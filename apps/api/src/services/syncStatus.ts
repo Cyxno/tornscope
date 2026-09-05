@@ -128,11 +128,14 @@ export async function getSyncHealth(userId: string) {
  * Resource phase derived from sync_state (no invented percentages):
  * queued / running / backfilling / caught_up / failed.
  *
- * "caught_up" now requires the historical backward walk to have actually
- * finished cleanly (history_boundary_reached / source_exhausted). A walk
- * that stopped on max_pages, a stalled cursor or an API error leaves the
- * resource in "backfilling" — it is NOT complete, the UI shows why.
+ * For backward-walk resources (the log domains) "caught_up" requires the
+ * historical walk to have finished cleanly (history_boundary_reached /
+ * source_exhausted) — max_pages, stalls and API errors stay "backfilling".
+ * Snapshot resources (networth, profile, ...) have no history walk; they are
+ * caught up once they have ever succeeded.
  */
+const WALK_RESOURCES = new Set(["drugs", "rehab", "money_logs", "travel", "events"]);
+
 function deriveResourcePhase(s: SyncStateRow): "queued" | "running" | "backfilling" | "caught_up" | "failed" {
   if (s.status === "running") {
     // A resource that never succeeded yet is part of the initial backfill.
@@ -140,6 +143,7 @@ function deriveResourcePhase(s: SyncStateRow): "queued" | "running" | "backfilli
   }
   if (s.status === "failed") return "failed";
   if (s.lastSuccessAt === null) return "queued";
+  if (!WALK_RESOURCES.has(s.resource)) return "caught_up";
   if (s.stopReason === null) return "backfilling"; // pre-coverage state; wait for next walk
   if (s.stopReason === "history_boundary_reached" || s.stopReason === "source_exhausted") return "caught_up";
   // max_pages / cursor_stalled / api_error — history incomplete.

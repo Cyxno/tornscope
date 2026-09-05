@@ -115,6 +115,20 @@ export interface CompletionUpdate {
 
 export async function completeResource(db: PrismaClientType, userId: string, resource: SyncResource, update: CompletionUpdate): Promise<void> {
   const now = update.now ?? new Date();
+  // Torn availability only shrinks over time: keep the DEEPEST oldest-source
+  // observation ever made (incremental walks see only recent pages and would
+  // otherwise overwrite the true retention floor with a recent timestamp).
+  let sourceEarliest = update.sourceEarliestAt;
+  if (sourceEarliest !== undefined) {
+    const current = await db.syncState.findUnique({
+      where: { userId_resource: { userId, resource } },
+      select: { sourceEarliestAt: true },
+    });
+    const existing = current?.sourceEarliestAt;
+    if (existing !== null && existing !== undefined && (sourceEarliest === null || sourceEarliest === undefined || existing < sourceEarliest)) {
+      sourceEarliest = existing;
+    }
+  }
   await db.syncState.update({
     where: { userId_resource: { userId, resource } },
     data: {
@@ -127,7 +141,7 @@ export async function completeResource(db: PrismaClientType, userId: string, res
       lastTimestamp: update.lastTimestamp ?? undefined,
       cursor: update.cursor ?? undefined,
       stopReason: update.stopReason !== undefined ? update.stopReason : undefined,
-      sourceEarliestAt: update.sourceEarliestAt !== undefined ? update.sourceEarliestAt : undefined,
+      sourceEarliestAt: sourceEarliest,
       nextRunAt: update.nextRunAt ?? undefined,
     },
   });
