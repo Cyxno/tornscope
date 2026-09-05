@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { DashboardResponse } from "@tornscope/shared";
-  import { formatMoneyCompact } from "@tornscope/shared";
+  import { formatMoneyCompact, formatKpiValue } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
   import { dateRange } from "$lib/state.svelte";
   import { formatRelative } from "$lib/reltime";
@@ -132,11 +132,11 @@
         </div>
         <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-[13px]">
           <span class="flex items-baseline gap-1.5 {(data.netGain30d.value ?? 0) >= 0 ? 'text-positive' : 'text-negative'}">
-            <span class="tnum font-semibold">{(data.netGain30d.value ?? 0) >= 0 ? '+' : ''}{formatMoneyCompact(data.netGain30d.value)}</span>
+            <span class="tnum font-semibold">{data.netGain30d.value === null ? "—" : `${(data.netGain30d.value ?? 0) >= 0 ? "+" : ""}${formatMoneyCompact(data.netGain30d.value)}`}</span>
             <span class="text-fg-faint">net · 30 days</span>
           </span>
           <span class="flex items-baseline gap-1.5 text-fg-muted">
-            <span class="tnum font-semibold text-fg">{formatMoneyCompact(data.travelProfit.value)}</span>
+            <span class="tnum font-semibold text-fg">{formatKpiValue(data.travelProfit)}</span>
             <span class="text-fg-faint">est. travel profit</span>
           </span>
           {#if data.lastSyncAt}
@@ -145,10 +145,10 @@
         </div>
       </div>
       <div class="grid grid-cols-2 gap-px border-t border-border bg-border md:grid-cols-4">
-        <Stat label="Cash" value={formatMoneyCompact(data.cash.value)} provenance="exact" />
-        <Stat label="30d income" value={formatMoneyCompact(data.income30d.value)} provenance="exact" tone="positive" />
-        <Stat label="30d expenses" value={formatMoneyCompact(data.expenses30d.value)} provenance="exact" tone="negative" />
-        <Stat label="Rehab spend" value={formatMoneyCompact(data.rehabSpend.value)} provenance={data.rehabSpend.provenance} />
+        <Stat label="Cash" value={formatKpiValue(data.cash)} provenance="exact" />
+        <Stat label="30d income" value={formatKpiValue(data.income30d)} provenance="derived" tone="positive" sub={data.income30d.availability === "incomplete" ? "some logs unclassified" : null} />
+        <Stat label="30d expenses" value={formatKpiValue(data.expenses30d)} provenance="derived" tone="negative" sub={data.expenses30d.availability === "incomplete" ? "some logs unclassified" : null} />
+        <Stat label="Rehab spend" value={formatKpiValue(data.rehabSpend)} provenance={data.rehabSpend.provenance} />
       </div>
     </section>
 

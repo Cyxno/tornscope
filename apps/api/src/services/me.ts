@@ -23,7 +23,7 @@ export async function setDemoView(user: { id: string }, enabled: boolean): Promi
       update: { value: true },
     });
   } else {
-    await clearDemoViewFlag(db);
+    await clearDemoViewFlag(db, user.id);
   }
 }
 
@@ -32,8 +32,17 @@ function buildCommit(): string {
   return process.env.GIT_SHA ?? "dev";
 }
 
-/** The flag always lives under a non-demo (owner) user id. */
-async function clearDemoViewFlag(db: ReturnType<typeof getPrismaClient>): Promise<void> {
+/**
+ * Clear the demo-view flag for ONE owner user only — never globally. With
+ * several local owner accounts, toggling one must not touch the others.
+ */
+async function clearDemoViewFlag(db: ReturnType<typeof getPrismaClient>, userId?: string): Promise<void> {
+  if (userId) {
+    await db.appSetting.deleteMany({ where: { userId, key: DEMO_VIEW_KEY } });
+    return;
+  }
+  // No explicit owner passed (legacy callers): clear every owner's flag but
+  // never the demo user's own row.
   const demo = await db.user.findUnique({ where: { email: DEMO_USER_EMAIL }, select: { id: true } });
   await db.appSetting.deleteMany({
     where: { key: DEMO_VIEW_KEY, ...(demo ? { userId: { not: demo.id } } : {}) },
@@ -175,8 +184,8 @@ export async function saveApiKey(user: { id: string }, apiKey: string): Promise<
 
   // Sync schedules exist per user from the first valid key onward.
   await ensureSyncStates(db, user.id);
-  // A real key always takes precedence over the demo view.
-  await clearDemoViewFlag(db);
+  // A real key always takes precedence over the demo view (this owner only).
+  await clearDemoViewFlag(db, user.id);
 
   // Detect the player NOW (basic is public) so needsOnboarding flips and the
   // user can enter the app while the historical backfill runs in background.

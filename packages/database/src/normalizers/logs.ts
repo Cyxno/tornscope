@@ -8,17 +8,30 @@ import {
   stripHtml,
   type LogRecord,
 } from "./extract.js";
-import { LOG_CATEGORY_ROUTES, type MoneyCategory } from "@tornscope/shared";
+import {
+  routeLog,
+  travelTransitionFor,
+  drugNameFromTitle,
+  isOverdoseTitle,
+  moneyPlanFor,
+  classifyMoneyCategory,
+  INCOME_WORDS,
+  EXPENSE_WORDS,
+  TRANSFER_WORDS,
+  MONEY_AMOUNT_KEYS,
+  type TravelTransitionType,
+} from "./titles.js";
+import type { MoneyCategory, MoneyDirection } from "@tornscope/shared";
 
 /**
  * Normalization layer: raw Torn log entries -> typed domain events.
  *
- * Routing is driven by the log entry's own `details.category` title (each
- * entry carries it), matched against the LOG_CATEGORY_ROUTES keywords.
- * Category -> money-category mapping is keyword based and intentionally
- * conservative: unknown categories still land on the unified timeline, so no
- * information is lost, but nothing is presented as structured data that we
- * cannot actually derive.
+ * Routing is driven by the REAL category/title combinations observed in a
+ * live 180-day backfill (see titles.ts for the mapping tables). Every entry
+ * always lands on the unified timeline; structured tables are filled only
+ * from recognized shapes, and unrecognized money movements are recorded with
+ * direction "unknown" so they can be audited instead of silently inflating
+ * income or expenses.
  */
 
 export interface DrugEventInput {
@@ -39,13 +52,12 @@ export interface RehabEventInput {
   raw: unknown;
 }
 
-export interface TravelEventInput {
-  destination: string;
-  departedAt: Date;
-  arrivedAt: Date | null;
-  returnedAt: Date | null;
-  durationSeconds: number | null;
-  status: string;
+/** A single travel transition (step A); trips are assembled from these. */
+export interface TravelTransitionInput {
+  occurredAt: Date;
+  type: TravelTransitionType;
+  country: string | null;
+  countryId: number | null;
   sourceRef: string;
   raw: unknown;
 }
@@ -67,8 +79,8 @@ export interface MoneyEventInput {
   occurredAt: Date;
   category: MoneyCategory;
   subcategory: string | null;
-  direction: "income" | "expense" | "neutral";
-  amount: bigint; // signed
+  direction: MoneyDirection;
+  amount: bigint; // signed: positive into the wallet, negative out
   sourceRef: string;
   description: string | null;
   raw: unknown;
@@ -88,76 +100,50 @@ export interface TimelineEventInput {
 export interface NormalizedLogWrites {
   drugEvents: DrugEventInput[];
   rehabEvents: RehabEventInput[];
-  travelEvents: TravelEventInput[];
+  /** Individual travel transitions (never full trips). */
+  travelTransitions: TravelTransitionInput[];
   travelItemEvents: TravelItemEventInput[];
   moneyEvents: MoneyEventInput[];
   timelineEvents: TimelineEventInput[];
+  /** Entries that produced no structured domain data (timeline-only). */
   unmapped: number;
 }
 
 export interface NormalizeContext {
   /** itemId -> item name, from the cached Torn item catalog. */
   itemNameById: Map<number, string>;
+  /** itemId -> catalog type ("Plushie", "Flower", ...), when available. */
+  itemTypeById?: Map<number, string>;
 }
 
 const DRUG_ITEM_KEYS = ["item", "drug", "item_id", "itemId", "drug_id"];
 const ITEM_ID_KEYS = ["id", "item", "item_id", "itemId"];
 const QTY_KEYS = ["qty", "quantity", "amount", "count"];
-const COST_KEYS = ["cost", "price", "total", "amount", "money", "value"];
-const MONEY_AMOUNT_KEYS = ["amount", "money", "total", "value", "gain", "profit"];
-const PERCENT_KEYS = ["percentage", "percent", "rehab", "rehab_percent", "progress"];
-const COUNTRY_KEYS = ["country", "destination", "abroad_country"];
+const COST_KEYS = ["cost_total", "cost", "price", "total", "money", "value"];
+const PERCENT_KEYS = ["percentage", "percent", "rehab_percent", "progress"];
+const COUNTRY_STRING_KEYS = ["country", "destination", "abroad_country"];
 
-const INCOME_WORDS = /gain|gained|received?|won|sold|income|payout|payou|reward|refund|mugg(ed)?|steal|profit|interest|withdrew|withdrawing|sold/i;
-const EXPENSE_WORDS = /spent|spend|paid|pay|bought|purchase|lost|loss|fee|fine|cost|donat|invested/i;
-/** Money moving between own accounts/pools: a transfer, never income/expense. */
-const TRANSFER_WORDS = /deposit|withdraw|withdrew|withdrawing|transferr|invest(ed|ing)?|savings/i;
-
-export function classifyMoneyCategory(text: string): MoneyCategory {
-  const t = text.toLowerCase();
-  if (/plushie/.test(t)) return "plushie";
-  if (/flower/.test(t)) return "flower";
-  if (/mug/.test(t)) return "mugging";
-  if (/ranked.?war/.test(t)) return "ranked_war";
-  if (/faction/.test(t)) return "faction";
-  if (/crime/.test(t)) return "crime";
-  if (/rehab/.test(t)) return "rehab";
-  if (/drug/.test(t)) return "drugs";
-  if (/stock/.test(t)) return "stock";
-  if (/casino|bookie|bet|lottery|slots|roulette|blackjack|poker|high.?low/.test(t)) return "casino";
-  if (/point/.test(t)) return "points";
-  if (/bazaar/.test(t)) return "bazaar";
-  if (/auction/.test(t)) return "auction";
-  if (/cayman|swiss|abroad.*bank/.test(t)) return "cayman_bank";
-  if (/city.?bank|\bbank\b|savings|deposit|withdraw/.test(t)) return "city_bank";
-  if (/salary|job|paycheck|wage/.test(t)) return "salary";
-  if (/education|course/.test(t)) return "education";
-  if (/hospital|surgery|medical/.test(t)) return "hospital";
-  if (/jail|bail/.test(t)) return "jail";
-  if (/travel|fly|abroad/.test(t)) return "travel";
-  if (/trade|sold|sell/.test(t)) return "trading";
-  if (/item/.test(t)) return "items";
+function isPlushieOrFlower(name: string | null, catalogType?: string | null): "plushie" | "flower" | "other" {
+  // The catalog type is authoritative ("Teddy Bear" is a Plushie without the
+  // word in its name); the name heuristic is only a fallback.
+  const t = catalogType?.toLowerCase();
+  if (t === "plushie") return "plushie";
+  if (t === "flower") return "flower";
+  if (name && /plushie/i.test(name)) return "plushie";
+  if (name && /flower|rose|daffodil|orchid|heather|ceibo|edeweiss|peony|cherry blossom|african daisy|tribulus|banana orchid|crocus|kuala/i.test(name)) return "flower";
   return "other";
 }
 
-function routeForCategoryTitle(categoryTitle: string): keyof typeof LOG_CATEGORY_ROUTES | null {
-  const t = categoryTitle.toLowerCase();
-  for (const [route, keywords] of Object.entries(LOG_CATEGORY_ROUTES)) {
-    if (keywords.some((kw) => t.includes(kw))) return route as keyof typeof LOG_CATEGORY_ROUTES;
-  }
-  return null;
-}
-
-function directionFor(text: string): "income" | "expense" {
+/**
+ * Word-based fallback classification for old-style money titles the rule
+ * table does not recognize ("Deposited money in the city bank"). Returns
+ * "unknown" when nothing in the text indicates a direction — unknown money
+ * must NEVER default to expense.
+ */
+function fallbackDirection(text: string): "income" | "expense" | "unknown" {
   if (EXPENSE_WORDS.test(text) && !INCOME_WORDS.test(text)) return "expense";
   if (INCOME_WORDS.test(text)) return "income";
-  return "expense"; // Torn money log entries default to outflows for most categories
-}
-
-function isPlushieOrFlower(name: string | null): "plushie" | "flower" | "other" {
-  if (name && /plushie/i.test(name)) return "plushie";
-  if (name && /flower|rose|daffodil|orchid|heather|ceibo|edeweiss|peony|cherry blossom|african daisy|tribulus|banana orchid/i.test(name)) return "flower";
-  return "other";
+  return "unknown";
 }
 
 /**
@@ -169,7 +155,7 @@ export function normalizeLogEntry(log: TornUserLog, ctx: NormalizeContext): Norm
   const writes: NormalizedLogWrites = {
     drugEvents: [],
     rehabEvents: [],
-    travelEvents: [],
+    travelTransitions: [],
     travelItemEvents: [],
     moneyEvents: [],
     timelineEvents: [],
@@ -178,6 +164,7 @@ export function normalizeLogEntry(log: TornUserLog, ctx: NormalizeContext): Norm
 
   const occurredAt = new Date(log.timestamp * 1000);
   const categoryTitle = log.details.category;
+  const logTitle = log.details.title;
   const ref = sourceRef(["torn_log", log.id]);
 
   // Unified timeline gets every entry (this is what makes the timeline page
@@ -186,15 +173,15 @@ export function normalizeLogEntry(log: TornUserLog, ctx: NormalizeContext): Norm
     occurredAt,
     type: "log",
     category: categoryTitle,
-    title: log.details.title,
+    title: logTitle,
     description: null,
     amount: null,
     sourceRef: ref,
     raw: log,
   });
 
-  const route = routeForCategoryTitle(categoryTitle);
-  if (!route) {
+  const route = routeLog(categoryTitle, logTitle);
+  if (route === "timeline") {
     writes.unmapped += 1;
     return writes;
   }
@@ -205,25 +192,30 @@ export function normalizeLogEntry(log: TornUserLog, ctx: NormalizeContext): Norm
   switch (route) {
     case "drugs": {
       const itemId = pickNestedNumber(data, DRUG_ITEM_KEYS, ["id"]) ?? pickNumber(data, DRUG_ITEM_KEYS);
+      const fromTitle = drugNameFromTitle(logTitle);
       const drugName =
+        fromTitle ??
         (itemId !== null ? ctx.itemNameById.get(itemId) ?? null : null) ??
         pickNestedString(data, DRUG_ITEM_KEYS, ["name"]) ??
         pickString(data, ["drug_name", "name"]);
-      const overdosed = /overdos/i.test(log.details.title) || /overdos/i.test(categoryTitle);
       writes.drugEvents.push({
         occurredAt,
         drugItemId: itemId,
         drugName,
-        outcome: overdosed ? "overdose" : "success",
+        outcome: isOverdoseTitle(logTitle) ? "overdose" : "success",
         sourceRef: ref,
         raw: log,
       });
       break;
     }
+
     case "rehab": {
+      // Real payload (category "Travel", title "Rehab"):
+      // {cost, addiction, rehab_times, happy_increased} — there is no
+      // rehab-percentage field; `addiction` is the addiction level at visit.
       const cost = pickNumber(data, COST_KEYS) ?? pickNumber(params, COST_KEYS);
       const percent = pickNumber(data, PERCENT_KEYS) ?? pickNumber(params, PERCENT_KEYS);
-      const points = pickNumber(data, ["points", "addiction_points", "ap"]) ?? pickNumber(params, ["points", "addiction_points", "ap"]);
+      const points = pickNumber(data, ["points_removed", "addiction_removed", "addiction_points"]) ?? pickNumber(params, ["points_removed", "addiction_removed", "addiction_points"]);
       writes.rehabEvents.push({
         occurredAt,
         rehabPercent: percent,
@@ -232,7 +224,7 @@ export function normalizeLogEntry(log: TornUserLog, ctx: NormalizeContext): Norm
         sourceRef: ref,
         raw: log,
       });
-      if (cost !== null) {
+      if (cost !== null && cost !== 0) {
         writes.moneyEvents.push({
           occurredAt,
           category: "rehab",
@@ -246,40 +238,52 @@ export function normalizeLogEntry(log: TornUserLog, ctx: NormalizeContext): Norm
       }
       break;
     }
+
     case "travel": {
-      const country =
-        pickString(data, COUNTRY_KEYS) ??
+      const countryString =
+        pickString(data, COUNTRY_STRING_KEYS) ??
         pickNestedString(data, ["country", "destination"], ["name", "title"]) ??
-        pickString(params, COUNTRY_KEYS);
+        pickString(params, COUNTRY_STRING_KEYS);
 
-      const itemPurchase =
-        /item|bought|purchase|buy|shop/i.test(log.details.title + " " + categoryTitle) &&
-        !/depart|fly|travel(ed)?|leav|went|arriv|return/i.test(log.details.title);
+      const transition = travelTransitionFor(logTitle, data);
+      if (transition === null) break;
 
-      if (itemPurchase) {
-        // Items bought while abroad.
+      if (transition.type === "ITEM_PURCHASE") {
+        // Items bought while abroad: {area, item, quantity, cost_each, cost_total}
         const itemId = pickNestedNumber(data, DRUG_ITEM_KEYS, ["id"]) ?? pickNumber(data, ITEM_ID_KEYS);
+        writes.travelTransitions.push({
+          occurredAt,
+          type: transition.type,
+          country: countryString ?? transition.country,
+          countryId: transition.countryId,
+          sourceRef: ref,
+          raw: log,
+        });
         if (itemId !== null) {
-          const quantity = pickNumber(data, QTY_KEYS) ?? 1;
+          const rawQty = pickNumber(data, QTY_KEYS) ?? 1;
+          // Guard: a non-positive quantity must never reach analytics or a
+          // divide-by-zero unit cost.
+          const quantity = Math.max(1, Math.round(rawQty));
           const totalCost = pickNumber(data, COST_KEYS);
-          const name = (itemId !== null ? ctx.itemNameById.get(itemId) ?? null : null) ?? pickNestedString(data, DRUG_ITEM_KEYS, ["name"]);
+          const name = ctx.itemNameById.get(itemId) ?? pickNestedString(data, DRUG_ITEM_KEYS, ["name"]);
           const unit = totalCost !== null ? Math.round(totalCost / quantity) : 0;
+          const itemCategory = isPlushieOrFlower(name, ctx.itemTypeById?.get(itemId));
           writes.travelItemEvents.push({
             occurredAt,
-            destination: country,
-            category: isPlushieOrFlower(name),
+            destination: countryString ?? transition.country,
+            category: itemCategory,
             itemId,
             itemName: name,
             quantity,
-            unitCost: BigInt(unit),
-            totalCost: BigInt(Math.round(totalCost ?? 0)),
+            unitCost: BigInt(Math.max(0, unit)),
+            totalCost: BigInt(Math.max(0, Math.round(totalCost ?? 0))),
             sourceRef: ref,
             raw: log,
           });
           if (totalCost !== null && totalCost > 0) {
             writes.moneyEvents.push({
               occurredAt,
-              category: isPlushieOrFlower(name) === "plushie" ? "plushie" : isPlushieOrFlower(name) === "flower" ? "flower" : "travel",
+              category: itemCategory === "plushie" ? "plushie" : itemCategory === "flower" ? "flower" : "travel",
               subcategory: name,
               direction: "expense",
               amount: -BigInt(Math.round(totalCost)),
@@ -290,62 +294,63 @@ export function normalizeLogEntry(log: TornUserLog, ctx: NormalizeContext): Norm
           }
         }
       } else {
-        const isArrival = /arriv|return|back|land/i.test(log.details.title);
-        const isDeparture = /depart|fly|travel|leav|went|abroad/i.test(log.details.title) || /abroad/i.test(categoryTitle);
-
-        if (country && (isDeparture || isArrival)) {
-          writes.travelEvents.push({
-            destination: country,
-            departedAt: isDeparture ? occurredAt : new Date(log.timestamp * 1000),
-            arrivedAt: isArrival ? occurredAt : null,
-            returnedAt: /return|back to torn|home/i.test(log.details.title) ? occurredAt : null,
-            durationSeconds: pickNumber(data, ["duration", "time", "flight_time"]),
-            status: isArrival ? "arrived" : isDeparture ? "departed" : "unknown",
-            sourceRef: ref,
-            raw: log,
-          });
-        }
-      }
-      break;
-    }
-    case "money": {
-      const amount = pickNumber(data, MONEY_AMOUNT_KEYS) ?? pickNumber(params, MONEY_AMOUNT_KEYS);
-      const text = `${log.details.title} ${categoryTitle}`;
-      if (amount !== null && amount !== 0) {
-        const magnitude = BigInt(Math.round(Math.abs(amount)));
-        const category = classifyMoneyCategory(text);
-
-        // Bank movements (city/cayman) and faction pool deposits/withdrawals
-        // are TRANSFERS: the money stays the player's, so they must never
-        // inflate income or spending. They keep a signed amount (out of the
-        // wallet on deposit/invest, back in on withdrawal) with direction
-        // "neutral", which the flow aggregations exclude.
-        const isTransfer =
-          TRANSFER_WORDS.test(text) &&
-          (category === "city_bank" || category === "cayman_bank" || category === "faction");
-
-        let direction: "income" | "expense" | "neutral";
-        let signed: bigint;
-        if (isTransfer) {
-          direction = "neutral";
-          // Money coming back to the player (withdrawals, receives) is positive.
-          signed = /withdrew|withdraw|withdrawing|receive|received/i.test(text) ? magnitude : -magnitude;
-        } else {
-          direction = directionFor(text);
-          signed = direction === "income" ? magnitude : -magnitude;
-        }
-
-        writes.moneyEvents.push({
+        writes.travelTransitions.push({
           occurredAt,
-          category,
-          subcategory: categoryTitle,
-          direction,
-          amount: signed,
+          type: transition.type,
+          country: transition.country ?? countryString,
+          countryId: transition.countryId,
           sourceRef: ref,
-          description: log.details.title,
           raw: log,
         });
       }
+      break;
+    }
+
+    case "money": {
+      const amount = pickNumber(data, [...MONEY_AMOUNT_KEYS]) ?? pickNumber(params, [...MONEY_AMOUNT_KEYS]);
+      if (amount === null || amount === 0) break;
+      const magnitude = BigInt(Math.round(Math.abs(amount)));
+      const text = `${logTitle} ${categoryTitle}`;
+      const plan = moneyPlanFor(categoryTitle, logTitle);
+
+      if (plan?.skip) break; // definitively not a cash movement
+
+      let direction: MoneyDirection;
+      let signed: bigint;
+      if (plan) {
+        if (plan.transfer) {
+          // Own-pool movement (bank investments, withdrawals, faction vault):
+          // keep a signed ledger row but never count it as income/expense.
+          direction = "neutral";
+          signed = /withdrew|withdraw|withdrawing|receive|received|payout/i.test(text) ? magnitude : -magnitude;
+        } else {
+          direction = plan.direction;
+          signed = plan.direction === "expense" ? -magnitude : magnitude;
+        }
+      } else {
+        // Fallback classification for old-style titles; unknown stays unknown.
+        const isTransfer =
+          TRANSFER_WORDS.test(text) &&
+          ["city_bank", "cayman_bank", "faction"].includes(classifyMoneyCategory(text));
+        if (isTransfer) {
+          direction = "neutral";
+          signed = /withdrew|withdraw|withdrawing|receive|received/i.test(text) ? magnitude : -magnitude;
+        } else {
+          direction = fallbackDirection(text);
+          signed = direction === "expense" ? -magnitude : direction === "income" ? magnitude : magnitude;
+        }
+      }
+
+      writes.moneyEvents.push({
+        occurredAt,
+        category: plan?.category ?? classifyMoneyCategory(text),
+        subcategory: logTitle,
+        direction,
+        amount: signed,
+        sourceRef: ref,
+        description: logTitle,
+        raw: log,
+      });
       break;
     }
   }

@@ -39,33 +39,40 @@ export async function enqueueDueSyncs(syncQueue: Queue<SyncJobData>): Promise<vo
 
       const states = await getSyncStates(db, userId);
       for (const state of states) {
-        const resource = state.resource as SyncResource;
-        if (!SYNC_RESOURCES.includes(resource)) continue;
+        // One failed resource must not skip all later resources for this
+        // user, so every resource is guarded individually.
+        try {
+          const resource = state.resource as SyncResource;
+          if (!SYNC_RESOURCES.includes(resource)) continue;
 
-        // Running resources are skipped only while they are alive: a run
-        // without a progress heartbeat for 15 minutes is an orphan (worker
-        // crash/restart) and must be re-enqueued so backfills resume.
-        if (state.status === "running") {
-          const lastTouch = state.updatedAt?.getTime() ?? state.lastStartedAt?.getTime() ?? 0;
-          if (now - lastTouch < 15 * 60_000) continue;
-          logger.warn({ userId, resource }, "re-enqueuing stale running sync (orphan recovered)");
+          // Running resources are skipped only while they are alive: a run
+          // without a progress heartbeat for 15 minutes is an orphan (worker
+          // crash/restart) and must be re-enqueued so backfills resume.
+          if (state.status === "running") {
+            const lastTouch = state.updatedAt?.getTime() ?? state.lastStartedAt?.getTime() ?? 0;
+            if (now - lastTouch < 15 * 60_000) continue;
+            logger.warn({ userId, resource }, "re-enqueuing stale running sync (orphan recovered)");
+          }
+
+          const dueAt = state.nextRunAt?.getTime() ?? 0;
+          if (state.status !== "running" && dueAt > now) continue;
+
+          // Enqueue FIRST, advance nextRunAt only on success: if the queue
+          // add throws, the resource stays due instead of being silently
+          // skipped for a whole frequency period.
+          await syncQueue.add(
+            SYNC_JOB_NAME,
+            { userId, resource },
+            // BullMQ rejects ":" in custom job ids — ids must always be built
+            // through the shared helper (this silently killed all scheduling).
+            { jobId: buildSyncJobId(userId, resource, now), delay: 0 }
+          );
+          const nextAt = new Date(now + Math.max(state.frequencySeconds, 60) * 1000);
+          await db.syncState.update({ where: { userId_resource: { userId, resource } }, data: { nextRunAt: nextAt } });
+          logger.debug({ userId, resource }, "enqueued due sync");
+        } catch (err) {
+          logger.error({ userId, resource: state.resource, err: (err as Error).message }, "scheduler failed for resource");
         }
-
-        const dueAt = state.nextRunAt?.getTime() ?? 0;
-        if (state.status !== "running" && dueAt > now) continue;
-
-        // Reserve the slot by pushing nextRunAt forward; claimResource still
-        // guards the actual execution against overlap.
-        const nextAt = new Date(now + Math.max(state.frequencySeconds, 60) * 1000);
-        await db.syncState.update({ where: { userId_resource: { userId, resource } }, data: { nextRunAt: nextAt } });
-        await syncQueue.add(
-          SYNC_JOB_NAME,
-          { userId, resource },
-          // BullMQ rejects ":" in custom job ids — ids must always be built
-          // through the shared helper (this silently killed all scheduling).
-          { jobId: buildSyncJobId(userId, resource, now), delay: 0 }
-        );
-        logger.debug({ userId, resource }, "enqueued due sync");
       }
     } catch (err) {
       logger.error({ userId, err: (err as Error).message }, "scheduler tick failed for user");

@@ -71,6 +71,7 @@ export const MONEY_CATEGORIES = [
   "education",
   "hospital",
   "jail",
+  "housing",
   "auction",
   "missions",
   "other",
@@ -78,7 +79,7 @@ export const MONEY_CATEGORIES = [
 
 export type MoneyCategory = (typeof MONEY_CATEGORIES)[number];
 
-export const MONEY_DIRECTIONS = ["income", "expense", "neutral"] as const;
+export const MONEY_DIRECTIONS = ["income", "expense", "neutral", "unknown"] as const;
 export type MoneyDirection = (typeof MONEY_DIRECTIONS)[number];
 
 /**

@@ -8,10 +8,11 @@ import {
   insertPersonalStatSnapshot,
   insertRehabEvents,
   insertTimelineEvents,
-  insertTravelEvents,
+  insertTravelTransitions,
   insertTravelItemEvents,
   insertFactionSnapshot,
   loadItemNameMap,
+  loadItemTypeMap,
   normalizeLogEntry,
   normalizeTornEvent,
   setLogCategories as cacheLogCategories,
@@ -21,6 +22,7 @@ import {
   upsertFactionMembership,
   upsertTornAccount,
   getLogCategories,
+  assembleTripsFromTransitions,
 } from "@tornscope/database";
 import { getWorkerContext } from "../context.js";
 import { logger } from "../env.js";
@@ -241,7 +243,7 @@ async function getCurrentApiKey(): Promise<string> {
  */
 async function syncLogsByCategories(args: SyncHandlerArgs, categoryIds: number[]): Promise<SyncHandlerResult> {
   const ctx = getWorkerContext();
-  const itemNameById = await loadItemNameMap(ctx.db);
+  const [itemNameById, itemTypeById] = await Promise.all([loadItemNameMap(ctx.db), loadItemTypeMap(ctx.db)]);
 
   const from =
     args.lastTimestamp !== null
@@ -258,14 +260,14 @@ async function syncLogsByCategories(args: SyncHandlerArgs, categoryIds: number[]
         logger.debug({ userId: args.userId, category, page: logs.length, stage: "page_received" }, "log page received");
         if (logs.length === 0) return;
         for (const log of logs) {
-          const normalized = normalizeLogEntry(log, { itemNameById });
+          const normalized = normalizeLogEntry(log, { itemNameById, itemTypeById });
           // Each typed insert is its own small idempotent transaction — the
           // cursor is only advanced after every page of this category made
           // it to PostgreSQL, so a crash resumes instead of skipping data.
           await insertTimelineEvents(ctx.db, args.userId, normalized.timelineEvents);
           await insertDrugEvents(ctx.db, args.userId, normalized.drugEvents);
           await insertRehabEvents(ctx.db, args.userId, normalized.rehabEvents);
-          await insertTravelEvents(ctx.db, args.userId, normalized.travelEvents);
+          await insertTravelTransitions(ctx.db, args.userId, normalized.travelTransitions);
           await insertTravelItemEvents(ctx.db, args.userId, normalized.travelItemEvents);
           await insertMoneyEvents(ctx.db, args.userId, normalized.moneyEvents);
           records += 1;
@@ -277,18 +279,37 @@ async function syncLogsByCategories(args: SyncHandlerArgs, categoryIds: number[]
     );
   }
 
+  // Trips are assembled from transitions, never written per log — rebuild
+  // them after any travel-domain fetch so new flights close out.
+  if (categoryIds.length > 0) {
+    const assembly = await assembleTripsFromTransitions(ctx.db, args.userId);
+    if (assembly.trips > 0) {
+      logger.debug({ userId: args.userId, trips: assembly.trips, unmatched: assembly.unmatchedTransitions }, "travel trips assembled");
+    }
+  }
+
   return { records, lastTimestamp: maxTimestamp > 0 ? BigInt(maxTimestamp) : null };
 }
 
 export const syncDrugLogs: SyncHandler = async (args) => syncLogsByCategories(args, await resolveCategoryIds(["drug"]));
 
-export const syncRehabLogs: SyncHandler = async (args) => syncLogsByCategories(args, await resolveCategoryIds(["rehab", "rehabilitation"]));
+// Torn has NO rehab log category: rehab visits are filed under the "Travel"
+// category with the title "Rehab". The keyword list therefore mirrors the
+// travel resource; the normalizer routes by title.
+export const syncRehabLogs: SyncHandler = async (args) =>
+  syncLogsByCategories(args, await resolveCategoryIds(["travel", "abroad", "fly", "flight", "rehab", "rehabilitation"]));
 
-export const syncTravelLogs: SyncHandler = async (args) => syncLogsByCategories(args, await resolveCategoryIds(["travel", "abroad", "fly", "flight"]));
+export const syncTravelLogs: SyncHandler = async (args) =>
+  syncLogsByCategories(args, await resolveCategoryIds(["travel", "abroad", "fly", "flight"]));
 
+// Financial surface. Beyond the obvious money keywords this includes the real
+// category names observed in a live 180-day history: "Company", "Job",
+// "Property", "Shops", "Item market", "Donator", "Offshore bank", "Piggy
+// bank", "Loan". The normalizer decides which entries are actual movements.
 export const syncMoneyLogs: SyncHandler = async (args) =>
   syncLogsByCategories(args, await resolveCategoryIds([
     "trade", "money", "bazaar", "bank", "casino", "stock", "salary", "points", "auction", "crime", "mug", "payout",
+    "company", "job", "property", "shop", "item market", "donator", "offshore", "piggy", "loan", "upkeep", "faction",
   ]));
 
 /* -------------------------------------------------------------------------- */

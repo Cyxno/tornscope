@@ -28,6 +28,9 @@ enum MoneyDirection {
   income
   expense
   neutral
+  /// Money movement observed but not yet classified (e.g. unmapped log
+  /// titles). Excluded from income/expense aggregates until classified.
+  unknown
 }
 
 enum DrugOutcome {
@@ -69,6 +72,7 @@ model User {
   rehabEvents          RehabEvent[]
   travelEvents         TravelEvent[]
   travelItemEvents     TravelItemEvent[]
+  travelTransitions    TravelTransition[]
   moneyEvents          MoneyEvent[]
   timelineEvents       TimelineEvent[]
   factionMemberships   FactionMembership[]
@@ -277,6 +281,12 @@ model RehabEvent {
 }
 
 /// Flights (departure/arrival/return lifecycle).
+///
+/// Since the travel rebuild, rows are ASSEMBLED TRIPS built from
+/// TravelTransition evidence (source = "trip"), not one-per-log fragments.
+/// destination/departedAt/arrivedAt/returnedAt are only filled from real
+/// chronological transitions — departedAt is never fabricated from an
+/// arrival timestamp.
 model TravelEvent {
   id              String    @id @default(cuid())
   userId          String
@@ -326,6 +336,29 @@ model TravelItemEvent {
   @@index([userId, occurredAt])
   @@index([userId, category])
   @@index([itemId])
+}
+
+/// Step A of the travel model: an individual travel transition parsed from a
+/// single Torn log entry. Trips (TravelEvent, source="trip") are assembled
+/// from these in chronological order — never fabricated per log.
+model TravelTransition {
+  id        String   @id @default(cuid())
+  userId    String
+  occurredAt DateTime
+  type      String
+  /// Resolved country name (empty string when unknown/unresolvable).
+  country   String?
+  /// Numeric Torn country id from the raw payload, kept for re-mapping.
+  countryId Int?
+  source    String   @default("torn_log")
+  sourceRef String
+  metadata  Json?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, source, sourceRef])
+  @@index([userId, occurredAt])
+  @@index([userId, type])
 }
 
 /// Central normalized financial ledger (single source of truth for money).

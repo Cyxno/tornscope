@@ -38,3 +38,22 @@ export function formatDuration(seconds: number | null | undefined): string {
   if (h === 0) return `${m}m`;
   return `${h}h ${m}m`;
 }
+
+/**
+ * Zero-vs-unknown semantics for KPI display.
+ *
+ * $0 is only shown when the value is a CONFIRMED zero (availability "ok" or
+ * absent). Otherwise:
+ *   "Importing"  — the historical backfill is still running
+ *   "Incomplete" — parser coverage insufficient; the number may change
+ *   "—"          — not computable from the collected data
+ */
+export function formatKpiValue(
+  kpi: { value: number | null; availability?: "ok" | "unavailable" | "importing" | "incomplete" },
+  format: (value: number | null | undefined) => string = formatMoneyCompact
+): string {
+  if (kpi.availability === "importing") return "Importing";
+  if (kpi.availability === "incomplete" && kpi.value === null) return "Incomplete";
+  if (kpi.value === null || kpi.availability === "unavailable") return "—";
+  return format(kpi.value);
+}

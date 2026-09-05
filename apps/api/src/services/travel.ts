@@ -6,28 +6,41 @@ import {
   type Paginated,
   type Provenance,
 } from "@tornscope/shared";
-import { assembleTrips, calculateTravelProfit, calculateTripEconomics } from "@tornscope/analytics";
+import { calculateTravelProfit, calculateTripEconomics } from "@tornscope/analytics";
 import { bigintToNumber, getPrismaClient, loadMarketPrices } from "@tornscope/database";
 
-/** Travel analytics: trips assembled from events + item purchases. */
+/** Travel analytics: pre-assembled trips + their linked abroad purchases. */
 export async function getTravelSummary(userId: string, rangeInput: DateRangeInput): Promise<TravelSummaryResponse> {
   const db = getPrismaClient();
   const range = resolveDateRange(rangeInput);
 
   const marketPrices = await loadMarketPrices(db);
-  const trips = await loadTrips(userId, range.from, range.to, marketPrices);
+  const { trips, unattached } = await loadTrips(userId, range.from, range.to, marketPrices);
 
   const summary = calculateTravelProfit(trips, range.from, range.to);
 
   const topDest = summary.byDestination[0] ?? null;
   const topItem = findTopItem(trips, marketPrices);
 
+  const profitAvailable = summary.trips > 0;
   return {
     range: { from: range.from, to: range.to },
     trips: summary.trips,
-    estimatedProfit: { value: summary.estimatedProfit, provenance: "estimated" },
-    averageTripProfit: { value: summary.averageProfitPerTrip, provenance: "estimated" },
-    profitPerHour: { value: summary.averageProfitPerHour, provenance: "estimated" },
+    estimatedProfit: {
+      value: profitAvailable ? summary.estimatedProfit : null,
+      provenance: "estimated",
+      availability: profitAvailable ? "ok" : unattached.count > 0 ? "incomplete" : "unavailable",
+    },
+    averageTripProfit: {
+      value: profitAvailable ? summary.averageProfitPerTrip : null,
+      provenance: "estimated",
+      availability: profitAvailable ? "ok" : "unavailable",
+    },
+    profitPerHour: {
+      value: profitAvailable ? summary.averageProfitPerHour : null,
+      provenance: "estimated",
+      availability: profitAvailable ? (summary.averageProfitPerHour === null ? "incomplete" : "ok") : "unavailable",
+    },
     topDestination: { destination: topDest?.destination ?? null, profit: topDest?.estimatedProfit ?? null },
     topItem: topItem,
     profitSeries: buildProfitSeries(trips, range.from, range.to),
@@ -43,16 +56,17 @@ export async function getTravelSummary(userId: string, rangeInput: DateRangeInpu
       spend: c.spend,
       estimatedValue: c.estimatedValue,
     })),
+    unattachedPurchases: unattached,
   };
 }
 
 export async function getTravelHistory(userId: string, rangeInput: DateRangeInput, limit: number, cursor?: string): Promise<Paginated<TravelTripDto>> {
   const db = getPrismaClient();
   const range = resolveDateRange(rangeInput);
-  // Trips are small enough in practice to assemble from the window's rows;
-  // cursor pagination slices the resulting DTOs by departure time.
-  const trips = await loadTrips(userId, range.from, range.to, await loadMarketPrices(db));
+  // Trips are stored assembled (source="trip"); cursor pagination slices the
+  // resulting DTOs by departure time.
   const marketPrices = await loadMarketPrices(db);
+  const { trips } = await loadTrips(userId, range.from, range.to, marketPrices);
 
   const dtos: TravelTripDto[] = trips
     .sort((a, b) => b.departedAt - a.departedAt)
@@ -105,61 +119,86 @@ export async function getTravelHistory(userId: string, rangeInput: DateRangeInpu
 
 /* -------------------------------------------------------------------------- */
 
-interface LoadedItem {
+interface LoadedTrip {
   id: string;
-  itemId: number;
-  itemName: string | null;
-  category: string;
-  quantity: number;
-  unitCost: number;
-  totalCost: number;
-  occurredAt: number;
-  destination: string | null;
-  estimatedUnitValue: number | null;
+  destination: string;
+  departedAt: number;
+  returnedAt: number | null;
+  durationSeconds: number | null;
+  items: Array<{
+    id: string;
+    itemId: number;
+    itemName: string | null;
+    category: string;
+    quantity: number;
+    unitCost: number;
+    totalCost: number;
+    estimatedUnitValue: number | null;
+  }>;
 }
 
+/**
+ * Load assembled trips with their DB-linked purchases. Trips are built by the
+ * worker/renormalize step from real travel transitions — this read path never
+ * re-assembles or fabricates. Purchases whose trip is unknown (departure logs
+ * beyond Torn's travel-log retention) are returned separately as unattached.
+ */
 async function loadTrips(userId: string, from: number, to: number, marketPrices: Map<number, bigint>) {
   const db = getPrismaClient();
-  const [events, itemRows] = await Promise.all([
+  const windowFrom = new Date((from - 7 * 86_400) * 1000);
+  const [tripRows, itemRows] = await Promise.all([
     db.travelEvent.findMany({
-      where: { userId, departedAt: { gte: new Date((from - 7 * 86_400) * 1000), lte: new Date(to * 1000) } },
+      where: { userId, departedAt: { gte: windowFrom, lte: new Date(to * 1000) } },
       orderBy: { departedAt: "asc" },
-      select: { id: true, destination: true, departedAt: true, arrivedAt: true, returnedAt: true, status: true },
+      select: { id: true, destination: true, departedAt: true, returnedAt: true, durationSeconds: true },
     }),
     db.travelItemEvent.findMany({
-      where: { userId, occurredAt: { gte: new Date((from - 7 * 86_400) * 1000), lte: new Date(to * 1000) } },
+      where: { userId, occurredAt: { gte: windowFrom, lte: new Date(to * 1000) } },
       orderBy: { occurredAt: "asc" },
-      select: { id: true, itemId: true, itemName: true, category: true, quantity: true, unitCost: true, totalCost: true, occurredAt: true, destination: true },
+      select: { id: true, travelEventId: true, itemId: true, itemName: true, category: true, quantity: true, unitCost: true, totalCost: true, occurredAt: true, destination: true },
     }),
   ]);
 
-  const items: LoadedItem[] = itemRows.map((r) => {
-    const marketPrice = marketPrices.get(r.itemId);
-    return {
-      id: r.id,
-      itemId: r.itemId,
-      itemName: r.itemName,
-      category: r.category,
-      quantity: r.quantity,
-      unitCost: bigintToNumber(r.unitCost) ?? 0,
-      totalCost: bigintToNumber(r.totalCost) ?? 0,
-      occurredAt: Math.floor(r.occurredAt.getTime() / 1000),
-      destination: r.destination,
-      estimatedUnitValue: marketPrice !== undefined ? Number(marketPrice) : null,
-    };
+  const mapItem = (r: (typeof itemRows)[number]) => ({
+    id: r.id,
+    itemId: r.itemId,
+    itemName: r.itemName,
+    category: r.category,
+    quantity: r.quantity,
+    unitCost: bigintToNumber(r.unitCost) ?? 0,
+    totalCost: bigintToNumber(r.totalCost) ?? 0,
+    estimatedUnitValue: marketPrices.get(r.itemId) !== undefined ? Number(marketPrices.get(r.itemId)) : null,
   });
 
-  return assembleTrips(
-    events.map((e) => ({
-      id: e.id,
-      destination: e.destination,
-      departedAt: Math.floor(e.departedAt.getTime() / 1000),
-      arrivedAt: e.arrivedAt ? Math.floor(e.arrivedAt.getTime() / 1000) : null,
-      returnedAt: e.returnedAt ? Math.floor(e.returnedAt.getTime() / 1000) : null,
-      status: e.status,
-    })),
-    items
-  );
+  const itemsByTrip = new Map<string, ReturnType<typeof mapItem>[]>();
+  const unattachedItems: ReturnType<typeof mapItem>[] = [];
+  for (const r of itemRows) {
+    const item = mapItem(r);
+    if (r.travelEventId) {
+      const list = itemsByTrip.get(r.travelEventId) ?? [];
+      list.push(item);
+      itemsByTrip.set(r.travelEventId, list);
+    } else {
+      unattachedItems.push(item);
+    }
+  }
+
+  const trips: LoadedTrip[] = tripRows.map((t) => ({
+    id: t.id,
+    destination: t.destination,
+    departedAt: Math.floor(t.departedAt.getTime() / 1000),
+    returnedAt: t.returnedAt ? Math.floor(t.returnedAt.getTime() / 1000) : null,
+    durationSeconds: t.durationSeconds,
+    items: itemsByTrip.get(t.id) ?? [],
+  }));
+
+  const unattached = {
+    count: unattachedItems.length,
+    spend: unattachedItems.reduce((s, i) => s + i.totalCost, 0),
+    itemsBought: unattachedItems.reduce((s, i) => s + i.quantity, 0),
+  };
+
+  return { trips, unattached };
 }
 
 /**
@@ -167,7 +206,7 @@ async function loadTrips(userId: string, from: number, to: number, marketPrices:
  * the Torn item catalog market price minus actual purchase spend; when a
  * price is unknown the item contributes -spend (pessimistic, clearly derived).
  */
-function buildProfitSeries(trips: Array<{ departedAt: number; items: Array<{ estimatedUnitValue?: number | null; quantity: number; totalCost: number }> }>, from: number, to: number): Array<{ t: number; profit: number }> {
+function buildProfitSeries(trips: LoadedTrip[], from: number, to: number): Array<{ t: number; profit: number }> {
   const byDay = new Map<number, number>();
   for (const trip of trips) {
     if (trip.departedAt < from || trip.departedAt > to) continue;
@@ -183,7 +222,7 @@ function buildProfitSeries(trips: Array<{ departedAt: number; items: Array<{ est
   return [...byDay.entries()].sort((a, b) => a[0] - b[0]).map(([t, p]) => ({ t, profit: p }));
 }
 
-function findTopItem(trips: Array<{ items: Array<{ itemId: number; itemName: string | null; category: string; quantity: number; totalCost: number }> }>, marketPrices: Map<number, bigint>): { item: string | null; profit: number | null } {
+function findTopItem(trips: LoadedTrip[], marketPrices: Map<number, bigint>): { item: string | null; profit: number | null } {
   const perItem = new Map<string, { profit: number; known: boolean }>();
   for (const trip of trips) {
     for (const item of trip.items) {

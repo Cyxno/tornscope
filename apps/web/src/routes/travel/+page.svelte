@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { TravelSummaryResponse, TravelTripDto, Paginated } from "@tornscope/shared";
-  import { formatMoneyCompact, formatDateTime, formatDuration } from "@tornscope/shared";
+  import { formatMoneyCompact, formatDateTime, formatDuration, formatKpiValue } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
   import { dateRange } from "$lib/state.svelte";
   import PageHeader from "$lib/components/PageHeader.svelte";
@@ -113,10 +113,25 @@
   {:else if summary}
     <div class="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border shadow-panel md:grid-cols-4">
       <Stat label="Trips" value={String(summary.trips)} provenance="exact" tone="accent" />
-      <Stat label="Estimated profit" value={formatMoneyCompact(summary.estimatedProfit.value)} provenance="estimated" tone={(summary.estimatedProfit.value ?? 0) >= 0 ? "positive" : "negative"} />
-      <Stat label="Profit / hour" value={formatMoneyCompact(summary.profitPerHour.value)} provenance="estimated" />
+      <Stat
+        label="Estimated profit"
+        value={formatKpiValue(summary.estimatedProfit)}
+        provenance="estimated"
+        tone={(summary.estimatedProfit.value ?? 0) >= 0 ? "positive" : "negative"}
+        sub={summary.estimatedProfit.availability === "incomplete" ? "purchases without a trip exist" : null}
+      />
+      <Stat label="Profit / hour" value={formatKpiValue(summary.profitPerHour)} provenance="estimated" />
       <Stat label="Top item" value={summary.topItem.item ?? "—"} sub={summary.topItem.profit !== null ? formatMoneyCompact(summary.topItem.profit) : null} provenance="estimated" />
     </div>
+
+    {#if summary.unattachedPurchases.count > 0}
+      <p class="rounded-xl border border-border bg-surface px-5 py-3 text-xs text-fg-muted">
+        <span class="font-medium text-fg">{summary.unattachedPurchases.count} abroad purchase{summary.unattachedPurchases.count === 1 ? "" : "s"}</span>
+        ({formatMoneyCompact(summary.unattachedPurchases.spend)} across {summary.unattachedPurchases.itemsBought} items) predate the recoverable
+        departure history — Torn keeps travel logs for a limited window, so their trips cannot be reconstructed. Their spend is still
+        counted on the Money page.
+      </p>
+    {/if}
 
     <section class="grid gap-6 lg:grid-cols-5">
       <div class="lg:col-span-3">

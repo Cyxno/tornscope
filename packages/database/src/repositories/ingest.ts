@@ -5,8 +5,8 @@ import type {
   MoneyEventInput,
   RehabEventInput,
   TimelineEventInput,
-  TravelEventInput,
   TravelItemEventInput,
+  TravelTransitionInput,
 } from "../normalizers/logs.js";
 
 /**
@@ -51,20 +51,18 @@ export async function insertRehabEvents(db: PrismaClientType, userId: string, ev
   return result.count;
 }
 
-export async function insertTravelEvents(db: PrismaClientType, userId: string, events: TravelEventInput[]): Promise<number> {
+export async function insertTravelTransitions(db: PrismaClientType, userId: string, events: TravelTransitionInput[]): Promise<number> {
   if (events.length === 0) return 0;
-  const result = await db.travelEvent.createMany({
+  const result = await db.travelTransition.createMany({
     data: events.map((e) => ({
       userId,
-      destination: e.destination,
-      departedAt: e.departedAt,
-      arrivedAt: e.arrivedAt,
-      returnedAt: e.returnedAt,
-      durationSeconds: e.durationSeconds,
-      status: e.status,
+      occurredAt: e.occurredAt,
+      type: e.type,
+      country: e.country,
+      countryId: e.countryId,
       source: "torn_log",
       sourceRef: e.sourceRef,
-      raw: e.raw === undefined ? Prisma.JsonNull : (e.raw as Prisma.InputJsonValue),
+      metadata: e.raw === undefined ? Prisma.JsonNull : (e.raw as Prisma.InputJsonValue),
     })),
     skipDuplicates: true,
   });

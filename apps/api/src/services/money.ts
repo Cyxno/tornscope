@@ -40,11 +40,16 @@ export async function getMoneySummary(userId: string, rangeInput: DateRangeInput
 
   const agg = aggregateMoneyEvents(events, range.from, range.to, autoInterval(range));
 
+  // Unknown-direction rows in range mean the P&L may still change once
+  // unclassified logs are mapped — surface that instead of a confident total.
+  const unknownInRange = rows.filter((r) => r.direction === "unknown").length;
+  const flowAvailability = unknownInRange > 0 ? ("incomplete" as const) : rows.length === 0 ? ("unavailable" as const) : ("ok" as const);
+
   return {
     range: { from: range.from, to: range.to, interval: autoInterval(range) },
-    totalIncome: { value: agg.totalIncome, provenance: agg.provenance },
-    totalExpenses: { value: agg.totalExpenses, provenance: agg.provenance },
-    netProfit: { value: agg.netProfit, provenance: agg.provenance },
+    totalIncome: { value: flowAvailability === "unavailable" ? null : agg.totalIncome, provenance: agg.provenance, availability: flowAvailability },
+    totalExpenses: { value: flowAvailability === "unavailable" ? null : agg.totalExpenses, provenance: agg.provenance, availability: flowAvailability },
+    netProfit: { value: flowAvailability === "unavailable" ? null : agg.netProfit, provenance: agg.provenance, availability: flowAvailability },
     largestIncomeCategory: { category: (agg.largestIncomeCategory?.category as MoneySummaryResponse["largestIncomeCategory"]["category"]) ?? null, total: agg.largestIncomeCategory?.total ?? null },
     largestExpenseCategory: { category: (agg.largestExpenseCategory?.category as MoneySummaryResponse["largestExpenseCategory"]["category"]) ?? null, total: agg.largestExpenseCategory?.total ?? null },
     incomeByCategory: agg.incomeByCategory.map((c) => ({ category: c.category as MoneySummaryResponse["incomeByCategory"][number]["category"], total: c.total })),

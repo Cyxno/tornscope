@@ -112,6 +112,17 @@ export interface Paginated<T> {
 
 export const ProvenanceSchema = z.enum(["exact", "derived", "estimated"]);
 
+/**
+ * Data-quality state for a displayed figure. The UI must never show a
+ * misleading $0:
+ * - ok           confirmed value ($0 really is zero)
+ * - unavailable  not computable from collected data ("—")
+ * - importing    the historical backfill is still running
+ * - incomplete   parser coverage insufficient; value may change on re-import
+ */
+export const KpiAvailabilitySchema = z.enum(["ok", "unavailable", "importing", "incomplete"]);
+export type KpiAvailability = z.infer<typeof KpiAvailabilitySchema>;
+
 /* -------------------------------------------------------------------------- */
 /* API response contracts                                                     */
 /* -------------------------------------------------------------------------- */
@@ -161,6 +172,8 @@ export const KpiValueSchema = z.object({
   value: z.number().nullable(),
   provenance: ProvenanceSchema,
   label: z.string().optional(),
+  /** Data-quality state; absent means "ok". UI renders $0 only when ok. */
+  availability: KpiAvailabilitySchema.optional(),
 });
 export type KpiValue = z.infer<typeof KpiValueSchema>;
 
@@ -283,6 +296,17 @@ export const TravelSummaryResponseSchema = z.object({
       estimatedValue: z.number().nullable(),
     })
   ),
+  /**
+   * Abroad purchases whose trip could not be reconstructed (Torn keeps
+   * travel-transition logs for a limited window, so the departure evidence
+   * may predate collection). Their spend is real but not attributable to a
+   * trip; provenance is incomplete by nature.
+   */
+  unattachedPurchases: z.object({
+    count: z.number(),
+    spend: z.number(),
+    itemsBought: z.number(),
+  }),
 });
 export type TravelSummaryResponse = z.infer<typeof TravelSummaryResponseSchema>;
 

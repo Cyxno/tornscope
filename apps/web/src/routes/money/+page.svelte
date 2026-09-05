@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { MoneySummaryResponse, MoneyEventDto, Paginated } from "@tornscope/shared";
-  import { MONEY_CATEGORIES, formatMoneyCompact, formatMoneyFull, formatDateTime } from "@tornscope/shared";
+  import { MONEY_CATEGORIES, formatMoneyCompact, formatMoneyFull, formatDateTime, formatKpiValue } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
   import { dateRange } from "$lib/state.svelte";
   import PageHeader from "$lib/components/PageHeader.svelte";
@@ -136,14 +136,14 @@
     <StateMessage state="error" title="Could not load money analytics" hint={error} action={{ label: "Retry", run: () => (reloadToken += 1) }} />
   {:else if summary}
     <div class="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border shadow-panel md:grid-cols-4">
-      <Stat label="Income" value={formatMoneyCompact(summary.totalIncome.value)} provenance="exact" tone="positive" />
-      <Stat label="Expenses" value={formatMoneyCompact(summary.totalExpenses.value)} provenance="exact" tone="negative" />
-      <Stat label="Net result" value={formatMoneyCompact(summary.netProfit.value)} provenance="exact" tone={(summary.netProfit.value ?? 0) >= 0 ? "positive" : "negative"} />
+      <Stat label="Income" value={formatKpiValue(summary.totalIncome)} provenance="derived" tone="positive" sub={summary.totalIncome.availability === "incomplete" ? "some logs unclassified" : null} />
+      <Stat label="Expenses" value={formatKpiValue(summary.totalExpenses)} provenance="derived" tone="negative" sub={summary.totalExpenses.availability === "incomplete" ? "some logs unclassified" : null} />
+      <Stat label="Net result" value={formatKpiValue(summary.netProfit)} provenance="derived" tone={(summary.netProfit.value ?? 0) >= 0 ? "positive" : "negative"} sub={summary.netProfit.availability === "incomplete" ? "some logs unclassified" : null} />
       <Stat
         label="Top expense"
         value={summary.largestExpenseCategory.category ?? "—"}
         sub={summary.largestExpenseCategory.total !== null ? formatMoneyCompact(summary.largestExpenseCategory.total) : null}
-        provenance="exact"
+        provenance="derived"
       />
     </div>
 

@@ -42,6 +42,12 @@ export async function loadItemNameMap(db: PrismaClientType): Promise<Map<number,
   return new Map(items.map((i) => [i.itemId, i.name]));
 }
 
+/** itemId -> catalog type ("Plushie", "Flower", ...) for normalizers. */
+export async function loadItemTypeMap(db: PrismaClientType): Promise<Map<number, string>> {
+  const items = await db.tornItemCatalog.findMany({ select: { itemId: true, type: true } });
+  return new Map(items.map((i) => [i.itemId, i.type]));
+}
+
 /** market price by item id (null when unknown - never guess). */
 export async function loadMarketPrices(db: PrismaClientType): Promise<Map<number, bigint>> {
   const items = await db.tornItemCatalog.findMany({
