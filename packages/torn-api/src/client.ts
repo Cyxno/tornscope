@@ -40,6 +40,21 @@ export interface TornMetadata {
   nanostamp?: string;
 }
 
+/** Why a backward (historical) pagination walk stopped. */
+export type BackwardStopReason =
+  | "history_boundary_reached"
+  | "source_exhausted"
+  | "callback_stop"
+  | "max_pages"
+  | "cursor_stalled";
+
+export interface BackwardPaginationResult {
+  pages: number;
+  oldestTimestamp: number | null;
+  newestTimestamp: number | null;
+  stopReason: BackwardStopReason;
+}
+
 interface RawTornResponse {
   _metadata?: TornMetadata;
   error?: { code: number; error: string };
@@ -134,6 +149,86 @@ export class TornApiClient {
       if (!parsed) return;
       currentPath = parsed.path;
       currentParams = parsed.params;
+    }
+  }
+
+  /**
+   * Walk Torn's history BACKWARD via `_metadata.links.prev`.
+   *
+   * Torn's v2 log/event endpoints return the NEWEST page first
+   * (sort=desc, links.next = null) and expose OLDER pages only through
+   * links.prev. Forward-only pagination therefore silently truncated every
+   * historical backfill to its first page — this method is the correct way
+   * to page from `now` (or `params.to`) down to the requested boundary.
+   *
+   * Stops are always explained so callers can persist WHY history stopped:
+   * - history_boundary_reached: a page's oldest row is at/before the boundary
+   * - source_exhausted: Torn returned no prev link (nothing older exists)
+   * - callback_stop: the caller asked to stop
+   * - max_pages: safety cap hit — history is INCOMPLETE
+   * - cursor_stalled: prev kept returning the same window (defensive)
+   */
+  async paginateBackward(
+    path: string,
+    params: TornRequestParams,
+    onPage: (page: { data: Record<string, unknown>; metadata: TornMetadata | undefined }) => boolean | void | Promise<boolean | void>,
+    opts: { maxPages?: number; boundaryTs?: number; rowTimestamps?: (data: Record<string, unknown>) => number[] } = {}
+  ): Promise<BackwardPaginationResult> {
+    const maxPages = opts.maxPages ?? 500;
+    const boundaryTs = opts.boundaryTs ?? null;
+    const rowTimestamps = opts.rowTimestamps;
+    let currentPath: string | null = path;
+    let currentParams: TornRequestParams | null = params;
+    let pages = 0;
+    let oldestSeen: number | null = null;
+    let newestSeen: number | null = null;
+    let lastWindow: string | null = null;
+    let stalls = 0;
+
+    while (pages < maxPages) {
+      if (!currentPath || !currentParams) return finish("cursor_stalled");
+      const result = await this.getRaw(currentPath, currentParams);
+      const data = result.data as Record<string, unknown>;
+      pages += 1;
+
+      const timestamps = rowTimestamps ? rowTimestamps(data) : [];
+      for (const ts of timestamps) {
+        if (oldestSeen === null || ts < oldestSeen) oldestSeen = ts;
+        if (newestSeen === null || ts > newestSeen) newestSeen = ts;
+      }
+
+      const again = await onPage({ data, metadata: result.metadata });
+      if (again === false) return finish("callback_stop");
+
+      // Boundary: the requested history start is covered by this page.
+      if (boundaryTs !== null && timestamps.length > 0) {
+        const pageOldest = Math.min(...timestamps);
+        if (pageOldest <= boundaryTs) return finish("history_boundary_reached");
+      }
+
+      const prev = result.metadata?.links?.prev ?? null;
+      const parsedPrev = prev ? splitLink(prev) : null;
+      if (!prev || !parsedPrev) return finish("source_exhausted");
+
+      // Stall detection: a prev link whose window equals the current one can
+      // never make progress (two identical consecutive windows = stalled).
+      const windowKey = JSON.stringify({ p: parsedPrev.path, q: parsedPrev.params });
+      if (lastWindow !== null && windowKey === lastWindow) {
+        stalls += 1;
+        if (stalls >= 2) return finish("cursor_stalled");
+      } else {
+        stalls = 0;
+      }
+      lastWindow = windowKey;
+
+      currentPath = parsedPrev.path;
+      currentParams = parsedPrev.params;
+    }
+
+    return finish("max_pages");
+
+    function finish(reason: BackwardStopReason): BackwardPaginationResult {
+      return { pages, oldestTimestamp: oldestSeen, newestTimestamp: newestSeen, stopReason: reason };
     }
   }
 

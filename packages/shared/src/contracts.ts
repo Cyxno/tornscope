@@ -242,6 +242,8 @@ export const DashboardResponseSchema = z.object({
   networthChange: KpiValueSchema,
   networthChangePct: z.number().nullable(),
   networthCoverage: NetworthCoverageSchema,
+  /** Earliest real networth snapshot — charts/labels must not predate it. */
+  networthTrackingSince: z.number().nullable(),
   consumedValue: KpiValueSchema,
   travelProfit: KpiValueSchema,
   drugsUsed: KpiValueSchema,
@@ -323,6 +325,8 @@ export const EconomySummaryResponseSchema = z.object({
     baselineAt: z.number().nullable(),
     trackedFrom: z.number().nullable(),
     byCategory: z.array(NetworthCategoryChangeSchema),
+    /** Earliest real networth snapshot ("Tracking since"). */
+    trackingSince: z.number().nullable(),
   }),
   travel: z.object({
     estimatedProfit: KpiValueSchema,
@@ -369,6 +373,8 @@ export const NetworthResponseSchema = z.object({
     trackedFrom: z.number().nullable(),
     byCategory: z.array(NetworthCategoryChangeSchema),
   }),
+  /** Earliest real snapshot across ALL history (independent of the range). */
+  trackingSince: z.number().nullable(),
 });
 export type NetworthResponse = z.infer<typeof NetworthResponseSchema>;
 
@@ -539,6 +545,8 @@ export const SyncHealthResponseSchema = z.object({
     note: z.string(),
   }),
   setupPhase: z.enum(["no_key", "queued", "syncing", "partial", "caught_up", "failed"]),
+  /** Requested history window (worker config) coverage is judged against. */
+  requestedHistoryDays: z.number(),
   resources: z.array(
     z.object({
       resource: SyncResourceSchema,
@@ -552,6 +560,17 @@ export const SyncHealthResponseSchema = z.object({
       recordsCollected: z.number(),
       errorCount: z.number(),
       errorMessage: z.string().nullable(),
+      /**
+       * Why the last historical (backward) walk stopped:
+       * history_boundary_reached | source_exhausted | max_pages |
+       * cursor_stalled | api_error | null (never walked).
+       */
+      stopReason: z.string().nullable(),
+      /** Oldest source timestamp observed during the last backward walk. */
+      sourceEarliestAt: z.number().nullable(),
+      /** Earliest/latest stored structured row for this resource's domain. */
+      storedEarliestAt: z.number().nullable(),
+      storedLatestAt: z.number().nullable(),
     })
   ),
 });

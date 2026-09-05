@@ -135,8 +135,61 @@ async function main(): Promise<void> {
 
     const logRows = await db.timelineEvent.findMany({
       where: { userId: user.id, type: "log" },
-      select: { category: true, title: true, metadata: true },
+      select: { category: true, title: true, metadata: true, occurredAt: true },
     });
+
+    // Structured-event coverage windows per domain.
+    const [drugWindow, moneyWindow, rehabWindow, transitionWindow, tornEventWindow, timelineWindow, networthWindow] = await Promise.all([
+      db.drugEvent.aggregate({ where: { userId: user.id }, _min: { occurredAt: true }, _max: { occurredAt: true }, _count: { _all: true } }),
+      db.moneyEvent.aggregate({ where: { userId: user.id }, _min: { occurredAt: true }, _max: { occurredAt: true }, _count: { _all: true } }),
+      db.rehabEvent.aggregate({ where: { userId: user.id }, _min: { occurredAt: true }, _max: { occurredAt: true }, _count: { _all: true } }),
+      db.travelTransition.aggregate({ where: { userId: user.id }, _min: { occurredAt: true }, _max: { occurredAt: true }, _count: { _all: true } }),
+      db.timelineEvent.aggregate({ where: { userId: user.id, type: "torn_event" }, _min: { occurredAt: true }, _max: { occurredAt: true }, _count: { _all: true } }),
+      db.timelineEvent.aggregate({ where: { userId: user.id }, _min: { occurredAt: true }, _max: { occurredAt: true }, _count: { _all: true } }),
+      db.networthSnapshot.aggregate({ where: { userId: user.id }, _min: { capturedAt: true }, _max: { capturedAt: true }, _count: { _all: true } }),
+    ]);
+
+    const fmt = (d: Date | null): string => (d ? d.toISOString().slice(0, 16).replace("T", " ") : "—");
+    const requestedStart = (days: number): string => new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+
+    const states = await db.syncState.findMany({ where: { userId: user.id }, orderBy: { resource: "asc" } });
+    const stateByResource = new Map(states.map((s) => [s.resource, s]));
+    const historyDays = Number(process.env.TORN_SYNC_INITIAL_HISTORY_DAYS ?? 180);
+
+    const coverageRows: Array<[string, string, string, string, string, string]> = [];
+    for (const resource of ["drugs", "rehab", "money_logs", "travel", "events"] as const) {
+      const state = stateByResource.get(resource);
+      const sourceEarliest = state?.sourceEarliestAt !== null && state?.sourceEarliestAt !== undefined ? fmt(new Date(Number(state.sourceEarliestAt) * 1000)) : "—";
+      const stored = (() => {
+        switch (resource) {
+          case "drugs": return [drugWindow._min.occurredAt, drugWindow._max.occurredAt] as const;
+          case "rehab": return [rehabWindow._min.occurredAt, rehabWindow._max.occurredAt] as const;
+          case "money_logs": return [moneyWindow._min.occurredAt, moneyWindow._max.occurredAt] as const;
+          case "travel": return [transitionWindow._min.occurredAt, transitionWindow._max.occurredAt] as const;
+          case "events": return [tornEventWindow._min.occurredAt, tornEventWindow._max.occurredAt] as const;
+        }
+      })();
+      coverageRows.push([
+        resource,
+        requestedStart(historyDays),
+        sourceEarliest,
+        fmt(stored[0]),
+        fmt(stored[1]),
+        state?.stopReason ?? "—",
+      ]);
+    }
+
+    console.log(`\n  historical coverage (requested history: ${historyDays} days):`);
+    console.log(`    ${["resource", "requested start", "available from", "stored since", "stored until", "stop reason"].join("  ")}`);
+    for (const [resource, req, avail, since, until, reason] of coverageRows) {
+      console.log(`    ${resource.padEnd(11)} ${req.padEnd(15)} ${avail.padEnd(18)} ${since.padEnd(18)} ${until.padEnd(18)} ${reason}`);
+    }
+    const distinctTotals = await db.networthSnapshot.findMany({
+      where: { userId: user.id },
+      distinct: ["total"],
+      select: { total: true },
+    });
+    console.log(`    networth: snapshots=${networthWindow._count._all} distinctValues=${distinctTotals.length} trackingSince=${networthWindow._min.capturedAt ? fmt(networthWindow._min.capturedAt) : "—"} latest=${networthWindow._max.capturedAt ? fmt(networthWindow._max.capturedAt) : "—"}`);
 
     interface TitleStat {
       category: string;

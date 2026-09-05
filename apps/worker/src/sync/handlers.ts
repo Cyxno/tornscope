@@ -1,4 +1,4 @@
-import { normalizeDonatorStatus, type TornEndpoints } from "@tornscope/torn-api";
+import { normalizeDonatorStatus, type TornEndpoints, type BackwardStopReason } from "@tornscope/torn-api";
 import type { SyncResource } from "@tornscope/shared";
 import {
   encryptionFromEnv,
@@ -50,7 +50,14 @@ export interface SyncHandlerArgs {
   onProgress?: (recordsSoFar: number) => void;
 }
 
-export type SyncHandlerResult = { records: number; lastTimestamp?: bigint | null };
+export type SyncHandlerResult = {
+  records: number;
+  lastTimestamp?: bigint | null;
+  /** Why the historical backward walk stopped (coverage reporting). */
+  stopReason?: BackwardStopReason | "api_error";
+  /** Oldest source timestamp seen during the walk. */
+  sourceEarliestAt?: bigint | null;
+};
 
 type SyncHandler = (args: SyncHandlerArgs) => Promise<SyncHandlerResult>;
 
@@ -240,9 +247,20 @@ async function getCurrentApiKey(): Promise<string> {
 }
 
 /**
- * Incremental log sync: fetch pages for the matched categories from the
- * cursor, normalize, and insert all typed writes. Dedup on
- * (userId, source, sourceRef) makes reprocessing safe.
+ * Incremental + historical log sync.
+ *
+ * Torn's /user/log returns the NEWEST page first and exposes older pages
+ * only through `links.prev` — the old forward-only pagination silently
+ * truncated every category to its first page (100 newest rows). We now walk
+ * BACKWARD from the newest page down to the boundary:
+ * - initial backfill (lastTimestamp null): boundary = now - history days
+ * - incremental (lastTimestamp set): boundary = last cursor timestamp
+ * Insertion is idempotent ((userId, source, sourceRef) unique), so walking
+ * over already-stored rows is always safe.
+ *
+ * The result reports WHY the walk stopped plus the oldest source timestamp
+ * observed, so Sync Status can show real historical coverage instead of
+ * claiming caught_up merely because a page completed.
  */
 async function syncLogsByCategories(args: SyncHandlerArgs, categoryIds: number[]): Promise<SyncHandlerResult> {
   const ctx = getWorkerContext();
@@ -253,17 +271,19 @@ async function syncLogsByCategories(args: SyncHandlerArgs, categoryIds: number[]
     loadItemIdByName(ctx.db),
   ]);
 
-  const from =
-    args.lastTimestamp !== null
-      ? Number(args.lastTimestamp)
-      : Math.floor(Date.now() / 1000) - ctx.initialHistoryDays * 86_400;
+  const nowSec = Math.floor(Date.now() / 1000);
+  const boundaryTs =
+    args.lastTimestamp !== null ? Number(args.lastTimestamp) : nowSec - ctx.initialHistoryDays * 86_400;
 
   let records = 0;
   let maxTimestamp = args.lastTimestamp !== null ? Number(args.lastTimestamp) : 0;
+  const stopReasons: BackwardStopReason[] = [];
+  let sourceEarliest: number | null = null;
 
   for (const category of categoryIds) {
-    await args.torn.iterateUserLogs(
-      { category, from, limit: 100 },
+    let categoryRecords = 0;
+    const walk = await args.torn.iterateUserLogsBackward(
+      { category, from: boundaryTs, limit: 100 },
       async (logs, _metadata) => {
         logger.debug({ userId: args.userId, category, page: logs.length, stage: "page_received" }, "log page received");
         if (logs.length === 0) return;
@@ -279,12 +299,23 @@ async function syncLogsByCategories(args: SyncHandlerArgs, categoryIds: number[]
           await insertTravelTransitions(ctx.db, args.userId, normalized.travelTransitions);
           await insertTravelItemEvents(ctx.db, args.userId, normalized.travelItemEvents);
           await insertMoneyEvents(ctx.db, args.userId, normalized.moneyEvents);
-          records += 1;
+          categoryRecords += 1;
           if (log.timestamp > maxTimestamp) maxTimestamp = log.timestamp;
         }
-        args.onProgress?.(records);
+        // Heartbeat cumulative totals so long backfills stay visible and a
+        // crashed run never advances the cursor past unstored data.
+        args.onProgress?.(records + categoryRecords);
       },
-      { maxPages: 400 }
+      { maxPages: 400, boundaryTs }
+    );
+    records += categoryRecords;
+    stopReasons.push(walk.stopReason);
+    if (walk.oldestTimestamp !== null && (sourceEarliest === null || walk.oldestTimestamp < sourceEarliest)) {
+      sourceEarliest = walk.oldestTimestamp;
+    }
+    logger.debug(
+      { userId: args.userId, category, pages: walk.pages, stopReason: walk.stopReason, oldest: walk.oldestTimestamp },
+      "log category backward walk finished"
     );
   }
 
@@ -297,7 +328,25 @@ async function syncLogsByCategories(args: SyncHandlerArgs, categoryIds: number[]
     }
   }
 
-  return { records, lastTimestamp: maxTimestamp > 0 ? BigInt(maxTimestamp) : null };
+  return {
+    records,
+    lastTimestamp: maxTimestamp > 0 ? BigInt(maxTimestamp) : null,
+    stopReason: aggregateStopReason(stopReasons),
+    sourceEarliestAt: sourceEarliest !== null ? BigInt(sourceEarliest) : null,
+  };
+}
+
+/**
+ * Aggregate per-category stop reasons into one resource-level reason,
+ * prioritizing incompleteness: any incomplete category must be visible.
+ */
+export function aggregateStopReason(reasons: BackwardStopReason[]): BackwardStopReason {
+  if (reasons.length === 0) return "source_exhausted";
+  if (reasons.includes("max_pages")) return "max_pages";
+  if (reasons.includes("cursor_stalled")) return "cursor_stalled";
+  if (reasons.includes("callback_stop")) return "callback_stop";
+  if (reasons.includes("history_boundary_reached")) return "history_boundary_reached";
+  return "source_exhausted";
 }
 
 // Consumable item use (EDVD, energy drinks, candy, boosters, medical items
@@ -331,16 +380,15 @@ export const syncMoneyLogs: SyncHandler = async (args) =>
 
 export const syncEvents: SyncHandler = async (args) => {
   const ctx = getWorkerContext();
-  const from =
-    args.lastTimestamp !== null
-      ? Number(args.lastTimestamp)
-      : Math.floor(Date.now() / 1000) - ctx.initialHistoryDays * 86_400;
+  const nowSec = Math.floor(Date.now() / 1000);
+  const boundaryTs =
+    args.lastTimestamp !== null ? Number(args.lastTimestamp) : nowSec - ctx.initialHistoryDays * 86_400;
 
   let records = 0;
   let maxTimestamp = args.lastTimestamp !== null ? Number(args.lastTimestamp) : 0;
 
-  await args.torn.iterateUserEvents(
-    { from, limit: 100 },
+  const walk = await args.torn.iterateUserEventsBackward(
+    { from: boundaryTs, limit: 100 },
     async (events) => {
       if (events.length === 0) return;
       await insertTimelineEvents(ctx.db, args.userId, events.map((event) => normalizeTornEvent(event)));
@@ -350,10 +398,16 @@ export const syncEvents: SyncHandler = async (args) => {
       }
       args.onProgress?.(records);
     },
-    { maxPages: 200 }
+    { maxPages: 200, boundaryTs }
   );
+  logger.debug({ userId: args.userId, pages: walk.pages, stopReason: walk.stopReason, oldest: walk.oldestTimestamp }, "events backward walk finished");
 
-  return { records, lastTimestamp: maxTimestamp > 0 ? BigInt(maxTimestamp) : null };
+  return {
+    records,
+    lastTimestamp: maxTimestamp > 0 ? BigInt(maxTimestamp) : null,
+    stopReason: walk.stopReason,
+    sourceEarliestAt: walk.oldestTimestamp !== null ? BigInt(walk.oldestTimestamp) : null,
+  };
 };
 
 /* -------------------------------------------------------------------------- */

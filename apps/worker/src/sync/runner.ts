@@ -95,6 +95,8 @@ export async function runResourceSync(userId: string, resource: SyncResource): P
       success: true,
       recordsCollected: 0, // already committed through progress heartbeats
       lastTimestamp: result.lastTimestamp ?? undefined,
+      stopReason: result.stopReason ?? null,
+      sourceEarliestAt: result.sourceEarliestAt ?? null,
       nextRunAt: new Date(Date.now() + frequency * 1000),
       now: new Date(),
     });
@@ -115,6 +117,9 @@ export async function runResourceSync(userId: string, resource: SyncResource): P
       success: false,
       errorMessage: message,
       lastTimestamp: claim.state.lastTimestamp,
+      // A failed run also failed its historical walk — record it so the
+      // coverage view never mistakes an error for a complete history.
+      stopReason: "api_error",
       nextRunAt: new Date(Date.now() + Math.min(claim.state.frequencySeconds, 600) * 1000),
       now: new Date(),
     });

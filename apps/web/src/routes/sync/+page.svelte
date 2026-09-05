@@ -123,6 +123,51 @@
   function phaseOf(row: Health["resources"][number]) {
     return phaseCopy[row.phase] ?? phaseCopy.queued!;
   }
+
+  const COVERAGE_RESOURCES = ["drugs", "rehab", "money_logs", "travel", "events", "networth"] as const;
+
+  /** Per-resource historical coverage rows for the table. */
+  const coverageRows = $derived.by(() => {
+    if (!health) return [];
+    const requestedStart = new Date(Date.now() - health.requestedHistoryDays * 86_400_000).toISOString().slice(0, 10);
+    const day = (ts: number | null | undefined): string => (ts ? new Date(ts * 1000).toISOString().slice(0, 10) : "—");
+    return COVERAGE_RESOURCES.map((resource) => {
+      const row = health!.resources.find((r) => r.resource === resource);
+      return {
+        resource,
+        requestedStart,
+        availableFrom: day(row?.sourceEarliestAt),
+        storedSince: day(row?.storedEarliestAt),
+        storedUntil: day(row?.storedLatestAt),
+        stopReason: row?.stopReason ?? null,
+      };
+    });
+  });
+
+  function stopReasonLabel(reason: string | null): string {
+    switch (reason) {
+      case "history_boundary_reached":
+        return "history boundary reached";
+      case "source_exhausted":
+        return "Torn has no older rows";
+      case "max_pages":
+        return "page cap — incomplete";
+      case "cursor_stalled":
+        return "cursor stalled — incomplete";
+      case "api_error":
+        return "API error — incomplete";
+      case null:
+        return "not walked yet";
+      default:
+        return reason;
+    }
+  }
+
+  function stopReasonStyle(reason: string | null): string {
+    if (reason === "history_boundary_reached" || reason === "source_exhausted") return "border-positive/30 bg-positive/10 text-positive";
+    if (reason === null) return "border-border bg-surface-2 text-fg-faint";
+    return "border-warning/40 bg-warning/10 text-warning";
+  }
 </script>
 
 <div class="space-y-10">
@@ -271,6 +316,42 @@
           {/each}
         </ul>
       {/if}
+    </Panel>
+
+    <!-- Historical coverage -->
+    <Panel title="Historical coverage" caption={`Requested history: ${health.requestedHistoryDays} days — what Torn still exposes vs what is actually stored`}>
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-[13px]">
+          <thead>
+            <tr class="border-b border-border text-[11px] uppercase tracking-[0.12em] text-fg-faint">
+              <th class="py-2.5 pr-4 font-medium">Resource</th>
+              <th class="py-2.5 pr-4 font-medium">Requested start</th>
+              <th class="py-2.5 pr-4 font-medium">Available from Torn</th>
+              <th class="py-2.5 pr-4 font-medium">Stored since</th>
+              <th class="py-2.5 pr-4 font-medium">Stored until</th>
+              <th class="py-2.5 font-medium">Stop reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each coverageRows as row (row.resource)}
+              <tr class="border-b border-border/50 last:border-0">
+                <td class="py-2.5 pr-4 font-medium capitalize text-fg">{row.resource.replace(/_/g, " ")}</td>
+                <td class="tnum py-2.5 pr-4 text-fg-muted">{row.requestedStart}</td>
+                <td class="tnum py-2.5 pr-4 text-fg-muted">{row.availableFrom}</td>
+                <td class="tnum py-2.5 pr-4 text-fg-muted">{row.storedSince}</td>
+                <td class="tnum py-2.5 pr-4 text-fg-muted">{row.storedUntil}</td>
+                <td class="py-2.5">
+                  <span class={`rounded-full border px-2 py-0.5 text-[11px] ${stopReasonStyle(row.stopReason)}`}>{stopReasonLabel(row.stopReason)}</span>
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+      <p class="mt-4 text-[11px] leading-relaxed text-fg-faint">
+        TornScope imports up to 180 days of available Torn history. Retention varies by Torn log type — when Torn no longer returns older
+        rows the walk stops with "Torn has no older rows"; nothing is fabricated to fill the gap.
+      </p>
     </Panel>
 
     <p class="max-w-2xl text-xs leading-relaxed text-fg-faint">

@@ -71,6 +71,10 @@ export function timeAxis(data: (number | string)[]): Record<string, unknown> {
 export function valueAxis(): Record<string, unknown> {
   return {
     type: "value",
+    // scale: true lets the axis fit the ACTUAL data range. Without it ECharts
+    // anchors the axis at 0, so small-but-real movements (e.g. networth
+    // drifting a few $m across a $849m base) render as a flat line.
+    scale: true,
     axisLabel: { ...AXIS_LABEL, formatter: (v: number) => compact(v) },
     splitLine: SPLIT_LINE,
     axisLine: { show: false },

@@ -52,6 +52,27 @@ export async function getSyncHealth(userId: string) {
 
   const lastErrorState = states.find((s) => s.errorMessage !== null);
 
+  // Earliest/latest STRUCTURED row per resource — the real stored coverage,
+  // shown next to what Torn still exposes (sourceEarliestAt) so it is obvious
+  // why a domain covers 7, 30 or 180 days.
+  const [drugW, rehabW, moneyW, travelW, eventW, networthW] = await Promise.all([
+    db.drugEvent.aggregate({ where: { userId }, _min: { occurredAt: true }, _max: { occurredAt: true } }),
+    db.rehabEvent.aggregate({ where: { userId }, _min: { occurredAt: true }, _max: { occurredAt: true } }),
+    db.moneyEvent.aggregate({ where: { userId }, _min: { occurredAt: true }, _max: { occurredAt: true } }),
+    db.travelTransition.aggregate({ where: { userId }, _min: { occurredAt: true }, _max: { occurredAt: true } }),
+    db.timelineEvent.aggregate({ where: { userId, type: "torn_event" }, _min: { occurredAt: true }, _max: { occurredAt: true } }),
+    db.networthSnapshot.aggregate({ where: { userId }, _min: { capturedAt: true }, _max: { capturedAt: true } }),
+  ]);
+  const storedWindows: Record<string, { earliest: Date | null; latest: Date | null }> = {
+    drugs: { earliest: drugW._min.occurredAt, latest: drugW._max.occurredAt },
+    rehab: { earliest: rehabW._min.occurredAt, latest: rehabW._max.occurredAt },
+    money_logs: { earliest: moneyW._min.occurredAt, latest: moneyW._max.occurredAt },
+    travel: { earliest: travelW._min.occurredAt, latest: travelW._max.occurredAt },
+    events: { earliest: eventW._min.occurredAt, latest: eventW._max.occurredAt },
+    networth: { earliest: networthW._min.capturedAt, latest: networthW._max.capturedAt },
+  };
+  const sec = (d: Date | null): number | null => (d ? Math.floor(d.getTime() / 1000) : null);
+
   return {
     running: states.some((s) => s.status === "running"),
     build: { commit: process.env.GIT_SHA ?? "dev" },
@@ -93,13 +114,24 @@ export async function getSyncHealth(userId: string) {
       recordsCollected: s.recordsCollected,
       errorCount: s.errorCount,
       errorMessage: s.errorMessage,
+      stopReason: s.stopReason,
+      sourceEarliestAt: s.sourceEarliestAt !== null ? Number(s.sourceEarliestAt) : null,
+      storedEarliestAt: sec(storedWindows[s.resource]?.earliest ?? null),
+      storedLatestAt: sec(storedWindows[s.resource]?.latest ?? null),
     })),
+    /** Requested history window (worker env default) — coverage is judged against it. */
+    requestedHistoryDays: Number(process.env.TORN_SYNC_INITIAL_HISTORY_DAYS ?? 180),
   };
 }
 
 /**
  * Resource phase derived from sync_state (no invented percentages):
  * queued / running / backfilling / caught_up / failed.
+ *
+ * "caught_up" now requires the historical backward walk to have actually
+ * finished cleanly (history_boundary_reached / source_exhausted). A walk
+ * that stopped on max_pages, a stalled cursor or an API error leaves the
+ * resource in "backfilling" — it is NOT complete, the UI shows why.
  */
 function deriveResourcePhase(s: SyncStateRow): "queued" | "running" | "backfilling" | "caught_up" | "failed" {
   if (s.status === "running") {
@@ -107,7 +139,11 @@ function deriveResourcePhase(s: SyncStateRow): "queued" | "running" | "backfilli
     return s.lastSuccessAt === null ? "backfilling" : "running";
   }
   if (s.status === "failed") return "failed";
-  return s.lastSuccessAt !== null ? "caught_up" : "queued";
+  if (s.lastSuccessAt === null) return "queued";
+  if (s.stopReason === null) return "backfilling"; // pre-coverage state; wait for next walk
+  if (s.stopReason === "history_boundary_reached" || s.stopReason === "source_exhausted") return "caught_up";
+  // max_pages / cursor_stalled / api_error — history incomplete.
+  return "backfilling";
 }
 
 /**

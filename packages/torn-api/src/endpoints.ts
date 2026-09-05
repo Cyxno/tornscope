@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { TornApiClient, TornMetadata, TornRequestParams } from "./client.js";
+import type { BackwardPaginationResult, TornApiClient, TornMetadata, TornRequestParams } from "./client.js";
 
 /**
  * Light runtime validation for the Torn API v2 responses we consume.
@@ -393,6 +393,39 @@ export class TornEndpoints {
     );
   }
 
+  /**
+   * Walk a log category's history BACKWARD (newest page first, following
+   * links.prev) down to `boundaryTs`. Returns why the walk stopped plus the
+   * actual oldest/newest timestamps seen — the source of truth for historical
+   * coverage reporting. Torn's /user/log exposes older pages ONLY through
+   * links.prev, so this is the only correct way to backfill history.
+   */
+  async iterateUserLogsBackward(
+    query: LogQuery,
+    onPage: (logs: TornUserLog[], metadata: TornMetadata | undefined) => boolean | void | Promise<boolean | void>,
+    opts: { maxPages?: number; boundaryTs?: number } = {}
+  ): Promise<BackwardPaginationResult> {
+    const params: TornRequestParams = {
+      cat: query.category,
+      from: query.from,
+      to: query.to,
+      limit: query.limit ?? 100,
+    };
+    return this.client.paginateBackward(
+      "/user/log",
+      params,
+      ({ data, metadata }) => {
+        const parsed = z.array(UserLogSchema).parse(Array.isArray(data.log) ? data.log : []);
+        return onPage(parsed, metadata);
+      },
+      {
+        maxPages: opts.maxPages,
+        boundaryTs: opts.boundaryTs,
+        rowTimestamps: (data) => (Array.isArray(data.log) ? (data.log as Array<{ timestamp?: number }>).map((l) => l.timestamp).filter((t): t is number => typeof t === "number") : []),
+      }
+    );
+  }
+
   /** Single page of user events. */
   userEventsPage(query: { from?: number; to?: number; limit?: number } = {}): Promise<{ events: TornUserEvent[]; metadata: TornMetadata | undefined }> {
     const params: TornRequestParams = {
@@ -426,6 +459,35 @@ export class TornEndpoints {
         return onPage(parsed, metadata);
       },
       opts
+    );
+  }
+
+  /**
+   * Walk event history BACKWARD (newest page first, following links.prev)
+   * down to `boundaryTs` — /user/events paginates the same way as /user/log.
+   */
+  async iterateUserEventsBackward(
+    query: { from?: number; to?: number; limit?: number },
+    onPage: (events: TornUserEvent[], metadata: TornMetadata | undefined) => boolean | void | Promise<boolean | void>,
+    opts: { maxPages?: number; boundaryTs?: number } = {}
+  ): Promise<BackwardPaginationResult> {
+    const params: TornRequestParams = {
+      from: query.from,
+      to: query.to,
+      limit: query.limit ?? 100,
+    };
+    return this.client.paginateBackward(
+      "/user/events",
+      params,
+      ({ data, metadata }) => {
+        const parsed = z.array(UserEventSchema).parse(Array.isArray(data.events) ? data.events : []);
+        return onPage(parsed, metadata);
+      },
+      {
+        maxPages: opts.maxPages,
+        boundaryTs: opts.boundaryTs,
+        rowTimestamps: (data) => (Array.isArray(data.events) ? (data.events as Array<{ timestamp?: number }>).map((e) => e.timestamp).filter((t): t is number => typeof t === "number") : []),
+      }
     );
   }
 

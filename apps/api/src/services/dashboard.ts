@@ -205,6 +205,7 @@ export async function getDashboard(userId: string, rangeInput: DateRangeInput): 
     },
     networthChangePct: nwPeriod.changePct,
     networthCoverage: nwPeriod.coverage,
+    networthTrackingSince: nwPeriod.trackedFrom,
     consumedValue: {
       value: consumedTotal,
       provenance: "estimated",

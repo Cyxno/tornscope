@@ -108,6 +108,7 @@ export async function getEconomySummary(userId: string, rangeInput: DateRangeInp
       baselineAt: nwPeriod.baseline?.capturedAt ?? null,
       trackedFrom: nwPeriod.trackedFrom,
       byCategory: nwPeriod.byCategory,
+      trackingSince: nwPeriod.trackedFrom,
     },
     travel: {
       estimatedProfit: { value: travel.estimatedProfit, provenance: "estimated", availability: travelAvailability },

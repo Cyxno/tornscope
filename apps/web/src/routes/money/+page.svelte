@@ -84,6 +84,38 @@
 
   const topConsumedValue = $derived(economy?.consumption.byCategory[0]?.totalValue || 1);
 
+  /** Friendly cash-expense groups; the rows always sum to Cash Expenses. */
+  const EXPENSE_LABELS: Record<string, string> = {
+    rehab: "Rehab",
+    casino: "Casino",
+    items: "Item purchases",
+    bazaar: "Bazaar purchases",
+    plushie: "Plushies",
+    flower: "Flowers",
+    travel: "Travel purchases",
+    points: "Points",
+    stock: "Stocks",
+    housing: "Property upkeep",
+    crime: "Crime",
+    mugging: "Mugging",
+    trading: "Trades",
+    auction: "Auctions",
+    drugs: "Drugs",
+    faction: "Faction",
+    salary: "Salary",
+    education: "Education",
+    hospital: "Hospital",
+    jail: "Jail",
+    city_bank: "Bank",
+  };
+
+  const expenseBreakdown = $derived(
+    (economy?.cashFlow.expensesByCategory ?? []).map((row) => ({
+      label: EXPENSE_LABELS[row.category] ?? row.category,
+      total: row.total,
+    }))
+  );
+
   const cumulativeOption = $derived.by(() => {
     if (!summary || summary.cumulativeNetSeries.length === 0) return null;
     return {
@@ -164,7 +196,7 @@
       <h2 class="text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-faint">A · Cash Flow — real money in and out</h2>
       <div class="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border shadow-panel md:grid-cols-4">
         <Stat label="{period} income" value={formatKpiValue(economy.cashFlow.income)} provenance="exact" tone="positive" sub={economy.cashFlow.unclassifiedCount > 0 ? `${economy.cashFlow.unclassifiedCount} unclassified` : null} />
-        <Stat label="{period} expenses" value={formatKpiValue(economy.cashFlow.expenses)} provenance="exact" tone="negative" sub={economy.cashFlow.unclassifiedCount > 0 ? `${economy.cashFlow.unclassifiedCount} unclassified` : null} />
+        <Stat label="{period} Cash Expenses" value={formatKpiValue(economy.cashFlow.expenses)} provenance="exact" tone="negative" sub={economy.cashFlow.unclassifiedCount > 0 ? `${economy.cashFlow.unclassifiedCount} unclassified` : null} />
         <Stat label="{period} Net Cash Flow" value={formatKpiValue(economy.cashFlow.netCashFlow)} provenance="exact" tone={(economy.cashFlow.netCashFlow.value ?? 0) >= 0 ? "positive" : "negative"} />
         <Stat
           label="Top expense"
@@ -173,19 +205,56 @@
           provenance="exact"
         />
       </div>
+
+      <Panel title="Cash expense breakdown" caption="Where the Cash Expenses total goes — consumed inventory is NOT part of this">
+        {#if economy.cashFlow.expensesByCategory.length === 0}
+          <StateMessage state="empty" title="No cash expenses in this range" />
+        {:else}
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-[13px]">
+              <thead>
+                <tr class="border-b border-border text-[11px] uppercase tracking-[0.12em] text-fg-faint">
+                  <th class="py-2.5 pr-4 font-medium">Category</th>
+                  <th class="py-2.5 pr-4 text-right font-medium">Cash out</th>
+                  <th class="py-2.5 text-right font-medium">Share</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each expenseBreakdown as row (row.label)}
+                  <tr class="border-b border-border/50 last:border-0">
+                    <td class="py-2.5 pr-4 text-fg">{row.label}</td>
+                    <td class="tnum py-2.5 pr-4 text-right text-fg-muted">{formatMoneyCompact(row.total)}</td>
+                    <td class="tnum py-2.5 text-right text-fg-faint">{Math.round((row.total / (economy.cashFlow.expenses.value || 1)) * 100)}%</td>
+                  </tr>
+                {/each}
+                <tr class="font-semibold">
+                  <td class="py-2.5 pr-4 text-fg">Total Cash Expenses</td>
+                  <td class="tnum py-2.5 pr-4 text-right text-negative">{formatMoneyCompact(economy.cashFlow.expenses.value ?? 0)}</td>
+                  <td class="tnum py-2.5 text-right text-fg-faint">100%</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        {/if}
+      </Panel>
     </section>
 
     <!-- ═══ B. Consumption ═══ -->
     <section class="space-y-6">
-      <h2 class="text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-faint">B · Consumption — value of items used up (not cash flow)</h2>
+      <h2 class="text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-faint">B · Consumed Inventory — items used up (separate from cash)</h2>
+      <p class="max-w-3xl text-[13px] leading-relaxed text-fg-muted">
+        Consumed value represents inventory used during the period and may have been purchased earlier, so it is separate from current cash expenses.
+        A Xanax bought for $840k is a cash expense the moment it is bought; using it later consumes $840k of inventory value and moves no cash.
+        The two are never added together.
+      </p>
       <div class="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border shadow-panel md:grid-cols-4">
         <Stat label="Total Consumed Value" value={formatKpiValue(economy.consumption.totalValue)} provenance="estimated" tone="negative" sub={economy.consumption.valueUnknownCount > 0 ? `${economy.consumption.valueUnknownCount} uses without a price` : null} />
-        <Stat label="Drug consumption" value={economy.consumption.drugValue !== null ? formatMoneyCompact(economy.consumption.drugValue) : formatKpiValue({ value: null, availability: economy.consumption.uses === 0 ? "unavailable" : "incomplete" })} provenance="estimated" tone="negative" />
+        <Stat label="Drugs consumed" value={economy.consumption.drugValue !== null ? formatMoneyCompact(economy.consumption.drugValue) : formatKpiValue({ value: null, availability: economy.consumption.uses === 0 ? "unavailable" : "incomplete" })} provenance="estimated" tone="negative" />
         <Stat label="Consumption events" value={String(economy.consumption.uses)} provenance="exact" />
         <Stat label="{period} Networth Change" value={economy.networth.coverage === "none" ? "Insufficient history" : formatSignedMoney(economy.networth.change.value)} provenance="exact" tone={(economy.networth.change.value ?? 0) >= 0 ? "positive" : "negative"} sub={networthChangeLabel() !== `${period} Networth Change` ? "incomplete history for this period" : (economy.networth.changePct !== null ? `${economy.networth.changePct >= 0 ? "+" : ""}${economy.networth.changePct.toFixed(2)}%` : null)} />
       </div>
 
-      <Panel title="Consumed value by category" caption="What your item use cost you — valued from Torn catalog market prices">
+      <Panel title="Consumed Inventory by category" caption="What your item use cost you — valued from Torn catalog market prices">
         {#if economy.consumption.byCategory.length === 0}
           <StateMessage state="empty" title="No consumption recorded in this range" hint="Item uses appear here as the sync collects logs." />
         {:else}
@@ -219,6 +288,9 @@
     <!-- ═══ C. Networth ═══ -->
     <section class="space-y-6">
       <h2 class="text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-faint">C · Networth — Torn snapshots, including inventory appreciation</h2>
+      {#if economy.networth.trackingSince !== null}
+        <p class="text-xs text-fg-faint">Tracking since {new Date(economy.networth.trackingSince * 1000).toISOString().slice(0, 10)} — networth history before that point does not exist and is never fabricated.</p>
+      {/if}
       <div class="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border shadow-panel md:grid-cols-4">
         <Stat label="Current networth" value={formatKpiValue(economy.networth.current)} provenance="exact" tone="accent" />
         <Stat

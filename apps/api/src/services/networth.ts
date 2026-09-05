@@ -1,5 +1,5 @@
 import { autoInterval, resolveDateRange, type DateRangeInput, type NetworthCoverage, type NetworthResponse } from "@tornscope/shared";
-import { calculateNetworthChanges, calculateNetworthPeriodChange, type NetworthSnapshotFields } from "@tornscope/analytics";
+import { buildNetworthSeries, calculateNetworthChanges, calculateNetworthPeriodChange, type NetworthSnapshotFields } from "@tornscope/analytics";
 import { bigintToNumber, getPrismaClient } from "@tornscope/database";
 
 const SNAPSHOT_SELECT = {
@@ -105,18 +105,25 @@ export async function getNetworth(userId: string, rangeInput: DateRangeInput): P
 
   const period = calculateNetworthPeriodChange(allFields, range.from, range.to);
 
-  const series = rows.map((r) => {
-    const f = toFields(r);
+  // Chart series: every real snapshot in the range exactly as stored,
+  // chronologically sorted (buildNetworthSeries never repeats the latest
+  // value or collapses points into buckets).
+  const fieldsByTs = new Map<number, NetworthSnapshotFields>(allRows.map((r) => [Math.floor(r.capturedAt.getTime() / 1000), toFields(r)]));
+  const series = buildNetworthSeries(
+    rows.map((r) => ({ capturedAt: Math.floor(r.capturedAt.getTime() / 1000), total: bigintToNumber(r.total) ?? 0 })),
+    range.from,
+    range.to
+  ).map((point) => {
+    const f = fieldsByTs.get(point.t);
     return {
-      t: f.capturedAt,
-      total: f.total,
+      ...point,
       breakdown: {
-        cash: f.wallet + f.vault,
-        banks: f.cityBank + f.caymanBank,
-        points: f.points,
-        property: f.property,
-        stocks: f.stockMarket,
-        company: f.company,
+        cash: f ? f.wallet + f.vault : 0,
+        banks: f ? f.cityBank + f.caymanBank : 0,
+        points: f?.points ?? 0,
+        property: f?.property ?? 0,
+        stocks: f?.stockMarket ?? 0,
+        company: f?.company ?? 0,
       },
     };
   });
@@ -143,6 +150,7 @@ export async function getNetworth(userId: string, rangeInput: DateRangeInput): P
       trackedFrom: period.trackedFrom,
       byCategory: period.byCategory,
     },
+    trackingSince: changes.firstTrackedAt,
   };
 }
 

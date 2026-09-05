@@ -60,7 +60,8 @@
           name: "Net worth",
           type: "line",
           data: data.networthSeries.map((p) => p.total),
-          showSymbol: false,
+          // Sparse early history must be visible as real points, not a guess.
+          showSymbol: data.networthSeries.length < 40,
           smooth: 0.25,
           lineStyle: { color: C.accent, width: 2 },
           areaStyle: tealArea(),
@@ -164,7 +165,13 @@
     </section>
 
     <!-- Net worth over time -->
-    <Panel title="Net worth over time" caption="Hourly snapshots from the sync worker — exact Torn-provided values" flush>
+    <Panel
+      title="Net worth over time"
+      caption={data.networthTrackingSince !== null
+        ? `Real snapshots from the sync worker · Tracking since ${new Date(data.networthTrackingSince * 1000).toISOString().slice(0, 10)} — no data is invented before that point`
+        : "Hourly snapshots from the sync worker — exact Torn-provided values"}
+      flush
+    >
       {#if !networthOption}
         <StateMessage state="empty" title="No networth history in this range" hint="Snapshots appear as the worker runs. Try a wider range or check Sync Status." />
       {:else}

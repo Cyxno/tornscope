@@ -20,6 +20,10 @@ export type SyncStateRow = {
   recordsCollected: number;
   errorCount: number;
   errorMessage: string | null;
+  /** Why the last backward (history) walk stopped; null = never walked. */
+  stopReason: string | null;
+  /** Oldest source timestamp observed during the last backward walk. */
+  sourceEarliestAt: bigint | null;
   frequencySeconds: number;
   /** Last write to this row — the liveness heartbeat for stale detection. */
   updatedAt: Date | null;
@@ -101,6 +105,10 @@ export interface CompletionUpdate {
   errorMessage?: string | null;
   lastTimestamp?: bigint | null;
   cursor?: string | null;
+  /** Why the historical backward walk stopped (null clears: full re-sync). */
+  stopReason?: string | null;
+  /** Oldest source timestamp seen during the backward walk. */
+  sourceEarliestAt?: bigint | null;
   nextRunAt?: Date | null;
   now?: Date;
 }
@@ -118,6 +126,8 @@ export async function completeResource(db: PrismaClientType, userId: string, res
       errorCount: update.success ? 0 : { increment: 1 },
       lastTimestamp: update.lastTimestamp ?? undefined,
       cursor: update.cursor ?? undefined,
+      stopReason: update.stopReason !== undefined ? update.stopReason : undefined,
+      sourceEarliestAt: update.sourceEarliestAt !== undefined ? update.sourceEarliestAt : undefined,
       nextRunAt: update.nextRunAt ?? undefined,
     },
   });
@@ -157,6 +167,8 @@ export async function getSyncStates(db: PrismaClientType, userId: string): Promi
     recordsCollected: r.recordsCollected,
     errorCount: r.errorCount,
     errorMessage: r.errorMessage,
+    stopReason: r.stopReason,
+    sourceEarliestAt: r.sourceEarliestAt,
     frequencySeconds: r.frequencySeconds,
     updatedAt: r.updatedAt,
   }));

@@ -135,6 +135,39 @@ describe("itemNameFromUseTitle", () => {
   });
 });
 
+describe("overdose old-log normalization (Torn.report-style history)", () => {
+  it("an old 'Overdosed on Xanax' log (empty payload, title only) yields an overdose DrugEvent AND a consumption event", () => {
+    const writes = normalize("Overdosed on Xanax", "Item use drug", {}, ctx({ names: { [XANAX_ID]: "Xanax" }, types: { [XANAX_ID]: "Drug" }, prices: { [XANAX_ID]: 840_000 } }));
+    expect(writes.drugEvents).toHaveLength(1);
+    expect(writes.drugEvents[0]!.outcome).toBe("overdose");
+    expect(writes.drugEvents[0]!.drugItemId).toBe(XANAX_ID);
+    expect(writes.drugEvents[0]!.drugName).toBe("Xanax");
+    expect(writes.consumptionEvents).toHaveLength(1);
+    expect(writes.consumptionEvents[0]!.category).toBe("drug");
+    expect(writes.consumptionEvents[0]!.totalValue).toBe(840_000n);
+  });
+
+  it("every drug-use log produces exactly one DrugEvent and one ConsumptionEvent (count agreement)", () => {
+    const priceCtx = ctx({ names: { [XANAX_ID]: "Xanax" }, types: { [XANAX_ID]: "Drug" }, prices: { [XANAX_ID]: 840_000 } });
+    const logs: Array<[string, string, Record<string, unknown>]> = [
+      ["Item use xanax", "Drugs", { item: XANAX_ID, faction: 0 }],
+      ["Used Xanax", "Item use drug", {}],
+      ["Overdosed on Xanax", "Item use drug", {}],
+      ["Item use ecstasy", "Drugs", { item: 493, faction: 0 }],
+      ["Used Cannabis", "Item use drug", {}],
+    ];
+    let drugEvents = 0;
+    let consumptionEvents = 0;
+    for (const [title, category, data] of logs) {
+      const writes = normalize(title, category, data, priceCtx);
+      drugEvents += writes.drugEvents.length;
+      consumptionEvents += writes.consumptionEvents.length;
+    }
+    expect(drugEvents).toBe(logs.length);
+    expect(consumptionEvents).toBe(logs.length);
+  });
+});
+
 describe("Xanax purchase then use is not double counted", () => {
   it("the purchase is a cash expense; the use creates consumption, not another expense", () => {
     const priceCtx = ctx({ prices: { [XANAX_ID]: 840_000 }, names: { [XANAX_ID]: "Xanax" }, types: { [XANAX_ID]: "Drug" } });

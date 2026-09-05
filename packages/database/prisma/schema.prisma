@@ -145,6 +145,13 @@ model SyncState {
   recordsCollected Int       @default(0)
   errorCount       Int       @default(0)
   errorMessage     String?
+  /// Why the historical (backward) pagination last stopped:
+  /// history_boundary_reached | source_exhausted | max_pages | cursor_stalled
+  /// | api_error | null (never ran a backward walk).
+  stopReason       String?
+  /// Oldest timestamp the source still exposes within the requested window,
+  /// observed during the last backward walk ("available from Torn").
+  sourceEarliestAt BigInt?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 

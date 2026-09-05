@@ -154,6 +154,24 @@ export const NETWORTH_CATEGORY_LABELS: Record<NetworthCategoryChange["key"], str
   other: "Other",
 };
 
+export interface NetworthSeriesPoint {
+  t: number;
+  total: number;
+}
+
+/**
+ * Chronological series of REAL snapshots for the chart. Every stored snapshot
+ * appears exactly once with its own capturedAt and its own value — no
+ * bucketing that could collapse or repeat values, nothing stretched outside
+ * [from, to], nothing replaced with the latest value.
+ */
+export function buildNetworthSeries(rows: ReadonlyArray<{ capturedAt: number; total: number }>, from: number, to: number): NetworthSeriesPoint[] {
+  return rows
+    .filter((r) => r.capturedAt >= from && r.capturedAt <= to)
+    .map((r) => ({ t: r.capturedAt, total: r.total }))
+    .sort((a, b) => a.t - b.t || a.total - b.total);
+}
+
 export function toBreakdownPoint(snapshot: NetworthSnapshotFields): NetworthBreakdownPoint {
   const cash = snapshot.wallet + snapshot.vault + snapshot.pending;
   const banks = snapshot.cityBank + snapshot.caymanBank + snapshot.piggyBank + snapshot.bookie;
