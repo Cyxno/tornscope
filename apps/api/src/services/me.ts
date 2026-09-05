@@ -23,7 +23,10 @@ export async function setDemoView(user: { id: string }, enabled: boolean): Promi
       update: { value: true },
     });
   } else {
-    await clearDemoViewFlag(db, user.id);
+    // While the flag is set, resolveCurrentUser IS the demo user — clearing
+    // only its row would make demo mode impossible to leave. The flag is a
+    // per-owner view switch, so clear it for every user (single-owner app).
+    await db.appSetting.deleteMany({ where: { key: DEMO_VIEW_KEY } });
   }
 }
 
