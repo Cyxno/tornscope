@@ -1,4 +1,4 @@
-import { getSyncStates, getPrismaClient, type SyncStateRow } from "@tornscope/database";
+import { getSyncStates, getSyncCategoryStates, getPrismaClient, type SyncStateRow } from "@tornscope/database";
 import { deriveSetupPhase, SYNC_JOB_NAME, SCHEDULER_QUEUE, buildSyncJobId, SYNC_RESOURCES, type SyncResource } from "@tornscope/shared";
 import { getApiContext } from "../context.js";
 import { queueRedis } from "../redis.js";
@@ -73,6 +73,13 @@ export async function getSyncHealth(userId: string) {
   };
   const sec = (d: Date | null): number | null => (d ? Math.floor(d.getTime() / 1000) : null);
 
+  // Per-category cursor detail for walk resources (money, drugs, ...).
+  const WALK_RESOURCES = ["drugs", "rehab", "money_logs", "travel"];
+  const categoryStates = new Map<string, Awaited<ReturnType<typeof getSyncCategoryStates>>>();
+  for (const resource of WALK_RESOURCES) {
+    categoryStates.set(resource, await getSyncCategoryStates(db, userId, resource));
+  }
+
   return {
     running: states.some((s) => s.status === "running"),
     build: { commit: process.env.GIT_SHA ?? "dev" },
@@ -105,7 +112,7 @@ export async function getSyncHealth(userId: string) {
     resources: states.map((s) => ({
       resource: s.resource,
       status: s.status,
-      phase: deriveResourcePhase(s),
+      phase: deriveResourcePhase(s, categoryStates.get(s.resource) ?? []),
       lastAttemptAt: s.lastAttemptAt ? Math.floor(s.lastAttemptAt.getTime() / 1000) : null,
       lastSuccessAt: s.lastSuccessAt ? Math.floor(s.lastSuccessAt.getTime() / 1000) : null,
       nextRunAt: s.nextRunAt ? Math.floor(s.nextRunAt.getTime() / 1000) : null,
@@ -137,7 +144,9 @@ export async function getSyncHealth(userId: string) {
  */
 const WALK_RESOURCES = new Set(["drugs", "rehab", "money_logs", "travel", "events"]);
 
-function deriveResourcePhase(s: SyncStateRow): "queued" | "running" | "backfilling" | "caught_up" | "failed" {
+type CategoryStateLike = { status: string; lastSuccessAt: Date | null };
+
+function deriveResourcePhase(s: SyncStateRow, categories: CategoryStateLike[] = []): "queued" | "running" | "backfilling" | "caught_up" | "partial" | "failed" {
   if (s.status === "running") {
     // A resource that never succeeded yet is part of the initial backfill.
     return s.lastSuccessAt === null ? "backfilling" : "running";
@@ -145,6 +154,11 @@ function deriveResourcePhase(s: SyncStateRow): "queued" | "running" | "backfilli
   if (s.status === "failed") return "failed";
   if (s.lastSuccessAt === null) return "queued";
   if (!WALK_RESOURCES.has(s.resource)) return "caught_up";
+  // Per-category truth beats the resource-level summary: if any category
+  // failed (or is access-denied) the resource is only PARTIAL — successful
+  // categories keep their progress and are never rolled back.
+  const failed = categories.filter((c) => c.status === "failed" || c.status === "access_denied").length;
+  if (categories.length > 0 && failed > 0) return failed === categories.length ? "failed" : "partial";
   if (s.stopReason === null) return "backfilling"; // pre-coverage state; wait for next walk
   if (s.stopReason === "history_boundary_reached" || s.stopReason === "source_exhausted") return "caught_up";
   // max_pages / cursor_stalled / api_error — history incomplete.

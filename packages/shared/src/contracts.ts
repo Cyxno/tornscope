@@ -566,7 +566,7 @@ export const SyncHealthResponseSchema = z.object({
     z.object({
       resource: SyncResourceSchema,
       status: z.string(),
-      phase: z.enum(["queued", "running", "backfilling", "caught_up", "failed"]),
+      phase: z.enum(["queued", "running", "backfilling", "caught_up", "partial", "failed"]),
       lastAttemptAt: z.number().nullable(),
       lastSuccessAt: z.number().nullable(),
       nextRunAt: z.number().nullable(),
@@ -588,6 +588,19 @@ export const SyncHealthResponseSchema = z.object({
       /** Earliest/latest stored structured row for this resource's domain. */
       storedEarliestAt: z.number().nullable(),
       storedLatestAt: z.number().nullable(),
+      /** Per-category cursor detail (walk resources; empty otherwise). */
+      categories: z.array(
+        z.object({
+          categoryId: z.number(),
+          title: z.string().nullable(),
+          status: z.string(),
+          lastTimestamp: z.number().nullable(),
+          lastSuccessAt: z.number().nullable(),
+          lastWalkPages: z.number().nullable(),
+          lastRecordsInserted: z.number().nullable(),
+          errorMessage: z.string().nullable(),
+        })
+      ),
     })
   ),
 });

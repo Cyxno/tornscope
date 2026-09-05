@@ -71,6 +71,7 @@ model User {
   drugEvents           DrugEvent[]
   consumptionEvents    ConsumptionEvent[]
   rehabEvents          RehabEvent[]
+  syncCategoryStates   SyncCategoryState[]
   travelEvents         TravelEvent[]
   travelItemEvents     TravelItemEvent[]
   travelTransitions    TravelTransition[]
@@ -163,6 +164,46 @@ model SyncState {
   @@unique([userId, resource])
   @@index([status])
   @@index([nextRunAt])
+}
+
+/// Per-category incremental cursor for log resources (money, drugs, travel,
+/// rehab, events).
+///
+/// CURSOR SEMANTICS — a category's lastTimestamp means:
+///   "all log rows above this successfully persisted point are known to be
+///    stored" (minus the cursor overlap window, which is re-fetched each
+///    cycle to protect same-second rows straddling a page boundary).
+/// It is advanced only AFTER a category's page data has been normalized and
+/// inserted; a crash mid-walk leaves the previous cursor intact and the next
+/// run replays safely (insertion is idempotent via (userId, source, sourceRef)).
+///
+/// Torn has no server-side lower-bound filter, so an incremental walk pages
+/// down from the newest page until it reaches the category's own cursor —
+/// most low-volume categories need exactly one page.
+model SyncCategoryState {
+  id                  String   @id @default(cuid())
+  userId              String
+  resource            String
+  categoryId          Int
+  /// Catalog title at creation time (display only).
+  categoryTitle       String?
+  /// active | access_denied | source_exhausted | failed
+  status              String   @default("active")
+  /// Incremental watermark (see model comment).
+  lastTimestamp       BigInt?
+  lastSuccessAt       DateTime?
+  lastWalkPages       Int?
+  lastRecordsInserted Int?
+  /// Oldest source row observed for this category (backfill depth).
+  sourceEarliestAt    BigInt?
+  errorMessage        String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, resource, categoryId])
+  @@index([userId, resource])
 }
 
 /// Append-only history of sync attempts (drives the Sync Status page).

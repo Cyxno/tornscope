@@ -215,6 +215,23 @@ async function main(): Promise<void> {
       console.log(`    unattached abroad purchases (kept, never invented into trips): ${unattached}`);
     }
 
+    // Category sync efficiency (per-category incremental cursors).
+    for (const resource of ["money_logs", "drugs"] as const) {
+      const catStates = await db.syncCategoryState.findMany({
+        where: { userId: user.id, resource },
+        orderBy: { categoryId: "asc" },
+      });
+      if (catStates.length === 0) continue;
+      const totalPages = catStates.reduce((n, c) => n + (c.lastWalkPages ?? 0), 0) as number;
+      const totalInserted: number = catStates.reduce((n: number, c) => n + (c.lastRecordsInserted ?? 0), 0);
+      console.log(`    ${resource} category sync (last walk): ${catStates.length} categories, ${totalPages} pages, ${totalInserted} inserted`);
+      const sorted = [...catStates].sort((a, b) => (b.lastWalkPages ?? 0) - (a.lastWalkPages ?? 0)).slice(0, 10);
+      for (const c of sorted) {
+        const label = String(c.categoryTitle ?? c.categoryId).padEnd(24).slice(0, 24);
+        console.log(`      ${label} pages ${String(c.lastWalkPages ?? 0).padStart(3)}  inserted ${String(c.lastRecordsInserted ?? 0).padStart(5)}  [${c.status}]`);
+      }
+    }
+
     interface TitleStat {
       category: string;
       title: string;

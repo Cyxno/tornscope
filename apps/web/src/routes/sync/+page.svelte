@@ -19,6 +19,14 @@
   let error = $state<string | null>(null);
   let loading = $state(true);
   let syncing = $state<Record<string, boolean>>({});
+  let expandedCategories = $state<Set<string>>(new Set());
+
+  function toggleCategories(resource: string) {
+    const next = new Set(expandedCategories);
+    if (next.has(resource)) next.delete(resource);
+    else next.add(resource);
+    expandedCategories = next;
+  }
   let notice = $state<string | null>(null);
   let retrying = $state(false);
   let restarting = $state(false);
@@ -54,6 +62,7 @@
     running: { label: "Syncing", dot: "live-dot bg-accent", text: "text-accent" },
     backfilling: { label: "Importing history", dot: "live-dot bg-accent", text: "text-accent" },
     caught_up: { label: "Caught up", dot: "bg-positive", text: "text-fg-muted" },
+    partial: { label: "Partial — category failed", dot: "bg-warning", text: "text-warning" },
     failed: { label: "Failed", dot: "bg-negative", text: "text-negative" },
   };
 
@@ -304,6 +313,18 @@
                   <p class="text-[10px] uppercase tracking-[0.12em] text-fg-faint">Records</p>
                   <p class="tnum mt-0.5 text-fg-muted">{row.recordsCollected.toLocaleString()}</p>
                 </div>
+                <div>
+                  <p class="text-[10px] uppercase tracking-[0.12em] text-fg-faint">API pages</p>
+                  <p class="tnum mt-0.5 text-fg-muted">{row.lastWalkPages ?? "—"}</p>
+                </div>
+                {#if row.categories.length > 0}
+                  <button
+                    class="rounded-full border border-border-strong px-3.5 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:border-accent hover:text-accent"
+                    onclick={() => toggleCategories(row.resource)}
+                  >
+                    {expandedCategories.has(row.resource) ? "Hide" : "Show"} categories ({row.categories.length})
+                  </button>
+                {/if}
                 <button
                   class="rounded-full border border-border-strong px-3.5 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:border-accent hover:text-accent disabled:opacity-40"
                   disabled={syncing[row.resource] || row.status === "running"}
@@ -313,6 +334,40 @@
                 </button>
               </div>
             </li>
+            {#if expandedCategories.has(row.resource) && row.categories.length > 0}
+              <li class="border-b border-border/50 bg-bg-raise/40 px-4 py-3">
+                <div class="overflow-x-auto">
+                  <table class="w-full text-left text-xs">
+                    <thead>
+                      <tr class="text-[10px] uppercase tracking-[0.12em] text-fg-faint">
+                        <th class="py-1.5 pr-3 font-medium">Category</th>
+                        <th class="py-1.5 pr-3 font-medium">Last success</th>
+                        <th class="py-1.5 pr-3 font-medium">Cursor</th>
+                        <th class="py-1.5 pr-3 text-right font-medium">Pages</th>
+                        <th class="py-1.5 pr-3 text-right font-medium">Inserted</th>
+                        <th class="py-1.5 pr-3 font-medium">Status</th>
+                        <th class="py-1.5 font-medium">Error</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {#each row.categories as cat (cat.categoryId)}
+                        <tr class="border-t border-border/40">
+                          <td class="py-1.5 pr-3 text-fg">{cat.title ?? cat.categoryId}</td>
+                          <td class="py-1.5 pr-3 text-fg-muted">{cat.lastSuccessAt ? formatDateTime(cat.lastSuccessAt) : "—"}</td>
+                          <td class="tnum py-1.5 pr-3 text-fg-muted">{cat.lastTimestamp ? formatDateTime(cat.lastTimestamp) : "—"}</td>
+                          <td class="tnum py-1.5 pr-3 text-right text-fg-muted">{cat.lastWalkPages ?? "—"}</td>
+                          <td class="tnum py-1.5 pr-3 text-right text-fg-muted">{cat.lastRecordsInserted ?? "—"}</td>
+                          <td class="py-1.5 pr-3">
+                            <span class={`rounded-full border px-2 py-0.5 text-[10px] ${cat.status === "active" ? "border-positive/30 bg-positive/10 text-positive" : cat.status === "source_exhausted" ? "border-border bg-surface-2 text-fg-faint" : "border-warning/40 bg-warning/10 text-warning"}`}>{cat.status}</span>
+                          </td>
+                          <td class="max-w-[220px] truncate py-1.5 text-negative" title={cat.errorMessage ?? ""}>{cat.errorMessage ?? ""}</td>
+                        </tr>
+                      {/each}
+                    </tbody>
+                  </table>
+                </div>
+              </li>
+            {/if}
           {/each}
         </ul>
       {/if}

@@ -205,3 +205,117 @@ export async function updateSyncFrequencies(db: PrismaClientType, userId: string
     )
   );
 }
+
+/* -------------------------------------------------------------------------- */
+/* Per-category incremental cursors                                            */
+/* -------------------------------------------------------------------------- */
+
+export interface SyncCategoryStateRow {
+  resource: string;
+  categoryId: number;
+  categoryTitle: string | null;
+  status: string;
+  lastTimestamp: bigint | null;
+  lastSuccessAt: Date | null;
+  lastWalkPages: number | null;
+  lastRecordsInserted: number | null;
+  sourceEarliestAt: bigint | null;
+  errorMessage: string | null;
+  updatedAt: Date | null;
+}
+
+function toCategoryRow(row: {
+  resource: string;
+  categoryId: number;
+  categoryTitle: string | null;
+  status: string;
+  lastTimestamp: bigint | null;
+  lastSuccessAt: Date | null;
+  lastWalkPages: number | null;
+  lastRecordsInserted: number | null;
+  sourceEarliestAt: bigint | null;
+  errorMessage: string | null;
+  updatedAt: Date;
+}): SyncCategoryStateRow {
+  return {
+    resource: row.resource,
+    categoryId: row.categoryId,
+    categoryTitle: row.categoryTitle,
+    status: row.status,
+    lastTimestamp: row.lastTimestamp,
+    lastSuccessAt: row.lastSuccessAt,
+    lastWalkPages: row.lastWalkPages,
+    lastRecordsInserted: row.lastRecordsInserted,
+    sourceEarliestAt: row.sourceEarliestAt,
+    errorMessage: row.errorMessage,
+    updatedAt: row.updatedAt,
+  };
+}
+
+export async function getSyncCategoryState(db: PrismaClientType, userId: string, resource: string, categoryId: number): Promise<SyncCategoryStateRow | null> {
+  const row = await db.syncCategoryState.findUnique({
+    where: { userId_resource_categoryId: { userId, resource, categoryId } },
+  });
+  return row ? toCategoryRow(row) : null;
+}
+
+export async function getSyncCategoryStates(db: PrismaClientType, userId: string, resource: string): Promise<SyncCategoryStateRow[]> {
+  const rows = await db.syncCategoryState.findMany({
+    where: { userId, resource },
+    orderBy: { categoryId: "asc" },
+  });
+  return rows.map(toCategoryRow);
+}
+
+export interface SyncCategoryStatePatch {
+  categoryTitle?: string | null;
+  status?: string;
+  lastTimestamp?: bigint | null;
+  lastSuccessAt?: Date | null;
+  lastWalkPages?: number | null;
+  lastRecordsInserted?: number | null;
+  sourceEarliestAt?: bigint | null;
+  errorMessage?: string | null;
+}
+
+/**
+ * Create-or-update one category's cursor state (created lazily on first walk).
+ * sourceEarliestAt keeps the DEEPEST observation ever made for the category:
+ * Torn availability only shrinks, and incremental walks see only recent pages.
+ */
+export async function upsertSyncCategoryState(db: PrismaClientType, userId: string, resource: string, categoryId: number, patch: SyncCategoryStatePatch): Promise<void> {
+  const existing = await db.syncCategoryState.findUnique({
+    where: { userId_resource_categoryId: { userId, resource, categoryId } },
+    select: { sourceEarliestAt: true },
+  });
+  let sourceEarliestAt = patch.sourceEarliestAt;
+  if (sourceEarliestAt !== undefined && sourceEarliestAt !== null && existing?.sourceEarliestAt != null && existing.sourceEarliestAt < sourceEarliestAt) {
+    sourceEarliestAt = existing.sourceEarliestAt;
+  }
+  await db.syncCategoryState.upsert({
+    where: { userId_resource_categoryId: { userId, resource, categoryId } },
+    create: {
+      userId,
+      resource,
+      categoryId,
+      categoryTitle: patch.categoryTitle ?? null,
+      status: patch.status ?? "active",
+      lastTimestamp: patch.lastTimestamp ?? null,
+      lastSuccessAt: patch.lastSuccessAt ?? null,
+      lastWalkPages: patch.lastWalkPages ?? null,
+      lastRecordsInserted: patch.lastRecordsInserted ?? null,
+      sourceEarliestAt: sourceEarliestAt ?? null,
+      errorMessage: patch.errorMessage ?? null,
+    },
+    update: {
+      categoryTitle: patch.categoryTitle ?? undefined,
+      status: patch.status ?? undefined,
+      lastTimestamp: patch.lastTimestamp ?? undefined,
+      lastSuccessAt: patch.lastSuccessAt ?? undefined,
+      lastWalkPages: patch.lastWalkPages ?? undefined,
+      lastRecordsInserted: patch.lastRecordsInserted ?? undefined,
+      sourceEarliestAt: sourceEarliestAt,
+      errorMessage: patch.errorMessage ?? undefined,
+    },
+  });
+}

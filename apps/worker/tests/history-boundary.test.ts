@@ -108,3 +108,67 @@ describe("travel source exhaustion reporting", () => {
     expect(aggregateStopReason(["history_boundary_reached", "max_pages"])).toBe("max_pages");
   });
 });
+
+/* ------------------------------------------------------------------------ */
+/* Per-category cursors                                                      */
+/* ------------------------------------------------------------------------ */
+
+import { CURSOR_OVERLAP_SECONDS, advanceCursor, planCategoryWalk } from "../../worker/src/sync/handlers.js";
+
+describe("planCategoryWalk (per-category cursors)", () => {
+  it("independent categories get independent plans", () => {
+    const bank = planCategoryWalk(BigInt(NOW - 3 * DAY), 180, NOW);
+    const bazaar = planCategoryWalk(BigInt(NOW - 30), 180, NOW);
+    expect(bank.boundaryTs).toBe(NOW - 3 * DAY - CURSOR_OVERLAP_SECONDS);
+    expect(bazaar.boundaryTs).toBe(NOW - 30 - CURSOR_OVERLAP_SECONDS);
+    // Bank never walks based on Bazaar's cursor.
+    expect(bank.boundaryTs).not.toBe(bazaar.boundaryTs);
+  });
+
+  it("a low-volume category with an old cursor still plans from its OWN cursor", () => {
+    // Bank's last log is 3 days ago; the resource cursor of another category
+    // (30s ago) must not influence this plan.
+    const plan = planCategoryWalk(BigInt(NOW - 3 * DAY), 180, NOW);
+    expect(plan.initial).toBe(false);
+    expect(plan.persistFromTs).toBe(0);
+  });
+
+  it("a category seen for the first time gets a full-window initial backfill", () => {
+    const plan = planCategoryWalk(null, 180, NOW);
+    expect(plan.initial).toBe(true);
+    expect(plan.boundaryTs).toBe(NOW - 180 * DAY);
+    expect(plan.persistFromTs).toBe(NOW - 180 * DAY);
+  });
+
+  it("a new category under a 30-day config gets the 30-day window; 365 gets a year", () => {
+    expect(planCategoryWalk(null, 30, NOW).boundaryTs).toBe(NOW - 30 * DAY);
+    expect(planCategoryWalk(null, 365, NOW).boundaryTs).toBe(NOW - 365 * DAY);
+  });
+});
+
+describe("advanceCursor (same-second safety)", () => {
+  it("advances to newest-seen minus the overlap window", () => {
+    expect(advanceCursor(NOW, BigInt(NOW - DAY))).toBe(BigInt(NOW - CURSOR_OVERLAP_SECONDS));
+  });
+
+  it("never moves a cursor backwards", () => {
+    const recent = BigInt(NOW - 10);
+    expect(advanceCursor(NOW - DAY, recent)).toBe(recent);
+  });
+
+  it("keeps the previous cursor when nothing was seen", () => {
+    expect(advanceCursor(null, BigInt(123))).toBe(BigInt(123));
+    expect(advanceCursor(0, BigInt(123))).toBe(BigInt(123));
+  });
+
+  it("the overlap re-fetches same-second rows straddling the cursor", () => {
+    // Multiple Torn logs can share one second. The next walk's boundary sits
+    // BELOW the stored cursor by the overlap, so any row sharing the cursor
+    // second is re-fetched and re-persisted (dedup is idempotent).
+    const cursor = BigInt(NOW - CURSOR_OVERLAP_SECONDS);
+    const nextPlan = planCategoryWalk(cursor, 180, NOW);
+    expect(nextPlan.boundaryTs).toBe(Number(cursor) - CURSOR_OVERLAP_SECONDS);
+    // A row at the exact cursor second is strictly above the next boundary.
+    expect(Number(cursor) > nextPlan.boundaryTs).toBe(true);
+  });
+});

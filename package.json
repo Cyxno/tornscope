@@ -27,7 +27,7 @@
     "db:studio": "pnpm --filter @tornscope/database studio",
     "seed:demo": "pnpm --filter @tornscope/database seed:demo",
     "lint": "eslint .",
-    "torn:audit": "pnpm --filter @tornscope/database audit",
+    "torn:audit": "pnpm --filter @tornscope/database run audit",
     "torn:renormalize": "pnpm --filter @tornscope/database renormalize"
   },
   "devDependencies": {

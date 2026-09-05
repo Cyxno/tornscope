@@ -1,4 +1,4 @@
-import { normalizeDonatorStatus, type TornEndpoints, type BackwardStopReason } from "@tornscope/torn-api";
+import { TornApiError, normalizeDonatorStatus, type TornEndpoints, type BackwardStopReason } from "@tornscope/torn-api";
 import type { SyncResource } from "@tornscope/shared";
 import {
   encryptionFromEnv,
@@ -25,6 +25,8 @@ import {
   upsertFactionMembership,
   upsertTornAccount,
   getLogCategories,
+  getSyncCategoryState,
+  upsertSyncCategoryState,
   assembleTripsFromTransitions,
 } from "@tornscope/database";
 import { getWorkerContext } from "../context.js";
@@ -59,6 +61,9 @@ export type SyncHandlerResult = {
   stopReason?: BackwardStopReason | "api_error";
   /** Oldest source timestamp seen during the walk. */
   sourceEarliestAt?: bigint | null;
+  /** Categories that failed this sync (each recorded in its own state). */
+  failedCategories?: number;
+  totalCategories?: number;
 };
 
 type SyncHandler = (args: SyncHandlerArgs) => Promise<SyncHandlerResult>;
@@ -223,8 +228,14 @@ export const syncPersonalStats: SyncHandler = async ({ userId, torn }) => {
 /* Log-based resources                                                        */
 /* -------------------------------------------------------------------------- */
 
-/** Resolve log category ids whose titles match any keyword. */
-async function resolveCategoryIds(keywords: readonly string[]): Promise<number[]> {
+/** A resolvable log category for a resource. */
+export interface ResolvedCategory {
+  id: number;
+  title: string;
+}
+
+/** Resolve log categories whose titles match any keyword (catalog-driven). */
+async function resolveCategoryIds(keywords: readonly string[]): Promise<ResolvedCategory[]> {
   const ctx = getWorkerContext();
   let categories = await getLogCategories(ctx.db);
   if (!categories) {
@@ -235,7 +246,7 @@ async function resolveCategoryIds(keywords: readonly string[]): Promise<number[]
   if (!categories) return [];
   return categories
     .filter((c) => keywords.some((kw) => c.title.toLowerCase().includes(kw)))
-    .map((c) => c.id);
+    .map((c) => ({ id: c.id, title: c.title }));
 }
 
 async function getCurrentApiKey(): Promise<string> {
@@ -249,7 +260,7 @@ async function getCurrentApiKey(): Promise<string> {
 }
 
 /**
- * Requested history boundary (unix seconds) for a sync.
+ * Requested history boundary (unix seconds) for a resource-level sync.
  *
  * - Initial backfill (lastTimestamp null): now - initialHistoryDays. The walk
  *   stops at this boundary and only rows INSIDE the window are persisted —
@@ -265,24 +276,68 @@ export function historyBoundaryTs(lastTimestamp: bigint | null, initialHistoryDa
 }
 
 /**
- * Incremental + historical log sync.
+ * Per-category cursor plan.
+ *
+ * CURSOR SEMANTICS — a category's stored lastTimestamp means:
+ *   "all log rows above this successfully persisted point are known to be
+ *    stored" (minus CURSOR_OVERLAP_SECONDS, which the next walk re-fetches
+ *    so rows sharing the cursor second can never straddle a page boundary
+ *    unnoticed). Dedup via (userId, source, sourceRef) makes the overlap
+ *    replay idempotent.
+ *
+ * It is advanced only AFTER a category's page data has been normalized and
+ * inserted; a crash mid-walk leaves the previous cursor intact and the next
+ * run replays that category safely. Categories are independent: one failing
+ * category never rolls back or blocks another.
+ */
+export const CURSOR_OVERLAP_SECONDS = 120;
+
+export interface CategoryWalkPlan {
+  /** Initial (full window) backfill vs incremental from the own cursor. */
+  initial: boolean;
+  /** The walk stops when a page's oldest row is at/before this. */
+  boundaryTs: number;
+  /** Rows older than this are not persisted (initial backfills only). */
+  persistFromTs: number;
+}
+
+export function planCategoryWalk(lastTimestamp: bigint | null, initialHistoryDays: number, nowSec = Math.floor(Date.now() / 1000)): CategoryWalkPlan {
+  if (lastTimestamp === null) {
+    const boundaryTs = Math.max(0, nowSec - initialHistoryDays * 86_400);
+    return { initial: true, boundaryTs, persistFromTs: boundaryTs };
+  }
+  const boundaryTs = Math.max(0, Number(lastTimestamp) - CURSOR_OVERLAP_SECONDS);
+  return { initial: false, boundaryTs, persistFromTs: 0 };
+}
+
+/** Advance a category cursor to (newest seen - overlap); never move backwards. */
+export function advanceCursor(maxSeen: number | null, previous: bigint | null): bigint | null {
+  if (maxSeen === null || maxSeen <= 0) return previous;
+  const overlapped = Math.max(0, maxSeen - CURSOR_OVERLAP_SECONDS);
+  if (previous !== null && BigInt(overlapped) < previous) return previous;
+  return BigInt(overlapped);
+}
+
+/**
+ * Incremental + historical log sync, CATEGORY-AWARE.
  *
  * Torn's /user/log returns the NEWEST page first and exposes older pages
  * only through `links.prev` — the old forward-only pagination silently
- * truncated every category to its first page (100 newest rows). We now walk
- * BACKWARD from the newest page down to the boundary:
- * - initial backfill (lastTimestamp null): boundary = now - history days;
- *   rows outside the window are NOT persisted even when the boundary-
- *   crossing page contains them
- * - incremental (lastTimestamp set): boundary = last cursor timestamp
- * Insertion is idempotent ((userId, source, sourceRef) unique), so walking
- * over already-stored rows is always safe.
+ * truncated every category to its first page. Each (user, resource,
+ * category) now owns its cursor in SyncCategoryState:
+ * - no category state yet + no resource cursor: initial backfill — walk the
+ *   configured window, persist only rows inside it
+ * - no category state + resource cursor present (migration bridge): seed the
+ *   category from the resource watermark — the resource-level backfill
+ *   already covered the window, so no deep re-walk is needed
+ * - category state present: incremental — walk down to the category's own
+ *   cursor (plus the overlap window); most categories need one page
  *
- * The result reports WHY the walk stopped plus the oldest source timestamp
- * observed, so Sync Status can show real historical coverage instead of
- * claiming caught_up merely because a page completed.
+ * A failing category is recorded in its own state and DOES NOT stop the
+ * others; the resource-level result aggregates pages, records and the worst
+ * stop reason for the existing SyncState UI.
  */
-async function syncLogsByCategories(args: SyncHandlerArgs, categoryIds: number[]): Promise<SyncHandlerResult> {
+async function syncLogsByCategories(args: SyncHandlerArgs, resource: SyncResource, categoryIds: Array<{ id: number; title: string }>): Promise<SyncHandlerResult> {
   const ctx = getWorkerContext();
   const [itemNameById, itemTypeById, itemMarketPriceById, itemIdByName] = await Promise.all([
     loadItemNameMap(ctx.db),
@@ -291,56 +346,97 @@ async function syncLogsByCategories(args: SyncHandlerArgs, categoryIds: number[]
     loadItemIdByName(ctx.db),
   ]);
 
-  const boundaryTs = historyBoundaryTs(args.lastTimestamp, ctx.initialHistoryDays);
-  // Only the initial backfill is bounded by the configured window: rows the
-  // boundary-crossing page carries from before it are not persisted.
-  const enforceBoundary = args.lastTimestamp === null;
+  const nowSec = Math.floor(Date.now() / 1000);
+  const resourceCursor = args.lastTimestamp;
 
   let records = 0;
   let pagesWalked = 0;
-  let maxTimestamp = args.lastTimestamp !== null ? Number(args.lastTimestamp) : 0;
+  let maxTimestamp = resourceCursor !== null ? Number(resourceCursor) : 0;
   const stopReasons: BackwardStopReason[] = [];
   let sourceEarliest: number | null = null;
+  let failedCategories = 0;
+  let totalCategories = 0;
 
   for (const category of categoryIds) {
-    let categoryRecords = 0;
-    const walk = await args.torn.iterateUserLogsBackward(
-      { category, from: boundaryTs, limit: 100 },
-      async (logs, _metadata) => {
-        logger.debug({ userId: args.userId, category, page: logs.length, stage: "page_received" }, "log page received");
-        if (logs.length === 0) return;
-        for (const log of logs) {
-          if (enforceBoundary && log.timestamp < boundaryTs) continue;
-          const normalized = normalizeLogEntry(log, { itemNameById, itemTypeById, itemMarketPriceById, itemIdByName });
-          // Each typed insert is its own small idempotent transaction — the
-          // cursor is only advanced after every page of this category made
-          // it to PostgreSQL, so a crash resumes instead of skipping data.
-          await insertTimelineEvents(ctx.db, args.userId, normalized.timelineEvents);
-          await insertDrugEvents(ctx.db, args.userId, normalized.drugEvents);
-          await insertConsumptionEvents(ctx.db, args.userId, normalized.consumptionEvents);
-          await insertRehabEvents(ctx.db, args.userId, normalized.rehabEvents);
-          await insertTravelTransitions(ctx.db, args.userId, normalized.travelTransitions);
-          await insertTravelItemEvents(ctx.db, args.userId, normalized.travelItemEvents);
-          await insertMoneyEvents(ctx.db, args.userId, normalized.moneyEvents);
-          categoryRecords += 1;
-          if (log.timestamp > maxTimestamp) maxTimestamp = log.timestamp;
-        }
-        // Heartbeat cumulative totals so long backfills stay visible and a
-        // crashed run never advances the cursor past unstored data.
-        args.onProgress?.(records + categoryRecords);
-      },
-      { maxPages: 400, boundaryTs }
-    );
-    records += categoryRecords;
-    pagesWalked += walk.pages;
-    stopReasons.push(walk.stopReason);
-    if (walk.oldestTimestamp !== null && (sourceEarliest === null || walk.oldestTimestamp < sourceEarliest)) {
-      sourceEarliest = walk.oldestTimestamp;
+    totalCategories += 1;
+    let state = await getSyncCategoryState(ctx.db, args.userId, resource, category.id);
+    if (state === null && resourceCursor !== null) {
+      // Migration bridge: the resource-level backfill already stored this
+      // category's window — seed from its watermark instead of re-walking.
+      await upsertSyncCategoryState(ctx.db, args.userId, resource, category.id, {
+        categoryTitle: category.title,
+        status: "active",
+        lastTimestamp: resourceCursor,
+        lastSuccessAt: new Date(),
+      });
+      state = await getSyncCategoryState(ctx.db, args.userId, resource, category.id);
+      logger.info({ userId: args.userId, resource, category: category.id }, "category cursor seeded from resource watermark");
     }
-    logger.debug(
-      { userId: args.userId, category, pages: walk.pages, stopReason: walk.stopReason, oldest: walk.oldestTimestamp },
-      "log category backward walk finished"
-    );
+
+    const plan = planCategoryWalk(state?.lastTimestamp ?? null, ctx.initialHistoryDays, nowSec);
+    let categoryRecords = 0;
+    let maxSeen: number | null = null;
+
+    try {
+      const walk = await args.torn.iterateUserLogsBackward(
+        { category: category.id, from: plan.boundaryTs, limit: 100 },
+        async (logs, _metadata) => {
+          logger.debug({ userId: args.userId, category: category.id, page: logs.length, stage: "page_received" }, "log page received");
+          if (logs.length === 0) return;
+          for (const log of logs) {
+            if (log.timestamp > (maxSeen ?? 0)) maxSeen = log.timestamp;
+            if (plan.initial && log.timestamp < plan.persistFromTs) continue;
+            const normalized = normalizeLogEntry(log, { itemNameById, itemTypeById, itemMarketPriceById, itemIdByName });
+            // Idempotent writes: a category's cursor only advances after its
+            // page data is safely persisted (the upsert happens below, after
+            // the whole walk succeeded).
+            await insertTimelineEvents(ctx.db, args.userId, normalized.timelineEvents);
+            await insertDrugEvents(ctx.db, args.userId, normalized.drugEvents);
+            await insertConsumptionEvents(ctx.db, args.userId, normalized.consumptionEvents);
+            await insertRehabEvents(ctx.db, args.userId, normalized.rehabEvents);
+            await insertTravelTransitions(ctx.db, args.userId, normalized.travelTransitions);
+            await insertTravelItemEvents(ctx.db, args.userId, normalized.travelItemEvents);
+            await insertMoneyEvents(ctx.db, args.userId, normalized.moneyEvents);
+            categoryRecords += 1;
+            if (log.timestamp > maxTimestamp) maxTimestamp = log.timestamp;
+          }
+          args.onProgress?.(records + categoryRecords);
+        },
+        { maxPages: 400, boundaryTs: plan.boundaryTs }
+      );
+
+      pagesWalked += walk.pages;
+      stopReasons.push(walk.stopReason);
+      if (walk.oldestTimestamp !== null && (sourceEarliest === null || walk.oldestTimestamp < sourceEarliest)) {
+        sourceEarliest = walk.oldestTimestamp;
+      }
+      records += categoryRecords;
+      await upsertSyncCategoryState(ctx.db, args.userId, resource, category.id, {
+        categoryTitle: category.title,
+        status: walk.stopReason === "source_exhausted" ? "source_exhausted" : "active",
+        lastTimestamp: advanceCursor(maxSeen, state?.lastTimestamp ?? null),
+        lastSuccessAt: new Date(),
+        lastWalkPages: walk.pages,
+        lastRecordsInserted: categoryRecords,
+        sourceEarliestAt: walk.oldestTimestamp !== null ? BigInt(walk.oldestTimestamp) : null,
+        errorMessage: null,
+      });
+      logger.info(
+        { userId: args.userId, resource, category: category.id, title: category.title, pages: walk.pages, inserted: categoryRecords, stopReason: walk.stopReason, initial: plan.initial },
+        "category walk complete"
+      );
+    } catch (err) {
+      // One failed category must not prevent the others from completing —
+      // record it in its own state and move on.
+      const denied = err instanceof TornApiError && err.kind === "access_denied";
+      failedCategories += 1;
+      await upsertSyncCategoryState(ctx.db, args.userId, resource, category.id, {
+        categoryTitle: category.title,
+        status: denied ? "access_denied" : "failed",
+        errorMessage: (err as Error).message.slice(0, 300),
+      });
+      logger.warn({ userId: args.userId, resource, category: category.id, err: (err as Error).message }, "category walk failed; continuing");
+    }
   }
 
   // Trips are assembled from transitions, never written per log — rebuild
@@ -352,12 +448,15 @@ async function syncLogsByCategories(args: SyncHandlerArgs, categoryIds: number[]
     }
   }
 
+  const walkStopReason = aggregateStopReason(stopReasons);
   return {
     records,
     pagesWalked,
     lastTimestamp: maxTimestamp > 0 ? BigInt(maxTimestamp) : null,
-    stopReason: aggregateStopReason(stopReasons),
+    stopReason: failedCategories > 0 ? "api_error" : walkStopReason,
     sourceEarliestAt: sourceEarliest !== null ? BigInt(sourceEarliest) : null,
+    failedCategories,
+    totalCategories,
   };
 }
 
@@ -378,23 +477,23 @@ export function aggregateStopReason(reasons: BackwardStopReason[]): BackwardStop
 // and other consumables) is filed under the dedicated "Item use ..." log
 // categories. They are fetched with the drugs resource so consumption
 // economics cover every consumable, not only drugs.
-export const syncDrugLogs: SyncHandler = async (args) => syncLogsByCategories(args, await resolveCategoryIds(["drug", "item use"]));
+export const syncDrugLogs: SyncHandler = async (args) => syncLogsByCategories(args, "drugs", await resolveCategoryIds(["drug", "item use"]));
 
 // Torn has NO rehab log category: rehab visits are filed under the "Travel"
 // category with the title "Rehab". The keyword list therefore mirrors the
 // travel resource; the normalizer routes by title.
 export const syncRehabLogs: SyncHandler = async (args) =>
-  syncLogsByCategories(args, await resolveCategoryIds(["travel", "abroad", "fly", "flight", "rehab", "rehabilitation"]));
+  syncLogsByCategories(args, "rehab", await resolveCategoryIds(["travel", "abroad", "fly", "flight", "rehab", "rehabilitation"]));
 
 export const syncTravelLogs: SyncHandler = async (args) =>
-  syncLogsByCategories(args, await resolveCategoryIds(["travel", "abroad", "fly", "flight"]));
+  syncLogsByCategories(args, "travel", await resolveCategoryIds(["travel", "abroad", "fly", "flight"]));
 
 // Financial surface. Beyond the obvious money keywords this includes the real
 // category names observed in a live 180-day history: "Company", "Job",
 // "Property", "Shops", "Item market", "Donator", "Offshore bank", "Piggy
 // bank", "Loan". The normalizer decides which entries are actual movements.
 export const syncMoneyLogs: SyncHandler = async (args) =>
-  syncLogsByCategories(args, await resolveCategoryIds([
+  syncLogsByCategories(args, "money_logs", await resolveCategoryIds([
     "trade", "money", "bazaar", "bank", "casino", "stock", "salary", "points", "auction", "crime", "mug", "payout",
     "company", "job", "property", "shop", "item market", "donator", "offshore", "piggy", "loan", "upkeep", "faction",
   ]));
