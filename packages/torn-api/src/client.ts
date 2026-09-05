@@ -145,7 +145,7 @@ export class TornApiClient {
 
       const next = result.metadata?.links?.next ?? null;
       if (!next) return;
-      const parsed = splitLink(next);
+      const parsed = this.relativeLink(next);
       if (!parsed) return;
       currentPath = parsed.path;
       currentParams = parsed.params;
@@ -207,7 +207,7 @@ export class TornApiClient {
       }
 
       const prev = result.metadata?.links?.prev ?? null;
-      const parsedPrev = prev ? splitLink(prev) : null;
+      const parsedPrev = prev ? this.relativeLink(prev) : null;
       if (!prev || !parsedPrev) return finish("source_exhausted");
 
       // Stall detection: a prev link whose window equals the current one can
@@ -302,6 +302,30 @@ export class TornApiClient {
     }
     const qs = search.toString();
     return `${base}${clean}${qs ? `?${qs}` : ""}`;
+  }
+
+  /**
+   * Turn an absolute Torn pagination link into a path RELATIVE to the
+   * configured base URL. Torn's links are absolute and INCLUDE the version
+   * prefix (`https://api.torn.com/v2/user/log?...`); naively re-joining them
+   * onto the base produced `…/v2/v2/user/log`, which Torn answers with a
+   * misleading "access level" error. This keeps forward and backward
+   * pagination working regardless of the configured base (also proxies).
+   */
+  private relativeLink(link: string): { path: string; params: TornRequestParams } | null {
+    const parsed = splitLink(link);
+    if (!parsed) return null;
+    let base: URL;
+    try {
+      base = new URL(this.opts.baseUrl);
+    } catch {
+      return parsed;
+    }
+    const prefix = base.pathname.replace(/\/$/, "");
+    if (prefix && parsed.path.startsWith(prefix)) {
+      parsed.path = parsed.path.slice(prefix.length) || "/";
+    }
+    return parsed;
   }
 }
 

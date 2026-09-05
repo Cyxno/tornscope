@@ -154,4 +154,25 @@ describe("paginateBackward", () => {
     const init = fetchImpl.mock.calls[0]![1] as RequestInit;
     expect((init.headers as Record<string, string>).Authorization).toBe("ApiKey TESTKEY123");
   });
+
+  it("rewrites absolute prev links relative to the base (no doubled /v2/v2)", async () => {
+    // Torn's prev links are ABSOLUTE and include the version prefix. Re-joining
+    // them onto the base produced /v2/v2/user/log, which Torn answers with a
+    // misleading access_denied (code 16).
+    const { client, fetchImpl } = clientWithPages([
+      { timestamps: [NOW], prev: "https://api.torn.com/v2/user/log?&limit=100&cat=61&sort=desc&from=1773076314&to=1786075052" },
+      { timestamps: [NOW - DAY], prev: null },
+    ]);
+    await client.paginateBackward("/user/log", { cat: 61, limit: 100 }, () => {}, {
+      rowTimestamps: (data) => (data as { log: Array<{ timestamp: number }> }).log.map((l) => l.timestamp),
+    });
+    const secondUrl = fetchImpl.mock.calls[1]![0] as string;
+    expect(secondUrl).toContain("https://api.torn.com/v2/user/log?");
+    expect(secondUrl).not.toContain("/v2/v2/");
+    const url = new URL(secondUrl);
+    expect(url.pathname).toBe("/v2/user/log");
+    expect(url.searchParams.get("to")).toBe("1786075052");
+    expect(url.searchParams.get("from")).toBe("1773076314");
+    expect(url.searchParams.has("key")).toBe(false);
+  });
 });
