@@ -567,7 +567,7 @@ export const syncTravelLogs: SyncHandler = async (args) =>
 export const syncMoneyLogs: SyncHandler = async (args) =>
   syncLogsByCategories(args, "money_logs", await resolveCategoryIds([
     "trade", "money", "bazaar", "bank", "casino", "stock", "salary", "points", "auction", "crime", "mug", "payout",
-    "company", "job", "property", "shop", "item market", "donator", "offshore", "piggy", "loan", "upkeep", "faction",
+    "company", "job", "property", "shop", "item market", "donator", "offshore", "piggy", "loan", "upkeep", "faction", "attacking",
   ]));
 
 /* -------------------------------------------------------------------------- */

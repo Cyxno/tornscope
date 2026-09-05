@@ -276,6 +276,8 @@ export function moneyPlanFor(category: string, title: string): MoneyPlan | null 
   if (is(/^faction payout money receive/)) return { category: "faction", direction: "income", skip: false, transfer: false };
   if (is(/^faction (deposit|withdraw)/)) return { category: "faction", direction: "neutral", skip: false, transfer: true };
   if (is(/^bazaar sell/)) return { category: "bazaar", direction: "income", skip: false, transfer: false };
+  if (is(/^bazaar buy/)) return { category: "bazaar", direction: "expense", skip: false, transfer: false };
+  if (is(/^property buy/)) return { category: "housing", direction: "expense", skip: false, transfer: false };
   if (is(/^item market sell/)) return { category: "items", direction: "income", skip: false, transfer: false };
   if (is(/^item market buy/)) return { category: "items", direction: "expense", skip: false, transfer: false };
   if (is(/^item shop buy|^shops? /)) return { category: "items", direction: "expense", skip: false, transfer: false };
