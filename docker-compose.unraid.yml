@@ -1,0 +1,116 @@
+# TornScope deployment stack for Unraid.
+#
+# Differences from docker-compose.yml:
+# - PostgreSQL data lives in /mnt/user/appdata/tornscope/postgres (on the
+#   array/pool, so it is included in normal appdata backups)
+# - web is published on the LAN (0.0.0.0:5173) so the portal is reachable
+#   from other devices
+# - api is published on 127.0.0.1:3100 only (host 3000 is taken by Nginx
+#   Proxy Manager); the web container talks to the API over the internal
+#   docker network, so this mapping is only for host-side debugging
+# - redis is not published at all
+
+name: tornscope
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-tornscope}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-tornscope}
+    volumes:
+      - /mnt/user/appdata/tornscope/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tornscope} -d ${POSTGRES_DB:-tornscope}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "127.0.0.1:5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+      target: migrator
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-tornscope}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-tornscope}?schema=public
+    command: ["npx", "prisma", "migrate", "deploy"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-tornscope}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-tornscope}?schema=public
+      REDIS_URL: redis://redis:6379
+      TORN_API_BASE_URL: ${TORN_API_BASE_URL:-https://api.torn.com/v2}
+      TORN_API_MIN_REQUEST_INTERVAL_MS: ${TORN_API_MIN_REQUEST_INTERVAL_MS:-700}
+      API_KEY_ENCRYPTION_KEY: ${API_KEY_ENCRYPTION_KEY:?set API_KEY_ENCRYPTION_KEY in .env}
+      APP_BASE_URL: ${APP_BASE_URL:-http://192.168.1.2:5173}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "127.0.0.1:3100:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/worker.Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-tornscope}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-tornscope}?schema=public
+      REDIS_URL: redis://redis:6379
+      TORN_API_BASE_URL: ${TORN_API_BASE_URL:-https://api.torn.com/v2}
+      TORN_API_MIN_REQUEST_INTERVAL_MS: ${TORN_API_MIN_REQUEST_INTERVAL_MS:-700}
+      API_KEY_ENCRYPTION_KEY: ${API_KEY_ENCRYPTION_KEY:?set API_KEY_ENCRYPTION_KEY in .env}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+      args:
+        API_BASE_URL: http://api:3000
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 5173
+      API_BASE_URL: http://api:3000
+      ORIGIN: ${ORIGIN:-http://192.168.1.2:5173}
+    ports:
+      - "5173:5173"
+    depends_on:
+      - api

@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Builds
+dist/
+**/dist/
+build/
+**/build/
+.svelte-kit/
+**/.svelte-kit/
+packages/database/src/generated/
+**/generated/
+**/tsconfig.tsbuildinfo
+*.tsbuildinfo
+
+# Environment & secrets - never bake into build context or images
+.env
+.env.*
+*.pem
+
+# Git / docs / misc
+.git/
+.gitignore
+*.log
+tmp-ref/
+coverage/

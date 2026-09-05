@@ -1,0 +1,65 @@
+import Fastify, { type FastifyInstance } from "fastify";
+import helmet from "@fastify/helmet";
+import cors from "@fastify/cors";
+import rateLimit from "@fastify/rate-limit";
+import { env } from "./env.js";
+import { registerRoutes } from "./routes.js";
+import { AppError } from "./errors.js";
+
+/** Build the configured Fastify server (not started). */
+export async function buildServer(): Promise<FastifyInstance> {
+  const app = Fastify({
+    logger: {
+      level: process.env.LOG_LEVEL ?? "info",
+      redact: {
+        paths: ["apiKey", "api_key", "key", "*.apiKey", "*.api_key", "*.key", "authorization", "req.headers.authorization"],
+        censor: "[REDACTED]",
+      },
+    },
+    trustProxy: true,
+    bodyLimit: 256 * 1024,
+  });
+
+  await app.register(helmet, {
+    contentSecurityPolicy: false, // JSON API only
+    referrerPolicy: { policy: "no-referrer" },
+  });
+
+  await app.register(cors, {
+    origin: [env.appBaseUrl],
+    credentials: false,
+    methods: ["GET", "POST", "DELETE"],
+  });
+
+  await app.register(rateLimit, {
+    max: 300,
+    timeWindow: "1 minute",
+    ban: 0,
+  });
+
+  app.setErrorHandler((err, req, reply) => {
+    if (err instanceof AppError) {
+      reply.status(err.statusCode).send({
+        error: { code: err.code, message: err.message, ...(err.details !== undefined ? { details: err.details } : {}) },
+      });
+      return;
+    }
+    const statusCode = (err as { statusCode?: number }).statusCode;
+    if (statusCode && statusCode < 500) {
+      reply.status(statusCode).send({ error: { code: "bad_request", message: (err as Error).message } });
+      return;
+    }
+    req.log.error({ err }, "unhandled error");
+    reply.status(500).send({ error: { code: "internal_error", message: "Unexpected server error" } });
+  });
+
+  app.setNotFoundHandler((_req, reply) => {
+    reply.status(404).send({ error: { code: "not_found", message: "Route not found" } });
+  });
+
+  app.get("/", async () => ({ name: "TornScope API", status: "ok" }));
+
+  registerRoutes(app as FastifyInstance);
+
+  return app;
+}

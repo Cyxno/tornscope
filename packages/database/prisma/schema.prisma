@@ -1,0 +1,524 @@
+// TornScope database schema.
+//
+// Design principles:
+// - Historical data is a first-class concern: events (individual historical
+//   occurrences) and snapshots (state at a point in time) are separated.
+// - Unique constraints on (user_id, source, source_ref) make ingestion
+//   idempotent so workers can safely re-run after downtime.
+// - Indexes on (user_id, occurred_at / captured_at) serve the analytics reads.
+// - JSONB only stores raw Torn payloads for reference; commonly queried fields
+//   are normalized columns.
+// - Money amounts use BigInt (Prisma BigInt / Postgres bigint) and are
+//   converted to JS numbers at the API boundary.
+
+generator client {
+  provider               = "prisma-client"
+  output                 = "../src/generated/client"
+  runtime                = "nodejs"
+  moduleFormat           = "esm"
+  generatedFileExtension = "ts"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum MoneyDirection {
+  income
+  expense
+  neutral
+}
+
+enum DrugOutcome {
+  success
+  overdose
+}
+
+enum TravelItemCategory {
+  plushie
+  flower
+  other
+}
+
+/* -------------------------------------------------------------------------- */
+/* Identity & credentials                                                     */
+/* -------------------------------------------------------------------------- */
+
+/// Application user. MVP ships single-user (a local owner account), but the
+/// schema and services are multi-user ready (every table scopes by user_id).
+model User {
+  id          String   @id @default(cuid())
+  email       String?  @unique
+  displayName String
+  role        String   @default("owner")
+  isDemo      Boolean  @default(false)
+  timezone    String   @default("UTC")
+  currency    String   @default("USD")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tornAccount          TornAccount?
+  apiCredential        ApiCredential?
+  syncStates           SyncState[]
+  syncRuns             SyncRun[]
+  userSnapshots        UserSnapshot[]
+  personalStatSnapshot PersonalStatSnapshot[]
+  networthSnapshots    NetworthSnapshot[]
+  drugEvents           DrugEvent[]
+  rehabEvents          RehabEvent[]
+  travelEvents         TravelEvent[]
+  travelItemEvents     TravelItemEvent[]
+  moneyEvents          MoneyEvent[]
+  timelineEvents       TimelineEvent[]
+  factionMemberships   FactionMembership[]
+  factionSnapshots     FactionSnapshot[]
+  rankedWarMembers     RankedWarMember?
+  rankedWarPayouts     RankedWarPayout[]
+  settings             AppSetting[]
+}
+
+/// The Torn player connected to a user.
+model TornAccount {
+  id             String    @id @default(cuid())
+  userId         String    @unique
+  tornId         Int       @unique
+  name           String
+  level          Int
+  rank           String?
+  donatorStatus  Int?
+  gender         String?
+  property       String?
+  factionId      Int?
+  status         Json?
+  firstSeenAt    DateTime
+  lastSeenAt     DateTime
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([factionId])
+}
+
+/// AES-256-GCM encrypted Torn API key. Never stored or logged in plaintext.
+model ApiCredential {
+  id                 String    @id @default(cuid())
+  userId             String    @unique
+  encryptedKey       String
+  iv                 String
+  authTag            String
+  keyPreview         String
+  accessLevel        Int?
+  accessType         String?
+  logAccessAvailable Boolean   @default(false)
+  validatedAt        DateTime?
+  revokedAt          DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/* -------------------------------------------------------------------------- */
+/* Synchronization                                                            */
+/* -------------------------------------------------------------------------- */
+
+/// One row per (user, resource) tracking incremental sync progress.
+model SyncState {
+  id               String    @id @default(cuid())
+  userId           String
+  resource         String
+  frequencySeconds Int       @default(600)
+  status           String    @default("idle")
+  lastAttemptAt    DateTime?
+  lastStartedAt    DateTime?
+  lastCompletedAt  DateTime?
+  lastSuccessAt    DateTime?
+  nextRunAt        DateTime?
+  lastTimestamp    BigInt?
+  cursor           String?
+  recordsCollected Int       @default(0)
+  errorCount       Int       @default(0)
+  errorMessage     String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, resource])
+  @@index([status])
+  @@index([nextRunAt])
+}
+
+/// Append-only history of sync attempts (drives the Sync Status page).
+model SyncRun {
+  id               String    @id @default(cuid())
+  userId           String
+  resource         String
+  startedAt        DateTime  @default(now())
+  finishedAt       DateTime?
+  status           String
+  recordsCollected Int       @default(0)
+  errorMessage     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, resource, startedAt])
+}
+
+/* -------------------------------------------------------------------------- */
+/* Snapshots (state at a point in time)                                       */
+/* -------------------------------------------------------------------------- */
+
+/// Player state snapshot, inserted on profile sync when state changed.
+model UserSnapshot {
+  id         String   @id @default(cuid())
+  userId     String
+  capturedAt DateTime
+  level      Int
+  rank       String?
+  factionId  Int?
+  status     Json?
+  raw        Json?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, capturedAt])
+  @@index([userId, capturedAt])
+}
+
+/// Long-term personal stats snapshot (hourly/daily).
+model PersonalStatSnapshot {
+  id            String   @id @default(cuid())
+  userId        String
+  capturedAt    DateTime
+  networthTotal BigInt?
+  stats         Json
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, capturedAt])
+  @@index([userId, capturedAt])
+}
+
+/// Net worth snapshot with Torn-provided category breakdown.
+model NetworthSnapshot {
+  id          String   @id @default(cuid())
+  userId      String
+  capturedAt  DateTime
+  total       BigInt
+  pending     BigInt   @default(0)
+  wallet      BigInt   @default(0)
+  vault       BigInt   @default(0)
+  bookie      BigInt   @default(0)
+  cityBank    BigInt   @default(0)
+  caymanBank  BigInt   @default(0)
+  piggyBank   BigInt   @default(0)
+  loans       BigInt   @default(0)
+  unpaidFees  BigInt   @default(0)
+  inventory   BigInt   @default(0)
+  displayCase BigInt   @default(0)
+  bazaar      BigInt   @default(0)
+  trades      BigInt   @default(0)
+  itemMarket  BigInt   @default(0)
+  auctionHouse BigInt  @default(0)
+  enlistedCars BigInt  @default(0)
+  property    BigInt   @default(0)
+  stockMarket BigInt   @default(0)
+  company     BigInt   @default(0)
+  points      BigInt   @default(0)
+  raw         Json?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, capturedAt])
+  @@index([userId, capturedAt])
+}
+
+/* -------------------------------------------------------------------------- */
+/* Events (individual historical occurrences)                                 */
+/* -------------------------------------------------------------------------- */
+
+/// Drug use events derived from Torn logs.
+model DrugEvent {
+  id         String      @id @default(cuid())
+  userId     String
+  occurredAt DateTime
+  drugItemId Int?
+  drugName   String?
+  outcome    DrugOutcome
+  source     String      @default("torn_log")
+  sourceRef  String
+  raw        Json?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, source, sourceRef])
+  @@index([userId, occurredAt])
+  @@index([userId, drugItemId])
+}
+
+/// Rehabilitation visits.
+model RehabEvent {
+  id                    String   @id @default(cuid())
+  userId                String
+  occurredAt            DateTime
+  rehabPercent          Int?
+  cost                  BigInt?
+  addictionPointsRemoved Int?
+  source                String   @default("torn_log")
+  sourceRef             String
+  raw                   Json?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, source, sourceRef])
+  @@index([userId, occurredAt])
+}
+
+/// Flights (departure/arrival/return lifecycle).
+model TravelEvent {
+  id              String    @id @default(cuid())
+  userId          String
+  destination     String
+  departedAt      DateTime
+  arrivedAt       DateTime?
+  returnedAt      DateTime?
+  durationSeconds Int?
+  status          String    @default("unknown")
+  source          String    @default("torn_log")
+  sourceRef       String
+  raw             Json?
+
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  itemPurchases TravelItemEvent[]
+
+  @@unique([userId, source, sourceRef])
+  @@index([userId, departedAt])
+  @@index([userId, destination])
+}
+
+/// Items purchased while abroad (plushies, flowers, other).
+model TravelItemEvent {
+  id                  String             @id @default(cuid())
+  userId              String
+  travelEventId       String?
+  occurredAt          DateTime
+  destination         String?
+  category            TravelItemCategory
+  itemId              Int
+  itemName            String?
+  quantity            Int
+  unitCost            BigInt
+  totalCost           BigInt
+  estimatedUnitValue  BigInt?
+  estimatedTotalValue BigInt?
+  realizedUnitValue   BigInt?
+  realizedTotalValue  BigInt?
+  source              String             @default("torn_log")
+  sourceRef           String
+  raw                 Json?
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  travelEvent TravelEvent? @relation(fields: [travelEventId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, source, sourceRef])
+  @@index([userId, occurredAt])
+  @@index([userId, category])
+  @@index([itemId])
+}
+
+/// Central normalized financial ledger (single source of truth for money).
+model MoneyEvent {
+  id           String        @id @default(cuid())
+  userId       String
+  occurredAt   DateTime
+  category     String
+  subcategory  String?
+  direction    MoneyDirection
+  amount       BigInt
+  source       String
+  sourceRef    String
+  description  String?
+  metadata     Json?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, source, sourceRef])
+  @@index([userId, occurredAt])
+  @@index([userId, category])
+}
+
+/// Unified chronological timeline entries.
+model TimelineEvent {
+  id          String   @id @default(cuid())
+  userId      String
+  occurredAt  DateTime
+  type        String
+  category    String?
+  title       String
+  description String?
+  amount      BigInt?
+  metadata    Json?
+  source      String
+  sourceRef   String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, source, sourceRef])
+  @@index([userId, occurredAt])
+  @@index([userId, type])
+}
+
+/* -------------------------------------------------------------------------- */
+/* Faction foundation                                                         */
+/* -------------------------------------------------------------------------- */
+
+model Faction {
+  id        Int      @id
+  name      String
+  tag       String?
+  leaderId  Int?
+  coLeaderId Int?
+  respect   Int?
+  daysOld   Int?
+  capacity  Int?
+  members   Int?
+  bestChain Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships FactionMembership[]
+  snapshots   FactionSnapshot[]
+  rankedWars  RankedWar[]
+}
+
+model FactionMembership {
+  id        String    @id @default(cuid())
+  userId    String
+  factionId Int
+  joinedAt  DateTime?
+  leftAt    DateTime?
+  isActive  Boolean   @default(true)
+  sourceRef String
+  createdAt DateTime  @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  faction Faction @relation(fields: [factionId], references: [id])
+
+  @@unique([userId, factionId, sourceRef])
+  @@index([userId, isActive])
+}
+
+model FactionSnapshot {
+  id         String   @id @default(cuid())
+  userId     String
+  factionId  Int
+  capturedAt DateTime
+  members    Int?
+  respect    Int?
+  raw        Json?
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  faction Faction @relation(fields: [factionId], references: [id])
+
+  @@unique([userId, capturedAt])
+  @@index([factionId, capturedAt])
+}
+
+/* -------------------------------------------------------------------------- */
+/* Torn item catalog cache (public /torn/items)                               */
+/* -------------------------------------------------------------------------- */
+
+model TornItemCatalog {
+  itemId      Int      @id
+  name        String
+  type        String
+  marketPrice BigInt?
+  updatedAt   DateTime @updatedAt
+}
+
+/* -------------------------------------------------------------------------- */
+/* Settings                                                                   */
+/* -------------------------------------------------------------------------- */
+
+/// Key/value application settings. userId = "" denotes a global setting.
+model AppSetting {
+  id        String   @id @default(cuid())
+  userId    String   @default("")
+  key       String
+  value     Json
+  updatedAt DateTime @updatedAt
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, key])
+}
+
+/* -------------------------------------------------------------------------- */
+/* Ranked war foundation (schema-only placeholder, not implemented in MVP)    */
+/* -------------------------------------------------------------------------- */
+
+model RankedWar {
+  id               String    @id @default(cuid())
+  tornWarId        Int       @unique
+  factionId        Int
+  opponentFactionId Int?
+  startedAt        DateTime?
+  endedAt          DateTime?
+  winnerFactionId  Int?
+  targetScore      Int?
+  raw              Json?
+  createdAt        DateTime  @default(now())
+
+  faction   Faction           @relation(fields: [factionId], references: [id])
+  members   RankedWarMember[]
+  attacks   RankedWarAttack[]
+  payouts   RankedWarPayout[]
+}
+
+model RankedWarMember {
+  id       String   @id @default(cuid())
+  warId    String
+  userId   String?  @unique
+  tornId   Int
+  score    Int?
+  hits     Int?
+  respect  Int?
+  joinedAt DateTime?
+
+  war  RankedWar @relation(fields: [warId], references: [id], onDelete: Cascade)
+  user User?     @relation(fields: [userId], references: [id])
+
+  @@unique([warId, tornId])
+}
+
+model RankedWarAttack {
+  id            String   @id @default(cuid())
+  warId         String
+  attackerTornId Int
+  defenderTornId Int
+  occurredAt    DateTime
+  result        String?
+  respectGained Int?
+  raw           Json?
+
+  war RankedWar @relation(fields: [warId], references: [id], onDelete: Cascade)
+
+  @@index([warId, occurredAt])
+}
+
+model RankedWarPayout {
+  id        String    @id @default(cuid())
+  warId     String
+  userId    String
+  amount    BigInt
+  paidAt    DateTime?
+  sourceRef String
+
+  war  RankedWar @relation(fields: [warId], references: [id], onDelete: Cascade)
+  user User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, sourceRef])
+}

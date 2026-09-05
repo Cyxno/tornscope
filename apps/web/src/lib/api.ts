@@ -1,0 +1,100 @@
+import type { MeResponse } from "@tornscope/shared";
+
+/**
+ * Typed browser API client. All calls go through the relative /api proxy.
+ * Errors surface as ApiClientError with the backend's stable error code.
+ */
+
+export class ApiClientError extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+    readonly status: number
+  ) {
+    super(message);
+    this.name = "ApiClientError";
+  }
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(`/api${path}`, {
+      headers: { accept: "application/json" },
+      ...init,
+    });
+  } catch {
+    throw new ApiClientError("network_error", "Could not reach the TornScope API. Is the backend running?", 0);
+  }
+
+  const body = (await response.json().catch(() => null)) as unknown;
+
+  if (!response.ok) {
+    const err = (body as { error?: { code?: string; message?: string } } | null)?.error;
+    throw new ApiClientError(err?.code ?? "unknown_error", err?.message ?? `Request failed (${response.status})`, response.status);
+  }
+
+  return body as T;
+}
+
+export const api = {
+  get: <T>(path: string) => request<T>(path),
+  post: <T>(path: string, body?: unknown) =>
+    request<T>(path, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body ?? {}),
+    }),
+  del: <T>(path: string) => request<T>(path, { method: "DELETE" }),
+};
+
+/* Typed helpers matching the shared contracts. */
+
+export interface QueryRange {
+  preset: string;
+  from?: number;
+  to?: number;
+}
+
+export function rangeQuery(range: QueryRange, extra: Record<string, string> = {}): string {
+  const params = new URLSearchParams({ preset: range.preset });
+  if (range.from) params.set("from", String(range.from));
+  if (range.to) params.set("to", String(range.to));
+  for (const [k, v] of Object.entries(extra)) params.set(k, v);
+  return params.toString();
+}
+
+export const endpoints = {
+  me: () => api.get<MeResponse>("/me"),
+  dashboard: (range: QueryRange) => api.get(`/dashboard?${rangeQuery(range)}`),
+  networth: (range: QueryRange) => api.get(`/networth?${rangeQuery(range)}`),
+  moneySummary: (range: QueryRange) => api.get(`/money/summary?${rangeQuery(range)}`),
+  moneyEvents: (range: QueryRange, opts: { limit?: number; cursor?: string; category?: string; direction?: string; search?: string }) => {
+    const params = new URLSearchParams({ preset: range.preset, limit: String(opts.limit ?? 50) });
+    if (range.from) params.set("from", String(range.from));
+    if (range.to) params.set("to", String(range.to));
+    if (opts.cursor) params.set("cursor", opts.cursor);
+    if (opts.category) params.set("category", opts.category);
+    if (opts.direction) params.set("direction", opts.direction);
+    if (opts.search) params.set("search", opts.search);
+    return api.get(`/money/events?${params.toString()}`);
+  },
+  drugsSummary: (range: QueryRange, drugs: string[] | null) =>
+    api.get(`/drugs/summary?${rangeQuery(range, drugs && drugs.length > 0 ? { drugs: drugs.join(",") } : {})}`),
+  travelSummary: (range: QueryRange) => api.get(`/travel/summary?${rangeQuery(range)}`),
+  travelHistory: (range: QueryRange, limit = 50) => api.get(`/travel/history?${rangeQuery(range)}&limit=${limit}`),
+  timeline: (range: QueryRange, opts: { limit?: number; cursor?: string; type?: string } = {}) => {
+    const params = new URLSearchParams({ preset: range.preset, limit: String(opts.limit ?? 50) });
+    if (range.from) params.set("from", String(range.from));
+    if (range.to) params.set("to", String(range.to));
+    if (opts.cursor) params.set("cursor", opts.cursor);
+    if (opts.type) params.set("type", opts.type);
+    return api.get(`/timeline?${params.toString()}`);
+  },
+  syncStatus: () => api.get("/sync/status"),
+  syncRun: (resource: string) => api.post("/sync/run", { resource }),
+  setDemoView: (enabled: boolean) => api.post<MeResponse>("/demo-view", { enabled }),
+  apiKeyStatus: () => api.get("/settings/api-key"),
+  saveApiKey: (key: string) => api.post("/settings/api-key", { key }),
+  deleteApiKey: () => api.del("/settings/api-key"),
+};

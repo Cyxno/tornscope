@@ -1,0 +1,129 @@
+/**
+ * Torn domain constants shared across frontend, API and workers.
+ * Values are based on the official Torn API v2 OpenAPI spec (CountryEnum)
+ * and long-stable Torn game concepts. Anything that cannot be sourced
+ * statically is resolved at runtime from the API instead.
+ */
+
+/** Travel destinations from Torn API v2 `CountryEnum` (swagger openapi.json). */
+export const TRAVEL_DESTINATIONS = [
+  "Argentina",
+  "Canada",
+  "Cayman Islands",
+  "China",
+  "Hawaii",
+  "Japan",
+  "Mexico",
+  "South Africa",
+  "Switzerland",
+  "UAE",
+  "United Kingdom",
+] as const;
+
+export type TravelDestination = (typeof TRAVEL_DESTINATIONS)[number];
+export const TORN_HOME = "Torn" as const;
+
+/** Item classes we track for travel profitability. */
+export const TRAVEL_ITEM_CATEGORIES = ["plushie", "flower", "other"] as const;
+export type TravelItemCategory = (typeof TRAVEL_ITEM_CATEGORIES)[number];
+
+/**
+ * Well-known Torn drug item names (stable item catalog names).
+ * Used to classify drug log entries; the authoritative id->name mapping is
+ * resolved from /torn/items at runtime and cached.
+ */
+export const TORN_DRUG_NAMES = [
+  "Cannabis",
+  "Ecstasy",
+  "Ketamine",
+  "LSD",
+  "Opium",
+  "PCP",
+  "Shrooms",
+  "Speed",
+  "Vicodin",
+  "Xanax",
+  "Love Juice",
+] as const;
+
+export type TornDrugName = (typeof TORN_DRUG_NAMES)[number];
+
+/** Central money ledger categories. */
+export const MONEY_CATEGORIES = [
+  "crime",
+  "mugging",
+  "ranked_war",
+  "faction",
+  "travel",
+  "plushie",
+  "flower",
+  "stock",
+  "rehab",
+  "drugs",
+  "items",
+  "casino",
+  "points",
+  "trading",
+  "bazaar",
+  "city_bank",
+  "cayman_bank",
+  "salary",
+  "education",
+  "hospital",
+  "jail",
+  "auction",
+  "missions",
+  "other",
+] as const;
+
+export type MoneyCategory = (typeof MONEY_CATEGORIES)[number];
+
+export const MONEY_DIRECTIONS = ["income", "expense", "neutral"] as const;
+export type MoneyDirection = (typeof MONEY_DIRECTIONS)[number];
+
+/**
+ * Sync resources tracked in sync_state.
+ * Frequencies are defaults (seconds) and configurable via env in the worker.
+ */
+export const SYNC_RESOURCES = [
+  "profile",
+  "personal_stats",
+  "networth",
+  "drugs",
+  "travel",
+  "rehab",
+  "money_logs",
+  "events",
+  "faction_basic",
+  "torn_catalog",
+] as const;
+
+export type SyncResource = (typeof SYNC_RESOURCES)[number];
+
+export const DEFAULT_SYNC_FREQUENCIES_SECONDS: Record<SyncResource, number> = {
+  profile: 300,
+  personal_stats: 3600,
+  networth: 3600,
+  drugs: 600,
+  travel: 600,
+  rehab: 3600,
+  money_logs: 600,
+  events: 300,
+  faction_basic: 21600,
+  torn_catalog: 86400,
+};
+
+/** Dedicated demo account — demo data is always scoped to this user only. */
+export const DEMO_USER_EMAIL = "demo@tornscope.local";
+
+/**
+ * Keyword router used to classify Torn log entries by their category title.
+ * Order matters: more specific routes are checked first (e.g. "Drug
+ * rehabilitation" must match rehab, not drugs).
+ */
+export const LOG_CATEGORY_ROUTES = {
+  rehab: ["rehab", "rehabilitation"],
+  drugs: ["drug"],
+  travel: ["travel", "flight", "abroad"],
+  money: ["trade", "money", "bazaar", "bank", "casino", "stock", "salary", "points", "auction", "crime", "mug", "payout"],
+} as const satisfies Record<string, readonly string[]>;

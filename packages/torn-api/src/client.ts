@@ -1,0 +1,229 @@
+import type { ZodType } from "zod";
+import { RateLimiter, sleep } from "./rate-limiter.js";
+import { TornApiError, TornNetworkError, tornKindForCode } from "./errors.js";
+
+export interface TornClientLogger {
+  debug?: (obj: object, msg?: string) => void;
+  info?: (obj: object, msg?: string) => void;
+  warn?: (obj: object, msg?: string) => void;
+  error?: (obj: object, msg?: string) => void;
+}
+
+export interface TornApiClientOptions {
+  baseUrl: string;
+  minRequestIntervalMs: number;
+  maxRetries: number;
+  retryBaseDelayMs: number;
+  timeoutMs: number;
+  logger: TornClientLogger;
+  /** Shared limiter across client instances (one process = one limiter). */
+  rateLimiter?: RateLimiter;
+  fetchImpl?: typeof fetch;
+}
+
+export const DEFAULT_TORN_CLIENT_OPTIONS: Omit<TornApiClientOptions, "logger" | "rateLimiter"> = {
+  baseUrl: process.env.TORN_API_BASE_URL ?? "https://api.torn.com/v2",
+  minRequestIntervalMs: Number(process.env.TORN_API_MIN_REQUEST_INTERVAL_MS ?? 700),
+  maxRetries: 4,
+  retryBaseDelayMs: 1500,
+  timeoutMs: 20_000,
+};
+
+const SAFE_DEFAULT_LOGGER: TornClientLogger = {
+  warn: (obj, msg) => console.warn("[torn-api]", msg ?? "", JSON.stringify(obj)),
+  error: (obj, msg) => console.error("[torn-api]", msg ?? "", JSON.stringify(obj)),
+};
+
+/** Torn v2 pagination metadata. */
+export interface TornMetadata {
+  links?: { next?: string | null; prev?: string | null };
+  nanostamp?: string;
+}
+
+interface RawTornResponse {
+  _metadata?: TornMetadata;
+  error?: { code: number; error: string };
+  [key: string]: unknown;
+}
+
+export interface TornRequestParams {
+  [name: string]: string | number | boolean | undefined | null;
+}
+
+export interface TornPage<T> {
+  data: T;
+  metadata: TornMetadata | undefined;
+}
+
+export class TornApiClient {
+  private readonly limiter: RateLimiter;
+  private readonly opts: TornApiClientOptions;
+
+  constructor(
+    /** API key is held privately and never logged. */
+    private readonly apiKey: string,
+    options: Partial<TornApiClientOptions> = {}
+  ) {
+    this.opts = {
+      ...DEFAULT_TORN_CLIENT_OPTIONS,
+      logger: SAFE_DEFAULT_LOGGER,
+      ...options,
+    } as TornApiClientOptions;
+    this.limiter = options.rateLimiter ?? new RateLimiter(this.opts.minRequestIntervalMs);
+  }
+
+  /**
+   * Perform a GET request, normalizing errors and retrying transient failures.
+   * The API key is sent via the Authorization header so it never appears in
+   * URLs, logs or pagination links.
+   */
+  async get<T>(path: string, params: TornRequestParams = {}, schema?: ZodType<T>): Promise<T> {
+    const page = await this.getRaw(path, params);
+    if (schema) return schema.parse(page.data);
+    return page.data as T;
+  }
+
+  /**
+   * GET that also returns pagination metadata (for callers that follow pages).
+   */
+  async getRaw(path: string, params: TornRequestParams = {}): Promise<TornPage<unknown>> {
+    let attempt = 0;
+    // Infinite loop protection: bounded retries with exponential backoff.
+    for (;;) {
+      attempt += 1;
+      try {
+        return await this.limiter.run(() => this.requestOnce(path, params));
+      } catch (err) {
+        const retryable = err instanceof TornApiError && err.retryable;
+        if (!retryable || attempt > this.opts.maxRetries) throw err;
+        const isRateLimit = err instanceof TornApiError && err.kind === "rate_limited";
+        const delay = this.backoffDelay(attempt, isRateLimit);
+        this.opts.logger.warn?.({ path: sanitizePath(path), attempt, delayMs: delay }, "retrying torn api request");
+        await sleep(delay);
+      }
+    }
+  }
+
+  /**
+   * Follow Torn's `_metadata.links.next` pagination. Fetches pages until the
+   * last page or `onPage` returns false. Links are re-issued through the
+   * authenticated client (any embedded key param is stripped before logging
+   * or replaying).
+   */
+  async paginate(
+    path: string,
+    params: TornRequestParams,
+    onPage: (page: { data: Record<string, unknown>; metadata: TornMetadata | undefined }) => boolean | void | Promise<boolean | void>,
+    opts: { maxPages?: number } = {}
+  ): Promise<void> {
+    const maxPages = opts.maxPages ?? 500;
+    let currentPath: string | null = path;
+    let currentParams = params;
+
+    for (let page = 0; page < maxPages; page++) {
+      const result = await this.getRaw(currentPath, currentParams);
+      const data = result.data as Record<string, unknown>;
+      const again = await onPage({ data, metadata: result.metadata });
+      if (again === false) return;
+
+      const next = result.metadata?.links?.next ?? null;
+      if (!next) return;
+      const parsed = splitLink(next);
+      if (!parsed) return;
+      currentPath = parsed.path;
+      currentParams = parsed.params;
+    }
+  }
+
+  private backoffDelay(attempt: number, rateLimited: boolean): number {
+    const exponential = this.opts.retryBaseDelayMs * Math.pow(2, attempt - 1);
+    const jitter = Math.random() * 0.3 * exponential;
+    return Math.round(exponential + jitter + (rateLimited ? 2000 : 0));
+  }
+
+  private async requestOnce(path: string, params: TornRequestParams): Promise<TornPage<unknown>> {
+    const url = this.buildUrl(path, params);
+    const startedAt = Date.now();
+    let response: Response;
+    try {
+      response = await this.opts.fetchImpl!(url, {
+        method: "GET",
+        headers: {
+          Authorization: `ApiKey ${this.apiKey}`,
+          Accept: "application/json",
+        },
+        signal: AbortSignal.timeout(this.opts.timeoutMs),
+      });
+    } catch (err) {
+      throw new TornNetworkError(`torn api request failed: ${sanitizePath(path)}`, err);
+    }
+
+    const durationMs = Date.now() - startedAt;
+    this.opts.logger.debug?.({ path: sanitizePath(path), status: response.status, durationMs }, "torn api request");
+
+    let body: RawTornResponse;
+    try {
+      body = (await response.json()) as RawTornResponse;
+    } catch {
+      if (!response.ok) {
+        throw new TornApiError(`torn api returned http ${response.status}`, {
+          kind: "transient",
+          status: response.status,
+          retryable: response.status >= 500,
+        });
+      }
+      throw new TornApiError("torn api returned invalid json", { kind: "permanent", status: response.status });
+    }
+
+    if (body.error) {
+      const { kind } = tornKindForCode(body.error.code);
+      throw new TornApiError(`torn api error ${body.error.code}: ${body.error.error}`, {
+        kind,
+        tornCode: body.error.code,
+        status: response.status,
+      });
+    }
+
+    if (!response.ok) {
+      throw new TornApiError(`torn api returned http ${response.status}`, {
+        kind: response.status >= 500 ? "transient" : "permanent",
+        status: response.status,
+        retryable: response.status >= 500,
+      });
+    }
+
+    return { data: body, metadata: body._metadata };
+  }
+
+  private buildUrl(path: string, params: TornRequestParams): string {
+    const base = this.opts.baseUrl.replace(/\/$/, "");
+    const clean = path.startsWith("/") ? path : `/${path}`;
+    const search = new URLSearchParams();
+    for (const [name, value] of Object.entries(params)) {
+      if (value === undefined || value === null || value === "") continue;
+      search.set(name, String(value));
+    }
+    const qs = search.toString();
+    return `${base}${clean}${qs ? `?${qs}` : ""}`;
+  }
+}
+
+/** Split an absolute Torn pagination link into path + params (key stripped). */
+export function splitLink(link: string): { path: string; params: TornRequestParams } | null {
+  try {
+    const url = new URL(link);
+    const params: TornRequestParams = {};
+    for (const [name, value] of url.searchParams.entries()) {
+      if (name === "key") continue; // never propagate or log keys
+      params[name] = value;
+    }
+    return { path: url.pathname, params };
+  } catch {
+    return null;
+  }
+}
+
+/** Strip query strings so request logging never sees URL params. */
+export function sanitizePath(path: string): string {
+  return path.split("?")[0] ?? path;
+}

@@ -1,0 +1,12 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/shared" },
+    { "path": "packages/ui" },
+    { "path": "packages/analytics" },
+    { "path": "packages/torn-api" },
+    { "path": "packages/database" },
+    { "path": "apps/api" },
+    { "path": "apps/worker" }
+  ]
+}
