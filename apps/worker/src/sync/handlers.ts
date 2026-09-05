@@ -586,6 +586,7 @@ export interface NormalizedAttack {
   result: string;
   respectDelta: number | null;
   modifiers: Record<string, unknown> | null;
+  raw: unknown;
 }
 
 /**
@@ -612,6 +613,7 @@ export function normalizeAttack(a: { id: number; started: number; ended?: number
     result: a.result,
     respectDelta,
     modifiers: (a.modifiers ?? null) as Record<string, unknown> | null,
+    raw: a,
   };
 };
 
