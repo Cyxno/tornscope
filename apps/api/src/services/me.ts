@@ -184,6 +184,8 @@ export async function saveApiKey(user: { id: string }, apiKey: string): Promise<
 
   // Sync schedules exist per user from the first valid key onward.
   await ensureSyncStates(db, user.id);
+  // New credentials: access-denied categories may retry promptly (cursor kept).
+  await resetAccessDeniedCategories(db, user.id);
   // A real key always takes precedence over the demo view (this owner only).
   await clearDemoViewFlag(db, user.id);
 
@@ -232,10 +234,19 @@ export async function saveApiKey(user: { id: string }, apiKey: string): Promise<
 }
 
 /** DELETE /api/settings/api-key: revoke (data history is kept). */
+/** New credentials: let access-denied categories retry promptly (cursor kept). */
+async function resetAccessDeniedCategories(db: ReturnType<typeof getPrismaClient>, userId: string): Promise<void> {
+  await db.syncCategoryState.updateMany({
+    where: { userId, status: "access_denied" },
+    data: { status: "active", errorMessage: null, nextRunAt: new Date(), consecutiveEmptyRuns: 0 },
+  });
+}
+
 export async function deleteApiKey(userId: string): Promise<void> {
   const db = getPrismaClient();
   await db.apiCredential.updateMany({
     where: { userId, revokedAt: null },
     data: { revokedAt: new Date() },
   });
+  await resetAccessDeniedCategories(db, userId);
 }

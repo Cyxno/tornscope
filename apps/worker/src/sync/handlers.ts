@@ -26,9 +26,11 @@ import {
   upsertTornAccount,
   getLogCategories,
   getSyncCategoryState,
+  getSyncCategoryStates,
   upsertSyncCategoryState,
   assembleTripsFromTransitions,
 } from "@tornscope/database";
+import { isCategoryDue, nextCategorySchedule, SCHEDULE_THRESHOLDS } from "./schedule.js";
 import { getWorkerContext } from "../context.js";
 import { logger } from "../env.js";
 
@@ -49,6 +51,8 @@ export interface SyncHandlerArgs {
   torn: TornEndpoints;
   lastTimestamp: bigint | null;
   /** Report cumulative records successfully written so far. */
+  /** Manual "Sync Now": walk every category, ignoring adaptive nextRunAt. */
+  force?: boolean;
   onProgress?: (recordsSoFar: number) => void;
 }
 
@@ -64,6 +68,10 @@ export type SyncHandlerResult = {
   /** Categories that failed this sync (each recorded in its own state). */
   failedCategories?: number;
   totalCategories?: number;
+  /** Adaptive scheduling metrics for this run. */
+  categoriesDue?: number;
+  categoriesProcessed?: number;
+  categoriesSkipped?: number;
 };
 
 type SyncHandler = (args: SyncHandlerArgs) => Promise<SyncHandlerResult>;
@@ -349,17 +357,50 @@ async function syncLogsByCategories(args: SyncHandlerArgs, resource: SyncResourc
   const nowSec = Math.floor(Date.now() / 1000);
   const resourceCursor = args.lastTimestamp;
 
+  // Adaptive scheduling: load every category state once, decide due/skip.
+  const allStates = await getSyncCategoryStates(ctx.db, args.userId, resource);
+  const stateByCategory = new Map(allStates.map((st) => [st.categoryId, st]));
+
+  interface DueCategory { category: { id: number; title: string }; state: (typeof allStates)[number] | null; priority: number }
+  const dueCategories: DueCategory[] = [];
+  let categoriesSkipped = 0;
+
+  for (const category of categoryIds) {
+    const state = stateByCategory.get(category.id) ?? null;
+    if (!args.force && !isCategoryDue(state?.nextRunAt ?? null, nowSec)) {
+      categoriesSkipped += 1;
+      continue;
+    }
+    const schedule = nextCategorySchedule({
+      lastNetNewRecords: null,
+      lastActivityAt: state?.lastActivityAt ? Math.floor(state.lastActivityAt.getTime() / 1000) : null,
+      consecutiveEmptyRuns: state?.consecutiveEmptyRuns ?? 0,
+      status: state?.status ?? "active",
+      now: nowSec,
+    });
+    dueCategories.push({ category, state, priority: schedule.priority });
+  }
+  dueCategories.sort((a, b) => a.priority - b.priority);
+
   let records = 0;
   let pagesWalked = 0;
   let maxTimestamp = resourceCursor !== null ? Number(resourceCursor) : 0;
   const stopReasons: BackwardStopReason[] = [];
   let sourceEarliest: number | null = null;
   let failedCategories = 0;
-  let totalCategories = 0;
+  let totalCategories = categoryIds.length;
+  let categoriesProcessed = 0;
 
-  for (const category of categoryIds) {
-    totalCategories += 1;
-    let state = await getSyncCategoryState(ctx.db, args.userId, resource, category.id);
+  for (const { category, state: existingState } of dueCategories) {
+    // Rate budget: stop starting optional categories once this run reached
+    // the page budget — they stay due and run next cycle. The global request
+    // spacing / rate limiter is unaffected.
+    if (pagesWalked >= SCHEDULE_THRESHOLDS.RUN_PAGE_BUDGET) {
+      categoriesSkipped += 1;
+      continue;
+    }
+    categoriesProcessed += 1;
+    let state = existingState;
     if (state === null && resourceCursor !== null) {
       // Migration bridge: the resource-level backfill already stored this
       // category's window — seed from its watermark instead of re-walking.
@@ -411,15 +452,31 @@ async function syncLogsByCategories(args: SyncHandlerArgs, resource: SyncResourc
         sourceEarliest = walk.oldestTimestamp;
       }
       records += categoryRecords;
+      // Activity: rows above the category's previous cursor are genuinely new.
+      const previousCursor = state?.lastTimestamp ?? null;
+      const netNew = maxSeen !== null && (previousCursor === null || maxSeen > Number(previousCursor));
+      const consecutiveEmptyRuns = netNew ? 0 : (state?.consecutiveEmptyRuns ?? 0) + 1;
+      const lastActivityAt = netNew ? new Date() : state?.lastActivityAt ?? null;
+      const schedule = nextCategorySchedule({
+        lastNetNewRecords: netNew ? categoryRecords : 0,
+        lastActivityAt: lastActivityAt ? Math.floor(lastActivityAt.getTime() / 1000) : null,
+        consecutiveEmptyRuns,
+        status: "active",
+        now: nowSec,
+      });
       await upsertSyncCategoryState(ctx.db, args.userId, resource, category.id, {
         categoryTitle: category.title,
         status: walk.stopReason === "source_exhausted" ? "source_exhausted" : "active",
-        lastTimestamp: advanceCursor(maxSeen, state?.lastTimestamp ?? null),
+        lastTimestamp: advanceCursor(maxSeen, previousCursor),
         lastSuccessAt: new Date(),
         lastWalkPages: walk.pages,
         lastRecordsInserted: categoryRecords,
         sourceEarliestAt: walk.oldestTimestamp !== null ? BigInt(walk.oldestTimestamp) : null,
         errorMessage: null,
+        nextRunAt: new Date(schedule.nextRunAt * 1000),
+        frequencySeconds: schedule.nextFrequencySeconds,
+        lastActivityAt,
+        consecutiveEmptyRuns,
       });
       logger.info(
         { userId: args.userId, resource, category: category.id, title: category.title, pages: walk.pages, inserted: categoryRecords, stopReason: walk.stopReason, initial: plan.initial },
@@ -430,10 +487,21 @@ async function syncLogsByCategories(args: SyncHandlerArgs, resource: SyncResourc
       // record it in its own state and move on.
       const denied = err instanceof TornApiError && err.kind === "access_denied";
       failedCategories += 1;
+      const consecutiveEmptyRuns = (state?.consecutiveEmptyRuns ?? 0) + 1;
+      const retrySchedule = nextCategorySchedule({
+        lastNetNewRecords: 0,
+        lastActivityAt: state?.lastActivityAt ? Math.floor(state.lastActivityAt.getTime() / 1000) : null,
+        consecutiveEmptyRuns,
+        status: denied ? "access_denied" : "failed",
+        now: nowSec,
+      });
       await upsertSyncCategoryState(ctx.db, args.userId, resource, category.id, {
         categoryTitle: category.title,
         status: denied ? "access_denied" : "failed",
         errorMessage: (err as Error).message.slice(0, 300),
+        nextRunAt: new Date(retrySchedule.nextRunAt * 1000),
+        frequencySeconds: retrySchedule.nextFrequencySeconds,
+        consecutiveEmptyRuns,
       });
       logger.warn({ userId: args.userId, resource, category: category.id, err: (err as Error).message }, "category walk failed; continuing");
     }
@@ -457,6 +525,9 @@ async function syncLogsByCategories(args: SyncHandlerArgs, resource: SyncResourc
     sourceEarliestAt: sourceEarliest !== null ? BigInt(sourceEarliest) : null,
     failedCategories,
     totalCategories,
+    categoriesDue: dueCategories.length,
+    categoriesProcessed,
+    categoriesSkipped,
   };
 }
 

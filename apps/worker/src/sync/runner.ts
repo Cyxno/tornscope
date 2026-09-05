@@ -20,7 +20,11 @@ export interface SyncOutcome {
  * - heartbeats progress (records written so far) so long initial backfills
  *   are visible in Sync Status and never mistaken for a dead worker
  */
-export async function runResourceSync(userId: string, resource: SyncResource): Promise<SyncOutcome> {
+export async function runResourceSync(
+  userId: string,
+  resource: SyncResource,
+  opts: { /** Manual "Sync Now": ignore adaptive per-category schedules. */ force?: boolean } = {}
+): Promise<SyncOutcome> {
   const ctx = getWorkerContext();
   const startedAt = new Date();
   logger.info({ userId, resource, stage: "job_received" }, "sync job received");
@@ -82,6 +86,7 @@ export async function runResourceSync(userId: string, resource: SyncResource): P
       apiKey,
       torn,
       lastTimestamp: claim.state.lastTimestamp,
+      force: opts.force === true,
       onProgress,
     });
     logger.info({ userId, resource, stage: "records_written", records: result.records }, "torn responses normalized and written");
@@ -94,10 +99,12 @@ export async function runResourceSync(userId: string, resource: SyncResource): P
     await completeResource(ctx.db, userId, resource, {
       success: true,
       recordsCollected: 0, // already committed through progress heartbeats
+      // Zero-due adaptive cycles omit these — the last full walk's coverage
+      // data stays visible instead of being overwritten with nulls.
       lastTimestamp: result.lastTimestamp ?? undefined,
-      stopReason: result.stopReason ?? null,
-      sourceEarliestAt: result.sourceEarliestAt ?? null,
-      lastWalkPages: result.pagesWalked ?? null,
+      stopReason: result.stopReason,
+      sourceEarliestAt: result.sourceEarliestAt,
+      lastWalkPages: result.pagesWalked,
       nextRunAt: new Date(Date.now() + frequency * 1000),
       now: new Date(),
     });
@@ -106,6 +113,14 @@ export async function runResourceSync(userId: string, resource: SyncResource): P
       finishedAt: new Date(),
       status: "success",
       recordsCollected: result.records,
+      stats: {
+        categoriesTotal: result.totalCategories ?? null,
+        categoriesDue: result.categoriesDue ?? null,
+        categoriesProcessed: result.categoriesProcessed ?? null,
+        categoriesSkipped: result.categoriesSkipped ?? null,
+        pagesWalked: result.pagesWalked ?? null,
+        recordsInserted: result.records,
+      },
     });
     logger.info({ userId, resource, stage: "job_completed", records: result.records, durationMs: Date.now() - startedAt.getTime() }, "sync success");
     return { ok: true, records: result.records };

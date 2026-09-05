@@ -75,6 +75,7 @@ export async function getSyncHealth(userId: string) {
 
   // Per-category cursor detail for walk resources (money, drugs, ...).
   const WALK_RESOURCES = ["drugs", "rehab", "money_logs", "travel"];
+  const nowSec = Math.floor(Date.now() / 1000);
   const categoryStates = new Map<string, Awaited<ReturnType<typeof getSyncCategoryStates>>>();
   for (const resource of WALK_RESOURCES) {
     categoryStates.set(resource, await getSyncCategoryStates(db, userId, resource));
@@ -135,7 +136,11 @@ export async function getSyncHealth(userId: string) {
         lastWalkPages: c.lastWalkPages,
         lastRecordsInserted: c.lastRecordsInserted,
         errorMessage: c.errorMessage,
+        lastActivityAt: sec(c.lastActivityAt),
+        frequencySeconds: c.frequencySeconds,
+        nextRunAt: sec(c.nextRunAt),
       })),
+      scheduleSummary: summarizeSchedule(categoryStates.get(s.resource) ?? [], nowSec),
     })),
     /** Requested history window (worker env default) — coverage is judged against it. */
     requestedHistoryDays: Number(process.env.TORN_SYNC_INITIAL_HISTORY_DAYS ?? 180),
@@ -155,6 +160,24 @@ export async function getSyncHealth(userId: string) {
 const WALK_RESOURCES = new Set(["drugs", "rehab", "money_logs", "travel", "events"]);
 
 type CategoryStateLike = { status: string; lastSuccessAt: Date | null };
+
+interface ScheduleStateLike {
+  status: string;
+  nextRunAt: Date | null;
+  lastActivityAt: Date | null;
+}
+
+/** Aggregate adaptive-schedule tiers for a resource (Sync Status summary). */
+function summarizeSchedule(categories: ScheduleStateLike[], nowSec: number) {
+  const due = categories.filter((c) => c.nextRunAt === null || Math.floor(c.nextRunAt.getTime() / 1000) <= nowSec).length;
+  const hot = categories.filter((c) => c.lastActivityAt !== null && nowSec - Math.floor(c.lastActivityAt.getTime() / 1000) <= 3600).length;
+  const warm = categories.filter((c) => c.lastActivityAt !== null && nowSec - Math.floor(c.lastActivityAt.getTime() / 1000) > 3600 && nowSec - Math.floor(c.lastActivityAt.getTime() / 1000) <= 6 * 3600).length;
+  const cold = categories.filter((c) => c.lastActivityAt !== null && nowSec - Math.floor(c.lastActivityAt.getTime() / 1000) > 6 * 3600 && nowSec - Math.floor(c.lastActivityAt.getTime() / 1000) <= 48 * 3600).length;
+  const veryCold = categories.filter((c) => c.lastActivityAt === null || nowSec - Math.floor(c.lastActivityAt.getTime() / 1000) > 48 * 3600).length;
+  const retry = categories.filter((c) => c.status === "failed").length;
+  const accessDenied = categories.filter((c) => c.status === "access_denied").length;
+  return { total: categories.length, due, hot, warm, cold, veryCold, retry, accessDenied };
+}
 
 function deriveResourcePhase(s: SyncStateRow, categories: CategoryStateLike[] = []): "queued" | "running" | "backfilling" | "caught_up" | "partial" | "failed" {
   if (s.status === "running") {
@@ -254,6 +277,12 @@ export async function restartBackfill(userId: string): Promise<{ queued: number;
   await db.syncState.updateMany({
     where: { userId, status: { not: "running" } },
     data: { lastTimestamp: null, cursor: null, nextRunAt: new Date() },
+  });
+  // A real historical backfill ignores adaptive scheduling: every category
+  // re-walks the configured window immediately. Cursors reset, history kept.
+  await db.syncCategoryState.updateMany({
+    where: { userId },
+    data: { lastTimestamp: null, nextRunAt: new Date(), consecutiveEmptyRuns: 0, status: "active" },
   });
 
   const ctx = getApiContext();

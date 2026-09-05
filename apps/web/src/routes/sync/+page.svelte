@@ -21,6 +21,15 @@
   let syncing = $state<Record<string, boolean>>({});
   let expandedCategories = $state<Set<string>>(new Set());
 
+  function scheduleSummaryText(sum: {
+    total: number; due: number; hot: number; warm: number; cold: number; veryCold: number; retry: number; accessDenied: number;
+  }): string {
+    let text = `${sum.total} categories · ${sum.due} due now · ${sum.hot} hot · ${sum.warm} warm · ${sum.cold} cold · ${sum.veryCold} very cold`;
+    if (sum.retry > 0) text += ` · ${sum.retry} retrying`;
+    if (sum.accessDenied > 0) text += ` · ${sum.accessDenied} access denied`;
+    return text;
+  }
+
   function toggleCategories(resource: string) {
     const next = new Set(expandedCategories);
     if (next.has(resource)) next.delete(resource);
@@ -336,6 +345,7 @@
             </li>
             {#if expandedCategories.has(row.resource) && row.categories.length > 0}
               <li class="border-b border-border/50 bg-bg-raise/40 px-4 py-3">
+                <p class="mb-2 text-[11px] text-fg-muted">{scheduleSummaryText(row.scheduleSummary)}</p>
                 <div class="overflow-x-auto">
                   <table class="w-full text-left text-xs">
                     <thead>
@@ -345,6 +355,8 @@
                         <th class="py-1.5 pr-3 font-medium">Cursor</th>
                         <th class="py-1.5 pr-3 text-right font-medium">Pages</th>
                         <th class="py-1.5 pr-3 text-right font-medium">Inserted</th>
+                        <th class="py-1.5 pr-3 font-medium">Interval</th>
+                        <th class="py-1.5 pr-3 font-medium">Next run</th>
                         <th class="py-1.5 pr-3 font-medium">Status</th>
                         <th class="py-1.5 font-medium">Error</th>
                       </tr>
@@ -357,6 +369,8 @@
                           <td class="tnum py-1.5 pr-3 text-fg-muted">{cat.lastTimestamp ? formatDateTime(cat.lastTimestamp) : "—"}</td>
                           <td class="tnum py-1.5 pr-3 text-right text-fg-muted">{cat.lastWalkPages ?? "—"}</td>
                           <td class="tnum py-1.5 pr-3 text-right text-fg-muted">{cat.lastRecordsInserted ?? "—"}</td>
+                          <td class="tnum py-1.5 pr-3 text-fg-muted">{cat.frequencySeconds ? Math.round(cat.frequencySeconds / 60) + "m" : "—"}</td>
+                          <td class="tnum py-1.5 pr-3 text-fg-muted">{cat.nextRunAt ? formatRelative(cat.nextRunAt) : "—"}</td>
                           <td class="py-1.5 pr-3">
                             <span class={`rounded-full border px-2 py-0.5 text-[10px] ${cat.status === "active" ? "border-positive/30 bg-positive/10 text-positive" : cat.status === "source_exhausted" ? "border-border bg-surface-2 text-fg-faint" : "border-warning/40 bg-warning/10 text-warning"}`}>{cat.status}</span>
                           </td>

@@ -232,6 +232,35 @@ async function main(): Promise<void> {
       }
     }
 
+    // Adaptive scheduling efficiency per walk resource.
+    for (const resource of ["money_logs", "drugs", "travel", "rehab"] as const) {
+      const catStates = await db.syncCategoryState.findMany({
+        where: { userId: user.id, resource },
+        orderBy: { categoryId: "asc" },
+      });
+      if (catStates.length === 0) continue;
+      const now = Date.now();
+      const dueNow = catStates.filter((c) => c.nextRunAt === null || c.nextRunAt.getTime() <= now).length;
+      const tier = (c: (typeof catStates)[number]): string => {
+        if (c.status === "access_denied") return "access_denied";
+        if (c.status === "failed") return "retry";
+        if (!c.lastActivityAt) return "very_cold";
+        const ageH = (now - c.lastActivityAt.getTime()) / 3_600_000;
+        if (ageH <= 1) return "hot";
+        if (ageH <= 6) return "warm";
+        if (ageH <= 48) return "cold";
+        return "very_cold";
+      };
+      const tiers: Record<string, number> = {};
+      let callsPerHour = 0;
+      for (const c of catStates) {
+        tiers[tier(c)] = (tiers[tier(c)] ?? 0) + 1;
+        callsPerHour += 3600 / Math.max(60, c.frequencySeconds ?? 21600);
+      }
+      const tierText = Object.entries(tiers).map(([k, v]) => `${k}=${v}`).join(" ");
+      console.log(`    ${resource} schedule: ${tierText} | due now=${dueNow} | est. API calls/hour=${callsPerHour.toFixed(0)}`);
+    }
+
     interface TitleStat {
       category: string;
       title: string;

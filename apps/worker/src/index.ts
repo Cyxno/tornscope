@@ -31,7 +31,7 @@ async function main(): Promise<void> {
   const syncWorker = createSyncWorker(env.redisUrl, async (job) => {
     const data = job.data as SyncJobData;
     logger.info({ userId: data.userId, resource: data.resource, manual: data.manual === true, stage: "job_received" }, "sync job received");
-    const outcome = await runResourceSync(data.userId, data.resource as never);
+    const outcome = await runResourceSync(data.userId, data.resource as never, { force: data.manual === true });
     if (!outcome.ok && !outcome.skipped) {
       // Job-level failure is already recorded in sync_state + sync_run;
       // do not retry automatically to respect the API budget.

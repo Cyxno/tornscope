@@ -599,8 +599,22 @@ export const SyncHealthResponseSchema = z.object({
           lastWalkPages: z.number().nullable(),
           lastRecordsInserted: z.number().nullable(),
           errorMessage: z.string().nullable(),
+          lastActivityAt: z.number().nullable(),
+          frequencySeconds: z.number().nullable(),
+          nextRunAt: z.number().nullable(),
         })
       ),
+      /** Adaptive schedule summary for the resource. */
+      scheduleSummary: z.object({
+        total: z.number(),
+        due: z.number(),
+        hot: z.number(),
+        warm: z.number(),
+        cold: z.number(),
+        veryCold: z.number(),
+        retry: z.number(),
+        accessDenied: z.number(),
+      }),
     })
   ),
 });

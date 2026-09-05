@@ -197,6 +197,12 @@ model SyncCategoryState {
   /// Oldest source row observed for this category (backfill depth).
   sourceEarliestAt    BigInt?
   errorMessage        String?
+  /// Adaptive per-category scheduling (policy in worker/sync/schedule.ts).
+  nextRunAt           DateTime?
+  frequencySeconds    Int?
+  /// Last walk that actually found rows above the category cursor.
+  lastActivityAt      DateTime?
+  consecutiveEmptyRuns Int      @default(0)
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
@@ -204,6 +210,7 @@ model SyncCategoryState {
 
   @@unique([userId, resource, categoryId])
   @@index([userId, resource])
+  @@index([nextRunAt])
 }
 
 /// Append-only history of sync attempts (drives the Sync Status page).
@@ -216,6 +223,9 @@ model SyncRun {
   status           String
   recordsCollected Int       @default(0)
   errorMessage     String?
+  /// Adaptive-scheduling metrics: categoriesDue, categoriesProcessed,
+  /// categoriesSkipped, pagesWalked, apiCallsEstimate.
+  stats            Json?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

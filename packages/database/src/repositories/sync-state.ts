@@ -156,7 +156,7 @@ export async function recordSyncRun(
   db: PrismaClientType,
   userId: string,
   resource: SyncResource,
-  run: { startedAt: Date; finishedAt: Date | null; status: string; recordsCollected: number; errorMessage?: string | null }
+  run: { startedAt: Date; finishedAt: Date | null; status: string; recordsCollected: number; errorMessage?: string | null; stats?: Record<string, unknown> }
 ): Promise<void> {
   await db.syncRun.create({
     data: {
@@ -167,6 +167,7 @@ export async function recordSyncRun(
       status: run.status,
       recordsCollected: run.recordsCollected,
       errorMessage: run.errorMessage ?? null,
+      stats: (run.stats ?? undefined) as never,
     },
   });
 }
@@ -221,6 +222,10 @@ export interface SyncCategoryStateRow {
   lastRecordsInserted: number | null;
   sourceEarliestAt: bigint | null;
   errorMessage: string | null;
+  nextRunAt: Date | null;
+  frequencySeconds: number | null;
+  lastActivityAt: Date | null;
+  consecutiveEmptyRuns: number;
   updatedAt: Date | null;
 }
 
@@ -235,6 +240,10 @@ function toCategoryRow(row: {
   lastRecordsInserted: number | null;
   sourceEarliestAt: bigint | null;
   errorMessage: string | null;
+  nextRunAt: Date | null;
+  frequencySeconds: number | null;
+  lastActivityAt: Date | null;
+  consecutiveEmptyRuns: number;
   updatedAt: Date;
 }): SyncCategoryStateRow {
   return {
@@ -248,6 +257,10 @@ function toCategoryRow(row: {
     lastRecordsInserted: row.lastRecordsInserted,
     sourceEarliestAt: row.sourceEarliestAt,
     errorMessage: row.errorMessage,
+    nextRunAt: row.nextRunAt,
+    frequencySeconds: row.frequencySeconds,
+    lastActivityAt: row.lastActivityAt,
+    consecutiveEmptyRuns: row.consecutiveEmptyRuns,
     updatedAt: row.updatedAt,
   };
 }
@@ -276,6 +289,10 @@ export interface SyncCategoryStatePatch {
   lastRecordsInserted?: number | null;
   sourceEarliestAt?: bigint | null;
   errorMessage?: string | null;
+  nextRunAt?: Date | null;
+  frequencySeconds?: number | null;
+  lastActivityAt?: Date | null;
+  consecutiveEmptyRuns?: number;
 }
 
 /**
@@ -306,6 +323,10 @@ export async function upsertSyncCategoryState(db: PrismaClientType, userId: stri
       lastRecordsInserted: patch.lastRecordsInserted ?? null,
       sourceEarliestAt: sourceEarliestAt ?? null,
       errorMessage: patch.errorMessage ?? null,
+      nextRunAt: patch.nextRunAt ?? null,
+      frequencySeconds: patch.frequencySeconds ?? null,
+      lastActivityAt: patch.lastActivityAt ?? null,
+      consecutiveEmptyRuns: patch.consecutiveEmptyRuns ?? 0,
     },
     update: {
       categoryTitle: patch.categoryTitle ?? undefined,
@@ -316,6 +337,10 @@ export async function upsertSyncCategoryState(db: PrismaClientType, userId: stri
       lastRecordsInserted: patch.lastRecordsInserted ?? undefined,
       sourceEarliestAt: sourceEarliestAt,
       errorMessage: patch.errorMessage ?? undefined,
+      nextRunAt: patch.nextRunAt ?? undefined,
+      frequencySeconds: patch.frequencySeconds ?? undefined,
+      lastActivityAt: patch.lastActivityAt ?? undefined,
+      consecutiveEmptyRuns: patch.consecutiveEmptyRuns ?? undefined,
     },
   });
 }
