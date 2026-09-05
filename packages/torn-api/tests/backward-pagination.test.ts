@@ -146,6 +146,26 @@ describe("paginateBackward", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
+  it("reports history_boundary_reached when a stall happens after covering the boundary", async () => {
+    // Torn sometimes keeps returning the same prev window at the end of a
+    // category's history. If rows at/before the requested boundary were
+    // already collected, the requested history is covered — the result must
+    // say so instead of reporting an endless stall.
+    const boundary = NOW - 180 * DAY;
+    const samePrev = "https://api.torn.com/v2/user/log?cat=61&from=1&to=1";
+    const { client } = clientWithPages([
+      { timestamps: [NOW, boundary - 3600], prev: samePrev },
+      { timestamps: [boundary - 7200], prev: samePrev },
+      { timestamps: [boundary - 7200], prev: samePrev },
+    ]);
+    const result = await client.paginateBackward("/user/log", { cat: 61, limit: 100 }, () => {}, {
+      boundaryTs: boundary,
+      rowTimestamps: (data) => (data as { log: Array<{ timestamp: number }> }).log.map((l) => l.timestamp),
+    });
+    expect(result.stopReason).toBe("history_boundary_reached");
+    expect(result.oldestTimestamp!).toBeLessThanOrEqual(boundary);
+  });
+
   it("propagates the api key via header, never via URL", async () => {
     const { client, fetchImpl } = clientWithPages([{ timestamps: [NOW], prev: null }]);
     await client.paginateBackward("/user/log", { cat: 61, limit: 100 }, () => {});

@@ -228,6 +228,17 @@ export class TornApiClient {
     return finish("max_pages");
 
     function finish(reason: BackwardStopReason): BackwardPaginationResult {
+      // If the walk already collected rows at/before the requested boundary,
+      // the requested history IS fully covered — even when the stop itself
+      // was a stall or the page cap. Report the covered truth.
+      if (
+        (reason === "cursor_stalled" || reason === "max_pages") &&
+        boundaryTs !== null &&
+        oldestSeen !== null &&
+        oldestSeen <= boundaryTs
+      ) {
+        return { pages, oldestTimestamp: oldestSeen, newestTimestamp: newestSeen, stopReason: "history_boundary_reached" };
+      }
       return { pages, oldestTimestamp: oldestSeen, newestTimestamp: newestSeen, stopReason: reason };
     }
   }
