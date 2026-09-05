@@ -168,6 +168,40 @@ describe("paginateBackward", () => {
     expect(result.oldestTimestamp!).toBeLessThanOrEqual(boundary);
   });
 
+  it("a short page means the window is exhausted (one-page incremental syncs)", async () => {
+    // Torn clamps pages to the requested [from, now] window: a quiet category
+    // returns fewer rows than the page size, so the walk stops after ONE page.
+    const { client, fetchImpl } = clientWithPages([
+      { timestamps: [NOW, NOW - 60], prev: "https://api.torn.com/v2/user/log?cat=61&from=1&to=1" },
+    ]);
+    const result = await client.paginateBackward("/user/log", { cat: 61, limit: 100 }, () => {}, {
+      boundaryTs: NOW - 120,
+      pageSize: 100,
+      rowTimestamps: (data) => (data as { log: Array<{ timestamp: number }> }).log.map((l) => l.timestamp),
+    });
+    expect(result.stopReason).toBe("history_boundary_reached");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(result.oldestTimestamp).toBe(NOW - 60);
+  });
+
+  it("a full page continues the walk (high-volume category pages to its own cursor)", async () => {
+    const full = Array.from({ length: 100 }, (_, i) => NOW - i);
+    const { client, fetchImpl } = clientWithPages([
+      { timestamps: full, prev: "https://api.torn.com/v2/user/log?cat=136&from=1&to=" + (NOW - 99) },
+      { timestamps: [NOW - 200], prev: null },
+    ]);
+    const result = await client.paginateBackward("/user/log", { cat: 136, limit: 100 }, () => {}, {
+      boundaryTs: NOW - 150,
+      pageSize: 100,
+      rowTimestamps: (data) => (data as { log: Array<{ timestamp: number }> }).log.map((l) => l.timestamp),
+    });
+    // Page 1 is full (100 rows, all above the boundary) -> page 2 contains the
+    // boundary-crossing rows -> stop. Two pages, exactly to the own cursor.
+    expect(result.pages).toBe(2);
+    expect(result.stopReason).toBe("history_boundary_reached");
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
   it("propagates the api key via header, never via URL", async () => {
     const { client, fetchImpl } = clientWithPages([{ timestamps: [NOW], prev: null }]);
     await client.paginateBackward("/user/log", { cat: 61, limit: 100 }, () => {});

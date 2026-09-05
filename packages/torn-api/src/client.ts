@@ -172,11 +172,12 @@ export class TornApiClient {
     path: string,
     params: TornRequestParams,
     onPage: (page: { data: Record<string, unknown>; metadata: TornMetadata | undefined }) => boolean | void | Promise<boolean | void>,
-    opts: { maxPages?: number; boundaryTs?: number; rowTimestamps?: (data: Record<string, unknown>) => number[] } = {}
+    opts: { maxPages?: number; boundaryTs?: number; pageSize?: number; rowTimestamps?: (data: Record<string, unknown>) => number[] } = {}
   ): Promise<BackwardPaginationResult> {
     const maxPages = opts.maxPages ?? 500;
     const boundaryTs = opts.boundaryTs ?? null;
     const rowTimestamps = opts.rowTimestamps;
+    const pageSize = opts.pageSize;
     let currentPath: string | null = path;
     let currentParams: TornRequestParams | null = params;
     let pages = 0;
@@ -203,6 +204,12 @@ export class TornApiClient {
       if (boundaryTs !== null && timestamps.length > 0) {
         const pageOldest = Math.min(...timestamps);
         if (pageOldest <= boundaryTs) return finish("history_boundary_reached");
+      }
+      // Short page: Torn clamps pages to the requested window, so fewer rows
+      // than the page size means this window holds nothing further — the walk
+      // is complete (the boundary was already covered by the pages so far).
+      if (pageSize !== undefined && timestamps.length > 0 && timestamps.length < pageSize) {
+        return finish("history_boundary_reached");
       }
 
       const prev = result.metadata?.links?.prev ?? null;

@@ -421,6 +421,7 @@ export class TornEndpoints {
       {
         maxPages: opts.maxPages,
         boundaryTs: opts.boundaryTs,
+        pageSize: query.limit ?? 100,
         rowTimestamps: (data) => (Array.isArray(data.log) ? (data.log as Array<{ timestamp?: number }>).map((l) => l.timestamp).filter((t): t is number => typeof t === "number") : []),
       }
     );
@@ -486,6 +487,7 @@ export class TornEndpoints {
       {
         maxPages: opts.maxPages,
         boundaryTs: opts.boundaryTs,
+        pageSize: query.limit ?? 100,
         rowTimestamps: (data) => (Array.isArray(data.events) ? (data.events as Array<{ timestamp?: number }>).map((e) => e.timestamp).filter((t): t is number => typeof t === "number") : []),
       }
     );
