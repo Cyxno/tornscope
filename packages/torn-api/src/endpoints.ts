@@ -42,6 +42,8 @@ export const UserBasicSchema = loose({
     name: z.string(),
     level: z.number(),
     gender: z.string().optional(),
+    rank: z.string().optional(),
+    donator_status: z.union([z.number(), z.string()]).nullable().optional(),
     status: loose({}).optional(),
   }),
 });
@@ -71,7 +73,7 @@ export const UserProfileSchema = loose({
     gender: z.string().nullable().optional(),
     status: UserStatusSchema.optional(),
     last_action: loose({}).optional(),
-    donator_status: z.number().nullable().optional(),
+    donator_status: z.union([z.number(), z.string()]).nullable().optional(),
     life: loose({ current: z.number(), maximum: z.number() }).optional(),
   }),
 });
@@ -203,15 +205,10 @@ export const TornEducationCategorySchema = loose({
 });
 export type TornEducationCategory = z.infer<typeof TornEducationCategorySchema>;
 
-/** Torn personalstats: flat map of stat name -> number. */
-export const UserPersonalStatsSchema = loose({
-  personalstats: z.record(z.string(), z.number()),
-});
-export type TornUserPersonalStats = z.infer<typeof UserPersonalStatsSchema>;
-
 /** One Torn log entry. `data`/`params` are opaque by API contract. */
 export const UserLogSchema = loose({
-  id: z.number(),
+  /** Live v2 sends log ids as strings. */
+  id: z.union([z.number(), z.string()]),
   timestamp: z.number(),
   details: loose({
     id: z.number(),
@@ -223,12 +220,33 @@ export const UserLogSchema = loose({
 });
 export type TornUserLog = z.infer<typeof UserLogSchema>;
 
+/** Live v2 responses send event ids as strings; accept both to be safe. */
 export const UserEventSchema = loose({
-  id: z.number(),
+  id: z.union([z.number(), z.string()]),
   timestamp: z.number(),
   event: z.string(),
 });
 export type TornUserEvent = z.infer<typeof UserEventSchema>;
+
+/**
+ * donator_status arrives as a number on some endpoints and as a string
+ * ("Donator"/"Subscriber") on others. Normalize to the legacy int code.
+ */
+export function normalizeDonatorStatus(value: number | string | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  const byName: Record<string, number> = { none: 0, basic: 0, donator: 1, subscriber: 2 };
+  const asNumber = Number(value);
+  if (Number.isFinite(asNumber)) return asNumber;
+  return byName[value.toLowerCase()] ?? null;
+}
+
+/** Torn personalstats: mostly flat stat -> number, but cat=all nests some
+ * category groups as objects. Keep them pass-through (stored as JSONB). */
+export const UserPersonalStatsSchema = loose({
+  personalstats: z.record(z.string(), z.unknown()),
+});
+export type TornUserPersonalStats = z.infer<typeof UserPersonalStatsSchema>;
 
 export const FactionBasicSchema = loose({
   basic: loose({

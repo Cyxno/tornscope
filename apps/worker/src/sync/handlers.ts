@@ -1,4 +1,4 @@
-import type { TornEndpoints } from "@tornscope/torn-api";
+import { normalizeDonatorStatus, type TornEndpoints } from "@tornscope/torn-api";
 import type { SyncResource } from "@tornscope/shared";
 import {
   encryptionFromEnv,
@@ -30,11 +30,10 @@ import { logger } from "../env.js";
  *
  * Incremental log-based resources use sync_state.lastTimestamp as cursor and
  * rely on unique constraints (userId, source, sourceRef) for deduplication:
- * re-processing or overlapping ranges is always safe.
- *
- * The log normalizer routes by the entry's own `details.category` title
- * (resolved against the /torn/logcategories catalog at runtime), so no
- * undocumented category ids are hardcoded.
+ * re-processing or overlapping ranges is always safe. Handlers report
+ * progress through `onProgress(cumulativeRecords)` after every page so the
+ * Sync Status view shows live backfill state and crashed runs are detected
+ * by heartbeat instead of a fixed timeout.
  */
 
 export interface SyncHandlerArgs {
@@ -42,6 +41,8 @@ export interface SyncHandlerArgs {
   apiKey: string;
   torn: TornEndpoints;
   lastTimestamp: bigint | null;
+  /** Report cumulative records successfully written so far. */
+  onProgress?: (recordsSoFar: number) => void;
 }
 
 export type SyncHandlerResult = { records: number; lastTimestamp?: bigint | null };
@@ -95,7 +96,7 @@ export const syncProfile: SyncHandler = async ({ userId, torn }) => {
     name: p.name,
     level: p.level,
     rank: p.rank ?? null,
-    donatorStatus: p.donator_status ?? null,
+    donatorStatus: normalizeDonatorStatus(p.donator_status),
     gender: p.gender ?? null,
     property: p.property?.name ?? null,
     factionId: p.faction_id ?? null,
@@ -253,10 +254,14 @@ async function syncLogsByCategories(args: SyncHandlerArgs, categoryIds: number[]
   for (const category of categoryIds) {
     await args.torn.iterateUserLogs(
       { category, from, limit: 100 },
-      async (logs) => {
+      async (logs, _metadata) => {
+        logger.debug({ userId: args.userId, category, page: logs.length, stage: "page_received" }, "log page received");
         if (logs.length === 0) return;
         for (const log of logs) {
           const normalized = normalizeLogEntry(log, { itemNameById });
+          // Each typed insert is its own small idempotent transaction — the
+          // cursor is only advanced after every page of this category made
+          // it to PostgreSQL, so a crash resumes instead of skipping data.
           await insertTimelineEvents(ctx.db, args.userId, normalized.timelineEvents);
           await insertDrugEvents(ctx.db, args.userId, normalized.drugEvents);
           await insertRehabEvents(ctx.db, args.userId, normalized.rehabEvents);
@@ -266,6 +271,7 @@ async function syncLogsByCategories(args: SyncHandlerArgs, categoryIds: number[]
           records += 1;
           if (log.timestamp > maxTimestamp) maxTimestamp = log.timestamp;
         }
+        args.onProgress?.(records);
       },
       { maxPages: 400 }
     );
@@ -308,6 +314,7 @@ export const syncEvents: SyncHandler = async (args) => {
       for (const event of events) {
         if (event.timestamp > maxTimestamp) maxTimestamp = event.timestamp;
       }
+      args.onProgress?.(records);
     },
     { maxPages: 200 }
   );

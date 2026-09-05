@@ -424,6 +424,8 @@ export const TodayResponseSchema = z.object({
   fetchedAt: z.number(),
   /** Server clock in unix seconds. */
   serverTime: z.number(),
+  /** True when the payload is simulated demo live data, not a real account. */
+  demo: z.boolean(),
   player: z.object({
     name: z.string().nullable(),
     level: z.number().nullable(),
@@ -465,4 +467,50 @@ export function accessLevelName(level: number | null | undefined): string {
   if (level >= TORN_ACCESS_LEVELS.limited) return "Limited";
   if (level >= TORN_ACCESS_LEVELS.minimal) return "Minimal";
   return "Public";
+}
+
+/* -------------------------------------------------------------------------- */
+/* First-run setup phase                                                      */
+/* -------------------------------------------------------------------------- */
+
+export const SETUP_PHASES = [
+  "no_key",
+  "queued",
+  "syncing",
+  "partial",
+  "caught_up",
+  "failed",
+] as const;
+export type SetupPhase = (typeof SETUP_PHASES)[number];
+
+export interface SetupResourceSnapshot {
+  status: string;
+  lastSuccessAt: number | null;
+  lastAttemptAt: number | null;
+}
+
+/**
+ * Derive the first-run phase from per-resource sync states. Pure function so
+ * the API and tests share one definition:
+ * - no_key:   no active credential
+ * - queued:   key exists but nothing has been attempted/completed yet
+ * - syncing:  at least one resource currently running
+ * - partial:  some resources succeeded, others still pending/backfilling
+ * - caught_up: every resource has succeeded at least once
+ * - failed:   no success anywhere and at least one failure
+ */
+export function deriveSetupPhase(input: { hasApiKey: boolean; resources: SetupResourceSnapshot[] }): SetupPhase {
+  if (!input.hasApiKey) return "no_key";
+  const resources = input.resources;
+  if (resources.length === 0) return "queued";
+
+  if (resources.some((r) => r.status === "running")) return "syncing";
+
+  const succeeded = resources.filter((r) => r.lastSuccessAt !== null);
+  const attempted = resources.filter((r) => r.lastAttemptAt !== null);
+
+  if (succeeded.length === resources.length) return "caught_up";
+  if (succeeded.length > 0) return "partial";
+  if (attempted.length > 0 && resources.some((r) => r.status === "failed")) return "failed";
+  return "queued";
 }

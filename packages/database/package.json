@@ -18,7 +18,8 @@
     "migrate:deploy": "prisma migrate deploy",
     "migrate:dev": "prisma migrate dev",
     "studio": "prisma studio",
-    "seed:demo": "prisma migrate deploy && tsx src/seed/demo.ts"
+    "seed:demo": "prisma migrate deploy && tsx src/seed/demo.ts",
+    "audit": "tsx src/audit/audit.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.16.2",

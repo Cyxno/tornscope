@@ -1,20 +1,23 @@
 import { Queue, Worker, type ConnectionOptions, type Processor } from "bullmq";
+import {
+  SCHEDULER_QUEUE,
+  SCHEDULER_TICK_JOB_ID,
+  SCHEDULER_TICK_JOB_NAME,
+  SYNC_QUEUE,
+  type SyncJobData as SharedSyncJobData,
+} from "@tornscope/shared";
 
 /**
  * BullMQ wiring. Two queues:
  * - tornscope-sync: one job per (user, resource) sync, concurrency 1 to stay
  *   polite to the Torn API (the torn-api client limiter spaces requests too).
  * - tornscope-scheduler: a repeating tick that enqueues due resources.
+ *
+ * Queue/job names live in @tornscope/shared (queues.ts) so the API and the
+ * worker can never drift apart.
  */
 
-export const SYNC_QUEUE = "tornscope-sync";
-export const SCHEDULER_QUEUE = "tornscope-scheduler";
-
-export interface SyncJobData {
-  userId: string;
-  resource: string;
-  manual?: boolean;
-}
+export interface SyncJobData extends SharedSyncJobData {}
 
 export function connectionOptions(redisUrl: string): ConnectionOptions {
   return { url: redisUrl };
@@ -24,8 +27,8 @@ export function createSyncQueue(redisUrl: string): Queue<SyncJobData> {
   return new Queue<SyncJobData>(SYNC_QUEUE, {
     connection: connectionOptions(redisUrl),
     defaultJobOptions: {
-      removeOnComplete: 200,
-      removeOnFail: 200,
+      removeOnComplete: { count: 500 },
+      removeOnFail: { count: 500 },
       // A sync must not hang forever; Torn pagination is bounded per handler.
       attempts: 1,
     },
@@ -36,7 +39,10 @@ export function createSyncWorker(redisUrl: string, processor: Processor<SyncJobD
   return new Worker<SyncJobData>(SYNC_QUEUE, processor, {
     connection: connectionOptions(redisUrl),
     concurrency: 1,
-    lockDuration: 10 * 60_000,
+    // Long initial backfills run far longer than the default 30s lock.
+    lockDuration: 30 * 60_000,
+    // Renew the lock while a job runs so long backfills are never stolen.
+    lockRenewTime: 60_000,
   });
 }
 
@@ -48,17 +54,18 @@ export function createSchedulerWorker(redisUrl: string, processor: Processor): W
   return new Worker(SCHEDULER_QUEUE, processor, {
     connection: connectionOptions(redisUrl),
     concurrency: 1,
+    lockDuration: 5 * 60_000,
   });
 }
 
 /** Register the repeating 60s tick (idempotent thanks to a fixed jobId). */
 export async function registerSchedulerTick(schedulerQueue: Queue): Promise<void> {
   await schedulerQueue.add(
-    "tick",
+    SCHEDULER_TICK_JOB_NAME,
     {},
     {
       repeat: { every: 60_000 },
-      jobId: "scheduler-tick",
+      jobId: SCHEDULER_TICK_JOB_ID,
       removeOnComplete: 10,
       removeOnFail: 10,
     }

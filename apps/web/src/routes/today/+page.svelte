@@ -165,6 +165,12 @@
   <PageHeader eyebrow="Live status" title="Today" description="Everything that matters right now.">
     {#snippet actions()}
       <div class="flex items-center gap-3">
+        {#if data?.demo}
+          <span class="inline-flex items-center gap-1.5 rounded-full border border-warning/40 bg-warning/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-warning">
+            <span class="h-1.5 w-1.5 rounded-full bg-warning"></span>
+            Demo — simulated
+          </span>
+        {/if}
         {#if data}
           <span class="hidden text-xs text-fg-faint sm:inline">Updated {updatedAgo}</span>
         {/if}

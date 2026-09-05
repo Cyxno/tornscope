@@ -75,7 +75,6 @@ model User {
   factionSnapshots     FactionSnapshot[]
   rankedWarMembers     RankedWarMember?
   rankedWarPayouts     RankedWarPayout[]
-  settings             AppSetting[]
 }
 
 /// The Torn player connected to a user.
@@ -451,8 +450,8 @@ model AppSetting {
   value     Json
   updatedAt DateTime @updatedAt
 
-  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
-
+  // No FK: userId = "" is a deliberate global scope (dropped by migration
+  // 20260905000000_appsetting_drop_user_fk — the FK broke every global write).
   @@unique([userId, key])
 }
 

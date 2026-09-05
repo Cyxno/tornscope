@@ -5,6 +5,7 @@ import {
   assembleCooldowns,
   assembleEducation,
   assembleTravel,
+  buildDemoToday,
   clearEducationCatalogCache,
   collectUpcoming,
   extractNotice,
@@ -281,5 +282,35 @@ describe("today service: upcoming", () => {
     });
     expect(events.filter((e) => e.category === "bar")).toHaveLength(1); // happy only
     expect(events).toHaveLength(1);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Demo live data                                                             */
+/* -------------------------------------------------------------------------- */
+
+describe("today service: demo mode", () => {
+  it("produces deterministic simulated live data (same clock -> same payload)", () => {
+    const now = 1_792_000_000_000;
+    const a = buildDemoToday(now);
+    const b = buildDemoToday(now);
+    expect(a).toEqual(b);
+  });
+
+  it("marks the payload as demo and fills every section", () => {
+    const t = buildDemoToday();
+    expect(t.demo).toBe(true);
+    expect(t.player.name).toBe("DEMO_Player");
+    expect(t.bars.energy).not.toBeNull();
+    expect(t.bars.life).not.toBeNull();
+    expect(t.cooldowns.drug).not.toBeNull();
+    expect(t.cooldowns.medical?.state).toBe("ready");
+    expect(t.travel.state).not.toBe("unavailable");
+    expect(t.education.state).toBe("active");
+    expect(t.bank.state).toBe("active");
+    expect(t.hospital).toBeNull();
+    expect(t.upcoming.length).toBeGreaterThan(0);
+    // Simulation, never presented as exact Torn data:
+    expect(t.bars.energy?.provenance).toBe("estimated");
   });
 });

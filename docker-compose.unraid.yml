@@ -44,6 +44,8 @@ services:
     build:
       context: .
       dockerfile: docker/api.Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-dev}
       target: migrator
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-tornscope}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-tornscope}?schema=public
@@ -56,6 +58,8 @@ services:
     build:
       context: .
       dockerfile: docker/api.Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-dev}
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -83,6 +87,8 @@ services:
     build:
       context: .
       dockerfile: docker/worker.Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-dev}
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -104,6 +110,7 @@ services:
       dockerfile: docker/web.Dockerfile
       args:
         API_BASE_URL: http://api:3000
+        GIT_SHA: ${GIT_SHA:-dev}
     restart: unless-stopped
     environment:
       NODE_ENV: production

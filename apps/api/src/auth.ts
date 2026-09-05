@@ -9,8 +9,10 @@ import { DEMO_USER_EMAIL } from "@tornscope/shared";
  * (sessions, tokens, multi-user) can be added later without touching routes.
  *
  * Demo view: an explicit per-owner opt-in flag resolves requests to the
- * dedicated demo account while no real API key is connected. Demo data stays
- * in its own user row — it is never mixed with a real player's data.
+ * dedicated demo account. It works both before and after a real key is
+ * connected — it is a deliberate view switch, and saving/replacing the API
+ * key clears it automatically so the real account always wins. Demo data
+ * stays in its own user row and is never mixed with a real player's data.
  */
 const DEMO_VIEW_KEY = "demo_view";
 
@@ -30,14 +32,8 @@ export async function resolveCurrentUser() {
     where: { userId_key: { userId: user.id, key: DEMO_VIEW_KEY } },
   });
   if (flag) {
-    const credential = await db.apiCredential.findUnique({
-      where: { userId: user.id },
-      select: { revokedAt: true },
-    });
-    if (!credential || credential.revokedAt) {
-      const demo = await db.user.findUnique({ where: { email: DEMO_USER_EMAIL } });
-      if (demo) return demo;
-    }
+    const demo = await db.user.findUnique({ where: { email: DEMO_USER_EMAIL } });
+    if (demo) return demo;
   }
 
   return user;

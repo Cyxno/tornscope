@@ -16,6 +16,9 @@ COPY apps/api/package.json apps/api/
 RUN pnpm install --frozen-lockfile --filter @tornscope/api... --ignore-scripts
 
 FROM base AS build
+# Deployed commit identifier, injected by docker compose from the environment.
+ARG GIT_SHA=dev
+ENV GIT_SHA=$GIT_SHA
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/packages ./packages
 COPY --from=deps /app/apps ./apps
@@ -36,6 +39,8 @@ WORKDIR /app/packages/database
 CMD ["npx", "prisma", "migrate", "deploy"]
 
 FROM base AS runtime
+ARG GIT_SHA=dev
+ENV GIT_SHA=$GIT_SHA
 ENV NODE_ENV=production
 RUN addgroup -S tornscope && adduser -S tornscope -G tornscope
 COPY --from=build --chown=tornscope:tornscope /app ./

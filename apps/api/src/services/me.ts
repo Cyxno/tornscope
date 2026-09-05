@@ -1,6 +1,7 @@
 import type { ApiKeyStatusResponse, MeResponse } from "@tornscope/shared";
-import { ensureSyncStates, getPrismaClient } from "@tornscope/database";
-import { DEMO_USER_EMAIL } from "@tornscope/shared";
+import { deriveSetupPhase, SYNC_RESOURCES, buildSyncJobId, SYNC_JOB_NAME, DEMO_USER_EMAIL } from "@tornscope/shared";
+import { normalizeDonatorStatus } from "@tornscope/torn-api";
+import { ensureSyncStates, getPrismaClient, upsertTornAccount } from "@tornscope/database";
 import { getApiContext } from "../context.js";
 import { errors } from "../errors.js";
 
@@ -22,10 +23,21 @@ export async function setDemoView(user: { id: string }, enabled: boolean): Promi
       update: { value: true },
     });
   } else {
-    // The flag lives under the OWNER's id even while requests resolve to the
-    // demo account, so clear it for every non-demo user.
-    await db.appSetting.deleteMany({ where: { key: DEMO_VIEW_KEY, user: { isDemo: false } } });
+    await clearDemoViewFlag(db);
   }
+}
+
+/** Deployed build commit — injected at Docker build time (never hand-edited). */
+function buildCommit(): string {
+  return process.env.GIT_SHA ?? "dev";
+}
+
+/** The flag always lives under a non-demo (owner) user id. */
+async function clearDemoViewFlag(db: ReturnType<typeof getPrismaClient>): Promise<void> {
+  const demo = await db.user.findUnique({ where: { email: DEMO_USER_EMAIL }, select: { id: true } });
+  await db.appSetting.deleteMany({
+    where: { key: DEMO_VIEW_KEY, ...(demo ? { userId: { not: demo.id } } : {}) },
+  });
 }
 
 /** GET /api/me */
@@ -72,6 +84,15 @@ export async function getMe(user: { id: string; displayName: string; timezone: s
       running,
       errorCount,
     },
+    setupPhase: deriveSetupPhase({
+      hasApiKey: Boolean(credential && !credential.revokedAt),
+      resources: syncStates.map((s) => ({
+        status: s.status,
+        lastSuccessAt: s.lastSuccessAt ? Math.floor(s.lastSuccessAt.getTime() / 1000) : null,
+        lastAttemptAt: s.lastAttemptAt ? Math.floor(s.lastAttemptAt.getTime() / 1000) : null,
+      })),
+    }),
+    build: { commit: buildCommit() },
   };
 }
 
@@ -99,6 +120,11 @@ export async function getApiKeyStatus(userId: string): Promise<ApiKeyStatusRespo
  * POST /api/settings/api-key: validate against Torn, then store encrypted.
  * The key is decrypted only for the validation request and never persisted
  * in plaintext or logged.
+ *
+ * After storing, the player identity is fetched immediately (public access)
+ * so the app is enterable right away, and the initial sync jobs are enqueued
+ * server-side — the old frontend-driven fan-out hid enqueue failures behind
+ * Promise.allSettled while BullMQ was rejecting every job id.
  */
 export async function saveApiKey(user: { id: string }, apiKey: string): Promise<ApiKeyStatusResponse> {
   const ctx = getApiContext();
@@ -149,9 +175,49 @@ export async function saveApiKey(user: { id: string }, apiKey: string): Promise<
 
   // Sync schedules exist per user from the first valid key onward.
   await ensureSyncStates(db, user.id);
-  // A real key always takes precedence over the demo view (flag lives under
-  // the owner's id, which may differ from the resolving user).
-  await db.appSetting.deleteMany({ where: { key: DEMO_VIEW_KEY, user: { isDemo: false } } });
+  // A real key always takes precedence over the demo view.
+  await clearDemoViewFlag(db);
+
+  // Detect the player NOW (basic is public) so needsOnboarding flips and the
+  // user can enter the app while the historical backfill runs in background.
+  try {
+    const basic = await torn.userBasic();
+    await upsertTornAccount(db, user.id, {
+      tornId: basic.profile.id,
+      name: basic.profile.name,
+      level: basic.profile.level,
+      rank: basic.profile.rank ?? null,
+      donatorStatus: normalizeDonatorStatus(basic.profile.donator_status),
+      gender: basic.profile.gender ?? null,
+      property: null,
+      factionId: null,
+      // Rich status arrives with the profile sync seconds later.
+      status: undefined,
+      seenAt: new Date(),
+    });
+  } catch {
+    // The profile sync will create the account shortly; saving the key
+    // itself must not fail because of this.
+  }
+
+  // Enqueue the initial backfill for every resource, server-side, with real
+  // error surfacing (was: 10 silent frontend POSTs that all failed inside
+  // BullMQ's job-id validation).
+  const enqueueErrors: string[] = [];
+  for (const resource of SYNC_RESOURCES) {
+    try {
+      await ctx.syncQueue.add(
+        SYNC_JOB_NAME,
+        { userId: user.id, resource, manual: true },
+        { jobId: buildSyncJobId(user.id, resource, `init${Date.now()}`) }
+      );
+    } catch (err) {
+      enqueueErrors.push(`${resource}: ${(err as Error).message}`);
+    }
+  }
+  if (enqueueErrors.length === SYNC_RESOURCES.length) {
+    throw errors.internal(`Could not queue the initial sync: ${enqueueErrors[0] ?? "unknown queue error"}`);
+  }
 
   return getApiKeyStatus(user.id);
 }

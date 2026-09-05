@@ -108,8 +108,10 @@ const MONEY_AMOUNT_KEYS = ["amount", "money", "total", "value", "gain", "profit"
 const PERCENT_KEYS = ["percentage", "percent", "rehab", "rehab_percent", "progress"];
 const COUNTRY_KEYS = ["country", "destination", "abroad_country"];
 
-const INCOME_WORDS = /gain|gained|received|won|sold|income|payout|payou|reward|refund|mugg(ed)?|steal|profit|deposit|interest|withdrew|withdrawing|sold/i;
-const EXPENSE_WORDS = /spent|spend|paid|pay|bought|purchase|lost|loss|fee|fine|cost|deposit.*bank|withdrew.*fee|donat|invested/i;
+const INCOME_WORDS = /gain|gained|received?|won|sold|income|payout|payou|reward|refund|mugg(ed)?|steal|profit|interest|withdrew|withdrawing|sold/i;
+const EXPENSE_WORDS = /spent|spend|paid|pay|bought|purchase|lost|loss|fee|fine|cost|donat|invested/i;
+/** Money moving between own accounts/pools: a transfer, never income/expense. */
+const TRANSFER_WORDS = /deposit|withdraw|withdrew|withdrawing|transferr|invest(ed|ing)?|savings/i;
 
 export function classifyMoneyCategory(text: string): MoneyCategory {
   const t = text.toLowerCase();
@@ -126,8 +128,8 @@ export function classifyMoneyCategory(text: string): MoneyCategory {
   if (/point/.test(t)) return "points";
   if (/bazaar/.test(t)) return "bazaar";
   if (/auction/.test(t)) return "auction";
-  if (/city.?bank/.test(t)) return "city_bank";
-  if (/cayman|abroad.*bank|swiss/.test(t)) return "cayman_bank";
+  if (/cayman|swiss|abroad.*bank/.test(t)) return "cayman_bank";
+  if (/city.?bank|\bbank\b|savings|deposit|withdraw/.test(t)) return "city_bank";
   if (/salary|job|paycheck|wage/.test(t)) return "salary";
   if (/education|course/.test(t)) return "education";
   if (/hospital|surgery|medical/.test(t)) return "hospital";
@@ -310,11 +312,32 @@ export function normalizeLogEntry(log: TornUserLog, ctx: NormalizeContext): Norm
       const amount = pickNumber(data, MONEY_AMOUNT_KEYS) ?? pickNumber(params, MONEY_AMOUNT_KEYS);
       const text = `${log.details.title} ${categoryTitle}`;
       if (amount !== null && amount !== 0) {
-        const direction = directionFor(text);
-        const signed = direction === "income" ? BigInt(Math.round(Math.abs(amount))) : -BigInt(Math.round(Math.abs(amount)));
+        const magnitude = BigInt(Math.round(Math.abs(amount)));
+        const category = classifyMoneyCategory(text);
+
+        // Bank movements (city/cayman) and faction pool deposits/withdrawals
+        // are TRANSFERS: the money stays the player's, so they must never
+        // inflate income or spending. They keep a signed amount (out of the
+        // wallet on deposit/invest, back in on withdrawal) with direction
+        // "neutral", which the flow aggregations exclude.
+        const isTransfer =
+          TRANSFER_WORDS.test(text) &&
+          (category === "city_bank" || category === "cayman_bank" || category === "faction");
+
+        let direction: "income" | "expense" | "neutral";
+        let signed: bigint;
+        if (isTransfer) {
+          direction = "neutral";
+          // Money coming back to the player (withdrawals, receives) is positive.
+          signed = /withdrew|withdraw|withdrawing|receive|received/i.test(text) ? magnitude : -magnitude;
+        } else {
+          direction = directionFor(text);
+          signed = direction === "income" ? magnitude : -magnitude;
+        }
+
         writes.moneyEvents.push({
           occurredAt,
-          category: classifyMoneyCategory(text),
+          category,
           subcategory: categoryTitle,
           direction,
           amount: signed,
@@ -330,8 +353,8 @@ export function normalizeLogEntry(log: TornUserLog, ctx: NormalizeContext): Norm
   return writes;
 }
 
-/** Build a timeline event from a Torn event (HTML text). */
-export function normalizeTornEvent(event: { id: number; timestamp: number; event: string }): TimelineEventInput {
+/** Build a timeline event from a Torn event (HTML text). Live v2 ids are strings. */
+export function normalizeTornEvent(event: { id: number | string; timestamp: number; event: string }): TimelineEventInput {
   const text = stripHtml(event.event);
   return {
     occurredAt: new Date(event.timestamp * 1000),

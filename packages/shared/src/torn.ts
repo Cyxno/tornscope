@@ -124,6 +124,6 @@ export const DEMO_USER_EMAIL = "demo@tornscope.local";
 export const LOG_CATEGORY_ROUTES = {
   rehab: ["rehab", "rehabilitation"],
   drugs: ["drug"],
-  travel: ["travel", "flight", "abroad"],
-  money: ["trade", "money", "bazaar", "bank", "casino", "stock", "salary", "points", "auction", "crime", "mug", "payout"],
+  travel: ["travel", "abroad", "fly", "flight"],
+  money: ["trade", "money", "bazaar", "bank", "casino", "stock", "salary", "points", "auction", "crime", "mug", "payout", "faction", "job"],
 } as const satisfies Record<string, readonly string[]>;

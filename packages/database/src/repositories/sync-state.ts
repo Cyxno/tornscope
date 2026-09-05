@@ -21,6 +21,8 @@ export type SyncStateRow = {
   errorCount: number;
   errorMessage: string | null;
   frequencySeconds: number;
+  /** Last write to this row — the liveness heartbeat for stale detection. */
+  updatedAt: Date | null;
 };
 
 /** Ensure sync_state rows exist for every resource of a user. */
@@ -37,7 +39,7 @@ export async function ensureSyncStates(db: PrismaClientType, userId: string, fre
   );
 }
 
-/** Read stale "running" states: a run older than this is considered crashed. */
+/** Read stale "running" states: no progress for this long = crashed worker. */
 export const RUNNING_STALE_AFTER_MS = 15 * 60_000;
 
 export interface ClaimResult {
@@ -48,6 +50,10 @@ export interface ClaimResult {
 /**
  * Atomically claim a resource for syncing (guards against overlapping jobs
  * and recovers after crashes by treating stale runs as failed).
+ *
+ * Staleness is measured against `updatedAt`, which every progress heartbeat
+ * refreshes — long initial backfills keep touching the row, so only a truly
+ * dead worker (no progress for 15 minutes) is recovered.
  */
 export async function claimResource(db: PrismaClientType, userId: string, resource: SyncResource, now = new Date()): Promise<ClaimResult> {
   return db.$transaction(async (tx) => {
@@ -57,8 +63,8 @@ export async function claimResource(db: PrismaClientType, userId: string, resour
     if (!state) return { claimed: false, state: null };
 
     if (state.status === "running") {
-      const started = state.lastStartedAt?.getTime() ?? 0;
-      if (now.getTime() - started < RUNNING_STALE_AFTER_MS) {
+      const lastTouch = state.updatedAt?.getTime() ?? state.lastStartedAt?.getTime() ?? 0;
+      if (now.getTime() - lastTouch < RUNNING_STALE_AFTER_MS) {
         return { claimed: false, state };
       }
       // Stale run from a crashed worker - recover.
@@ -73,6 +79,19 @@ export async function claimResource(db: PrismaClientType, userId: string, resour
       data: { status: "running", lastStartedAt: now, lastAttemptAt: now, errorMessage: null },
     });
     return { claimed: true, state: updated };
+  });
+}
+
+/**
+ * Live progress heartbeat for a running sync: records records processed so
+ * far (delta) and refreshes updatedAt so the run is not considered stale.
+ * Safe batches — the cursor never advances past stored data here.
+ */
+export async function progressResource(db: PrismaClientType, userId: string, resource: SyncResource, recordsDelta: number): Promise<void> {
+  if (recordsDelta <= 0) return;
+  await db.syncState.updateMany({
+    where: { userId, resource, status: "running" },
+    data: { recordsCollected: { increment: recordsDelta } },
   });
 }
 
@@ -139,6 +158,7 @@ export async function getSyncStates(db: PrismaClientType, userId: string): Promi
     errorCount: r.errorCount,
     errorMessage: r.errorMessage,
     frequencySeconds: r.frequencySeconds,
+    updatedAt: r.updatedAt,
   }));
 }
 

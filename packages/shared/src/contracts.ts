@@ -145,6 +145,15 @@ export const MeResponseSchema = z.object({
     running: z.boolean(),
     errorCount: z.number(),
   }),
+  /**
+   * First-run phase (no_key / queued / syncing / partial / caught_up / failed)
+   * derived from the per-resource sync states — the UI uses this to let the
+   * player in as soon as basic account data is live instead of blocking on
+   * the historical backfill.
+   */
+  setupPhase: z.enum(["no_key", "queued", "syncing", "partial", "caught_up", "failed"]),
+  /** Deployed build identifier (git sha injected at Docker build time). */
+  build: z.object({ commit: z.string() }),
 });
 export type MeResponse = z.infer<typeof MeResponseSchema>;
 
@@ -332,6 +341,45 @@ export const SyncStatusResponseSchema = z.object({
   running: z.boolean(),
 });
 export type SyncStatusResponse = z.infer<typeof SyncStatusResponseSchema>;
+
+/** Full sync + system health for the Sync Status page. */
+export const SyncHealthResponseSchema = z.object({
+  running: z.boolean(),
+  build: z.object({ commit: z.string() }),
+  system: z.object({
+    postgres: z.string(),
+    redis: z.string(),
+    worker: z.object({
+      online: z.boolean(),
+      lastHeartbeatAt: z.number().nullable(),
+    }),
+    tornApi: z.object({
+      lastError: z.object({ resource: z.string(), message: z.string().nullable() }).nullable(),
+    }),
+  }),
+  queues: z.object({
+    sync: z.record(z.string(), z.number()).nullable(),
+    scheduler: z.record(z.string(), z.number()).nullable(),
+    note: z.string(),
+  }),
+  setupPhase: z.enum(["no_key", "queued", "syncing", "partial", "caught_up", "failed"]),
+  resources: z.array(
+    z.object({
+      resource: SyncResourceSchema,
+      status: z.string(),
+      phase: z.enum(["queued", "running", "backfilling", "caught_up", "failed"]),
+      lastAttemptAt: z.number().nullable(),
+      lastSuccessAt: z.number().nullable(),
+      nextRunAt: z.number().nullable(),
+      lastTimestamp: z.number().nullable(),
+      cursor: z.string().nullable(),
+      recordsCollected: z.number(),
+      errorCount: z.number(),
+      errorMessage: z.string().nullable(),
+    })
+  ),
+});
+export type SyncHealthResponse = z.infer<typeof SyncHealthResponseSchema>;
 
 export const ApiKeyStatusResponseSchema = z.object({
   hasKey: z.boolean(),

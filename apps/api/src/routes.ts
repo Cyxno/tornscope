@@ -23,7 +23,7 @@ import { getTimeline } from "./services/timeline.js";
 import { getDashboard } from "./services/dashboard.js";
 import { getToday } from "./services/today.js";
 import { getMe, getApiKeyStatus, saveApiKey, deleteApiKey, setDemoView } from "./services/me.js";
-import { getSyncStatus, requestManualSync } from "./services/syncStatus.js";
+import { getSyncStatus, getSyncHealth, requestManualSync, retryFailedSyncs, restartBackfill } from "./services/syncStatus.js";
 import { getPrismaClient } from "@tornscope/database";
 
 function parseRange(query: Record<string, unknown>) {
@@ -183,13 +183,33 @@ export function registerRoutes(app: FastifyInstance): void {
     return getSyncStatus(user.id);
   });
 
+  // Full sync + system health for the Sync Status page.
+  app.get("/api/sync/health", async () => {
+    const user = await resolveCurrentUser();
+    return getSyncHealth(user.id);
+  });
+
   app.post("/api/sync/run", async (req) => {
     const user = await resolveCurrentUser();
-    const body = z.object({ resource: z.string().min(1).max(64) }).safeParse(req.body);
+    const body = z.object({ resource: z.string().min(1).max(64), force: z.boolean().optional() }).safeParse(req.body);
     if (!body.success) throw errors.validation(body.error.flatten());
-    const result = await requestManualSync(user.id, body.data.resource);
+    const result = await requestManualSync(user.id, body.data.resource, { force: body.data.force });
     if (!result.queued && result.retryAfterSeconds && result.retryAfterSeconds > 0) {
       throw errors.cooldown(`Sync for ${body.data.resource} was requested recently. Try again in ${result.retryAfterSeconds}s.`);
+    }
+    return { queued: result.queued };
+  });
+
+  app.post("/api/sync/retry-failed", async () => {
+    const user = await resolveCurrentUser();
+    return retryFailedSyncs(user.id);
+  });
+
+  app.post("/api/sync/backfill", async () => {
+    const user = await resolveCurrentUser();
+    const result = await restartBackfill(user.id);
+    if (result.retryAfterSeconds && result.retryAfterSeconds > 0) {
+      throw errors.cooldown(`Backfill was restarted recently. Try again in ${result.retryAfterSeconds}s.`);
     }
     return { queued: result.queued };
   });

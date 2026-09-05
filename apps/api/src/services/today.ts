@@ -60,13 +60,15 @@ export function clearEducationCatalogCache(): void {
   educationCatalog = null;
 }
 
-/** GET /api/today — cached, single-flight per user. */
-export async function getToday(user: { id: string }): Promise<TodayResponse> {
+/** GET /api/today — cached, single-flight per user. Demo users get
+ * deterministic simulated live data instead of real Torn calls (a demo
+ * account has no API key, and Today must never hang on "loading"). */
+export async function getToday(user: { id: string; isDemo: boolean }): Promise<TodayResponse> {
   const now = Date.now();
   const entry = cache.get(user.id);
   if (entry && entry.expiresAt > now) return entry.promise;
 
-  const promise = fetchToday(user.id);
+  const promise = user.isDemo ? Promise.resolve(buildDemoToday()) : fetchToday(user.id);
   cache.set(user.id, { expiresAt: now + CACHE_TTL_MS, promise });
   try {
     return await promise;
@@ -77,6 +79,155 @@ export async function getToday(user: { id: string }): Promise<TodayResponse> {
     if (current?.promise === promise) cache.delete(user.id);
     throw err;
   }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Demo live data (deterministic, time-driven — clearly marked)               */
+/* -------------------------------------------------------------------------- */
+
+const DEMO_COURSES = [
+  { id: 74, name: "Cognitive Psychology", category: "Bachelor of Psychology" },
+  { id: 12, name: "Defensive Driving", category: "Defensive Driving" },
+  { id: 31, name: "Self-defense Basics", category: "Self-defense" },
+] as const;
+
+/**
+ * Simulated live status for the demo player. Everything is a deterministic
+ * function of the server clock (no random, no Torn calls): bars fill and
+ * reset on fixed cycles, cooldowns clear, flights land, courses complete.
+ * Provenance is "estimated" throughout — this is simulation, never a real
+ * Torn reading, and it never touches the real user's records.
+ */
+export function buildDemoToday(nowMs: number = Date.now()): TodayResponse {
+  const nowSec = Math.floor(nowMs / 1000);
+  const cycle = (period: number) => nowSec % period;
+  const bar = (key: TodayBarKey, max: number, period: number): LiveBar =>
+    buildLiveBar(nowSec, key, { current: Math.floor(max * (cycle(period) / period)), maximum: max, increment: Math.max(1, Math.round(max / (period / 60))), interval: 60, full_time: nowSec + period - cycle(period) });
+
+  const cooldown = (kind: "drug" | "booster" | "medical", period: number, activeFor: number) =>
+    buildCooldown(nowSec, kind, cycle(period) < activeFor ? activeFor - cycle(period) : 0);
+
+  const travelCycle = 3 * 3600;
+  const phase = cycle(travelCycle);
+  let travel: TravelStatus;
+  if (phase < 3600) {
+    const landsAt = nowSec + 3600 - phase;
+    travel = {
+      state: "traveling",
+      country: "Argentina",
+      direction: "outbound",
+      method: "Airliner",
+      departedAt: nowSec - phase,
+      landsAt,
+      remainingSeconds: landsAt - nowSec,
+      durationSeconds: 3600,
+      provenance: "estimated",
+      unavailableReason: null,
+      requiredAccess: null,
+    };
+  } else if (phase < 7200) {
+    travel = {
+      state: "abroad",
+      country: "Argentina",
+      direction: null,
+      method: "Airliner",
+      departedAt: nowSec - (phase - 3600),
+      landsAt: null,
+      remainingSeconds: null,
+      durationSeconds: null,
+      provenance: "estimated",
+      unavailableReason: null,
+      requiredAccess: null,
+    };
+  } else {
+    travel = {
+      state: "home",
+      country: null,
+      direction: null,
+      method: "Airliner",
+      departedAt: null,
+      landsAt: null,
+      remainingSeconds: null,
+      durationSeconds: null,
+      provenance: "estimated",
+      unavailableReason: null,
+      requiredAccess: null,
+    };
+  }
+
+  const course = DEMO_COURSES[Math.floor(nowSec / 86_400) % DEMO_COURSES.length] ?? DEMO_COURSES[0];
+  const completesAt = nowSec + 6 * 3600 - cycle(6 * 3600);
+  const education: EducationStatus = {
+    state: "active",
+    courseId: course.id,
+    courseName: course.name,
+    categoryName: course.category,
+    completesAt,
+    remainingSeconds: completesAt - nowSec,
+    provenance: "estimated",
+    unavailableReason: null,
+    requiredAccess: null,
+  };
+
+  const amount = 450_000_000;
+  const maturesAt = nowSec + 10 * 86_400 + (86_400 - cycle(86_400));
+  const bank: BankStatus = {
+    state: "active",
+    amount,
+    profit: Math.round(amount * 0.0803),
+    interestRate: 8.03,
+    durationDays: 30,
+    investedAt: nowSec - 20 * 86_400,
+    maturesAt,
+    remainingSeconds: maturesAt - nowSec,
+    provenance: "estimated",
+    unavailableReason: null,
+    requiredAccess: null,
+  };
+
+  const bars = {
+    energy: { ...bar("energy", 150, 3600), provenance: "estimated" as const },
+    nerve: { ...bar("nerve", 55, 5400), provenance: "estimated" as const },
+    happy: { ...bar("happy", 5000, 4500), provenance: "estimated" as const },
+    life: { ...bar("life", 4150, 2700), provenance: "estimated" as const },
+  };
+  const cooldowns = {
+    drug: { ...cooldown("drug", 1800, 720), provenance: "estimated" as const },
+    booster: { ...cooldown("booster", 10_800, 2700), provenance: "estimated" as const },
+    medical: { ...cooldown("medical", 3600, 0), provenance: "estimated" as const },
+  };
+
+  const upcoming = buildUpcomingEvents(
+    collectUpcoming(nowSec, {
+      bars,
+      cooldowns,
+      travel,
+      education,
+      bank,
+      hospital: null,
+      jail: null,
+    })
+  );
+
+  return {
+    fetchedAt: nowMs,
+    serverTime: nowSec,
+    demo: true,
+    player: {
+      name: "DEMO_Player",
+      level: 42,
+      status: { state: "Okay", description: "Okay", details: null, until: null },
+    },
+    bars,
+    cooldowns,
+    travel,
+    bank,
+    education,
+    hospital: null,
+    jail: null,
+    upcoming,
+    access: { level: null, type: "demo", note: null },
+  };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -191,6 +342,7 @@ async function fetchToday(userId: string): Promise<TodayResponse> {
   return {
     fetchedAt: nowMs,
     serverTime: nowSec,
+    demo: false,
     player: {
       name: profile.profile.name ?? null,
       level: profile.profile.level ?? null,

@@ -67,6 +67,9 @@ export function aggregateMoneyEvents(
 
   for (const event of inRange) {
     if (event.amount === 0) continue;
+    // Transfers (bank deposits/withdrawals, faction pool movements) keep a
+    // ledger row but never count as income or spending.
+    if (event.direction === "neutral") continue;
     const cat = String(event.category);
     if (event.amount > 0) {
       totalIncome += event.amount;
@@ -86,6 +89,7 @@ export function aggregateMoneyEvents(
   const expenseByBucket = new Map<number, number>();
   for (const event of inRange) {
     if (event.amount === 0) continue;
+    if (event.direction === "neutral") continue; // transfers are not flows
     const b = bucketStart(event.occurredAt, interval);
     if (event.amount > 0) incomeByBucket.set(b, (incomeByBucket.get(b) ?? 0) + event.amount);
     else expenseByBucket.set(b, (expenseByBucket.get(b) ?? 0) + -event.amount);

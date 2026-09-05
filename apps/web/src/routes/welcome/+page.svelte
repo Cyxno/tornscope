@@ -1,9 +1,10 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
+  import { onMount } from "svelte";
   import { endpoints, ApiClientError } from "$lib/api";
   import type { ApiKeyStatusResponse } from "@tornscope/shared";
   import { branding } from "@tornscope/shared";
-  import { refreshMe } from "$lib/state.svelte";
+  import { refreshMe, me } from "$lib/state.svelte";
 
   let apiKey = $state("");
   let validating = $state(false);
@@ -11,6 +12,25 @@
   let error = $state<string | null>(null);
   let status = $state<ApiKeyStatusResponse | null>(null);
   let step = $state(1);
+
+  // Step 3 progress (resource-level — never an invented overall percentage).
+  type ResourceRow = { resource: string; status: string; lastSuccessAt: number | null; recordsCollected: number; errorMessage: string | null };
+  let syncRows = $state<ResourceRow[]>([]);
+  let syncRunning = $state(false);
+  let retrying = $state(false);
+
+  const RESOURCE_LABELS: Record<string, string> = {
+    profile: "Profile",
+    networth: "Net worth",
+    personal_stats: "Stats",
+    drugs: "Drugs",
+    rehab: "Rehab",
+    money_logs: "Money",
+    travel: "Travel",
+    events: "Timeline",
+    faction_basic: "Faction",
+    torn_catalog: "Catalog",
+  };
 
   async function validateAndSave() {
     if (apiKey.trim().length < 10) {
@@ -20,16 +40,48 @@
     validating = true;
     error = null;
     try {
+      // The backend validates, stores the encrypted credential, detects the
+      // player and queues the initial backfill itself.
       status = await endpoints.saveApiKey(apiKey.trim());
-      step = 2;
-      await Promise.allSettled(
-        ["profile", "networth", "personal_stats", "drugs", "travel", "rehab", "money_logs", "events", "faction_basic", "torn_catalog"].map((r) => endpoints.syncRun(r))
-      );
+      apiKey = "";
+      await refreshMe(); // drop stale "not configured" state immediately
       step = 3;
+      void pollSync();
     } catch (err) {
       error = err instanceof ApiClientError ? err.message : (err as Error).message;
     } finally {
       validating = false;
+    }
+  }
+
+  async function pollSync() {
+    try {
+      const s = await endpoints.syncStatus();
+      syncRunning = s.running;
+      syncRows = s.resources as ResourceRow[];
+    } catch {
+      // Progress is best-effort; the button below never depends on it.
+    }
+  }
+
+  function rowState(row: ResourceRow): { label: string; cls: string } {
+    if (row.status === "running") return { label: row.lastSuccessAt === null ? "importing" : "syncing", cls: "text-accent" };
+    if (row.errorMessage && row.lastSuccessAt === null) return { label: "failed", cls: "text-negative" };
+    if (row.lastSuccessAt !== null) {
+      return { label: row.recordsCollected > 0 ? `ready · ${row.recordsCollected.toLocaleString("en-US")} records` : "ready", cls: "text-positive" };
+    }
+    return { label: "queued", cls: "text-fg-faint" };
+  }
+
+  async function retryFailed() {
+    retrying = true;
+    try {
+      await endpoints.syncRetryFailed();
+      void pollSync();
+    } catch {
+      // surfaced on the Sync Status page
+    } finally {
+      retrying = false;
     }
   }
 
@@ -39,16 +91,23 @@
     try {
       await endpoints.setDemoView(true);
       await refreshMe();
-      await goto("/");
+      await goto("/today");
     } catch (err) {
       error = err instanceof ApiClientError ? err.message : (err as Error).message;
       loadingDemo = false;
     }
   }
 
-  async function toDashboard() {
-    await goto("/");
+  function openApp() {
+    void goto("/today");
   }
+
+  onMount(() => {
+    const poll = setInterval(() => {
+      if (step === 3) void pollSync();
+    }, 3000);
+    return () => clearInterval(poll);
+  });
 </script>
 
 <div class="flex min-h-screen items-center justify-center px-5 py-14">
@@ -113,19 +172,47 @@
           <p class="text-sm text-fg-muted">Key saved. Kicking off the initial sync of your Torn history…</p>
         </div>
       {:else}
-        <div class="space-y-4 text-center">
-          <p class="text-sm font-semibold text-positive">Initial sync queued.</p>
-          <p class="mx-auto max-w-sm text-[13px] leading-relaxed text-fg-muted">
-            The worker is collecting up to 180 days of logs. The dashboard fills in as data arrives — watch Sync Status for progress.
-          </p>
-          <button class="rounded-xl bg-accent-strong px-8 py-3 text-sm font-semibold text-bg transition-colors hover:bg-accent" onclick={() => void toDashboard()}>
-            Go to dashboard
+        <div class="space-y-5">
+          <div class="space-y-1 text-center">
+            <p class="text-sm font-semibold text-positive">Account connected — live data is available.</p>
+            <p class="mx-auto max-w-sm text-[13px] leading-relaxed text-fg-muted">
+              You can start exploring now; the historical import continues in the background.
+            </p>
+          </div>
+
+          <!-- Resource-level progress (no invented overall percentage) -->
+          <div class="rounded-xl border border-border bg-bg-raise px-4 py-2">
+            {#each syncRows as row (row.resource)}
+              <div class="flex items-center justify-between gap-3 border-b border-border/50 py-2 last:border-0">
+                <span class="text-[13px] text-fg">{RESOURCE_LABELS[row.resource] ?? row.resource}</span>
+                <span class="tnum text-xs {rowState(row).cls}">{rowState(row).label}</span>
+              </div>
+            {:else}
+              <p class="py-3 text-center text-xs text-fg-faint">
+                {syncRunning ? "Starting the initial sync…" : "Waiting for the first sync…"}
+              </p>
+            {/each}
+          </div>
+
+          <button class="w-full rounded-xl bg-accent-strong py-3 text-sm font-semibold text-bg transition-colors hover:bg-accent" onclick={openApp}>
+            Open Today
           </button>
+          <div class="flex items-center justify-center gap-4 text-xs">
+            <a href="/sync" class="text-fg-muted transition-colors hover:text-accent">Sync status</a>
+            {#if syncRows.some((r) => r.errorMessage && r.lastSuccessAt === null)}
+              <button class="text-fg-muted transition-colors hover:text-accent disabled:opacity-40" onclick={() => void retryFailed()} disabled={retrying}>
+                {retrying ? "Retrying…" : "Retry failed sync"}
+              </button>
+            {/if}
+          </div>
+          {#if me.data?.torn}
+            <p class="text-center text-xs text-fg-faint">Detected player: {me.data.torn.name} [{me.data.torn.tornId}]</p>
+          {/if}
         </div>
       {/if}
     </div>
 
-    {#if status?.tornId}
+    {#if step !== 3 && status?.tornId}
       <p class="text-center text-xs text-fg-muted">
         Detected player: <span class="text-fg">{status.tornName}</span> [{status.tornId}]
       </p>

@@ -106,7 +106,8 @@ export async function insertMoneyEvents(db: PrismaClientType, userId: string, ev
       source: "torn_log",
       sourceRef: e.sourceRef,
       description: e.description,
-      raw: e.raw === undefined ? Prisma.JsonNull : (e.raw as Prisma.InputJsonValue),
+      // MoneyEvent stores the raw Torn log under `metadata` (there is no raw column).
+      metadata: e.raw === undefined ? Prisma.JsonNull : (e.raw as Prisma.InputJsonValue),
     })),
     skipDuplicates: true,
   });
@@ -222,13 +223,14 @@ export async function insertPersonalStatSnapshot(
   db: PrismaClientType,
   userId: string,
   capturedAt: Date,
-  stats: Record<string, number>,
+  stats: Record<string, unknown>,
   networthTotal: bigint | null
 ): Promise<void> {
+  const json = stats as Prisma.InputJsonValue;
   await db.personalStatSnapshot.upsert({
     where: { userId_capturedAt: { userId, capturedAt } },
-    create: { userId, capturedAt, stats, networthTotal },
-    update: { stats, networthTotal },
+    create: { userId, capturedAt, stats: json, networthTotal },
+    update: { stats: json, networthTotal },
   });
 }
 

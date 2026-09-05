@@ -6,7 +6,7 @@ import type {
   MoneyEventDto,
   MoneySummaryResponse,
   Paginated,
-  SyncStatusResponse,
+  SyncHealthResponse,
   TimelineEventDto,
   TodayResponse,
   TravelSummaryResponse,
@@ -105,8 +105,11 @@ export const endpoints = {
     if (opts.type) params.set("type", opts.type);
     return api.get(`/timeline?${params.toString()}`);
   },
-  syncStatus: () => api.get<SyncStatusResponse>("/sync/status"),
-  syncRun: (resource: string) => api.post<{ queued: boolean }>("/sync/run", { resource }),
+  syncStatus: () => api.get<{ running: boolean; resources: Array<{ resource: string; status: string; lastAttemptAt: number | null; lastSuccessAt: number | null; nextRunAt: number | null; recordsCollected: number; errorMessage: string | null }> }>("/sync/status"),
+  syncHealth: () => api.get<SyncHealthResponse>("/sync/health"),
+  syncRun: (resource: string, force = false) => api.post<{ queued: boolean }>("/sync/run", { resource, force }),
+  syncRetryFailed: () => api.post<{ queued: string[] }>("/sync/retry-failed"),
+  syncBackfill: () => api.post<{ queued: number }>("/sync/backfill"),
   setDemoView: (enabled: boolean) => api.post<MeResponse>("/demo-view", { enabled }),
   apiKeyStatus: () => api.get<ApiKeyStatusResponse>("/settings/api-key"),
   saveApiKey: (key: string) => api.post<ApiKeyStatusResponse>("/settings/api-key", { key }),
