@@ -118,7 +118,7 @@ export async function getCombatSummary(userId: string, rangeInput: DateRangeInpu
     db.combatEvent.findFirst({ where: { userId }, orderBy: { occurredAt: "desc" }, select: { occurredAt: true } }),
   ]);
   const muggedGain = Number(mugRows.find((r) => r.direction === "income")?._sum.amount ?? 0n);
-  const muggedLoss = Number(mugRows.find((r) => r.direction === "expense")?._sum.amount ?? 0n);
+  const muggedLoss = -Number(mugRows.find((r) => r.direction === "expense")?._sum.amount ?? 0n);
   const mug: (v: number) => KpiValue = (v) => ({ value: v, provenance: "exact", availability: mugRows.length > 0 ? "ok" : "unavailable" });
 
   return {
