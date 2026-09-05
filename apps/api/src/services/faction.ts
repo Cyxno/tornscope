@@ -287,6 +287,7 @@ export async function getFactionChains(userId: string, rangeInput: DateRangeInpu
 export async function getFactionOcs(userId: string, rangeInput: DateRangeInput, myTornId: number | null): Promise<FactionOcsResponse> {
   const db = getPrismaClient();
   const range = resolveDateRange(rangeInput);
+  const resolved = myTornId ?? (await db.tornAccount.findUnique({ where: { userId }, select: { tornId: true } }))?.tornId ?? null;
   const ocs = await db.organizedCrime.findMany({
     where: { userId, OR: [{ executedAt: { gte: new Date(range.from * 1000) } }, { executedAt: null }] },
     orderBy: { executedAt: "desc" },
@@ -294,7 +295,7 @@ export async function getFactionOcs(userId: string, rangeInput: DateRangeInput, 
 
   const rows: FactionOcRow[] = ocs.map((oc) => {
     const slots = (oc.slots ?? []) as Array<{ user?: { id?: number; outcome?: string } | null }>;
-    const myParticipation = myTornId !== null && slots.some((s) => s.user?.id === myTornId);
+    const myParticipation = resolved !== null && slots.some((s) => s.user?.id === resolved);
     const rewards = (oc.rewards ?? {}) as { money?: number; respect?: number; payout?: { percentage?: number } | null };
     return {
       ocId: oc.ocId,
