@@ -202,6 +202,22 @@ describe("paginateBackward", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
+  it("an empty page stops the walk before following the below-window prev link", async () => {
+    // Torn quirk (live-observed): a from-clamped empty page still advertises
+    // a prev link whose pages IGNORE from — following it re-serves entire
+    // below-window history every cycle. The walk must stop at the empty page.
+    const { client, fetchImpl } = clientWithPages([
+      { timestamps: [], prev: "https://api.torn.com/v2/user/log?cat=219&from=1&to=1" },
+    ]);
+    const result = await client.paginateBackward("/user/log", { cat: 219, limit: 100 }, () => {}, {
+      boundaryTs: NOW - 120,
+      pageSize: 100,
+      rowTimestamps: (data) => (data as { log: Array<{ timestamp: number }> }).log.map((l) => l.timestamp),
+    });
+    expect(result.stopReason).toBe("history_boundary_reached");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
   it("propagates the api key via header, never via URL", async () => {
     const { client, fetchImpl } = clientWithPages([{ timestamps: [NOW], prev: null }]);
     await client.paginateBackward("/user/log", { cat: 61, limit: 100 }, () => {});

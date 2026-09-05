@@ -205,10 +205,16 @@ export class TornApiClient {
         const pageOldest = Math.min(...timestamps);
         if (pageOldest <= boundaryTs) return finish("history_boundary_reached");
       }
-      // Short page: Torn clamps pages to the requested window, so fewer rows
-      // than the page size means this window holds nothing further — the walk
-      // is complete (the boundary was already covered by the pages so far).
-      if (pageSize !== undefined && timestamps.length > 0 && timestamps.length < pageSize) {
+      // Empty page: Torn clamps pages to the requested window, so an empty
+      // page means no rows exist at/after the boundary. CRITICAL: Torn still
+      // advertises a prev link here whose pages IGNORE from — following it
+      // re-serves entire below-window history every cycle. Stop instead.
+      if (timestamps.length === 0) {
+        return finish(boundaryTs !== null ? "history_boundary_reached" : "source_exhausted");
+      }
+      // Short page: fewer rows than the page size also means this window
+      // holds nothing further — the walk is complete.
+      if (pageSize !== undefined && timestamps.length < pageSize) {
         return finish("history_boundary_reached");
       }
 
