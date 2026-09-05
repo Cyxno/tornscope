@@ -183,10 +183,9 @@ export class TornApiClient {
     let oldestSeen: number | null = null;
     let newestSeen: number | null = null;
     let lastWindow: string | null = null;
-    let stalls = 0;
 
     while (pages < maxPages) {
-      if (!currentPath || !currentParams) return finish("cursor_stalled");
+      if (!currentPath || !currentParams) return finish("source_exhausted");
       const result = await this.getRaw(currentPath, currentParams);
       const data = result.data as Record<string, unknown>;
       pages += 1;
@@ -210,15 +209,12 @@ export class TornApiClient {
       const parsedPrev = prev ? this.relativeLink(prev) : null;
       if (!prev || !parsedPrev) return finish("source_exhausted");
 
-      // Stall detection: a prev link whose window equals the current one can
-      // never make progress (two identical consecutive windows = stalled).
+      // Torn quirk: at the true end of a category's history the advertised
+      // prev link can repeat forever (pointing at a window that was already
+      // served). Following it only re-serves the same rows, so a repeated
+      // link means there are no older rows left — source exhausted.
       const windowKey = JSON.stringify({ p: parsedPrev.path, q: parsedPrev.params });
-      if (lastWindow !== null && windowKey === lastWindow) {
-        stalls += 1;
-        if (stalls >= 2) return finish("cursor_stalled");
-      } else {
-        stalls = 0;
-      }
+      if (lastWindow !== null && windowKey === lastWindow) return finish("source_exhausted");
       lastWindow = windowKey;
 
       currentPath = parsedPrev.path;
@@ -229,14 +225,9 @@ export class TornApiClient {
 
     function finish(reason: BackwardStopReason): BackwardPaginationResult {
       // If the walk already collected rows at/before the requested boundary,
-      // the requested history IS fully covered — even when the stop itself
-      // was a stall or the page cap. Report the covered truth.
-      if (
-        (reason === "cursor_stalled" || reason === "max_pages") &&
-        boundaryTs !== null &&
-        oldestSeen !== null &&
-        oldestSeen <= boundaryTs
-      ) {
+      // the requested history IS fully covered — even when the safety cap
+      // stopped the walk. Report the covered truth.
+      if (reason === "max_pages" && boundaryTs !== null && oldestSeen !== null && oldestSeen <= boundaryTs) {
         return { pages, oldestTimestamp: oldestSeen, newestTimestamp: newestSeen, stopReason: "history_boundary_reached" };
       }
       return { pages, oldestTimestamp: oldestSeen, newestTimestamp: newestSeen, stopReason: reason };

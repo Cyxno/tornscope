@@ -104,7 +104,9 @@ describe("paginateBackward", () => {
     expect(result.stopReason).toBe("source_exhausted");
   });
 
-  it("detects a stalled cursor (identical prev window twice) and stops", async () => {
+  it("a repeated prev window at the end of history means source exhausted (no infinite loop)", async () => {
+    // Torn quirk: at the end of a category's history the prev link repeats.
+    // The walk must stop instead of looping, reporting source_exhausted.
     const samePrev = "https://api.torn.com/v2/user/log?cat=61&from=1&to=1";
     const { client, fetchImpl } = clientWithPages([
       { timestamps: [NOW, NOW - 10], prev: samePrev },
@@ -114,9 +116,9 @@ describe("paginateBackward", () => {
     const result = await client.paginateBackward("/user/log", { cat: 61, limit: 100 }, () => {}, {
       rowTimestamps: (data) => (data as { log: Array<{ timestamp: number }> }).log.map((l) => l.timestamp),
     });
-    expect(result.stopReason).toBe("cursor_stalled");
-    // Initial page + 2 stalled confirmations, then stop before a 4th call.
-    expect(fetchImpl.mock.calls.length).toBeLessThanOrEqual(3);
+    expect(result.stopReason).toBe("source_exhausted");
+    // Initial page + 1 repeat confirmation, then stop before a 3rd call.
+    expect(fetchImpl.mock.calls.length).toBeLessThanOrEqual(2);
   });
 
   it("stops with max_pages (incomplete) when the safety cap is hit", async () => {
