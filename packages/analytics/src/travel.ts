@@ -104,9 +104,8 @@ export function calculateTravelProfit(trips: readonly TravelTripLike[], from?: n
   let revenueSum = 0;
   let revenueKnown = true;
   let durationSum = 0;
-  let durationKnown = true;
 
-  const destMap = new Map<string, DestinationAnalytics & { _revenueKnown: boolean; _durationSum: number; _durationKnown: boolean }>();
+  const destMap = new Map<string, DestinationAnalytics & { _revenueKnown: boolean; _durationSum: number }>();
   const catMap = new Map<string, { quantity: number; spend: number; estimatedValue: number | null }>();
 
   for (const trip of inRange) {
@@ -125,7 +124,6 @@ export function calculateTravelProfit(trips: readonly TravelTripLike[], from?: n
           averageProfitPerHour: null,
           _revenueKnown: true,
           _durationSum: 0,
-          _durationKnown: true,
         }
       ), destMap.get(trip.destination)!);
 
@@ -134,9 +132,6 @@ export function calculateTravelProfit(trips: readonly TravelTripLike[], from?: n
     if (duration !== null) {
       durationSum += duration;
       dest._durationSum += duration;
-    } else {
-      durationKnown = false;
-      dest._durationKnown = false;
     }
 
     let tripRevenue = 0;
@@ -185,7 +180,9 @@ export function calculateTravelProfit(trips: readonly TravelTripLike[], from?: n
       estimatedRevenue: d._revenueKnown ? d.estimatedRevenue : null,
       estimatedProfit: profit,
       averageProfitPerTrip: profit !== null && d.trips > 0 ? profit / d.trips : null,
-      averageProfitPerHour: profit !== null && d._durationKnown && d._durationSum > 0 ? (profit / d._durationSum) * HOUR : null,
+      // Per-hour is computed over the trips with known durations (an
+      // in-flight trip has none yet) — null only when none are known.
+      averageProfitPerHour: profit !== null && d._durationSum > 0 ? (profit / d._durationSum) * HOUR : null,
     };
   }).sort((a, b) => (b.estimatedProfit ?? b.totalSpend * -1) - (a.estimatedProfit ?? a.totalSpend * -1));
 
@@ -201,8 +198,7 @@ export function calculateTravelProfit(trips: readonly TravelTripLike[], from?: n
     estimatedRevenue: revenueKnown ? revenueSum : null,
     estimatedProfit,
     averageProfitPerTrip: estimatedProfit !== null && inRange.length > 0 ? estimatedProfit / inRange.length : null,
-    averageProfitPerHour:
-      estimatedProfit !== null && durationKnown && durationSum > 0 ? (estimatedProfit / durationSum) * HOUR : null,
+    averageProfitPerHour: estimatedProfit !== null && durationSum > 0 ? (estimatedProfit / durationSum) * HOUR : null,
     byDestination,
     byCategory,
     mostProfitableDestination: byDestination.find((d) => d.estimatedProfit !== null) ?? null,
