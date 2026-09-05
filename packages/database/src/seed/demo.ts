@@ -381,7 +381,6 @@ async function main(): Promise<void> {
       jailSeconds: !success && i % 8 === 0 ? 3_600 : null,
       hospitalSeconds: null,
       skillGain: null,
-      source: "demo",
       sourceRef: `demo:crime:${i}`,
       metadata: { simulated: true },
     };
@@ -409,7 +408,6 @@ async function main(): Promise<void> {
       result: result,
       respectDelta: i % 3 !== 0 ? 1.5 + (i % 10) / 10 : 0,
       modifiers: { simulated: true },
-      source: "demo",
       sourceRef: `demo:attack:${i}`,
       metadata: { simulated: true },
     };
