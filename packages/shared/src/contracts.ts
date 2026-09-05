@@ -437,6 +437,21 @@ export type DrugHistoryPoint = z.infer<typeof DrugHistoryPointSchema>;
 export const TravelSummaryResponseSchema = z.object({
   range: z.object({ from: z.number(), to: z.number() }),
   trips: z.number(),
+  /**
+   * Historical source coverage vs TornScope tracked history:
+   * - trackingSince: earliest permanently stored travel evidence — trips
+   *   never disappear when Torn prunes its logs
+   * - sourceAvailableFrom: oldest travel log Torn still exposes (per the
+   *   last backward walk) — reconstructions BEFORE this point are impossible
+   */
+  coverage: z.object({
+    /** Earliest permanently stored travel evidence (tracking start). */
+    trackingSince: z.number().nullable(),
+    /** Earliest COMPLETE stored trip (depart + return both present). */
+    completeTripsFrom: z.number().nullable(),
+    /** Oldest travel log observed by the deepest backward walk so far. */
+    sourceAvailableFrom: z.number().nullable(),
+  }),
   estimatedProfit: KpiValueSchema,
   averageTripProfit: KpiValueSchema,
   profitPerHour: KpiValueSchema,
@@ -568,6 +583,8 @@ export const SyncHealthResponseSchema = z.object({
       stopReason: z.string().nullable(),
       /** Oldest source timestamp observed during the last backward walk. */
       sourceEarliestAt: z.number().nullable(),
+      /** Torn API pages used by the last sync (incremental stays lightweight). */
+      lastWalkPages: z.number().nullable(),
       /** Earliest/latest stored structured row for this resource's domain. */
       storedEarliestAt: z.number().nullable(),
       storedLatestAt: z.number().nullable(),

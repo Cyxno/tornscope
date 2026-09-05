@@ -97,6 +97,7 @@ export async function runResourceSync(userId: string, resource: SyncResource): P
       lastTimestamp: result.lastTimestamp ?? undefined,
       stopReason: result.stopReason ?? null,
       sourceEarliestAt: result.sourceEarliestAt ?? null,
+      lastWalkPages: result.pagesWalked ?? null,
       nextRunAt: new Date(Date.now() + frequency * 1000),
       now: new Date(),
     });

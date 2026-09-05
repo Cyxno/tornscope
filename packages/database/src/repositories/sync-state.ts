@@ -24,6 +24,8 @@ export type SyncStateRow = {
   stopReason: string | null;
   /** Oldest source timestamp observed during the last backward walk. */
   sourceEarliestAt: bigint | null;
+  /** Torn API pages fetched by the last sync. */
+  lastWalkPages: number | null;
   frequencySeconds: number;
   /** Last write to this row — the liveness heartbeat for stale detection. */
   updatedAt: Date | null;
@@ -109,6 +111,8 @@ export interface CompletionUpdate {
   stopReason?: string | null;
   /** Oldest source timestamp seen during the backward walk. */
   sourceEarliestAt?: bigint | null;
+  /** Torn API pages fetched during this sync. */
+  lastWalkPages?: number | null;
   nextRunAt?: Date | null;
   now?: Date;
 }
@@ -142,6 +146,7 @@ export async function completeResource(db: PrismaClientType, userId: string, res
       cursor: update.cursor ?? undefined,
       stopReason: update.stopReason !== undefined ? update.stopReason : undefined,
       sourceEarliestAt: sourceEarliest,
+      lastWalkPages: update.lastWalkPages !== undefined ? update.lastWalkPages : undefined,
       nextRunAt: update.nextRunAt ?? undefined,
     },
   });
@@ -183,6 +188,7 @@ export async function getSyncStates(db: PrismaClientType, userId: string): Promi
     errorMessage: r.errorMessage,
     stopReason: r.stopReason,
     sourceEarliestAt: r.sourceEarliestAt,
+    lastWalkPages: r.lastWalkPages,
     frequencySeconds: r.frequencySeconds,
     updatedAt: r.updatedAt,
   }));

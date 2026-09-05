@@ -52,6 +52,8 @@ export interface SyncHandlerArgs {
 
 export type SyncHandlerResult = {
   records: number;
+  /** Total Torn API pages fetched during this sync (lightweight-check). */
+  pagesWalked?: number;
   lastTimestamp?: bigint | null;
   /** Why the historical backward walk stopped (coverage reporting). */
   stopReason?: BackwardStopReason | "api_error";
@@ -247,13 +249,31 @@ async function getCurrentApiKey(): Promise<string> {
 }
 
 /**
+ * Requested history boundary (unix seconds) for a sync.
+ *
+ * - Initial backfill (lastTimestamp null): now - initialHistoryDays. The walk
+ *   stops at this boundary and only rows INSIDE the window are persisted —
+ *   the boundary-crossing page may contain much older rows (a low-volume
+ *   category's entire history fits on one page, potentially years back),
+ *   and those are filtered out unless explicitly configured otherwise.
+ * - Incremental (lastTimestamp set): the last successful cursor. Torn has no
+ *   server-side lower-bound filter, so the walk pages down from the newest
+ *   page until it reaches the cursor — normally one page, never a deep walk.
+ */
+export function historyBoundaryTs(lastTimestamp: bigint | null, initialHistoryDays: number, nowSec = Math.floor(Date.now() / 1000)): number {
+  return lastTimestamp !== null ? Number(lastTimestamp) : nowSec - initialHistoryDays * 86_400;
+}
+
+/**
  * Incremental + historical log sync.
  *
  * Torn's /user/log returns the NEWEST page first and exposes older pages
  * only through `links.prev` — the old forward-only pagination silently
  * truncated every category to its first page (100 newest rows). We now walk
  * BACKWARD from the newest page down to the boundary:
- * - initial backfill (lastTimestamp null): boundary = now - history days
+ * - initial backfill (lastTimestamp null): boundary = now - history days;
+ *   rows outside the window are NOT persisted even when the boundary-
+ *   crossing page contains them
  * - incremental (lastTimestamp set): boundary = last cursor timestamp
  * Insertion is idempotent ((userId, source, sourceRef) unique), so walking
  * over already-stored rows is always safe.
@@ -271,11 +291,13 @@ async function syncLogsByCategories(args: SyncHandlerArgs, categoryIds: number[]
     loadItemIdByName(ctx.db),
   ]);
 
-  const nowSec = Math.floor(Date.now() / 1000);
-  const boundaryTs =
-    args.lastTimestamp !== null ? Number(args.lastTimestamp) : nowSec - ctx.initialHistoryDays * 86_400;
+  const boundaryTs = historyBoundaryTs(args.lastTimestamp, ctx.initialHistoryDays);
+  // Only the initial backfill is bounded by the configured window: rows the
+  // boundary-crossing page carries from before it are not persisted.
+  const enforceBoundary = args.lastTimestamp === null;
 
   let records = 0;
+  let pagesWalked = 0;
   let maxTimestamp = args.lastTimestamp !== null ? Number(args.lastTimestamp) : 0;
   const stopReasons: BackwardStopReason[] = [];
   let sourceEarliest: number | null = null;
@@ -288,6 +310,7 @@ async function syncLogsByCategories(args: SyncHandlerArgs, categoryIds: number[]
         logger.debug({ userId: args.userId, category, page: logs.length, stage: "page_received" }, "log page received");
         if (logs.length === 0) return;
         for (const log of logs) {
+          if (enforceBoundary && log.timestamp < boundaryTs) continue;
           const normalized = normalizeLogEntry(log, { itemNameById, itemTypeById, itemMarketPriceById, itemIdByName });
           // Each typed insert is its own small idempotent transaction — the
           // cursor is only advanced after every page of this category made
@@ -309,6 +332,7 @@ async function syncLogsByCategories(args: SyncHandlerArgs, categoryIds: number[]
       { maxPages: 400, boundaryTs }
     );
     records += categoryRecords;
+    pagesWalked += walk.pages;
     stopReasons.push(walk.stopReason);
     if (walk.oldestTimestamp !== null && (sourceEarliest === null || walk.oldestTimestamp < sourceEarliest)) {
       sourceEarliest = walk.oldestTimestamp;
@@ -330,6 +354,7 @@ async function syncLogsByCategories(args: SyncHandlerArgs, categoryIds: number[]
 
   return {
     records,
+    pagesWalked,
     lastTimestamp: maxTimestamp > 0 ? BigInt(maxTimestamp) : null,
     stopReason: aggregateStopReason(stopReasons),
     sourceEarliestAt: sourceEarliest !== null ? BigInt(sourceEarliest) : null,
@@ -380,9 +405,8 @@ export const syncMoneyLogs: SyncHandler = async (args) =>
 
 export const syncEvents: SyncHandler = async (args) => {
   const ctx = getWorkerContext();
-  const nowSec = Math.floor(Date.now() / 1000);
-  const boundaryTs =
-    args.lastTimestamp !== null ? Number(args.lastTimestamp) : nowSec - ctx.initialHistoryDays * 86_400;
+  const boundaryTs = historyBoundaryTs(args.lastTimestamp, ctx.initialHistoryDays);
+  const enforceBoundary = args.lastTimestamp === null;
 
   let records = 0;
   let maxTimestamp = args.lastTimestamp !== null ? Number(args.lastTimestamp) : 0;
@@ -391,9 +415,11 @@ export const syncEvents: SyncHandler = async (args) => {
     { from: boundaryTs, limit: 100 },
     async (events) => {
       if (events.length === 0) return;
-      await insertTimelineEvents(ctx.db, args.userId, events.map((event) => normalizeTornEvent(event)));
-      records += events.length;
-      for (const event of events) {
+      const inWindow = enforceBoundary ? events.filter((e) => e.timestamp >= boundaryTs) : events;
+      if (inWindow.length === 0) return;
+      await insertTimelineEvents(ctx.db, args.userId, inWindow.map((event) => normalizeTornEvent(event)));
+      records += inWindow.length;
+      for (const event of inWindow) {
         if (event.timestamp > maxTimestamp) maxTimestamp = event.timestamp;
       }
       args.onProgress?.(records);
@@ -404,6 +430,7 @@ export const syncEvents: SyncHandler = async (args) => {
 
   return {
     records,
+    pagesWalked: walk.pages,
     lastTimestamp: maxTimestamp > 0 ? BigInt(maxTimestamp) : null,
     stopReason: walk.stopReason,
     sourceEarliestAt: walk.oldestTimestamp !== null ? BigInt(walk.oldestTimestamp) : null,

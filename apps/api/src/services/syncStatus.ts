@@ -116,6 +116,7 @@ export async function getSyncHealth(userId: string) {
       errorMessage: s.errorMessage,
       stopReason: s.stopReason,
       sourceEarliestAt: s.sourceEarliestAt !== null ? Number(s.sourceEarliestAt) : null,
+      lastWalkPages: s.lastWalkPages,
       storedEarliestAt: sec(storedWindows[s.resource]?.earliest ?? null),
       storedLatestAt: sec(storedWindows[s.resource]?.latest ?? null),
     })),

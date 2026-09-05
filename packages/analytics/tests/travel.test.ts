@@ -192,3 +192,16 @@ describe("assembleTrips", () => {
     expect(trips[0]!.items).toHaveLength(1);
   });
 });
+
+describe("permanent travel history", () => {
+  it("the All range uses every permanently stored trip, even older than Torn's own retention", () => {
+    // Torn prunes arrive logs after ~60 days; TornScope keeps trips forever.
+    const oldTrip = trip("old", "Canada", T0 - 200 * DAY, 8 * HOUR, plushies(1, 10_000, 12_000));
+    const recent = trip("new", "Canada", T0 - 2 * DAY, 6 * HOUR, plushies(1, 10_000, 15_000));
+    const summary = calculateTravelProfit([oldTrip, recent]);
+    expect(summary.trips).toBe(2);
+    expect(summary.estimatedProfit).toBe(7_000);
+    // Profit per hour covers the same stored trip set (14h total, 7k profit).
+    expect(summary.averageProfitPerHour).toBeCloseTo(500);
+  });
+});

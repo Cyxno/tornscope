@@ -152,6 +152,9 @@ model SyncState {
   /// Oldest timestamp the source still exposes within the requested window,
   /// observed during the last backward walk ("available from Torn").
   sourceEarliestAt BigInt?
+  /// Torn API pages fetched by the last sync — verifies incremental syncs
+  /// stay lightweight vs the initial backfill.
+  lastWalkPages    Int?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 

@@ -191,6 +191,30 @@ async function main(): Promise<void> {
     });
     console.log(`    networth: snapshots=${networthWindow._count._all} distinctValues=${distinctTotals.length} trackingSince=${networthWindow._min.capturedAt ? fmt(networthWindow._min.capturedAt) : "—"} latest=${networthWindow._max.capturedAt ? fmt(networthWindow._max.capturedAt) : "—"}`);
 
+    // Travel source retention differs per log type — report each title's
+    // stored window (depart/arrive/purchase feed trip reconstruction).
+    const travelTitles = await db.timelineEvent.groupBy({
+      by: ["title"],
+      where: { userId: user.id, type: "log", category: "Travel" },
+      _count: { _all: true },
+      _min: { occurredAt: true },
+      _max: { occurredAt: true },
+    });
+    if (travelTitles.length > 0) {
+      console.log("    travel source types stored (retention differs per type):");
+      for (const t of travelTitles.sort((a, b) => (a._min.occurredAt?.getTime() ?? 0) - (b._min.occurredAt?.getTime() ?? 0))) {
+        console.log(`      ${t.title.padEnd(22)} n=${String(t._count._all).padStart(5)}  ${fmt(t._min.occurredAt)} -> ${fmt(t._max.occurredAt)}`);
+      }
+      const earliestComplete = await db.travelEvent.findFirst({
+        where: { userId: user.id, source: "trip", returnedAt: { not: null } },
+        orderBy: { departedAt: "asc" },
+        select: { departedAt: true, destination: true },
+      });
+      console.log(`    earliest complete stored trip: ${earliestComplete ? `${earliestComplete.destination} departing ${fmt(earliestComplete.departedAt)}` : "—"}`);
+      const unattached = await db.travelItemEvent.count({ where: { userId: user.id, travelEventId: null } });
+      console.log(`    unattached abroad purchases (kept, never invented into trips): ${unattached}`);
+    }
+
     interface TitleStat {
       category: string;
       title: string;

@@ -111,10 +111,23 @@
   {:else if error}
     <StateMessage state="error" title="Could not load travel analytics" hint={error} action={{ label: "Retry", run: () => (reloadToken += 1) }} />
   {:else if summary}
+    {#if summary.coverage.trackingSince !== null}
+      <p class="rounded-xl border border-border bg-surface px-5 py-3 text-xs leading-relaxed text-fg-muted">
+        <span class="font-medium text-fg">Full trip data available from Torn:{' '}</span>
+        {summary.coverage.completeTripsFrom !== null ? new Date(summary.coverage.completeTripsFrom * 1000).toISOString().slice(0, 10) : "—"}
+        <span class="mx-2 text-border-strong">·</span>
+        <span class="font-medium text-fg">TornScope tracking since:{' '}</span>
+        {new Date(summary.coverage.trackingSince * 1000).toISOString().slice(0, 10)}
+        — trips are stored permanently from that point and do not disappear when Torn prunes its logs.
+        {#if dateRange.from !== undefined && dateRange.from < summary.coverage.trackingSince}
+          <span class="font-medium text-warning"> The selected range predates complete trip coverage, so it shows partial history — no zeros are invented.</span>
+        {/if}
+      </p>
+    {/if}
     <div class="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border shadow-panel md:grid-cols-4">
       <Stat label="Trips" value={String(summary.trips)} provenance="exact" tone="accent" />
       <Stat
-        label="Estimated profit"
+        label="Tracked trip profit"
         value={formatKpiValue(summary.estimatedProfit)}
         provenance="estimated"
         tone={(summary.estimatedProfit.value ?? 0) >= 0 ? "positive" : "negative"}
@@ -126,10 +139,11 @@
 
     {#if summary.unattachedPurchases.count > 0}
       <p class="rounded-xl border border-border bg-surface px-5 py-3 text-xs text-fg-muted">
-        <span class="font-medium text-fg">{summary.unattachedPurchases.count} abroad purchase{summary.unattachedPurchases.count === 1 ? "" : "s"}</span>
-        ({formatMoneyCompact(summary.unattachedPurchases.spend)} across {summary.unattachedPurchases.itemsBought} items) predate the recoverable
-        departure history — Torn keeps travel logs for a limited window, so their trips cannot be reconstructed. Their spend is still
-        counted in the Economy page's cash flow.
+        <span class="font-medium text-fg">Historical unattached purchases:</span>
+        {summary.unattachedPurchases.count} abroad purchase{summary.unattachedPurchases.count === 1 ? "" : "s"}
+        ({formatMoneyCompact(summary.unattachedPurchases.spend)} across {summary.unattachedPurchases.itemsBought} items) whose
+        departure/arrival logs Torn no longer exposes. The purchases and their destinations are kept permanently; they are shown
+        separately and never mixed into Tracked trip profit or profit/hour, since their trip duration is unknown.
       </p>
     {/if}
 

@@ -14,7 +14,12 @@ export async function getTravelSummary(userId: string, rangeInput: DateRangeInpu
   const db = getPrismaClient();
   const range = resolveDateRange(rangeInput);
 
-  const marketPrices = await loadMarketPrices(db);
+  const [marketPrices, earliestTransition, earliestCompleteTrip, travelSyncState] = await Promise.all([
+    loadMarketPrices(db),
+    db.travelTransition.findFirst({ where: { userId }, orderBy: { occurredAt: "asc" }, select: { occurredAt: true } }),
+    db.travelEvent.findFirst({ where: { userId, source: "trip", returnedAt: { not: null } }, orderBy: { departedAt: "asc" }, select: { departedAt: true } }),
+    db.syncState.findUnique({ where: { userId_resource: { userId, resource: "travel" } }, select: { sourceEarliestAt: true } }),
+  ]);
   const { trips, unattached } = await loadTrips(userId, range.from, range.to, marketPrices);
 
   const summary = calculateTravelProfit(trips, range.from, range.to);
@@ -26,6 +31,14 @@ export async function getTravelSummary(userId: string, rangeInput: DateRangeInpu
   return {
     range: { from: range.from, to: range.to },
     trips: summary.trips,
+    coverage: {
+      // Permanently stored evidence: trips never disappear when Torn prunes.
+      trackingSince: earliestTransition ? Math.floor(earliestTransition.occurredAt.getTime() / 1000) : null,
+      // Earliest trip with BOTH departure and return stored.
+      completeTripsFrom: earliestCompleteTrip ? Math.floor(earliestCompleteTrip.departedAt.getTime() / 1000) : null,
+      // Oldest travel log observed by the deepest backward walk so far.
+      sourceAvailableFrom: travelSyncState?.sourceEarliestAt !== null && travelSyncState?.sourceEarliestAt !== undefined ? Number(travelSyncState.sourceEarliestAt) : null,
+    },
     estimatedProfit: {
       value: profitAvailable ? summary.estimatedProfit : null,
       provenance: "estimated",
