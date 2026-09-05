@@ -150,3 +150,19 @@ describe("link helpers", () => {
     expect(sanitizePath("/user/log?cat=7&key=SECRET")).toBe("/user/log");
   });
 });
+
+describe("fetch default", () => {
+  it("falls back to global fetch when no fetchImpl is injected (production path)", async () => {
+    const stub = vi.fn(async () => jsonResponse({ info: { access: { level: 4 } } }));
+    const original = globalThis.fetch;
+    globalThis.fetch = stub as typeof fetch;
+    try {
+      // No options at all — exactly how apps/api constructs the client.
+      const client = new TornApiClient("testkey");
+      await client.get("/key/info");
+      expect(stub).toHaveBeenCalledOnce();
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+});

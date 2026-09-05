@@ -4,6 +4,7 @@
   import "@fontsource-variable/newsreader/wght-italic.css";
   import "../app.css";
   import { onMount } from "svelte";
+  import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import Header from "$lib/components/Header.svelte";
   import { me, refreshMe } from "$lib/state.svelte";
@@ -18,14 +19,14 @@
   // First-run flow: without a connected Torn player, route to /welcome.
   $effect(() => {
     if (me.loaded && me.data?.needsOnboarding && page.url.pathname !== "/welcome") {
-      page.goto("/welcome");
+      void goto("/welcome");
     }
   });
 
   async function exitDemo() {
     await endpoints.setDemoView(false);
     await refreshMe();
-    page.goto("/");
+    await goto("/");
   }
 </script>
 

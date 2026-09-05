@@ -14,6 +14,7 @@ The product intentionally combines ideas from Torn.Report (information density, 
 
 | Area | What you get |
 | --- | --- |
+| **Today (live status)** | The player's day-to-day command view: live bars (energy/nerve/happy/life with regen + full-at countdowns), drug/booster/medical cooldown countdowns, travel state (outbound/returning/abroad with landing timer), city-bank investment maturity, education progress, hospital/jail release notices, and one merged **Upcoming** timeline sorted soonest-first. Countdowns render client-side from absolute Torn timestamps; live state refreshes every 45s while the tab is open (paused when hidden) |
 | **Overview dashboard** | KPI cards (net worth, cash, 30d income/expenses/net gain, travel profit, drugs used, rehab spend), networth-over-time chart, income/expense by source, travel profit trend, drug use trend, recent activity |
 | **Drugs & rehab** | Daily drug use chart (Good/Bad with zoom), per-drug breakdown with donut, estimated spend from Torn market prices, overdose rate, rehab history & spend |
 | **Money** | Unified ledger (single source of truth, deduplicated), income vs expenses over time, cumulative net gain, category breakdowns, filterable + paginated ledger table |
@@ -116,9 +117,12 @@ Endpoints used (all v2, authenticated via the `Authorization: ApiKey` header —
 
 - `/key/info` — validation, access level, log permissions
 - `/user/basic`, `/user/profile` — identity, level, faction, status
+- `/user/bars` — live energy/nerve/happy/life with absolute full times
+- `/user/cooldowns` — drug/booster/medical seconds remaining (ready-at derived server-side)
+- `/user/education` + `/torn/education` — current course, completion time, course names
+- `/user/travel` — current travel state (linked to historical trips when flying home)
+- `/user/money` — exact cash positions + city bank investment (Today)
 - `/user/networth` — full category breakdown (exact)
-- `/user/money` — exact cash positions (available for future features)
-- `/user/travel` — current travel state
 - `/user/personalstats?cat=all` — long-term stat snapshots
 - `/user/log?cat=…&from=…` + `_metadata.links.next` pagination — drugs, rehab, travel, money history
 - `/user/events` — timeline events
@@ -161,10 +165,12 @@ docker compose up -d postgres redis
 pnpm db:migrate && pnpm db:generate
 
 pnpm dev        # tsc watch + api + worker + web (vite) concurrently
-pnpm test       # vitest (73 tests: analytics, money, travel, drugs, rehab,
-                #  networth, timeline, encryption, log normalization,
-                #  Torn client retry/pagination/error taxonomy, cursors)
+pnpm test       # vitest (128 tests: analytics, money, travel, drugs, rehab,
+                #  networth, timeline, today live-state logic, encryption,
+                #  log normalization, Torn client retry/pagination/error
+                #  taxonomy, cursors, Today selection fixtures)
 pnpm typecheck  # strict TypeScript across all packages
+pnpm --filter @tornscope/web check   # svelte-check
 ```
 
 Dev URL: http://localhost:5173 (web) — `/api/*` is proxied to the Fastify server on :3000 in every environment.

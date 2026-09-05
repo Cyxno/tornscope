@@ -67,6 +67,8 @@ export class TornApiClient {
     this.opts = {
       ...DEFAULT_TORN_CLIENT_OPTIONS,
       logger: SAFE_DEFAULT_LOGGER,
+      // Default to the platform fetch unless a caller injects its own.
+      fetchImpl: (...args) => globalThis.fetch(...args),
       ...options,
     } as TornApiClientOptions;
     this.limiter = options.rateLimiter ?? new RateLimiter(this.opts.minRequestIntervalMs);

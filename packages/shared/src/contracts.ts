@@ -123,6 +123,8 @@ export const SyncResourceSchema = z.enum(SYNC_RESOURCES);
 export const MeResponseSchema = z.object({
   userId: z.string(),
   displayName: z.string(),
+  /** IANA timezone used for rendering human-readable times (default UTC). */
+  timezone: z.string(),
   isDemo: z.boolean(),
   torn: z
     .object({

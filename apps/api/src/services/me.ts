@@ -22,12 +22,14 @@ export async function setDemoView(user: { id: string }, enabled: boolean): Promi
       update: { value: true },
     });
   } else {
-    await db.appSetting.deleteMany({ where: { userId: user.id, key: DEMO_VIEW_KEY } });
+    // The flag lives under the OWNER's id even while requests resolve to the
+    // demo account, so clear it for every non-demo user.
+    await db.appSetting.deleteMany({ where: { key: DEMO_VIEW_KEY, user: { isDemo: false } } });
   }
 }
 
 /** GET /api/me */
-export async function getMe(user: { id: string; displayName: string; isDemo: boolean }): Promise<MeResponse> {
+export async function getMe(user: { id: string; displayName: string; timezone: string; isDemo: boolean }): Promise<MeResponse> {
   const db = getPrismaClient();
   const [account, credential, syncStates, demoUser] = await Promise.all([
     db.tornAccount.findUnique({ where: { userId: user.id } }),
@@ -50,6 +52,7 @@ export async function getMe(user: { id: string; displayName: string; isDemo: boo
   return {
     userId: user.id,
     displayName: user.displayName,
+    timezone: user.timezone,
     isDemo: user.isDemo,
     torn: account
       ? {
@@ -146,8 +149,9 @@ export async function saveApiKey(user: { id: string }, apiKey: string): Promise<
 
   // Sync schedules exist per user from the first valid key onward.
   await ensureSyncStates(db, user.id);
-  // A real key always takes precedence over the demo view.
-  await db.appSetting.deleteMany({ where: { userId: user.id, key: DEMO_VIEW_KEY } });
+  // A real key always takes precedence over the demo view (flag lives under
+  // the owner's id, which may differ from the resolving user).
+  await db.appSetting.deleteMany({ where: { key: DEMO_VIEW_KEY, user: { isDemo: false } } });
 
   return getApiKeyStatus(user.id);
 }

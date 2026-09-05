@@ -47,6 +47,16 @@ export const UserBasicSchema = loose({
 });
 export type TornUserBasic = z.infer<typeof UserBasicSchema>;
 
+/** Player status block (profile.status): state + absolute `until` when timed. */
+export const UserStatusSchema = loose({
+  description: z.string().nullable().optional(),
+  details: z.string().nullable().optional(),
+  state: z.string(),
+  until: z.number().nullable().optional(),
+  color: z.string().optional(),
+});
+export type TornUserStatus = z.infer<typeof UserStatusSchema>;
+
 export const UserProfileSchema = loose({
   profile: loose({
     id: z.number(),
@@ -59,7 +69,7 @@ export const UserProfileSchema = loose({
     faction_id: z.number().nullable().optional(),
     property: loose({ id: z.number(), name: z.string() }).optional(),
     gender: z.string().nullable().optional(),
-    status: loose({}).optional(),
+    status: UserStatusSchema.optional(),
     last_action: loose({}).optional(),
     donator_status: z.number().nullable().optional(),
     life: loose({ current: z.number(), maximum: z.number() }).optional(),
@@ -125,6 +135,73 @@ export const UserTravelSchema = loose({
   }),
 });
 export type TornUserTravel = z.infer<typeof UserTravelSchema>;
+
+/** One Torn bar (energy/nerve/happy/life): regen math + absolute full time. */
+export const UserBarSchema = loose({
+  current: z.number(),
+  maximum: z.number(),
+  increment: z.number(),
+  interval: z.number(),
+  tick_time: z.number().optional(),
+  /** Unix seconds when the bar is full; 0 when full or not regenerating. */
+  full_time: z.number(),
+});
+export type TornUserBar = z.infer<typeof UserBarSchema>;
+
+export const UserBarsSchema = loose({
+  bars: loose({
+    energy: UserBarSchema,
+    nerve: UserBarSchema,
+    happy: UserBarSchema,
+    life: UserBarSchema,
+    chain: loose({}).nullable().optional(),
+  }),
+});
+export type TornUserBars = z.infer<typeof UserBarsSchema>;
+
+/**
+ * Cooldowns are SECONDS REMAINING (not timestamps); 0 means ready.
+ * Ready-at must therefore be derived server-side and returned as an
+ * absolute timestamp to clients.
+ */
+export const UserCooldownsSchema = loose({
+  cooldowns: loose({
+    drug: z.number(),
+    medical: z.number(),
+    booster: z.number(),
+  }),
+});
+export type TornUserCooldowns = z.infer<typeof UserCooldownsSchema>;
+
+/**
+ * Education state. `current.until` is a unix timestamp of course completion;
+ * `complete` lists finished course ids. Defensive: some historical keys have
+ * reported seconds-remaining — the Today service re-checks magnitude.
+ */
+export const UserEducationSchema = loose({
+  education: loose({
+    complete: z.array(z.number()).default([]),
+    current: loose({ id: z.number(), until: z.number() }).nullable(),
+  }),
+});
+export type TornUserEducation = z.infer<typeof UserEducationSchema>;
+
+/** Public education catalog: categories with their courses (id -> name map). */
+export const TornEducationCourseSchema = loose({
+  id: z.number(),
+  code: z.string().optional(),
+  name: z.string(),
+  description: z.string().optional(),
+  duration: z.number().optional(),
+});
+export type TornEducationCourse = z.infer<typeof TornEducationCourseSchema>;
+
+export const TornEducationCategorySchema = loose({
+  id: z.number(),
+  name: z.string(),
+  courses: z.array(TornEducationCourseSchema),
+});
+export type TornEducationCategory = z.infer<typeof TornEducationCategorySchema>;
 
 /** Torn personalstats: flat map of stat name -> number. */
 export const UserPersonalStatsSchema = loose({
@@ -230,6 +307,30 @@ export class TornEndpoints {
   /** Current travel state (abroad / flying / home). */
   userTravel(): Promise<TornUserTravel> {
     return this.client.get("/user/travel", {}, UserTravelSchema);
+  }
+
+  /** Live bars (energy/nerve/happy/life) with regen + absolute full times. */
+  userBars(): Promise<TornUserBars> {
+    return this.client.get("/user/bars", {}, UserBarsSchema);
+  }
+
+  /** Live cooldowns (seconds remaining; 0 = ready). */
+  userCooldowns(): Promise<TornUserCooldowns> {
+    return this.client.get("/user/cooldowns", {}, UserCooldownsSchema);
+  }
+
+  /** Education state: completed course ids + current course with end time. */
+  userEducation(): Promise<TornUserEducation> {
+    return this.client.get("/user/education", {}, UserEducationSchema);
+  }
+
+  /** Public education catalog (course id -> name/category resolution). */
+  tornEducationCatalog(): Promise<TornEducationCategory[]> {
+    return this.client.get(
+      "/torn/education",
+      {},
+      z.object({ education: z.array(TornEducationCategorySchema) }).transform((r) => r.education)
+    );
   }
 
   userPersonalStats(cat: string = "all"): Promise<TornUserPersonalStats> {

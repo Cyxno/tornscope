@@ -11,23 +11,29 @@
   let container: HTMLDivElement | undefined = $state();
   let chart: import("echarts/core").ECharts | null = null;
 
-  onMount(async () => {
-    const echarts = await import("echarts/core");
-    const { LineChart, BarChart, PieChart } = await import("echarts/charts");
-    const { GridComponent, TooltipComponent, DataZoomComponent, LegendComponent, TitleComponent } = await import("echarts/components");
-    const { CanvasRenderer } = await import("echarts/renderers");
+  onMount(() => {
+    let observer: ResizeObserver | null = null;
+    let disposed = false;
 
-    echarts.use([LineChart, BarChart, PieChart, GridComponent, TooltipComponent, DataZoomComponent, LegendComponent, TitleComponent, CanvasRenderer]);
+    void (async () => {
+      const echarts = await import("echarts/core");
+      const { LineChart, BarChart, PieChart } = await import("echarts/charts");
+      const { GridComponent, TooltipComponent, DataZoomComponent, LegendComponent, TitleComponent } = await import("echarts/components");
+      const { CanvasRenderer } = await import("echarts/renderers");
 
-    if (!container) return;
-    chart = echarts.init(container);
-    chart.setOption(option);
+      echarts.use([LineChart, BarChart, PieChart, GridComponent, TooltipComponent, DataZoomComponent, LegendComponent, TitleComponent, CanvasRenderer]);
 
-    const observer = new ResizeObserver(() => chart?.resize());
-    observer.observe(container);
+      if (disposed || !container) return;
+      chart = echarts.init(container);
+      chart.setOption(option);
+
+      observer = new ResizeObserver(() => chart?.resize());
+      observer.observe(container);
+    })();
 
     return () => {
-      observer.disconnect();
+      disposed = true;
+      observer?.disconnect();
       chart?.dispose();
       chart = null;
     };

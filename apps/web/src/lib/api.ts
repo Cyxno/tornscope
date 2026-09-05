@@ -1,4 +1,17 @@
-import type { MeResponse } from "@tornscope/shared";
+import type {
+  ApiKeyStatusResponse,
+  DashboardResponse,
+  DrugsSummaryResponse,
+  MeResponse,
+  MoneyEventDto,
+  MoneySummaryResponse,
+  Paginated,
+  SyncStatusResponse,
+  TimelineEventDto,
+  TodayResponse,
+  TravelSummaryResponse,
+  TravelTripDto,
+} from "@tornscope/shared";
 
 /**
  * Typed browser API client. All calls go through the relative /api proxy.
@@ -66,10 +79,11 @@ export function rangeQuery(range: QueryRange, extra: Record<string, string> = {}
 
 export const endpoints = {
   me: () => api.get<MeResponse>("/me"),
-  dashboard: (range: QueryRange) => api.get(`/dashboard?${rangeQuery(range)}`),
-  networth: (range: QueryRange) => api.get(`/networth?${rangeQuery(range)}`),
-  moneySummary: (range: QueryRange) => api.get(`/money/summary?${rangeQuery(range)}`),
-  moneyEvents: (range: QueryRange, opts: { limit?: number; cursor?: string; category?: string; direction?: string; search?: string }) => {
+  today: () => api.get<TodayResponse>("/today"),
+  dashboard: (range: QueryRange) => api.get<DashboardResponse>(`/dashboard?${rangeQuery(range)}`),
+  networth: (range: QueryRange) => api.get<Record<string, unknown>>(`/networth?${rangeQuery(range)}`),
+  moneySummary: (range: QueryRange) => api.get<MoneySummaryResponse>(`/money/summary?${rangeQuery(range)}`),
+  moneyEvents: (range: QueryRange, opts: { limit?: number; cursor?: string; category?: string; direction?: string; search?: string }): Promise<Paginated<MoneyEventDto>> => {
     const params = new URLSearchParams({ preset: range.preset, limit: String(opts.limit ?? 50) });
     if (range.from) params.set("from", String(range.from));
     if (range.to) params.set("to", String(range.to));
@@ -79,11 +93,11 @@ export const endpoints = {
     if (opts.search) params.set("search", opts.search);
     return api.get(`/money/events?${params.toString()}`);
   },
-  drugsSummary: (range: QueryRange, drugs: string[] | null) =>
+  drugsSummary: (range: QueryRange, drugs: string[] | null): Promise<DrugsSummaryResponse> =>
     api.get(`/drugs/summary?${rangeQuery(range, drugs && drugs.length > 0 ? { drugs: drugs.join(",") } : {})}`),
-  travelSummary: (range: QueryRange) => api.get(`/travel/summary?${rangeQuery(range)}`),
-  travelHistory: (range: QueryRange, limit = 50) => api.get(`/travel/history?${rangeQuery(range)}&limit=${limit}`),
-  timeline: (range: QueryRange, opts: { limit?: number; cursor?: string; type?: string } = {}) => {
+  travelSummary: (range: QueryRange) => api.get<TravelSummaryResponse>(`/travel/summary?${rangeQuery(range)}`),
+  travelHistory: (range: QueryRange, limit = 50): Promise<Paginated<TravelTripDto>> => api.get(`/travel/history?${rangeQuery(range)}&limit=${limit}`),
+  timeline: (range: QueryRange, opts: { limit?: number; cursor?: string; type?: string } = {}): Promise<Paginated<TimelineEventDto>> => {
     const params = new URLSearchParams({ preset: range.preset, limit: String(opts.limit ?? 50) });
     if (range.from) params.set("from", String(range.from));
     if (range.to) params.set("to", String(range.to));
@@ -91,10 +105,10 @@ export const endpoints = {
     if (opts.type) params.set("type", opts.type);
     return api.get(`/timeline?${params.toString()}`);
   },
-  syncStatus: () => api.get("/sync/status"),
-  syncRun: (resource: string) => api.post("/sync/run", { resource }),
+  syncStatus: () => api.get<SyncStatusResponse>("/sync/status"),
+  syncRun: (resource: string) => api.post<{ queued: boolean }>("/sync/run", { resource }),
   setDemoView: (enabled: boolean) => api.post<MeResponse>("/demo-view", { enabled }),
-  apiKeyStatus: () => api.get("/settings/api-key"),
-  saveApiKey: (key: string) => api.post("/settings/api-key", { key }),
-  deleteApiKey: () => api.del("/settings/api-key"),
+  apiKeyStatus: () => api.get<ApiKeyStatusResponse>("/settings/api-key"),
+  saveApiKey: (key: string) => api.post<ApiKeyStatusResponse>("/settings/api-key", { key }),
+  deleteApiKey: () => api.del<{ deleted: boolean }>("/settings/api-key"),
 };

@@ -21,6 +21,7 @@ import { getTravelHistory, getTravelSummary } from "./services/travel.js";
 import { getNetworth } from "./services/networth.js";
 import { getTimeline } from "./services/timeline.js";
 import { getDashboard } from "./services/dashboard.js";
+import { getToday } from "./services/today.js";
 import { getMe, getApiKeyStatus, saveApiKey, deleteApiKey, setDemoView } from "./services/me.js";
 import { getSyncStatus, requestManualSync } from "./services/syncStatus.js";
 import { getPrismaClient } from "@tornscope/database";
@@ -64,6 +65,13 @@ export function registerRoutes(app: FastifyInstance): void {
     const user = await resolveCurrentUser();
     const range = parseRange(req.query as Record<string, unknown>);
     return getDashboard(user.id, range);
+  });
+
+  // Live status: absolute timestamps + client-side countdowns; short-lived
+  // server cache keeps Torn API request volume low.
+  app.get("/api/today", async () => {
+    const user = await resolveCurrentUser();
+    return getToday(user);
   });
 
   app.get("/api/networth", async (req) => {

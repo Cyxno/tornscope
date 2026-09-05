@@ -1,0 +1,175 @@
+{
+  "_comment": "Sanitized Torn API v2 fixtures shaped exactly per the official OpenAPI spec (6.13.1). Values are synthetic.",
+  "profile": {
+    "profile": {
+      "id": 1234567,
+      "name": "Testplayer",
+      "level": 42,
+      "rank": "Underworld Legend",
+      "gender": "Male",
+      "property": { "id": 10, "name": "Premium Property" },
+      "status": {
+        "description": "Okay",
+        "details": null,
+        "state": "Okay",
+        "until": null,
+        "color": "green"
+      },
+      "last_action": { "status": "Online", "timestamp": 1792000000, "relative": "just now" },
+      "faction_id": 9988,
+      "age": 900,
+      "signed_up": 1500000000,
+      "life": { "current": 3921, "maximum": 4150 }
+    }
+  },
+  "profile_hospital": {
+    "profile": {
+      "id": 1234567,
+      "name": "Testplayer",
+      "level": 42,
+      "status": {
+        "description": "Hospital",
+        "details": "In hospital: hit by a car",
+        "state": "Hospital",
+        "until": 1792001122,
+        "color": "red"
+      },
+      "faction_id": 9988
+    }
+  },
+  "profile_jail": {
+    "profile": {
+      "id": 1234567,
+      "name": "Testplayer",
+      "level": 42,
+      "status": {
+        "description": "Jail",
+        "details": "In jail: burglary",
+        "state": "Jail",
+        "until": 1792001977,
+        "color": "red"
+      },
+      "faction_id": 9988
+    }
+  },
+  "profile_traveling": {
+    "profile": {
+      "id": 1234567,
+      "name": "Testplayer",
+      "level": 42,
+      "status": {
+        "description": "Traveling",
+        "details": "Traveling to Argentina",
+        "state": "Traveling",
+        "until": 1792005100,
+        "color": "purple"
+      },
+      "faction_id": 9988
+    }
+  },
+  "bars": {
+    "bars": {
+      "energy": { "current": 120, "maximum": 150, "increment": 1, "interval": 300, "tick_time": 1792000300, "full_time": 1792006520 },
+      "nerve": { "current": 48, "maximum": 55, "increment": 1, "interval": 900, "tick_time": 1792000400, "full_time": 1792005380 },
+      "happy": { "current": 4820, "maximum": 5000, "increment": 60, "interval": 1800, "tick_time": 1792000500, "full_time": 1792005600 },
+      "life": { "current": 3921, "maximum": 4150, "increment": 30, "interval": 900, "tick_time": 1792000600, "full_time": 1792006180 }
+    }
+  },
+  "bars_paused": {
+    "bars": {
+      "energy": { "current": 30, "maximum": 150, "increment": 1, "interval": 300, "tick_time": 1792000000, "full_time": 0 },
+      "nerve": { "current": 55, "maximum": 55, "increment": 1, "interval": 900, "tick_time": 1792000000, "full_time": 0 },
+      "happy": { "current": 100, "maximum": 5000, "increment": 60, "interval": 1800, "tick_time": 1792000000, "full_time": 1792005600 },
+      "life": { "current": 100, "maximum": 4150, "increment": 30, "interval": 900, "tick_time": 1792000000, "full_time": 0 }
+    }
+  },
+  "cooldowns": {
+    "cooldowns": {
+      "drug": 2531,
+      "medical": 0,
+      "booster": 8048
+    }
+  },
+  "education": {
+    "education": {
+      "complete": [1, 2, 3, 27],
+      "current": { "id": 74, "until": 1792294800 }
+    }
+  },
+  "education_none": {
+    "education": {
+      "complete": [1, 2, 3, 27, 74],
+      "current": null
+    }
+  },
+  "travel_home": {
+    "travel": {
+      "destination": "Torn",
+      "method": "Airliner",
+      "departed_at": 1791000000,
+      "arrival_at": 1791007200,
+      "time_left": 0
+    }
+  },
+  "travel_abroad": {
+    "travel": {
+      "destination": "Argentina",
+      "method": "Airliner",
+      "departed_at": 1791900000,
+      "arrival_at": 1791907200,
+      "time_left": 0
+    }
+  },
+  "travel_flying": {
+    "travel": {
+      "destination": "Torn",
+      "method": "Airliner",
+      "departed_at": 1792000000,
+      "arrival_at": 1792005100,
+      "time_left": 5100
+    }
+  },
+  "money": {
+    "money": {
+      "points": 12500,
+      "wallet": 8250000,
+      "company": 0,
+      "vault": 1500000000,
+      "cayman_bank": 0,
+      "city_bank": {
+        "amount": 450000000,
+        "profit": 36112500,
+        "duration": 30,
+        "interest_rate": 8.03,
+        "until": 1793132400,
+        "invested_at": 1790530000
+      },
+      "faction": { "money": 2000000000, "points": 50000 },
+      "daily_networth": 9876543210
+    }
+  },
+  "money_no_investment": {
+    "money": {
+      "points": 12500,
+      "wallet": 8250000,
+      "company": 0,
+      "vault": 1500000000,
+      "cayman_bank": 0,
+      "city_bank": null,
+      "faction": null,
+      "daily_networth": 9876543210
+    }
+  },
+  "education_catalog": {
+    "education": [
+      {
+        "id": 4,
+        "name": "Bachelor of Psychology",
+        "courses": [
+          { "id": 27, "code": "PSY-101", "name": "Introduction to Psychology", "description": "Foundations.", "duration": 173, "rewards": { "manual_labor": 1 }, "prerequisites": [] },
+          { "id": 74, "code": "PSY-320", "name": "Cognitive Psychology", "description": "How minds work.", "duration": 335, "rewards": { "defense": 1 }, "prerequisites": [27] }
+        ]
+      }
+    ]
+  }
+}
