@@ -242,6 +242,35 @@
           <Chart option={drugOption} height={260} />
         {/if}
       </Panel>
+      <Panel title="Faction" caption="Ranked war status and my payouts" flush>
+        {#if !data.faction}
+          <StateMessage state="empty" title="No faction membership" />
+        {:else}
+          <div class="grid grid-cols-3 gap-px bg-border">
+            <div class="bg-surface p-5 text-center">
+              <p class="text-[10px] uppercase tracking-[0.14em] text-fg-faint">Faction</p>
+              <p class="mt-1 truncate font-medium text-fg" title={data.faction.name ?? ""}>{data.faction.name ?? "—"}</p>
+            </div>
+            <div class="bg-surface p-5 text-center">
+              <p class="text-[10px] uppercase tracking-[0.14em] text-fg-faint">Last war</p>
+              <p class="mt-1 font-medium text-fg">
+                {#if data.faction.lastWar}
+                  <span class={data.faction.lastWar.result === "win" ? "text-positive" : data.faction.lastWar.result === "loss" ? "text-negative" : "text-fg-muted"}>
+                    {data.faction.lastWar.result === "ongoing" ? "ongoing" : data.faction.lastWar.result}
+                  </span>
+                  {/if}
+              </p>
+            </div>
+            <div class="bg-surface p-5 text-center">
+              <p class="text-[10px] uppercase tracking-[0.14em] text-fg-faint">My payouts</p>
+              <p class="tnum mt-1 font-semibold text-positive">{formatMoneyCompact(data.faction.myPayouts)}</p>
+            </div>
+          </div>
+          <p class="px-5 pt-3 text-xs text-fg-faint">
+            {period} faction payouts received. <a href="/faction" class="text-accent">Explore →</a>
+          </p>
+        {/if}
+      </Panel>
       <Panel title="Crimes" caption="Attempts, success rate and value in range" flush>
         {#if !data.crimes}
           <StateMessage state="empty" title="No crime attempts in this range" />

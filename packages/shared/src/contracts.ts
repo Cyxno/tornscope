@@ -259,6 +259,20 @@ export const DashboardResponseSchema = z.object({
       wins: z.number(),
     })
     .nullable(),
+  /** Faction summary: latest ranked war + personal payouts in range. */
+  faction: z
+    .object({
+      name: z.string().nullable(),
+      lastWar: z
+        .object({
+          opponentName: z.string().nullable(),
+          result: z.enum(["win", "loss", "ongoing", "draw"]),
+          endedAt: z.number().nullable(),
+        })
+        .nullable(),
+      myPayouts: z.number(),
+    })
+    .nullable(),
   consumedValue: KpiValueSchema,
   travelProfit: KpiValueSchema,
   drugsUsed: KpiValueSchema,

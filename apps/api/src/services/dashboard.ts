@@ -189,6 +189,38 @@ export async function getDashboard(userId: string, rangeInput: DateRangeInput): 
   const consumptionAvailability: KpiAvailability =
     consumptionRows.length > 0 ? (consumedUnknown > 0 ? "incomplete" : "ok") : drugsAvailability === "ok" ? "ok" : drugsAvailability;
 
+  // Faction summary: latest completed/ongoing ranked war + personal payouts.
+  const accountRow = await db.tornAccount.findUnique({ where: { userId }, select: { factionId: true } });
+  let factionSummary: DashboardResponse["faction"] = null;
+  if (accountRow?.factionId) {
+    const [lastWar, factionNameRow, myPayoutRows] = await Promise.all([
+      db.rankedWar.findFirst({ where: { factionId: accountRow.factionId }, orderBy: { startedAt: "desc" }, select: { opponentName: true, endedAt: true, winnerFactionId: true, factionId: true } }),
+      db.faction.findUnique({ where: { id: accountRow.factionId }, select: { name: true } }),
+      db.moneyEvent.aggregate({
+        where: { userId, category: "faction", direction: "income", occurredAt: { gte: from, lte: to } },
+        _sum: { amount: true },
+      }),
+    ]);
+    factionSummary = {
+      name: factionNameRow?.name ?? null,
+      lastWar: lastWar
+        ? {
+            opponentName: lastWar.opponentName,
+            result:
+              lastWar.endedAt === null
+                ? "ongoing"
+                : lastWar.winnerFactionId === null
+                  ? "draw"
+                  : lastWar.winnerFactionId === lastWar.factionId
+                    ? "win"
+                    : "loss",
+            endedAt: lastWar.endedAt ? Math.floor(lastWar.endedAt.getTime() / 1000) : null,
+          }
+        : null,
+      myPayouts: bigintToNumber(myPayoutRows._sum.amount ?? 0n) ?? 0,
+    };
+  }
+
   return {
     range: { from: range.from, to: range.to, interval: autoInterval(range) },
     netWorth: { value: latestNw?.total ?? null, provenance: "exact", availability: latestNw ? "ok" : "unavailable" },
@@ -216,6 +248,7 @@ export async function getDashboard(userId: string, rangeInput: DateRangeInput): 
     networthChangePct: nwPeriod.changePct,
     networthCoverage: nwPeriod.coverage,
     networthTrackingSince: nwPeriod.trackedFrom,
+    faction: factionSummary,
     crimes:
       crimeRows.length > 0
         ? (() => {
