@@ -126,6 +126,16 @@ export async function getSyncHealth(userId: string) {
       lastWalkPages: s.lastWalkPages,
       storedEarliestAt: sec(storedWindows[s.resource]?.earliest ?? null),
       storedLatestAt: sec(storedWindows[s.resource]?.latest ?? null),
+      categories: (categoryStates.get(s.resource) ?? []).map((c) => ({
+        categoryId: c.categoryId,
+        title: c.categoryTitle,
+        status: c.status,
+        lastTimestamp: c.lastTimestamp !== null ? Number(c.lastTimestamp) : null,
+        lastSuccessAt: sec(c.lastSuccessAt),
+        lastWalkPages: c.lastWalkPages,
+        lastRecordsInserted: c.lastRecordsInserted,
+        errorMessage: c.errorMessage,
+      })),
     })),
     /** Requested history window (worker env default) — coverage is judged against it. */
     requestedHistoryDays: Number(process.env.TORN_SYNC_INITIAL_HISTORY_DAYS ?? 180),
