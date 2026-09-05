@@ -10,6 +10,7 @@
     { href: "/travel", label: "Travel" },
     { href: "/crimes", label: "Crimes" },
     { href: "/combat", label: "Combat" },
+    { href: "/faction", label: "Faction" },
     { href: "/timeline", label: "Timeline" },
   ];
 

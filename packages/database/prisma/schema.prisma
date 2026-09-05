@@ -83,6 +83,9 @@ model User {
   factionSnapshots     FactionSnapshot[]
   rankedWarMembers     RankedWarMember?
   rankedWarPayouts     RankedWarPayout[]
+  factionChains        FactionChain[]
+  organizedCrimes      OrganizedCrime[]
+  factionBalanceSnapshots FactionBalanceSnapshot[]
 }
 
 /// The Torn player connected to a user.
@@ -655,15 +658,78 @@ model AppSetting {
 /* Ranked war foundation (schema-only placeholder, not implemented in MVP)    */
 /* -------------------------------------------------------------------------- */
 
+/// Historical faction chain record (/v2/faction/chains).
+model FactionChain {
+  id        String   @id @default(cuid())
+  userId    String
+  factionId Int
+  chainId   Int
+  chain     Int
+  respect   Float?
+  startedAt DateTime
+  endedAt   DateTime
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, chainId])
+  @@index([userId, factionId])
+  @@index([userId, startedAt])
+}
+
+/// Organized crime record (/v2/faction/crimes, OC 2.0). Participants and
+/// rewards are stored as JSON from the exact payload.
+model OrganizedCrime {
+  id          String   @id @default(cuid())
+  userId      String
+  factionId   Int
+  ocId        Int
+  name        String
+  difficulty  Int?
+  status      String
+  createdAt   DateTime?
+  planningAt  DateTime?
+  executedAt  DateTime?
+  readyAt     DateTime?
+  expiredAt   DateTime?
+  rewards     Json?
+  slots       Json?
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, ocId])
+  @@index([userId, factionId])
+  @@index([userId, status])
+}
+
+/// Faction bank balance snapshot (/v2/faction/balance): faction money and
+/// per-member faction-balance rows.
+model FactionBalanceSnapshot {
+  id         String   @id @default(cuid())
+  userId     String
+  factionId  Int
+  money      BigInt?
+  points     Int?
+  scope      Int?
+  members    Json?
+  capturedAt DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, factionId, capturedAt])
+}
+
 model RankedWar {
   id               String    @id @default(cuid())
   tornWarId        Int       @unique
   factionId        Int
   opponentFactionId Int?
+  opponentName     String?
   startedAt        DateTime?
   endedAt          DateTime?
   winnerFactionId  Int?
   targetScore      Int?
+  ourScore         Int?
+  opponentScore    Int?
+  ourChain         Int?
+  opponentChain    Int?
+  source           String    @default("torn_api")
   raw              Json?
   createdAt        DateTime  @default(now())
 

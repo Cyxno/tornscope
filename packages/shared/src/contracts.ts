@@ -466,6 +466,168 @@ export const CombatTimelineResponseSchema = z.object({
 });
 export type CombatTimelineResponse = z.infer<typeof CombatTimelineResponseSchema>;
 
+/* -------------------------------------------------------------------------- */
+/* Faction                                                                     */
+/* -------------------------------------------------------------------------- */
+
+export const FactionInfoSchema = z.object({
+  factionId: z.number().nullable(),
+  name: z.string().nullable(),
+  tag: z.string().nullable(),
+  respect: z.number().nullable(),
+  members: z.number().nullable(),
+  bestChain: z.number().nullable(),
+  rankName: z.string().nullable(),
+  rankWins: z.number().nullable(),
+});
+
+export const RankedWarRowSchema = z.object({
+  tornWarId: z.number(),
+  opponentName: z.string().nullable(),
+  startedAt: z.number(),
+  endedAt: z.number().nullable(),
+  result: z.enum(["win", "loss", "ongoing", "draw"]),
+  ourScore: z.number().nullable(),
+  opponentScore: z.number().nullable(),
+  durationSeconds: z.number().nullable(),
+  knownPayoutTotal: z.number(),
+  personalPayout: z.number().nullable(),
+  myAttacks: z.number(),
+  myWins: z.number(),
+  myRespect: z.number(),
+  linkage: z.enum(["exact", "time_window_match", "unmatched"]),
+});
+export type RankedWarRow = z.infer<typeof RankedWarRowSchema>;
+
+export const FactionOverviewResponseSchema = z.object({
+  faction: FactionInfoSchema,
+  membership: z.object({
+    isMember: z.boolean(),
+    joinedAt: z.number().nullable(),
+    position: z.string().nullable(),
+    daysInFaction: z.number().nullable(),
+  }),
+  currentWar: z
+    .object({
+      tornWarId: z.number(),
+      opponentName: z.string().nullable(),
+      startedAt: z.number(),
+      ourScore: z.number().nullable(),
+      opponentScore: z.number().nullable(),
+      targetScore: z.number().nullable(),
+      myAttacks: z.number(),
+      myRespect: z.number(),
+    })
+    .nullable(),
+  currentChain: z
+    .object({
+      chain: z.number(),
+      max: z.number().nullable(),
+      startedAt: z.number().nullable(),
+    })
+    .nullable(),
+  balance: z
+    .object({
+      money: z.number().nullable(),
+      points: z.number().nullable(),
+      capturedAt: z.number().nullable(),
+    })
+    .nullable(),
+  wars: z.object({ total: z.number(), wins: z.number(), losses: z.number(), ongoing: z.number() }),
+  payouts: z.object({ knownTotal: z.number(), personalTotal: z.number() }),
+  coverage: z.object({
+    warsEarliest: z.number().nullable(),
+    warsLatest: z.number().nullable(),
+    chainsStored: z.number(),
+    ocsStored: z.number(),
+  }),
+});
+export type FactionOverviewResponse = z.infer<typeof FactionOverviewResponseSchema>;
+
+export const FactionRankedWarsResponseSchema = z.object({
+  range: z.object({ from: z.number(), to: z.number() }),
+  wars: z.array(RankedWarRowSchema),
+});
+export type FactionRankedWarsResponse = z.infer<typeof FactionRankedWarsResponseSchema>;
+
+export const FactionMemberRowSchema = z.object({
+  memberId: z.number(),
+  name: z.string().nullable(),
+  position: z.string().nullable(),
+  daysInFaction: z.number().nullable(),
+  isCurrentUser: z.boolean(),
+  warAttacks: z.number(),
+  warWins: z.number(),
+  warRespect: z.number(),
+  warMugs: z.number(),
+  warHospitalizes: z.number(),
+});
+export type FactionMemberRow = z.infer<typeof FactionMemberRowSchema>;
+
+export const FactionMembersResponseSchema = z.object({
+  range: z.object({ from: z.number(), to: z.number() }),
+  factionId: z.number().nullable(),
+  members: z.array(FactionMemberRowSchema),
+});
+export type FactionMembersResponse = z.infer<typeof FactionMembersResponseSchema>;
+
+export type FactionChainRow = z.infer<typeof FactionChainRowSchema>;
+
+export const FactionChainRowSchema = z.object({
+  chainId: z.number(),
+  chain: z.number(),
+  respect: z.number().nullable(),
+  startedAt: z.number(),
+  endedAt: z.number(),
+  durationSeconds: z.number(),
+  myAttacks: z.number(),
+  myRespect: z.number(),
+});
+
+export const FactionChainsResponseSchema = z.object({
+  chains: z.array(FactionChainRowSchema),
+});
+export type FactionChainsResponse = z.infer<typeof FactionChainsResponseSchema>;
+
+export const FactionOcRowSchema = z.object({
+  ocId: z.number(),
+  name: z.string(),
+  status: z.string(),
+  difficulty: z.number().nullable(),
+  executedAt: z.number().nullable(),
+  myParticipation: z.boolean(),
+  rewardMoney: z.number().nullable(),
+  rewardRespect: z.number().nullable(),
+  payoutPercentage: z.number().nullable(),
+});
+
+export type FactionOcRow = z.infer<typeof FactionOcRowSchema>;
+
+export const FactionOcsResponseSchema = z.object({
+  ocs: z.array(FactionOcRowSchema),
+  note: z.string().nullable(),
+});
+export type FactionOcsResponse = z.infer<typeof FactionOcsResponseSchema>;
+
+export const FactionLedgerResponseSchema = z.object({
+  snapshots: z.array(
+    z.object({
+      capturedAt: z.number(),
+      money: z.number().nullable(),
+      points: z.number().nullable(),
+    })
+  ),
+  payouts: z.array(
+    z.object({
+      occurredAt: z.number(),
+      amount: z.number(),
+      description: z.string().nullable(),
+      sourceRef: z.string(),
+    })
+  ),
+});
+export type FactionLedgerResponse = z.infer<typeof FactionLedgerResponseSchema>;
+
 export const NetworthResponseSchema = z.object({
   range: z.object({ from: z.number(), to: z.number(), interval: z.string() }),
   series: z.array(

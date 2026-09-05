@@ -3,6 +3,12 @@ import type {
   DashboardResponse,
   DrugsSummaryResponse,
   CombatSummaryResponse,
+  FactionOverviewResponse,
+  FactionRankedWarsResponse,
+  FactionMembersResponse,
+  FactionChainsResponse,
+  FactionOcsResponse,
+  FactionLedgerResponse,
   CombatTimelineResponse,
   CrimesSummaryResponse,
   CrimesTimelineResponse,
@@ -103,6 +109,12 @@ export const endpoints = {
   drugsSummary: (range: QueryRange, drugs: string[] | null): Promise<DrugsSummaryResponse> =>
     api.get(`/drugs/summary?${rangeQuery(range, drugs && drugs.length > 0 ? { drugs: drugs.join(",") } : {})}`),
   travelSummary: (range: QueryRange) => api.get<TravelSummaryResponse>(`/travel/summary?${rangeQuery(range)}`),
+  factionOverview: (range: QueryRange) => api.get<FactionOverviewResponse>(`/faction/overview?${rangeQuery(range)}`),
+  factionRankedWars: (range: QueryRange) => api.get<FactionRankedWarsResponse>(`/faction/ranked-wars?${rangeQuery(range)}`),
+  factionMembers: (range: QueryRange) => api.get<FactionMembersResponse>(`/faction/members?${rangeQuery(range)}`),
+  factionChains: (range: QueryRange) => api.get<FactionChainsResponse>(`/faction/chains?${rangeQuery(range)}`),
+  factionOcs: (range: QueryRange) => api.get<FactionOcsResponse>(`/faction/organized-crimes?${rangeQuery(range)}`),
+  factionLedger: (range: QueryRange) => api.get<FactionLedgerResponse>(`/faction/ledger?${rangeQuery(range)}`),
   crimesSummary: (range: QueryRange) => api.get<CrimesSummaryResponse>(`/crimes/summary?${rangeQuery(range)}`),
   crimesTimeline: (range: QueryRange, limit = 50, cursor?: string): Promise<CrimesTimelineResponse> => {
     const params = new URLSearchParams({ preset: range.preset, limit: String(limit) });

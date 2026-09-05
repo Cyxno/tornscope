@@ -308,6 +308,66 @@ export const TornLogTypeSchema = loose({
 });
 export type TornLogType = z.infer<typeof TornLogTypeSchema>;
 
+
+/* ------------------------------ Faction ---------------------------------- */
+
+export const FactionBasicFullSchema = loose({
+  basic: loose({}),
+});
+export type TornFactionBasicFull = z.infer<typeof FactionBasicFullSchema>;
+
+export const FactionMemberSchema = loose({
+  id: z.number(),
+  name: z.string().optional(),
+  level: z.number().optional(),
+  days_in_faction: z.number().optional(),
+  position: z.string().nullable().optional(),
+  is_in_oc: z.boolean().nullable().optional(),
+});
+export type TornFactionMember = z.infer<typeof FactionMemberSchema>;
+
+export const FactionRankedWarSchema = loose({
+  id: z.number(),
+  start: z.number(),
+  end: z.number(),
+  target: z.number().nullable().optional(),
+  winner: z.number().nullable().optional(),
+  factions: z.array(loose({ id: z.number(), name: z.string().optional(), score: z.number().nullable().optional(), chain: z.number().nullable().optional() })),
+});
+export type TornFactionRankedWar = z.infer<typeof FactionRankedWarSchema>;
+
+export const FactionChainSchema = loose({
+  id: z.number(),
+  chain: z.number(),
+  respect: z.number().nullable().optional(),
+  start: z.number(),
+  end: z.number(),
+});
+export type TornFactionChainItem = z.infer<typeof FactionChainSchema>;
+
+export const FactionBalanceSchema = loose({
+  balance: loose({
+    faction: loose({ money: z.number().nullable().optional(), points: z.number().nullable().optional(), scope: z.number().nullable().optional() }).nullable().optional(),
+    members: z.array(loose({ id: z.number(), username: z.string().optional(), money: z.number().nullable().optional(), points: z.number().nullable().optional() })).nullable().optional(),
+  }),
+});
+export type TornFactionBalance = z.infer<typeof FactionBalanceSchema>;
+
+export const FactionOrganizedCrimeSchema = loose({
+  id: z.number(),
+  name: z.string(),
+  difficulty: z.number().nullable().optional(),
+  status: z.string(),
+  created_at: z.number().nullable().optional(),
+  planning_at: z.number().nullable().optional(),
+  executed_at: z.number().nullable().optional(),
+  ready_at: z.number().nullable().optional(),
+  expired_at: z.number().nullable().optional(),
+  rewards: loose({}).nullable().optional(),
+  slots: z.array(loose({})).nullable().optional(),
+});
+export type TornFactionOrganizedCrime = z.infer<typeof FactionOrganizedCrimeSchema>;
+
 /* -------------------------------------------------------------------------- */
 /* Endpoint facade                                                            */
 /* -------------------------------------------------------------------------- */
@@ -543,6 +603,84 @@ export class TornEndpoints {
         rowTimestamps: (data) => (Array.isArray(data.attacks) ? (data.attacks as Array<{ ended?: number }>).map((a) => a.ended).filter((t): t is number => typeof t === "number") : []),
       }
     );
+  }
+
+  factionBasicFull(): Promise<TornFactionBasicFull> {
+    return this.client.get("/faction/basic", {}, FactionBasicFullSchema);
+  }
+
+  factionMembers(): Promise<TornFactionMember[]> {
+    return this.client.get("/faction/members", {}, z.object({ members: z.array(FactionMemberSchema) }).transform((r) => r.members));
+  }
+
+  factionRankedWars(): Promise<TornFactionRankedWar[]> {
+    return this.client.get("/faction/rankedwars", {}, z.object({ rankedwars: z.array(FactionRankedWarSchema) }).transform((r) => r.rankedwars));
+  }
+
+  /** Paginate the full ranked-war history (offset-based next links). */
+  async iterateFactionRankedWars(
+    onPage: (wars: TornFactionRankedWar[]) => boolean | void | Promise<boolean | void>,
+    opts: { maxPages?: number } = {}
+  ): Promise<void> {
+    await this.client.paginate(
+      "/faction/rankedwars",
+      { limit: 100 },
+      ({ data }) => {
+        const parsed = z.array(FactionRankedWarSchema).parse(Array.isArray(data.rankedwars) ? data.rankedwars : []);
+        return onPage(parsed);
+      },
+      opts
+    );
+  }
+
+  factionChainsPage(path = "/faction/chains", params: TornRequestParams = { limit: 100 }): Promise<{ chains: TornFactionChainItem[]; metadata: TornMetadata | undefined }> {
+    return this.client.getRaw(path, params).then((page) => {
+      const data = page.data as { chains?: unknown };
+      return { chains: z.array(FactionChainSchema).parse(Array.isArray(data.chains) ? data.chains : []), metadata: page.metadata };
+    });
+  }
+
+  factionOrganizedCrimesPage(path = "/faction/crimes", params: TornRequestParams = { limit: 100 }): Promise<{ crimes: TornFactionOrganizedCrime[]; metadata: TornMetadata | undefined }> {
+    return this.client.getRaw(path, params).then((page) => {
+      const data = page.data as { crimes?: unknown };
+      return { crimes: z.array(FactionOrganizedCrimeSchema).parse(Array.isArray(data.crimes) ? data.crimes : []), metadata: page.metadata };
+    });
+  }
+
+  /** Paginate the full chain history (prev/next links, newest first). */
+  async iterateFactionChains(
+    onPage: (chains: TornFactionChainItem[]) => boolean | void | Promise<boolean | void>,
+    opts: { maxPages?: number } = {}
+  ): Promise<void> {
+    await this.client.paginate(
+      "/faction/chains",
+      { limit: 100 },
+      ({ data }) => {
+        const parsed = z.array(FactionChainSchema).parse(Array.isArray(data.chains) ? data.chains : []);
+        return onPage(parsed);
+      },
+      opts
+    );
+  }
+
+  /** Paginate organized crimes (offset-based next links, newest first). */
+  async iterateFactionOrganizedCrimes(
+    onPage: (crimes: TornFactionOrganizedCrime[]) => boolean | void | Promise<boolean | void>,
+    opts: { maxPages?: number } = {}
+  ): Promise<void> {
+    await this.client.paginate(
+      "/faction/crimes",
+      { limit: 100 },
+      ({ data }) => {
+        const parsed = z.array(FactionOrganizedCrimeSchema).parse(Array.isArray(data.crimes) ? data.crimes : []);
+        return onPage(parsed);
+      },
+      opts
+    );
+  }
+
+  factionBalance(): Promise<TornFactionBalance> {
+    return this.client.get("/faction/balance", {}, FactionBalanceSchema);
   }
 
   factionBasic(): Promise<TornFactionBasic> {

@@ -8,3 +8,4 @@ export * from "./repositories/catalog.js";
 export * from "./repositories/sync-state.js";
 export * from "./repositories/settings.js";
 export * from "./travel/assemble.js";
+export * from "./repositories/faction.js";

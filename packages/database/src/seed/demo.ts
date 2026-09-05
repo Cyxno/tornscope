@@ -1,3 +1,4 @@
+import { Prisma } from "../generated/client/client.js";
 import { getPrismaClient, ensureSyncStates, upsertCatalogEntries } from "../index.js";
 import { DEMO_USER_EMAIL } from "@tornscope/shared";
 
@@ -414,8 +415,133 @@ async function main(): Promise<void> {
   });
   await db.combatEvent.createMany({ data: combatRows, skipDuplicates: true });
 
+  // ---- Faction, ranked wars, chains, OCs (simulated, demo user only) ----
+  const DEMO_FACTION_ID = 9999;
+  await db.faction.upsert({
+    where: { id: DEMO_FACTION_ID },
+    create: { id: DEMO_FACTION_ID, name: "DEMO Syndicate", tag: "DEMO", respect: 250_000, daysOld: 400, capacity: 50, members: 12, bestChain: 420 },
+    update: {},
+  });
+  await db.factionMembership.upsert({
+    where: { userId_factionId_sourceRef: { userId: user.id, factionId: DEMO_FACTION_ID, sourceRef: "demo:member:2000000001" } },
+    create: { userId: user.id, factionId: DEMO_FACTION_ID, sourceRef: "demo:member:2000000001", joinedAt: new Date((now - 120 * DAY) * 1000) },
+    update: {},
+  });
+
+  const warRows = [
+    { id: 9001, opponent: "DEMO Rivals", started: now - 90 * DAY, days: 5, win: true, our: 12_000, their: 8_500, payout: 8_000_000 },
+    { id: 9002, opponent: "DEMO Warriors", started: now - 60 * DAY, days: 4, win: true, our: 15_200, their: 9_100, payout: 12_500_000 },
+    { id: 9003, opponent: "DEMO Titans", started: now - 30 * DAY, days: 6, win: false, our: 7_400, their: 16_800, payout: 2_000_000 },
+    { id: 9004, opponent: "DEMO Wolves", started: now - 10 * DAY, days: 5, win: true, our: 18_300, their: 11_000, payout: 15_000_000 },
+  ];
+  for (const [i, w] of warRows.entries()) {
+    await db.rankedWar.upsert({
+      where: { tornWarId: w.id },
+      create: {
+        tornWarId: w.id,
+        factionId: DEMO_FACTION_ID,
+        opponentFactionId: 8800 + i,
+        opponentName: w.opponent,
+        startedAt: new Date(w.started * 1000),
+        endedAt: new Date((w.started + w.days * DAY) * 1000),
+        winnerFactionId: w.win ? DEMO_FACTION_ID : 8800 + i,
+        targetScore: Math.max(w.our, w.their),
+        ourScore: w.our,
+        opponentScore: w.their,
+        source: "demo",
+        raw: { simulated: true, factions: [{ id: DEMO_FACTION_ID, name: "DEMO Syndicate", score: w.our }, { id: 8800 + i, name: w.opponent, score: w.their }] },
+      },
+      update: {},
+    });
+    // Personal payout inside the settlement tail (time-window match).
+    await db.moneyEvent.createMany({
+      data: [
+        {
+          userId: user.id,
+          occurredAt: new Date((w.started + (w.days + 1) * DAY) * 1000),
+          category: "faction",
+          subcategory: "Faction payout money receive",
+          direction: "income",
+          amount: BigInt(Math.round(w.payout * 0.08)),
+          source: "demo",
+          sourceRef: `demo:war-payout:${w.id}`,
+          description: "Faction payout money receive",
+          metadata: { simulated: true, warId: w.id },
+        },
+      ],
+      skipDuplicates: true,
+    });
+  }
+
+  const chainRows = [
+    { id: 9101, chain: 420, respect: 810.5, daysAgo: 75, hours: 3 },
+    { id: 9102, chain: 260, respect: 420.2, daysAgo: 40, hours: 2 },
+    { id: 9103, chain: 1_050, respect: 2_010.75, daysAgo: 12, hours: 5 },
+  ];
+  for (const c of chainRows) {
+    await db.factionChain.upsert({
+      where: { userId_chainId: { userId: user.id, chainId: c.id } },
+      create: {
+        userId: user.id,
+        factionId: DEMO_FACTION_ID,
+        chainId: c.id,
+        chain: c.chain,
+        respect: c.respect,
+        startedAt: new Date((now - c.daysAgo * DAY) * 1000),
+        endedAt: new Date((now - c.daysAgo * DAY + c.hours * 3600) * 1000),
+      },
+      update: {},
+    });
+  }
+
+  const ocNames: Array<[string, string, number | null]> = [
+    ["Thou Shalt Not Steal", "Successful", 1_332_000],
+    ["Break the Bank", "Successful", 2_100_000],
+    ["Human Trafficking", "Failure", null],
+    ["Stage Fright", "Recruiting", null],
+  ];
+  for (const [i, [name, status, money]] of ocNames.entries()) {
+    await db.organizedCrime.upsert({
+      where: { userId_ocId: { userId: user.id, ocId: 9200 + i } },
+      create: {
+        userId: user.id,
+        factionId: DEMO_FACTION_ID,
+        ocId: 9200 + i,
+        name,
+        difficulty: 8,
+        status,
+        createdAt: new Date((now - (60 - i * 10) * DAY) * 1000),
+        planningAt: new Date((now - (55 - i * 10) * DAY) * 1000),
+        executedAt: status === "Recruiting" ? null : new Date((now - (50 - i * 10) * DAY) * 1000),
+        readyAt: new Date((now - (48 - i * 10) * DAY) * 1000),
+        expiredAt: null,
+        rewards: status === "Successful" ? { money, respect: 60, payout: { type: "balance", percentage: 80 } } : Prisma.DbNull,
+        slots: [
+          { position: "Muscle", user: { id: DEMO_TORN_ID, outcome: status === "Successful" ? "Successful" : "Failure", progress: 100 } },
+          { position: "Thief", user: null },
+        ],
+      },
+      update: {},
+    });
+  }
+
+  await db.factionBalanceSnapshot.create({
+    data: {
+      userId: user.id,
+      factionId: DEMO_FACTION_ID,
+      money: BigInt(480_000_000),
+      points: 30,
+      scope: 12,
+      members: [{ id: DEMO_TORN_ID, username: "DEMO_Player", money: 9_000_000 }],
+      capturedAt: new Date(now * 1000),
+    },
+  });
+
   const counts = {
     crimes: crimeRows.length,
+    rankedWars: warRows.length,
+    chains: chainRows.length,
+    ocs: ocNames.length,
     combat: combatRows.length,
     drugs: drugRows.length,
     rehab: rehabRows.length,

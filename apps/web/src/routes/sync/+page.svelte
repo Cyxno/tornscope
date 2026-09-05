@@ -49,7 +49,12 @@
     rehab: "hourly",
     money_logs: "every 10 min",
     events: "every 5 min",
-    faction_basic: "every 6 h",
+    faction_basic: "hourly",
+    faction: "hourly",
+    ranked_wars: "6 h",
+    chains: "6 h",
+    organized_crimes: "hourly",
+    attacks: "30 min",
     torn_catalog: "daily",
   };
 
@@ -62,7 +67,12 @@
     rehab: "Rehabilitation visits",
     money_logs: "Income & expense ledger entries",
     events: "Torn events for your timeline",
-    faction_basic: "Faction identity & snapshots",
+    faction_basic: "Legacy faction snapshots",
+    faction: "Faction profile, members & bank balance",
+    ranked_wars: "Ranked war history (permanent)",
+    chains: "Faction chain history",
+    organized_crimes: "Organized crime 2.0 records",
+    attacks: "Your attack record",
     torn_catalog: "Item names & market prices",
   };
 

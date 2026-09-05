@@ -21,6 +21,7 @@ import { getTravelHistory, getTravelSummary } from "./services/travel.js";
 import { getNetworth } from "./services/networth.js";
 import { getEconomySummary } from "./services/economy.js";
 import { getCrimesSummary, getCrimesTimeline, getCombatSummary, getCombatTimeline } from "./services/crimesCombat.js";
+import { getFactionOverview, getFactionRankedWars, getFactionMembers, getFactionChains, getFactionOcs, getFactionLedger } from "./services/faction.js";
 import { getTimeline } from "./services/timeline.js";
 import { getDashboard } from "./services/dashboard.js";
 import { getToday } from "./services/today.js";
@@ -155,6 +156,43 @@ export function registerRoutes(app: FastifyInstance): void {
     const range = parseRange(req.query as Record<string, unknown>);
     const pagination = parsePagination(req.query as Record<string, unknown>);
     return getCombatTimeline(user.id, range, pagination.limit, pagination.cursor);
+  });
+
+  app.get("/api/faction/overview", async (req) => {
+    const user = await resolveCurrentUser();
+    const range = parseRange(req.query as Record<string, unknown>);
+    return getFactionOverview(user.id, range);
+  });
+
+  app.get("/api/faction/ranked-wars", async (req) => {
+    const user = await resolveCurrentUser();
+    const range = parseRange(req.query as Record<string, unknown>);
+    return getFactionRankedWars(user.id, range);
+  });
+
+  app.get("/api/faction/members", async (req) => {
+    const user = await resolveCurrentUser();
+    const range = parseRange(req.query as Record<string, unknown>);
+    return getFactionMembers(user.id, range);
+  });
+
+  app.get("/api/faction/chains", async (req) => {
+    const user = await resolveCurrentUser();
+    const range = parseRange(req.query as Record<string, unknown>);
+    return getFactionChains(user.id, range);
+  });
+
+  app.get("/api/faction/organized-crimes", async (req) => {
+    const user = await resolveCurrentUser();
+    const range = parseRange(req.query as Record<string, unknown>);
+    const q = req.query as Record<string, unknown>;
+    return getFactionOcs(user.id, range, q.myId === undefined ? null : Number(q.myId));
+  });
+
+  app.get("/api/faction/ledger", async (req) => {
+    const user = await resolveCurrentUser();
+    const range = parseRange(req.query as Record<string, unknown>);
+    return getFactionLedger(user.id, range);
   });
 
   app.get("/api/rehab", async (req) => {

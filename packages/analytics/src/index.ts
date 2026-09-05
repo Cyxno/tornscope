@@ -4,6 +4,7 @@ export * from "./travel.js";
 export * from "./drugs.js";
 export * from "./crimes.js";
 export * from "./combat.js";
+export * from "./faction.js";
 export * from "./consumption.js";
 export * from "./rehab.js";
 export * from "./networth.js";

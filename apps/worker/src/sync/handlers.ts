@@ -1,4 +1,4 @@
-import { TornApiError, normalizeDonatorStatus, type TornEndpoints, type BackwardStopReason } from "@tornscope/torn-api";
+import { TornApiError, normalizeDonatorStatus, type TornEndpoints, type BackwardStopReason, type TornUserAttack } from "@tornscope/torn-api";
 import type { SyncResource } from "@tornscope/shared";
 import {
   encryptionFromEnv,
@@ -30,6 +30,10 @@ import {
   upsertSyncCategoryState,
   insertCombatEvents,
   assembleTripsFromTransitions,
+  upsertFactionBalanceSnapshot,
+  upsertFactionChain,
+  upsertOrganizedCrime,
+  upsertRankedWar,
 } from "@tornscope/database";
 import { isCategoryDue, nextCategorySchedule, SCHEDULE_THRESHOLDS } from "./schedule.js";
 import { getWorkerContext } from "../context.js";
@@ -724,6 +728,157 @@ export const syncFactionBasic: SyncHandler = async ({ userId, torn }) => {
   return { records: 1 };
 };
 
+
+/* -------------------------------------------------------------------------- */
+/* Faction sync (basic/members/balance, ranked wars, chains, OC)               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Faction profile + members + bank balance snapshot. Members are recorded as
+ * FactionMembership rows keyed by faction-member id, so historical members
+ * keep their identity when they leave the current roster.
+ */
+export const syncFaction: SyncHandler = async (args) => {
+  const ctx = getWorkerContext();
+  const [basicFull, members, balance] = await Promise.all([
+    args.torn.factionBasicFull(),
+    args.torn.factionMembers().catch(() => null),
+    args.torn.factionBalance().catch(() => null),
+  ]);
+  const f = basicFull.basic;
+  if (typeof f.id !== "number") return { records: 0 };
+
+  await upsertFaction(ctx.db, {
+    id: f.id,
+    name: String(f.name ?? ""),
+    tag: f.tag !== null && f.tag !== undefined ? String(f.tag) : null,
+    leaderId: typeof f.leader_id === "number" ? f.leader_id : null,
+    coLeaderId: typeof f.co_leader_id === "number" ? f.co_leader_id : null,
+    respect: typeof f.respect === "number" ? f.respect : null,
+    daysOld: typeof f.days_old === "number" ? f.days_old : null,
+    capacity: typeof f.capacity === "number" ? f.capacity : null,
+    members: typeof f.members === "number" ? f.members : null,
+    bestChain: typeof f.best_chain === "number" ? f.best_chain : null,
+  });
+  await insertFactionSnapshot(ctx.db, args.userId, f.id, new Date(), typeof f.members === "number" ? f.members : null, typeof f.respect === "number" ? f.respect : null, f);
+
+  let memberRows = 0;
+  if (members) {
+    for (const m of members) {
+      await upsertFactionMembership(ctx.db, args.userId, f.id, `faction-member:${m.id}`, null, new Date());
+      memberRows += 1;
+    }
+  }
+
+  let balanceRows = 0;
+  if (balance?.balance) {
+    const input = {
+      factionId: f.id,
+      money: balance.balance.faction?.money !== null && balance.balance.faction?.money !== undefined ? BigInt(balance.balance.faction.money) : null,
+      points: balance.balance.faction?.points ?? null,
+      scope: balance.balance.faction?.scope ?? null,
+      members: (balance.balance.members ?? []) as unknown as never,
+      capturedAt: new Date(),
+    };
+    await upsertFactionBalanceSnapshot(ctx.db, args.userId, input);
+    balanceRows = 1;
+  }
+
+  return { records: 1 + memberRows + balanceRows, stopReason: "history_boundary_reached" };
+};
+
+/**
+ * Ranked war history: upsert every war keyed by Torn war id. Completed wars
+ * are permanent — Torn pruning the history endpoint never removes them.
+ */
+export const syncRankedWars: SyncHandler = async (args) => {
+  const ctx = getWorkerContext();
+  const factionId = await resolveUserFactionId(ctx.db, args.userId);
+  if (factionId === null) return { records: 0 };
+  let wars = 0;
+  await args.torn.iterateFactionRankedWars(async (page) => {
+    for (const w of page) {
+      const ours = w.factions.find((f) => f.id === factionId) ?? null;
+      const opp = w.factions.find((f) => f.id !== factionId) ?? null;
+      await upsertRankedWar(ctx.db, {
+        tornWarId: w.id,
+        factionId,
+        opponentFactionId: opp?.id ?? null,
+        opponentName: opp?.name ?? null,
+        startedAt: new Date(w.start * 1000),
+        endedAt: w.end ? new Date(w.end * 1000) : null,
+        winnerFactionId: w.winner ?? null,
+        targetScore: w.target ?? null,
+        ourScore: ours?.score ?? null,
+        opponentScore: opp?.score ?? null,
+        ourChain: ours?.chain ?? null,
+        opponentChain: opp?.chain ?? null,
+        raw: w as object,
+      });
+      wars += 1;
+    }
+  }, { maxPages: 20 });
+  logger.info({ userId: args.userId, wars }, "ranked wars synced");
+  return { records: wars, stopReason: "history_boundary_reached" };
+};
+
+export async function resolveUserFactionId(db: ReturnType<typeof getWorkerContext>["db"], userId: string): Promise<number | null> {
+  const account = await db.tornAccount.findUnique({ where: { userId }, select: { factionId: true } });
+  return account?.factionId ?? null;
+}
+
+/** Historical faction chains. */
+export const syncChains: SyncHandler = async (args) => {
+  const ctx = getWorkerContext();
+  const factionId = await resolveUserFactionId(ctx.db, args.userId);
+  if (factionId === null) return { records: 0 };
+  let chains = 0;
+  await args.torn.iterateFactionChains(async (page) => {
+    for (const c of page) {
+      await upsertFactionChain(ctx.db, args.userId, {
+        factionId,
+        chainId: c.id,
+        chain: c.chain,
+        respect: c.respect ?? null,
+        startedAt: new Date(c.start * 1000),
+        endedAt: new Date(c.end * 1000),
+      });
+      chains += 1;
+    }
+  }, { maxPages: 20 });
+  logger.info({ userId: args.userId, chains }, "faction chains synced");
+  return { records: chains, stopReason: "history_boundary_reached" };
+};
+
+/** Organized crimes (OC 2.0) with participants and rewards. */
+export const syncOrganizedCrimes: SyncHandler = async (args) => {
+  const ctx = getWorkerContext();
+  const factionId = await resolveUserFactionId(ctx.db, args.userId);
+  if (factionId === null) return { records: 0 };
+  let crimes = 0;
+  await args.torn.iterateFactionOrganizedCrimes(async (page) => {
+    for (const c of page) {
+      await upsertOrganizedCrime(ctx.db, args.userId, {
+        factionId,
+        ocId: c.id,
+        name: c.name,
+        difficulty: c.difficulty ?? null,
+        status: c.status,
+        createdAt: c.created_at ? new Date(c.created_at * 1000) : null,
+        planningAt: c.planning_at ? new Date(c.planning_at * 1000) : null,
+        executedAt: c.executed_at ? new Date(c.executed_at * 1000) : null,
+        readyAt: c.ready_at ? new Date(c.ready_at * 1000) : null,
+        expiredAt: c.expired_at ? new Date(c.expired_at * 1000) : null,
+        rewards: (c.rewards ?? null) as never,
+        slots: (c.slots ?? null) as never,
+      });
+      crimes += 1;
+    }
+  }, { maxPages: 20 });
+  logger.info({ userId: args.userId, crimes }, "organized crimes synced");
+  return { records: crimes, stopReason: "history_boundary_reached" };
+};
+
 /* -------------------------------------------------------------------------- */
 /* Registry                                                                   */
 /* -------------------------------------------------------------------------- */
@@ -738,6 +893,10 @@ export const SYNC_HANDLERS: Record<SyncResource, SyncHandler> = {
   money_logs: syncMoneyLogs,
   events: syncEvents,
   attacks: syncAttacks,
+  faction: syncFaction,
+  ranked_wars: syncRankedWars,
+  chains: syncChains,
+  organized_crimes: syncOrganizedCrimes,
   faction_basic: syncFactionBasic,
   torn_catalog: syncTornCatalog,
 };

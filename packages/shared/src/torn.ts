@@ -96,6 +96,10 @@ export const SYNC_RESOURCES = [
   "money_logs",
   "events",
   "faction_basic",
+  "faction",
+  "ranked_wars",
+  "chains",
+  "organized_crimes",
   "attacks",
   "torn_catalog",
 ] as const;
@@ -112,6 +116,10 @@ export const DEFAULT_SYNC_FREQUENCIES_SECONDS: Record<SyncResource, number> = {
   money_logs: 600,
   events: 300,
   faction_basic: 21600,
+  faction: 3600,
+  ranked_wars: 21600,
+  chains: 21600,
+  organized_crimes: 3600,
   attacks: 1800,
   torn_catalog: 86400,
 };
