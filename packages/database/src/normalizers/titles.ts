@@ -186,6 +186,7 @@ export const MONEY_AMOUNT_KEYS = [
   "money",
   "money_gained",
   "money_lost",
+  "money_mugged",
   "balance_change",
   "upkeep_paid",
   "cost_total",
@@ -301,6 +302,9 @@ export function moneyPlanFor(category: string, title: string): MoneyPlan | null 
   if (is(/crime success/)) return { category: "crime", direction: "income", skip: false, transfer: false };
 
   // --- mugging ---
+  // --- mugging (attack logs; "receive" = the user was mugged) ---
+  if (is(/^attack mug receive/)) return { category: "mugging", direction: "expense", skip: false, transfer: false };
+  if (is(/^attack mug/)) return { category: "mugging", direction: "income", skip: false, transfer: false };
   if (is(/mug(ged|ging)?/)) return { category: "mugging", direction: "income", skip: false, transfer: false };
 
   // --- generic older-style categories ("Money", "Money incoming/outgoing") ---
