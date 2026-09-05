@@ -107,7 +107,6 @@ export async function insertCombatEvents(db: PrismaClientType, userId: string, e
       result: e.result,
       respectDelta: e.respectDelta,
       modifiers: e.modifiers === null ? Prisma.JsonNull : (e.modifiers as Prisma.InputJsonValue),
-      source: "torn_api",
       sourceRef: `attack:${e.attackId}`,
       metadata: e.raw === undefined ? Prisma.JsonNull : (e.raw as Prisma.InputJsonValue),
     })),
