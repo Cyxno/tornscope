@@ -103,9 +103,14 @@ export function calculateTravelProfit(trips: readonly TravelTripLike[], from?: n
   let totalItemsBought = 0;
   let revenueSum = 0;
   let revenueKnown = true;
+  // Per-hour uses the SAME trip subset for profit and duration: trips without
+  // a known duration (e.g. still in flight) contribute to neither side.
+  let timedRevenueSum = 0;
+  let timedSpendSum = 0;
+  let timedRevenueKnown = true;
   let durationSum = 0;
 
-  const destMap = new Map<string, DestinationAnalytics & { _revenueKnown: boolean; _durationSum: number }>();
+  const destMap = new Map<string, DestinationAnalytics & { _revenueKnown: boolean; _durationSum: number; _timedRevenue: number; _timedSpend: number; _timedRevenueKnown: boolean }>();
   const catMap = new Map<string, { quantity: number; spend: number; estimatedValue: number | null }>();
 
   for (const trip of inRange) {
@@ -124,12 +129,16 @@ export function calculateTravelProfit(trips: readonly TravelTripLike[], from?: n
           averageProfitPerHour: null,
           _revenueKnown: true,
           _durationSum: 0,
+          _timedRevenue: 0,
+          _timedSpend: 0,
+          _timedRevenueKnown: true,
         }
       ), destMap.get(trip.destination)!);
 
     dest.trips += 1;
     const duration = tripDurationSeconds(trip);
-    if (duration !== null) {
+    const timed = duration !== null;
+    if (timed) {
       durationSum += duration;
       dest._durationSum += duration;
     }
@@ -159,7 +168,6 @@ export function calculateTravelProfit(trips: readonly TravelTripLike[], from?: n
       }
     }
 
-    dest.totalSpend = dest.totalSpend; // spend counted above
     if (tripRevenueKnown) {
       revenueSum += tripRevenue;
       dest.estimatedRevenue! += tripRevenue;
@@ -168,10 +176,24 @@ export function calculateTravelProfit(trips: readonly TravelTripLike[], from?: n
       revenueKnown = false;
       dest._revenueKnown = false;
     }
+    // Timed (known-duration) subset for the per-hour figure.
+    if (timed) {
+      timedSpendSum += tripSpend;
+      dest._timedSpend += tripSpend;
+      if (tripRevenueKnown) {
+        timedRevenueSum += tripRevenue;
+        dest._timedRevenue += tripRevenue;
+      } else {
+        timedRevenueKnown = false;
+        dest._timedRevenueKnown = false;
+      }
+    }
   }
 
+  const timedProfit = timedRevenueKnown ? timedRevenueSum - timedSpendSum : null;
   const byDestination = [...destMap.values()].map((d) => {
     const profit = d._revenueKnown ? d.estimatedRevenue! - d.totalSpend : null;
+    const destTimedProfit = d._timedRevenueKnown ? d._timedRevenue - d._timedSpend : null;
     return {
       destination: d.destination,
       trips: d.trips,
@@ -180,9 +202,9 @@ export function calculateTravelProfit(trips: readonly TravelTripLike[], from?: n
       estimatedRevenue: d._revenueKnown ? d.estimatedRevenue : null,
       estimatedProfit: profit,
       averageProfitPerTrip: profit !== null && d.trips > 0 ? profit / d.trips : null,
-      // Per-hour is computed over the trips with known durations (an
-      // in-flight trip has none yet) — null only when none are known.
-      averageProfitPerHour: profit !== null && d._durationSum > 0 ? (profit / d._durationSum) * HOUR : null,
+      // Per-hour: profit and hours over the same known-duration trips —
+      // null only when no durations are known (or profit is unknown).
+      averageProfitPerHour: destTimedProfit !== null && d._durationSum > 0 ? (destTimedProfit / d._durationSum) * HOUR : null,
     };
   }).sort((a, b) => (b.estimatedProfit ?? b.totalSpend * -1) - (a.estimatedProfit ?? a.totalSpend * -1));
 
@@ -198,7 +220,7 @@ export function calculateTravelProfit(trips: readonly TravelTripLike[], from?: n
     estimatedRevenue: revenueKnown ? revenueSum : null,
     estimatedProfit,
     averageProfitPerTrip: estimatedProfit !== null && inRange.length > 0 ? estimatedProfit / inRange.length : null,
-    averageProfitPerHour: estimatedProfit !== null && durationSum > 0 ? (estimatedProfit / durationSum) * HOUR : null,
+    averageProfitPerHour: timedProfit !== null && durationSum > 0 ? (timedProfit / durationSum) * HOUR : null,
     byDestination,
     byCategory,
     mostProfitableDestination: byDestination.find((d) => d.estimatedProfit !== null) ?? null,

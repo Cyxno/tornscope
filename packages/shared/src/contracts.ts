@@ -8,7 +8,9 @@ import type { Provenance } from "./provenance.js";
 
 export const DATE_RANGE_PRESETS = [
   "today",
+  "1d",
   "7d",
+  "14d",
   "30d",
   "90d",
   "this_month",
@@ -48,9 +50,12 @@ export function resolveDateRange(input: DateRangeInput, now: number = Math.floor
 
   switch (input.preset) {
     case "today":
+    case "1d":
       return { from: startOfToday, to: endOfToday };
     case "7d":
       return { from: startOfToday - 6 * 86_400, to: endOfToday };
+    case "14d":
+      return { from: startOfToday - 13 * 86_400, to: endOfToday };
     case "30d":
       return { from: startOfToday - 29 * 86_400, to: endOfToday };
     case "90d":
@@ -76,6 +81,37 @@ export function resolveDateRange(input: DateRangeInput, now: number = Math.floor
       }
       return { from: input.from, to: Math.min(input.to ?? endOfToday, endOfToday) };
     }
+  }
+}
+
+/**
+ * Short human label for a range preset, used to prefix KPI labels so they
+ * always match the selected period ("7D income", "This Year networth change").
+ */
+export function periodLabel(preset: DateRangePreset): string {
+  switch (preset) {
+    case "today":
+      return "Today";
+    case "1d":
+      return "1D";
+    case "7d":
+      return "7D";
+    case "14d":
+      return "14D";
+    case "30d":
+      return "30D";
+    case "90d":
+      return "90D";
+    case "this_month":
+      return "This Month";
+    case "prev_month":
+      return "Last Month";
+    case "this_year":
+      return "This Year";
+    case "all":
+      return "All";
+    case "custom":
+      return "Custom";
   }
 }
 
@@ -177,13 +213,36 @@ export const KpiValueSchema = z.object({
 });
 export type KpiValue = z.infer<typeof KpiValueSchema>;
 
+/**
+ * Coverage of the tracked history for a networth period change — the UI maps
+ * this to "Networth change" (full) / "Tracked period change" (partial) /
+ * "Insufficient history" (none). Never renders a misleading 0.
+ */
+export const NetworthCoverageSchema = z.enum(["full", "partial", "none"]);
+export type NetworthCoverage = z.infer<typeof NetworthCoverageSchema>;
+
+export const NetworthCategoryChangeSchema = z.object({
+  key: z.enum(["cash", "banks", "stocks", "items", "property", "points", "company", "other"]),
+  label: z.string(),
+  current: z.number(),
+  baseline: z.number(),
+  change: z.number(),
+});
+export type NetworthCategoryChangeDto = z.infer<typeof NetworthCategoryChangeSchema>;
+
 export const DashboardResponseSchema = z.object({
   range: z.object({ from: z.number(), to: z.number(), interval: z.string() }),
   netWorth: KpiValueSchema,
   cash: KpiValueSchema,
-  income30d: KpiValueSchema,
-  expenses30d: KpiValueSchema,
-  netGain30d: KpiValueSchema,
+  /** Cash flow over the SELECTED range — labels are built from the range. */
+  income: KpiValueSchema,
+  expenses: KpiValueSchema,
+  netCashFlow: KpiValueSchema,
+  /** Networth snapshot change over the SELECTED range. */
+  networthChange: KpiValueSchema,
+  networthChangePct: z.number().nullable(),
+  networthCoverage: NetworthCoverageSchema,
+  consumedValue: KpiValueSchema,
   travelProfit: KpiValueSchema,
   drugsUsed: KpiValueSchema,
   rehabSpend: KpiValueSchema,
@@ -219,6 +278,99 @@ export const MoneySummaryResponseSchema = z.object({
   cumulativeNetSeries: z.array(z.object({ t: z.number(), net: z.number() })),
 });
 export type MoneySummaryResponse = z.infer<typeof MoneySummaryResponseSchema>;
+
+/**
+ * Economy view: three clearly separated concepts.
+ * - Cash Flow: ONLY real cash movements (purchases, sales, fees, payouts).
+ * - Consumption: value of items used up (drugs, boosters, medical, happy
+ *   items, other) — never added to the cash P&L.
+ * - Networth: Torn snapshot totals and their change over the period.
+ * Plus the estimated travel profit, kept separate from all of the above.
+ */
+export const EconomySummaryResponseSchema = z.object({
+  range: z.object({ from: z.number(), to: z.number(), interval: z.string() }),
+  cashFlow: z.object({
+    income: KpiValueSchema,
+    expenses: KpiValueSchema,
+    netCashFlow: KpiValueSchema,
+    /** Unclassified money rows in range — value may still change. */
+    unclassifiedCount: z.number(),
+    incomeByCategory: z.array(z.object({ category: MoneyCategorySchema, total: z.number() })),
+    expensesByCategory: z.array(z.object({ category: MoneyCategorySchema, total: z.number() })),
+  }),
+  consumption: z.object({
+    uses: z.number(),
+    /** Total Consumed Value (known values; unknown-value events counted separately). */
+    totalValue: KpiValueSchema,
+    valueUnknownCount: z.number(),
+    drugValue: z.number().nullable(),
+    byCategory: z.array(
+      z.object({
+        category: z.string(),
+        uses: z.number(),
+        totalValue: z.number().nullable(),
+        valueUnknownCount: z.number(),
+      })
+    ),
+  }),
+  networth: z.object({
+    current: KpiValueSchema,
+    currentAt: z.number().nullable(),
+    baseline: z.number().nullable(),
+    change: KpiValueSchema,
+    changePct: z.number().nullable(),
+    coverage: NetworthCoverageSchema,
+    baselineAt: z.number().nullable(),
+    trackedFrom: z.number().nullable(),
+    byCategory: z.array(NetworthCategoryChangeSchema),
+  }),
+  travel: z.object({
+    estimatedProfit: KpiValueSchema,
+    profitPerHour: KpiValueSchema,
+    trips: z.number(),
+  }),
+});
+export type EconomySummaryResponse = z.infer<typeof EconomySummaryResponseSchema>;
+
+export const NetworthResponseSchema = z.object({
+  range: z.object({ from: z.number(), to: z.number(), interval: z.string() }),
+  series: z.array(
+    z.object({
+      t: z.number(),
+      total: z.number(),
+      breakdown: z.object({
+        cash: z.number(),
+        banks: z.number(),
+        points: z.number(),
+        property: z.number(),
+        stocks: z.number(),
+        company: z.number(),
+      }),
+    })
+  ),
+  /** Legacy fixed-window changes (7d/30d/YTD/all) for the chart tooltips. */
+  changes: z.object({
+    current: z.number().nullable(),
+    change7d: z.number().nullable(),
+    change30d: z.number().nullable(),
+    changeYtd: z.number().nullable(),
+    changeAllTime: z.number().nullable(),
+    firstTrackedAt: z.number().nullable(),
+  }),
+  /** Change over the SELECTED range with baseline + category breakdown. */
+  period: z.object({
+    currentAt: z.number().nullable(),
+    current: z.number().nullable(),
+    baselineAt: z.number().nullable(),
+    baseline: z.number().nullable(),
+    change: z.number().nullable(),
+    changePct: z.number().nullable(),
+    coverage: NetworthCoverageSchema,
+    trackedFrom: z.number().nullable(),
+    byCategory: z.array(NetworthCategoryChangeSchema),
+  }),
+});
+export type NetworthResponse = z.infer<typeof NetworthResponseSchema>;
 
 export const MoneyEventDtoSchema = z.object({
   id: z.string(),

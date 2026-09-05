@@ -6,8 +6,9 @@ import type { DateRangePreset } from "@tornscope/shared";
  */
 
 export const DATE_PRESETS: Array<{ value: DateRangePreset; label: string }> = [
-  { value: "today", label: "Today" },
+  { value: "1d", label: "1D" },
   { value: "7d", label: "7D" },
+  { value: "14d", label: "14D" },
   { value: "30d", label: "30D" },
   { value: "90d", label: "90D" },
   { value: "this_month", label: "Month" },

@@ -8,6 +8,7 @@ import {
 import {
   aggregateMoneyEvents,
   calculateDrugStats,
+  calculateNetworthPeriodChange,
   calculateRehabStats,
   calculateTravelProfit,
 } from "@tornscope/analytics";
@@ -21,31 +22,24 @@ import { getLatestNetworth } from "./networth.js";
  * zero-vs-unknown contract: a $0 is only displayed when it is a confirmed
  * zero; missing/backfilling/unparsed data renders as —, Importing or
  * Incomplete instead.
+ *
+ * All flow KPIs (income, expenses, net cash flow, networth change, consumed
+ * value, travel profit) follow the SELECTED global range — labels are built
+ * by the UI from the same range preset.
  */
 export async function getDashboard(userId: string, rangeInput: DateRangeInput): Promise<DashboardResponse> {
   const db = getPrismaClient();
   const range = resolveDateRange(rangeInput);
   const from = new Date(range.from * 1000);
   const to = new Date(range.to * 1000);
-  // Fixed 30-day window for the overview KPI row (independent of the range).
-  const nowSec = Math.floor(Date.now() / 1000);
-  const now30From = nowSec - 30 * 86_400;
 
-  const [latestNw, moneyRows, unknownMoneyRows, money30Rows, unknownMoney30, travelEvents, travelItems, travelTransitions, drugRows, rehabRows, rehabCandidates, timelineCount, timeline30Count, timelineRows, marketPrices, syncStates] = await Promise.all([
+  const [latestNw, moneyRows, unknownMoneyRows, travelEvents, travelItems, travelTransitions, drugRows, consumptionRows, rehabRows, rehabCandidates, timelineCount, timelineRows, marketPrices, syncStates] = await Promise.all([
     getLatestNetworth(userId),
     db.moneyEvent.findMany({
       where: { userId, occurredAt: { gte: from, lte: to } },
       select: { id: true, occurredAt: true, category: true, subcategory: true, direction: true, amount: true, description: true, source: true },
     }),
     db.moneyEvent.count({ where: { userId, direction: "unknown", occurredAt: { gte: from, lte: to } } }),
-    // The 30-day KPI window is independent of the selected range.
-    db.moneyEvent.findMany({
-      where: { userId, occurredAt: { gte: new Date((now30From) * 1000) } },
-      select: { occurredAt: true, direction: true, amount: true },
-    }),
-    db.moneyEvent.count({
-      where: { userId, direction: "unknown", occurredAt: { gte: new Date(now30From * 1000) } },
-    }),
     db.travelEvent.findMany({
       where: { userId, departedAt: { gte: new Date((range.from - 7 * 86_400) * 1000), lte: to } },
       select: { id: true, destination: true, departedAt: true, returnedAt: true, durationSeconds: true },
@@ -58,6 +52,10 @@ export async function getDashboard(userId: string, rangeInput: DateRangeInput): 
     db.drugEvent.findMany({
       where: { userId, occurredAt: { gte: from, lte: to } },
       select: { occurredAt: true, drugItemId: true, drugName: true, outcome: true },
+    }),
+    db.consumptionEvent.findMany({
+      where: { userId, occurredAt: { gte: from, lte: to } },
+      select: { occurredAt: true, category: true, quantity: true, totalValue: true },
     }),
     db.rehabEvent.findMany({
       where: { userId, occurredAt: { gte: from, lte: to } },
@@ -74,7 +72,6 @@ export async function getDashboard(userId: string, rangeInput: DateRangeInput): 
       },
     }),
     db.timelineEvent.count({ where: { userId, type: "log", occurredAt: { gte: from, lte: to } } }),
-    db.timelineEvent.count({ where: { userId, type: "log", occurredAt: { gte: new Date(now30From * 1000) } } }),
     db.timelineEvent.findMany({
       where: { userId, occurredAt: { gte: from, lte: to } },
       orderBy: [{ occurredAt: "desc" }, { id: "desc" }],
@@ -106,19 +103,6 @@ export async function getDashboard(userId: string, rangeInput: DateRangeInput): 
   }));
   const agg = aggregateMoneyEvents(moneyEvents, range.from, range.to, autoInterval(range));
 
-  const money30 = aggregateMoneyEvents(
-    money30Rows.map((r) => ({
-      id: "kpi",
-      occurredAt: Math.floor(r.occurredAt.getTime() / 1000),
-      category: "other",
-      direction: r.direction as "income" | "expense" | "neutral" | "unknown",
-      amount: bigintToNumber(r.amount) ?? 0,
-    })),
-    now30From,
-    nowSec,
-    "day"
-  );
-
   const trips = buildTripsForDashboard(travelEvents, travelItems, marketPrices);
   const travel = calculateTravelProfit(trips, range.from, range.to);
   const travelInRange = trips.filter((t) => t.departedAt >= range.from && t.departedAt <= range.to);
@@ -136,6 +120,12 @@ export async function getDashboard(userId: string, rangeInput: DateRangeInput): 
     range.to,
     "day"
   );
+
+  // Consumed value (items used up) over the selected range — deliberately
+  // separate from the cash flow aggregate above.
+  const consumedTotal = consumptionRows.reduce<number>((sum, r) => sum + (r.totalValue !== null ? Number(r.totalValue) : 0), 0);
+  const consumedUnknown = consumptionRows.filter((r) => r.totalValue === null).length;
+
   const rehab = calculateRehabStats(
     rehabRows.map((r) => ({
       occurredAt: Math.floor(r.occurredAt.getTime() / 1000),
@@ -146,15 +136,33 @@ export async function getDashboard(userId: string, rangeInput: DateRangeInput): 
     range.to
   );
 
-  const nwSeries = await db.networthSnapshot.findMany({
-    where: { userId, capturedAt: { gte: from, lte: to } },
-    orderBy: { capturedAt: "asc" },
-    select: { capturedAt: true, total: true },
-  });
+  const [nwSeriesRows, nwPeriodRows] = await Promise.all([
+    db.networthSnapshot.findMany({
+      where: { userId, capturedAt: { gte: from, lte: to } },
+      orderBy: { capturedAt: "asc" },
+      select: { capturedAt: true, total: true },
+    }),
+    db.networthSnapshot.findMany({
+      where: { userId, capturedAt: { lte: to } },
+      orderBy: { capturedAt: "asc" },
+      select: { capturedAt: true, total: true },
+    }),
+  ]);
+  const nwPeriod = calculateNetworthPeriodChange(
+    nwPeriodRows.map((r) => ({
+      capturedAt: Math.floor(r.capturedAt.getTime() / 1000),
+      total: bigintToNumber(r.total) ?? 0,
+      pending: 0, wallet: 0, vault: 0, bookie: 0, cityBank: 0, caymanBank: 0, piggyBank: 0,
+      inventory: 0, displayCase: 0, bazaar: 0, trades: 0, itemMarket: 0, auctionHouse: 0, enlistedCars: 0,
+      property: 0, stockMarket: 0, company: 0, points: 0,
+    })),
+    range.from,
+    range.to
+  );
 
   // --- availability per KPI (importing wins; then data evidence) ---
   const moneyAvailability: KpiAvailability =
-    unknownMoney30 > 0 ? "incomplete" : money30.totalIncome === 0 && money30.totalExpenses === 0 && timeline30Count === 0 ? "unavailable" : importing ? "importing" : "ok";
+    unknownMoneyRows > 0 ? "incomplete" : moneyRows.length === 0 && timelineCount === 0 ? "unavailable" : importing ? "importing" : "ok";
   const rehabAvailability: KpiAvailability =
     rehabRows.length > 0 || rehabCandidates === 0 ? (importing ? "importing" : "ok") : "incomplete";
   const drugsAvailability: KpiAvailability =
@@ -167,25 +175,40 @@ export async function getDashboard(userId: string, rangeInput: DateRangeInput): 
       : travelTransitions === 0 && timelineCount === 0
         ? "unavailable"
         : "incomplete";
+  const networthChangeAvailability: KpiAvailability = nwPeriod.coverage === "none" ? "unavailable" : "ok";
+  const consumptionAvailability: KpiAvailability =
+    consumptionRows.length > 0 ? (consumedUnknown > 0 ? "incomplete" : "ok") : drugsAvailability === "ok" ? "ok" : drugsAvailability;
 
   return {
     range: { from: range.from, to: range.to, interval: autoInterval(range) },
     netWorth: { value: latestNw?.total ?? null, provenance: "exact", availability: latestNw ? "ok" : "unavailable" },
     cash: { value: latestNw?.cash ?? null, provenance: "exact", availability: latestNw ? "ok" : "unavailable" },
-    income30d: {
-      value: moneyAvailability === "unavailable" ? null : money30.totalIncome,
+    income: {
+      value: moneyAvailability === "unavailable" ? null : agg.totalIncome,
       provenance: "derived",
       availability: moneyAvailability,
     },
-    expenses30d: {
-      value: moneyAvailability === "unavailable" ? null : money30.totalExpenses,
+    expenses: {
+      value: moneyAvailability === "unavailable" ? null : agg.totalExpenses,
       provenance: "derived",
       availability: moneyAvailability,
     },
-    netGain30d: {
-      value: moneyAvailability === "unavailable" ? null : money30.netProfit,
+    netCashFlow: {
+      value: moneyAvailability === "unavailable" ? null : agg.netProfit,
       provenance: "derived",
       availability: moneyAvailability,
+    },
+    networthChange: {
+      value: nwPeriod.change,
+      provenance: "exact",
+      availability: networthChangeAvailability,
+    },
+    networthChangePct: nwPeriod.changePct,
+    networthCoverage: nwPeriod.coverage,
+    consumedValue: {
+      value: consumedTotal,
+      provenance: "estimated",
+      availability: consumptionAvailability,
     },
     travelProfit: {
       value: travel.estimatedProfit,
@@ -194,7 +217,7 @@ export async function getDashboard(userId: string, rangeInput: DateRangeInput): 
     },
     drugsUsed: { value: drugs.totalUses, provenance: "exact", availability: drugsAvailability },
     rehabSpend: { value: rehab.totalSpend, provenance: rehab.provenance, availability: rehabAvailability },
-    networthSeries: nwSeries.map((r) => ({ t: Math.floor(r.capturedAt.getTime() / 1000), total: bigintToNumber(r.total) ?? 0 })),
+    networthSeries: nwSeriesRows.map((r) => ({ t: Math.floor(r.capturedAt.getTime() / 1000), total: bigintToNumber(r.total) ?? 0 })),
     incomeByCategory: agg.incomeByCategory.map((c) => ({ category: c.category as DashboardResponse["incomeByCategory"][number]["category"], total: c.total })),
     expensesByCategory: agg.expensesByCategory.map((c) => ({ category: c.category as DashboardResponse["expensesByCategory"][number]["category"], total: c.total })),
     travelProfitSeries: buildDailyTravelProfit(trips, range.from, range.to),

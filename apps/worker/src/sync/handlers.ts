@@ -2,6 +2,7 @@ import { normalizeDonatorStatus, type TornEndpoints } from "@tornscope/torn-api"
 import type { SyncResource } from "@tornscope/shared";
 import {
   encryptionFromEnv,
+  insertConsumptionEvents,
   insertDrugEvents,
   insertMoneyEvents,
   insertNetworthSnapshot,
@@ -11,8 +12,10 @@ import {
   insertTravelTransitions,
   insertTravelItemEvents,
   insertFactionSnapshot,
+  loadItemIdByName,
   loadItemNameMap,
   loadItemTypeMap,
+  loadMarketPrices,
   normalizeLogEntry,
   normalizeTornEvent,
   setLogCategories as cacheLogCategories,
@@ -243,7 +246,12 @@ async function getCurrentApiKey(): Promise<string> {
  */
 async function syncLogsByCategories(args: SyncHandlerArgs, categoryIds: number[]): Promise<SyncHandlerResult> {
   const ctx = getWorkerContext();
-  const [itemNameById, itemTypeById] = await Promise.all([loadItemNameMap(ctx.db), loadItemTypeMap(ctx.db)]);
+  const [itemNameById, itemTypeById, itemMarketPriceById, itemIdByName] = await Promise.all([
+    loadItemNameMap(ctx.db),
+    loadItemTypeMap(ctx.db),
+    loadMarketPrices(ctx.db),
+    loadItemIdByName(ctx.db),
+  ]);
 
   const from =
     args.lastTimestamp !== null
@@ -260,12 +268,13 @@ async function syncLogsByCategories(args: SyncHandlerArgs, categoryIds: number[]
         logger.debug({ userId: args.userId, category, page: logs.length, stage: "page_received" }, "log page received");
         if (logs.length === 0) return;
         for (const log of logs) {
-          const normalized = normalizeLogEntry(log, { itemNameById, itemTypeById });
+          const normalized = normalizeLogEntry(log, { itemNameById, itemTypeById, itemMarketPriceById, itemIdByName });
           // Each typed insert is its own small idempotent transaction — the
           // cursor is only advanced after every page of this category made
           // it to PostgreSQL, so a crash resumes instead of skipping data.
           await insertTimelineEvents(ctx.db, args.userId, normalized.timelineEvents);
           await insertDrugEvents(ctx.db, args.userId, normalized.drugEvents);
+          await insertConsumptionEvents(ctx.db, args.userId, normalized.consumptionEvents);
           await insertRehabEvents(ctx.db, args.userId, normalized.rehabEvents);
           await insertTravelTransitions(ctx.db, args.userId, normalized.travelTransitions);
           await insertTravelItemEvents(ctx.db, args.userId, normalized.travelItemEvents);
@@ -291,7 +300,11 @@ async function syncLogsByCategories(args: SyncHandlerArgs, categoryIds: number[]
   return { records, lastTimestamp: maxTimestamp > 0 ? BigInt(maxTimestamp) : null };
 }
 
-export const syncDrugLogs: SyncHandler = async (args) => syncLogsByCategories(args, await resolveCategoryIds(["drug"]));
+// Consumable item use (EDVD, energy drinks, candy, boosters, medical items
+// and other consumables) is filed under the dedicated "Item use ..." log
+// categories. They are fetched with the drugs resource so consumption
+// economics cover every consumable, not only drugs.
+export const syncDrugLogs: SyncHandler = async (args) => syncLogsByCategories(args, await resolveCategoryIds(["drug", "item use"]));
 
 // Torn has NO rehab log category: rehab visits are filed under the "Travel"
 // category with the title "Rehab". The keyword list therefore mirrors the

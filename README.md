@@ -105,7 +105,7 @@ See [.env.example](.env.example). Highlights:
 | `TORN_API_BASE_URL` | Defaults to `https://api.torn.com/v2` |
 | `API_KEY_ENCRYPTION_KEY` | **Required.** 32-byte hex master key for AES-256-GCM |
 | `TORN_API_MIN_REQUEST_INTERVAL_MS` | Minimum spacing between Torn requests (default 700ms ≈ 85/min vs Torn's 100/min cap) |
-| `TORN_SYNC_INITIAL_HISTORY_DAYS` | Initial history window on first sync (default/max 180) |
+| `TORN_SYNC_INITIAL_HISTORY_DAYS` | Initial history window on first sync (default 180 days of available Torn history — retention varies by Torn log type) |
 | `SYNC_INTERVAL_*` | Per-resource schedule overrides (seconds) |
 | `APP_BASE_URL` / `API_BASE_URL` | Web origin for CORS / API target for the web proxy |
 
@@ -201,7 +201,7 @@ Keep off-site copies. Test restores.
 | Sync shows `access_denied` on log resources | Your key lacks Full Access / custom log permissions — replace it in Settings |
 | Data stops updating | Check Sync Status errors + `docker compose logs worker` |
 | Torn errors `code 5` / `code 8` | Rate limited / IP block — increase `TORN_API_MIN_REQUEST_INTERVAL_MS` |
-| Charts empty right after onboarding | First sync (up to 180 days of logs) takes a few minutes; watch Sync Status |
+| Charts empty right after onboarding | First sync (up to 180 days of available Torn history) takes a few minutes; retention varies by Torn log type — watch Sync Status |
 
 ## Roadmap
 

@@ -19,6 +19,7 @@ function encodeLast(rows: Array<{ occurredAt: Date; id: string }>): string | nul
 import { getDrugsSummary } from "./services/drugs.js";
 import { getTravelHistory, getTravelSummary } from "./services/travel.js";
 import { getNetworth } from "./services/networth.js";
+import { getEconomySummary } from "./services/economy.js";
 import { getTimeline } from "./services/timeline.js";
 import { getDashboard } from "./services/dashboard.js";
 import { getToday } from "./services/today.js";
@@ -84,6 +85,13 @@ export function registerRoutes(app: FastifyInstance): void {
     const user = await resolveCurrentUser();
     const range = parseRange(req.query as Record<string, unknown>);
     return getMoneySummary(user.id, range);
+  });
+
+  // Economy view: cash flow + consumption + networth + travel, separated.
+  app.get("/api/economy", async (req) => {
+    const user = await resolveCurrentUser();
+    const range = parseRange(req.query as Record<string, unknown>);
+    return getEconomySummary(user.id, range);
   });
 
   app.get("/api/money/events", async (req) => {

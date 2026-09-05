@@ -1,7 +1,7 @@
 import { getPrismaClient, bigintToNumber } from "../client.js";
-import { loadItemNameMap, loadItemTypeMap } from "../repositories/catalog.js";
+import { loadItemIdByName, loadItemNameMap, loadItemTypeMap, loadMarketPrices } from "../repositories/catalog.js";
 import { normalizeLogEntry } from "../normalizers/logs.js";
-import { insertDrugEvents, insertMoneyEvents, insertRehabEvents, insertTimelineEvents, insertTravelItemEvents, insertTravelTransitions } from "../repositories/ingest.js";
+import { insertConsumptionEvents, insertDrugEvents, insertMoneyEvents, insertRehabEvents, insertTimelineEvents, insertTravelItemEvents, insertTravelTransitions } from "../repositories/ingest.js";
 import { assembleTripsFromTransitions } from "../travel/assemble.js";
 import type { TornUserLog } from "@tornscope/torn-api";
 
@@ -13,7 +13,8 @@ import type { TornUserLog } from "@tornscope/torn-api";
  *   pnpm torn:renormalize [--user <id|email|tornName>] [--dry-run]
  *
  * - Deletes ONLY derived structured rows for the selected user (MoneyEvent,
- *   DrugEvent, RehabEvent, TravelItemEvent, TravelTransition, TravelEvent).
+ *   DrugEvent, ConsumptionEvent, RehabEvent, TravelItemEvent,
+ *   TravelTransition, TravelEvent).
  * - Keeps TimelineEvent (the raw archive), networth snapshots, credentials
  *   and everything belonging to other users (demo data included).
  * - Re-runs the current normalizer over every stored log, then re-assembles
@@ -58,9 +59,10 @@ async function resolveUser(db: ReturnType<typeof getPrismaClient>, selector?: st
 }
 
 async function countAll(db: ReturnType<typeof getPrismaClient>, userId: string) {
-  const [money, drugs, rehab, travelItems, transitions, trips, legacyTravel, timeline] = await Promise.all([
+  const [money, drugs, consumption, rehab, travelItems, transitions, trips, legacyTravel, timeline] = await Promise.all([
     db.moneyEvent.count({ where: { userId } }),
     db.drugEvent.count({ where: { userId } }),
+    db.consumptionEvent.count({ where: { userId } }),
     db.rehabEvent.count({ where: { userId } }),
     db.travelItemEvent.count({ where: { userId } }),
     db.travelTransition.count({ where: { userId } }),
@@ -68,7 +70,7 @@ async function countAll(db: ReturnType<typeof getPrismaClient>, userId: string) 
     db.travelEvent.count({ where: { userId, source: { notIn: ["trip", "demo"] } } }),
     db.timelineEvent.count({ where: { userId, type: "log" } }),
   ]);
-  return { money, drugs, rehab, travelItems, transitions, trips, legacyTravel, timeline };
+  return { money, drugs, consumption, rehab, travelItems, transitions, trips, legacyTravel, timeline };
 }
 
 async function main(): Promise<void> {
@@ -93,15 +95,21 @@ async function main(): Promise<void> {
     .filter((m): m is TornUserLog => !!m && typeof m === "object" && m.details !== undefined);
   console.log(`raw logs to reprocess: ${logs.length} (${rows.length - logs.length} rows skipped: missing payload)`);
 
-  const [itemNameById, itemTypeById] = await Promise.all([loadItemNameMap(db), loadItemTypeMap(db)]);
+  const [itemNameById, itemTypeById, itemMarketPriceById, itemIdByName] = await Promise.all([
+    loadItemNameMap(db),
+    loadItemTypeMap(db),
+    loadMarketPrices(db),
+    loadItemIdByName(db),
+  ]);
 
   // Re-run normalization in memory first so a crash or a bad normalizer
   // cannot leave the derived tables half-deleted.
-  const rebuilt = { money: 0, drugs: 0, rehab: 0, travelItems: 0, transitions: 0, timeline: 0 };
+  const rebuilt = { money: 0, drugs: 0, consumption: 0, rehab: 0, travelItems: 0, transitions: 0, timeline: 0 };
   const normalized = logs.map((log) => {
-    const writes = normalizeLogEntry(log, { itemNameById, itemTypeById });
+    const writes = normalizeLogEntry(log, { itemNameById, itemTypeById, itemMarketPriceById, itemIdByName });
     rebuilt.money += writes.moneyEvents.length;
     rebuilt.drugs += writes.drugEvents.length;
+    rebuilt.consumption += writes.consumptionEvents.length;
     rebuilt.rehab += writes.rehabEvents.length;
     rebuilt.travelItems += writes.travelItemEvents.length;
     rebuilt.transitions += writes.travelTransitions.length;
@@ -121,6 +129,7 @@ async function main(): Promise<void> {
     const d = {
       money: await tx.moneyEvent.deleteMany({ where: { userId: user.id } }),
       drugs: await tx.drugEvent.deleteMany({ where: { userId: user.id } }),
+      consumption: await tx.consumptionEvent.deleteMany({ where: { userId: user.id } }),
       rehab: await tx.rehabEvent.deleteMany({ where: { userId: user.id } }),
       travelItems: await tx.travelItemEvent.deleteMany({ where: { userId: user.id } }),
       transitions: await tx.travelTransition.deleteMany({ where: { userId: user.id } }),
@@ -129,7 +138,7 @@ async function main(): Promise<void> {
     return d;
   });
   console.log(
-    `deleted derived rows: money=${deleted.money.count} drugs=${deleted.drugs.count} rehab=${deleted.rehab.count} travelItems=${deleted.travelItems.count} transitions=${deleted.transitions.count} travel=${deleted.trips.count}`
+    `deleted derived rows: money=${deleted.money.count} drugs=${deleted.drugs.count} consumption=${deleted.consumption.count} rehab=${deleted.rehab.count} travelItems=${deleted.travelItems.count} transitions=${deleted.transitions.count} travel=${deleted.trips.count}`
   );
 
   // Re-insert in chronological batches.
@@ -138,6 +147,7 @@ async function main(): Promise<void> {
     const merged = {
       timelineEvents: chunk.flatMap((w) => w.timelineEvents),
       drugEvents: chunk.flatMap((w) => w.drugEvents),
+      consumptionEvents: chunk.flatMap((w) => w.consumptionEvents),
       rehabEvents: chunk.flatMap((w) => w.rehabEvents),
       travelTransitions: chunk.flatMap((w) => w.travelTransitions),
       travelItemEvents: chunk.flatMap((w) => w.travelItemEvents),
@@ -145,6 +155,7 @@ async function main(): Promise<void> {
     };
     await insertTimelineEvents(db, user.id, merged.timelineEvents);
     await insertDrugEvents(db, user.id, merged.drugEvents);
+    await insertConsumptionEvents(db, user.id, merged.consumptionEvents);
     await insertRehabEvents(db, user.id, merged.rehabEvents);
     await insertTravelTransitions(db, user.id, merged.travelTransitions);
     await insertTravelItemEvents(db, user.id, merged.travelItemEvents);
@@ -169,6 +180,16 @@ async function main(): Promise<void> {
   });
   for (const d of moneyByDirection) {
     console.log(`  money ${d.direction.padEnd(8)} n=${String(d._count._all).padStart(6)} sum=${bigintToNumber(d._sum.amount ?? 0n)}`);
+  }
+
+  const consumptionByCategory = await db.consumptionEvent.groupBy({
+    by: ["category"],
+    where: { userId: user.id },
+    _count: { _all: true },
+    _sum: { totalValue: true },
+  });
+  for (const c of consumptionByCategory) {
+    console.log(`  consumption ${c.category.padEnd(10)} n=${String(c._count._all).padStart(6)} value=${bigintToNumber(c._sum.totalValue ?? 0n)}`);
   }
 
   console.log("=== re-normalization complete ===\n");

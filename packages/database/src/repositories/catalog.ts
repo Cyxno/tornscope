@@ -57,6 +57,12 @@ export async function loadMarketPrices(db: PrismaClientType): Promise<Map<number
   return new Map(items.filter((i) => i.marketPrice !== null).map((i) => [i.itemId, i.marketPrice as bigint]));
 }
 
+/** lowercase item name -> itemId (normalizers resolve title-only logs). */
+export async function loadItemIdByName(db: PrismaClientType): Promise<Map<string, number>> {
+  const items = await db.tornItemCatalog.findMany({ select: { itemId: true, name: true } });
+  return new Map(items.map((i) => [i.name.toLowerCase(), i.itemId]));
+}
+
 /** Item ids for the well-known drug names (from cached catalog). */
 export async function findDrugItemIds(db: PrismaClientType, names: readonly string[] = TORN_DRUG_NAMES): Promise<Map<string, number>> {
   const items = await db.tornItemCatalog.findMany({

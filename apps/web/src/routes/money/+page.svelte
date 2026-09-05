@@ -1,6 +1,6 @@
 <script lang="ts">
-  import type { MoneySummaryResponse, MoneyEventDto, Paginated } from "@tornscope/shared";
-  import { MONEY_CATEGORIES, formatMoneyCompact, formatMoneyFull, formatDateTime, formatKpiValue } from "@tornscope/shared";
+  import type { EconomySummaryResponse, MoneySummaryResponse, MoneyEventDto, Paginated } from "@tornscope/shared";
+  import { MONEY_CATEGORIES, formatMoneyCompact, formatMoneyFull, formatDateTime, formatKpiValue, periodLabel, formatSignedMoney } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
   import { dateRange } from "$lib/state.svelte";
   import PageHeader from "$lib/components/PageHeader.svelte";
@@ -11,6 +11,7 @@
   import StateMessage from "$lib/components/StateMessage.svelte";
   import { C, TOOLTIP, LEGEND, GRID, timeAxis, valueAxis, dayLabel, tealArea } from "$lib/charts";
 
+  let economy = $state<EconomySummaryResponse | null>(null);
   let summary = $state<MoneySummaryResponse | null>(null);
   let events = $state<Paginated<MoneyEventDto> | null>(null);
   let loading = $state(true);
@@ -26,7 +27,10 @@
   async function loadSummary() {
     error = null;
     try {
-      summary = await endpoints.moneySummary({ preset: dateRange.preset, from: dateRange.from, to: dateRange.to });
+      const range = { preset: dateRange.preset, from: dateRange.from, to: dateRange.to };
+      const [eco, money] = await Promise.all([endpoints.economy(range), endpoints.moneySummary(range)]);
+      economy = eco;
+      summary = money;
     } catch (err) {
       error = err instanceof ApiClientError ? err.message : (err as Error).message;
     }
@@ -65,8 +69,23 @@
     void loadEvents(false);
   });
 
+  const period = $derived(periodLabel(dateRange.preset));
+
+  const CONSUMPTION_LABELS: Record<string, string> = {
+    drug: "Drugs",
+    booster: "Boosters",
+    medical: "Medical",
+    happy_jump: "Happy items",
+    energy: "Energy drinks",
+    candy: "Candy",
+    temporary: "Temporary items",
+    other: "Other",
+  };
+
+  const topConsumedValue = $derived(economy?.consumption.byCategory[0]?.totalValue || 1);
+
   const cumulativeOption = $derived.by(() => {
-    if (!summary) return null;
+    if (!summary || summary.cumulativeNetSeries.length === 0) return null;
     return {
       tooltip: { ...TOOLTIP, trigger: "axis" },
       grid: { ...GRID, top: 20 },
@@ -74,7 +93,7 @@
       yAxis: valueAxis(),
       series: [
         {
-          name: "Cumulative net",
+          name: "Cumulative net cash flow",
           type: "line",
           data: summary.cumulativeNetSeries.map((p) => p.net),
           showSymbol: false,
@@ -87,7 +106,7 @@
   });
 
   const flowOption = $derived.by(() => {
-    if (!summary) return null;
+    if (!summary || summary.flowSeries.length === 0) return null;
     return {
       tooltip: { ...TOOLTIP, trigger: "axis" },
       legend: { ...LEGEND, data: ["Income", "Expenses"], top: 0, right: 0 },
@@ -100,6 +119,11 @@
       ],
     };
   });
+
+  function networthChangeLabel(): string {
+    if (!economy) return "Networth Change";
+    return economy.networth.coverage === "partial" ? "Tracked period change" : `${period} Networth Change`;
+  }
 
   function donut(rows: Array<{ category: string; total: number }>, color: string) {
     const top = rows.slice(0, 6);
@@ -122,32 +146,133 @@
 <div class="space-y-10">
   <PageHeader
     eyebrow="Finance"
-    title="Money flow"
-    description="Every dollar in and out of your Torn life — one deduplicated ledger, exact amounts, honest categories."
+    title="Economy"
+    description="Cash flow, consumed value and networth change — three separate concepts, never merged into one number."
   >
     {#snippet actions()}
       <SegmentedDateRange />
     {/snippet}
   </PageHeader>
 
-  {#if loading && !summary}
+  {#if loading && (!summary || !economy)}
     <StateMessage state="loading" />
   {:else if error && !summary}
-    <StateMessage state="error" title="Could not load money analytics" hint={error} action={{ label: "Retry", run: () => (reloadToken += 1) }} />
-  {:else if summary}
-    <div class="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border shadow-panel md:grid-cols-4">
-      <Stat label="Income" value={formatKpiValue(summary.totalIncome)} provenance="derived" tone="positive" sub={summary.totalIncome.availability === "incomplete" ? "some logs unclassified" : null} />
-      <Stat label="Expenses" value={formatKpiValue(summary.totalExpenses)} provenance="derived" tone="negative" sub={summary.totalExpenses.availability === "incomplete" ? "some logs unclassified" : null} />
-      <Stat label="Net result" value={formatKpiValue(summary.netProfit)} provenance="derived" tone={(summary.netProfit.value ?? 0) >= 0 ? "positive" : "negative"} sub={summary.netProfit.availability === "incomplete" ? "some logs unclassified" : null} />
-      <Stat
-        label="Top expense"
-        value={summary.largestExpenseCategory.category ?? "—"}
-        sub={summary.largestExpenseCategory.total !== null ? formatMoneyCompact(summary.largestExpenseCategory.total) : null}
-        provenance="derived"
-      />
-    </div>
+    <StateMessage state="error" title="Could not load economy analytics" hint={error} action={{ label: "Retry", run: () => (reloadToken += 1) }} />
+  {:else if summary && economy}
+    <!-- ═══ A. Cash flow ═══ -->
+    <section class="space-y-6">
+      <h2 class="text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-faint">A · Cash Flow — real money in and out</h2>
+      <div class="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border shadow-panel md:grid-cols-4">
+        <Stat label="{period} income" value={formatKpiValue(economy.cashFlow.income)} provenance="exact" tone="positive" sub={economy.cashFlow.unclassifiedCount > 0 ? `${economy.cashFlow.unclassifiedCount} unclassified` : null} />
+        <Stat label="{period} expenses" value={formatKpiValue(economy.cashFlow.expenses)} provenance="exact" tone="negative" sub={economy.cashFlow.unclassifiedCount > 0 ? `${economy.cashFlow.unclassifiedCount} unclassified` : null} />
+        <Stat label="{period} Net Cash Flow" value={formatKpiValue(economy.cashFlow.netCashFlow)} provenance="exact" tone={(economy.cashFlow.netCashFlow.value ?? 0) >= 0 ? "positive" : "negative"} />
+        <Stat
+          label="Top expense"
+          value={summary.largestExpenseCategory.category ?? "—"}
+          sub={summary.largestExpenseCategory.total !== null ? formatMoneyCompact(summary.largestExpenseCategory.total) : null}
+          provenance="exact"
+        />
+      </div>
+    </section>
 
-    <Panel title="Cumulative net result" caption="Running profit across the selected range" flush>
+    <!-- ═══ B. Consumption ═══ -->
+    <section class="space-y-6">
+      <h2 class="text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-faint">B · Consumption — value of items used up (not cash flow)</h2>
+      <div class="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border shadow-panel md:grid-cols-4">
+        <Stat label="Total Consumed Value" value={formatKpiValue(economy.consumption.totalValue)} provenance="estimated" tone="negative" sub={economy.consumption.valueUnknownCount > 0 ? `${economy.consumption.valueUnknownCount} uses without a price` : null} />
+        <Stat label="Drug consumption" value={economy.consumption.drugValue !== null ? formatMoneyCompact(economy.consumption.drugValue) : formatKpiValue({ value: null, availability: economy.consumption.uses === 0 ? "unavailable" : "incomplete" })} provenance="estimated" tone="negative" />
+        <Stat label="Consumption events" value={String(economy.consumption.uses)} provenance="exact" />
+        <Stat label="{period} Networth Change" value={economy.networth.coverage === "none" ? "Insufficient history" : formatSignedMoney(economy.networth.change.value)} provenance="exact" tone={(economy.networth.change.value ?? 0) >= 0 ? "positive" : "negative"} sub={networthChangeLabel() !== `${period} Networth Change` ? "incomplete history for this period" : (economy.networth.changePct !== null ? `${economy.networth.changePct >= 0 ? "+" : ""}${economy.networth.changePct.toFixed(2)}%` : null)} />
+      </div>
+
+      <Panel title="Consumed value by category" caption="What your item use cost you — valued from Torn catalog market prices">
+        {#if economy.consumption.byCategory.length === 0}
+          <StateMessage state="empty" title="No consumption recorded in this range" hint="Item uses appear here as the sync collects logs." />
+        {:else}
+          <ul class="space-y-4">
+            {#each economy.consumption.byCategory as row (row.category)}
+              <li>
+                <div class="flex items-baseline justify-between gap-3 text-[13px]">
+                  <span class="text-fg">
+                    {CONSUMPTION_LABELS[row.category] ?? row.category}
+                    <span class="ml-1.5 text-[11px] text-fg-faint">{row.uses} use{row.uses === 1 ? "" : "s"}</span>
+                  </span>
+                  <span class="tnum font-medium text-negative">
+                    {row.totalValue !== null ? `-${formatMoneyCompact(row.totalValue).replace("-", "")}` : "Incomplete"}
+                  </span>
+                </div>
+                <div class="mt-1.5 h-1.5 overflow-hidden rounded-full bg-surface-2">
+                  <div class="h-full rounded-full bg-negative/70" style="width: {row.totalValue !== null ? Math.round((row.totalValue / topConsumedValue) * 100) : 0}%"></div>
+                </div>
+              </li>
+            {/each}
+          </ul>
+          {#if economy.consumption.valueUnknownCount > 0}
+            <p class="mt-4 text-[11px] text-fg-faint">
+              {economy.consumption.valueUnknownCount} use{economy.consumption.valueUnknownCount === 1 ? "" : "s"} without a known price are counted as uses but add nothing to Consumed Value — never an invented price.
+            </p>
+          {/if}
+        {/if}
+      </Panel>
+    </section>
+
+    <!-- ═══ C. Networth ═══ -->
+    <section class="space-y-6">
+      <h2 class="text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-faint">C · Networth — Torn snapshots, including inventory appreciation</h2>
+      <div class="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border shadow-panel md:grid-cols-4">
+        <Stat label="Current networth" value={formatKpiValue(economy.networth.current)} provenance="exact" tone="accent" />
+        <Stat
+          label={networthChangeLabel()}
+          value={economy.networth.coverage === "none" ? "Insufficient history" : formatSignedMoney(economy.networth.change.value)}
+          provenance="exact"
+          tone={(economy.networth.change.value ?? 0) >= 0 ? "positive" : "negative"}
+          sub={economy.networth.changePct !== null ? `${economy.networth.changePct >= 0 ? "+" : ""}${economy.networth.changePct.toFixed(2)}%` : null}
+        />
+        <Stat label="Estimated Travel Profit" value={formatKpiValue(economy.travel.estimatedProfit)} provenance="estimated" tone={(economy.travel.estimatedProfit.value ?? 0) >= 0 ? "positive" : "negative"} />
+        <Stat label="Travel profit / hour" value={formatKpiValue(economy.travel.profitPerHour)} provenance="estimated" sub={economy.travel.trips > 0 ? `${economy.travel.trips} trip${economy.travel.trips === 1 ? "" : "s"}` : null} />
+      </div>
+
+      {#if economy.networth.byCategory.length > 0}
+        <Panel title="Networth by category" caption="Torn-provided categories — baseline is the closest snapshot at or before the period start">
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-[13px]">
+              <thead>
+                <tr class="border-b border-border text-[11px] uppercase tracking-[0.12em] text-fg-faint">
+                  <th class="py-2.5 pr-4 font-medium">Category</th>
+                  <th class="py-2.5 pr-4 text-right font-medium">Baseline</th>
+                  <th class="py-2.5 pr-4 text-right font-medium">Current</th>
+                  <th class="py-2.5 text-right font-medium">{period} change</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each economy.networth.byCategory as cat (cat.key)}
+                  <tr class="border-b border-border/50 last:border-0">
+                    <td class="py-2.5 pr-4 text-fg">{cat.label}</td>
+                    <td class="tnum py-2.5 pr-4 text-right text-fg-muted">{formatMoneyCompact(cat.baseline)}</td>
+                    <td class="tnum py-2.5 pr-4 text-right text-fg-muted">{formatMoneyCompact(cat.current)}</td>
+                    <td class="tnum py-2.5 text-right font-medium {cat.change >= 0 ? 'text-positive' : 'text-negative'}">{formatSignedMoney(cat.change)}</td>
+                  </tr>
+                {/each}
+                <tr class="font-semibold">
+                  <td class="py-2.5 pr-4 text-fg">Total</td>
+                  <td class="tnum py-2.5 pr-4 text-right text-fg">{formatMoneyCompact(economy.networth.baseline ?? 0)}</td>
+                  <td class="tnum py-2.5 pr-4 text-right text-fg">{formatMoneyCompact(economy.networth.current.value ?? 0)}</td>
+                  <td class="tnum py-2.5 text-right {economy.networth.change.value !== null && economy.networth.change.value < 0 ? 'text-negative' : 'text-positive'}">
+                    {economy.networth.coverage === "none" ? "Insufficient history" : formatSignedMoney(economy.networth.change.value)}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          {#if economy.networth.coverage === "partial"}
+            <p class="mt-4 text-[11px] text-fg-faint">Tracked period: TornScope started snapshotting after this period began, so the change covers the tracked span only.</p>
+          {/if}
+        </Panel>
+      {/if}
+    </section>
+
+    <!-- Cash flow charts -->
+    <Panel title="Cumulative net cash flow" caption="Running cash flow across the selected range" flush>
       {#if !cumulativeOption}
         <StateMessage state="empty" title="No money events in this range" />
       {:else}
@@ -156,7 +281,7 @@
     </Panel>
 
     <section class="grid gap-6 lg:grid-cols-2">
-      <Panel title="Income vs expenses" caption="Per-day flow in both directions" flush>
+      <Panel title="Income vs expenses" caption="Per-day cash flow in both directions" flush>
         {#if !flowOption}
           <StateMessage state="empty" title="No flow to show" />
         {:else}
@@ -182,7 +307,7 @@
     </section>
 
     <!-- Ledger -->
-    <Panel title="The ledger" caption="Every money event recorded from Torn logs — deduplicated, exact amounts">
+    <Panel title="The cash ledger" caption="Every real cash movement recorded from Torn logs — deduplicated, exact amounts">
       <div class="mb-4 flex flex-wrap items-center gap-2">
         <select bind:value={category} class="rounded-full border border-border bg-bg-raise px-3.5 py-2 text-xs text-fg">
           <option value="">All categories</option>

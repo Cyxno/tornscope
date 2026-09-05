@@ -95,6 +95,56 @@ describe("calculateTravelProfit", () => {
   });
 });
 
+describe("profit per hour uses one consistent trip set", () => {
+  // The canonical case: a completed 10m/10h trip plus an in-flight 5m trip.
+  const completed = trip("t1", "Switzerland", T0 - 11 * DAY, 10 * HOUR, plushies(1, 40_000_000, 50_000_000));
+  const inFlight = trip("t2", "Switzerland", T0, null, plushies(1, 85_000_000, 90_000_000));
+
+  it("excludes in-flight profit from the per-hour numerator", () => {
+    const summary = calculateTravelProfit([completed, inFlight]);
+    // total estimatedProfit counts both trips (15m), but per-hour divides the
+    // completed trip's 10m profit by its own 10h duration.
+    expect(summary.estimatedProfit).toBe(15_000_000);
+    expect(summary.averageProfitPerHour).toBeCloseTo(1_000_000);
+  });
+
+  it("applies the same rule per destination", () => {
+    const summary = calculateTravelProfit([completed, inFlight]);
+    const dest = summary.byDestination.find((d) => d.destination === "Switzerland")!;
+    expect(dest).toBeDefined();
+    expect(dest.estimatedProfit).toBe(15_000_000);
+    expect(dest.averageProfitPerHour).toBeCloseTo(1_000_000);
+  });
+
+  it("keeps separate destinations independent", () => {
+    const swiss = trip("s1", "Switzerland", T0 - 5 * DAY, 5 * HOUR, plushies(1, 1_000, 3_000));
+    const canada = trip("c1", "Canada", T0 - 2 * DAY, 1 * HOUR, plushies(1, 1_000, 5_000));
+    const canadaOpen = trip("c2", "Canada", T0, null, plushies(1, 1_000, 50_000));
+    const summary = calculateTravelProfit([swiss, canada, canadaOpen]);
+    const byDest = Object.fromEntries(summary.byDestination.map((d) => [d.destination, d]));
+    // Switzerland: 2k profit over 5h -> 400/h.
+    expect(byDest.Switzerland!.averageProfitPerHour).toBeCloseTo(400);
+    // Canada: only the completed 1h trip counts -> 4k/h, not (4k+49k)/1h.
+    expect(byDest.Canada!.averageProfitPerHour).toBeCloseTo(4_000);
+  });
+
+  it("returns null per hour when no trip has a known duration", () => {
+    const open = trip("o1", "Japan", T0, null, plushies(1, 100, 200));
+    const summary = calculateTravelProfit([open]);
+    expect(summary.averageProfitPerHour).toBeNull();
+  });
+
+  it("drops to null when the timed subset has unknown item values", () => {
+    const openUnknown = trip("u1", "China", T0, null, [{ id: "x", category: "other", itemId: 9, itemName: null, quantity: 1, unitCost: 10, totalCost: 10 }]);
+    const timed = trip("t1", "China", T0 - DAY, HOUR, plushies(1, 100, 150));
+    const summary = calculateTravelProfit([openUnknown, timed]);
+    // Total profit is unknown (open trip has an unpriced item), per-hour
+    // covers only the timed trip where the value IS known.
+    expect(summary.estimatedProfit).toBeNull();
+    expect(summary.averageProfitPerHour).toBeCloseTo(50);
+  });
+});
+
 describe("calculateTripEconomics", () => {
   it("computes per-trip economics with provenance", () => {
     const econ = calculateTripEconomics(trip("t1", "Switzerland", T0, 5 * HOUR, plushies(2, 50_000, 60_000)));

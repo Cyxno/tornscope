@@ -32,6 +32,12 @@ import type { MoneyCategory, MoneyDirection } from "@tornscope/shared";
  * from recognized shapes, and unrecognized money movements are recorded with
  * direction "unknown" so they can be audited instead of silently inflating
  * income or expenses.
+ *
+ * Consumption events (ConsumptionEvent) record the ECONOMIC VALUE of used-up
+ * items — drugs, boosters, medical items, energy drinks, candy and happy-jump
+ * items (EDVD). They are deliberately kept out of the cash ledger: buying the
+ * item is the cash movement (MoneyEvent); using it later consumes value but
+ * moves no cash, so the two concepts are never summed into one number.
  */
 
 export interface DrugEventInput {
@@ -41,6 +47,61 @@ export interface DrugEventInput {
   outcome: "success" | "overdose";
   sourceRef: string;
   raw: unknown;
+}
+
+/** Consumption categories (consumables only — not a cash-flow category). */
+export const CONSUMPTION_CATEGORIES = [
+  "drug",
+  "booster",
+  "medical",
+  "energy",
+  "candy",
+  "happy_jump",
+  "temporary",
+  "other",
+] as const;
+export type ConsumptionCategory = (typeof CONSUMPTION_CATEGORIES)[number];
+
+export const CONSUMPTION_VALUATION_METHODS = [
+  "acquisition_cost",
+  "market_price",
+  "catalog_market_price",
+  "unknown",
+] as const;
+export type ConsumptionValuationMethod = (typeof CONSUMPTION_VALUATION_METHODS)[number];
+
+export const CONSUMPTION_PROVENANCE = ["exact", "derived", "estimated", "unknown"] as const;
+export type ConsumptionProvenance = (typeof CONSUMPTION_PROVENANCE)[number];
+
+export interface ConsumptionEventInput {
+  occurredAt: Date;
+  itemId: number | null;
+  itemName: string | null;
+  category: ConsumptionCategory;
+  quantity: number;
+  unitValue: bigint | null;
+  totalValue: bigint | null;
+  valuationMethod: ConsumptionValuationMethod;
+  provenance: ConsumptionProvenance;
+  source: string;
+  sourceRef: string;
+  raw: unknown;
+}
+
+/** Torn item-catalog types that map to tracked consumption categories. */
+const CONSUMABLE_TYPE_CATEGORY: Record<string, ConsumptionCategory> = {
+  drug: "drug",
+  booster: "booster",
+  medical: "medical",
+  "energy drink": "energy",
+  candy: "candy",
+  special: "temporary",
+};
+
+/** Item-name based refinement for Special items (e.g. Erotic DVD). */
+function specialItemCategory(name: string): ConsumptionCategory {
+  if (/dvd/i.test(name)) return "happy_jump";
+  return "temporary";
 }
 
 export interface RehabEventInput {
@@ -99,6 +160,7 @@ export interface TimelineEventInput {
 
 export interface NormalizedLogWrites {
   drugEvents: DrugEventInput[];
+  consumptionEvents: ConsumptionEventInput[];
   rehabEvents: RehabEventInput[];
   /** Individual travel transitions (never full trips). */
   travelTransitions: TravelTransitionInput[];
@@ -114,6 +176,10 @@ export interface NormalizeContext {
   itemNameById: Map<number, string>;
   /** itemId -> catalog type ("Plushie", "Flower", ...), when available. */
   itemTypeById?: Map<number, string>;
+  /** itemId -> catalog market price, when available (consumption valuation). */
+  itemMarketPriceById?: Map<number, bigint>;
+  /** lowercase item name -> itemId, for title-only logs ("Used Xanax"). */
+  itemIdByName?: Map<string, number>;
 }
 
 const DRUG_ITEM_KEYS = ["item", "drug", "item_id", "itemId", "drug_id"];
@@ -122,6 +188,70 @@ const QTY_KEYS = ["qty", "quantity", "amount", "count"];
 const COST_KEYS = ["cost_total", "cost", "price", "total", "money", "value"];
 const PERCENT_KEYS = ["percentage", "percent", "rehab_percent", "progress"];
 const COUNTRY_STRING_KEYS = ["country", "destination", "abroad_country"];
+
+/**
+ * Build a consumption event for a used item, valuing it from the cached Torn
+ * item catalog market price when available. Valuation never invents prices:
+ * without a price source the event is still recorded, but its value is null
+ * with valuationMethod/provenance "unknown".
+ */
+function consumptionFromCatalog(
+  ctx: NormalizeContext,
+  itemId: number | null,
+  itemName: string | null,
+  category: ConsumptionCategory,
+  quantity: number,
+  occurredAt: Date,
+  sourceRef: string,
+  raw: unknown
+): ConsumptionEventInput {
+  const price = itemId !== null ? ctx.itemMarketPriceById?.get(itemId) ?? null : null;
+  const qty = Math.max(1, Math.round(quantity));
+  return {
+    occurredAt,
+    itemId,
+    itemName,
+    category,
+    quantity: qty,
+    unitValue: price,
+    totalValue: price !== null ? price * BigInt(qty) : null,
+    valuationMethod: price !== null ? "catalog_market_price" : "unknown",
+    provenance: price !== null ? "estimated" : "unknown",
+    source: "torn_log",
+    sourceRef,
+    raw,
+  };
+}
+
+/**
+ * Consumption category for a used item, or null when the item is not a tracked
+ * consumable. The catalog type is authoritative; recognizable consumable names
+ * are still tracked when the catalog lacks the item, and otherwise-priced
+ * catalog items are recorded under "other" (valuable consumables). Items
+ * without a type and without a recognizable name are skipped — never invented.
+ */
+export function consumptionCategoryFor(
+  catalogType: string | undefined,
+  itemName: string,
+  catalogPrice: bigint | null
+): ConsumptionCategory | null {
+  const t = catalogType?.toLowerCase();
+  if (t === "special") return specialItemCategory(itemName);
+  const mapped = t ? CONSUMABLE_TYPE_CATEGORY[t] : undefined;
+  if (mapped) return mapped;
+  if (t === undefined) {
+    if (/dvd/i.test(itemName)) return "happy_jump";
+    if (/energy drink/i.test(itemName)) return "energy";
+    return null;
+  }
+  return catalogPrice !== null && catalogPrice > 0n ? "other" : null;
+}
+
+/** "Item use erotic dvd" / "Used Ecstasy" -> the used item part of the title. */
+export function itemNameFromUseTitle(title: string): string | null {
+  const m = /^(?:item use|used|consumed)\s+(.+)$/i.exec(title.trim());
+  return m ? m[1]!.trim() : null;
+}
 
 function isPlushieOrFlower(name: string | null, catalogType?: string | null): "plushie" | "flower" | "other" {
   // The catalog type is authoritative ("Teddy Bear" is a Plushie without the
@@ -154,6 +284,7 @@ function fallbackDirection(text: string): "income" | "expense" | "unknown" {
 export function normalizeLogEntry(log: TornUserLog, ctx: NormalizeContext): NormalizedLogWrites {
   const writes: NormalizedLogWrites = {
     drugEvents: [],
+    consumptionEvents: [],
     rehabEvents: [],
     travelTransitions: [],
     travelItemEvents: [],
@@ -191,8 +322,11 @@ export function normalizeLogEntry(log: TornUserLog, ctx: NormalizeContext): Norm
 
   switch (route) {
     case "drugs": {
-      const itemId = pickNestedNumber(data, DRUG_ITEM_KEYS, ["id"]) ?? pickNumber(data, DRUG_ITEM_KEYS);
       const fromTitle = drugNameFromTitle(logTitle);
+      const itemId =
+        pickNestedNumber(data, DRUG_ITEM_KEYS, ["id"]) ??
+        pickNumber(data, DRUG_ITEM_KEYS) ??
+        (fromTitle ? ctx.itemIdByName?.get(fromTitle.toLowerCase()) ?? null : null);
       const drugName =
         fromTitle ??
         (itemId !== null ? ctx.itemNameById.get(itemId) ?? null : null) ??
@@ -206,6 +340,36 @@ export function normalizeLogEntry(log: TornUserLog, ctx: NormalizeContext): Norm
         sourceRef: ref,
         raw: log,
       });
+      // The use consumed one unit of the drug. This is a consumption-economy
+      // event only: the cash side of buying the drug is (or was) a separate
+      // MoneyEvent, and the use itself moves no cash.
+      writes.consumptionEvents.push(consumptionFromCatalog(ctx, itemId, drugName, "drug", 1, occurredAt, ref, log));
+      break;
+    }
+
+    case "itemuse": {
+      // Generic consumable use ("Item use erotic dvd", "Used Edvd Boosters",
+      // energy drinks, candy, medical items). Drugs are claimed by the drugs
+      // route above; stash boxes stay on the money route (their use pays out
+      // cash). Unknown items are skipped, never guessed into consumption.
+      const titleName = itemNameFromUseTitle(logTitle);
+      const itemId =
+        pickNestedNumber(data, ITEM_ID_KEYS, ["id"]) ??
+        pickNumber(data, ITEM_ID_KEYS) ??
+        (titleName ? ctx.itemIdByName?.get(titleName.toLowerCase()) ?? null : null);
+      const name = itemId !== null ? ctx.itemNameById.get(itemId) ?? titleName : titleName;
+      if (!name) {
+        writes.unmapped += 1;
+        break;
+      }
+      const price = itemId !== null ? ctx.itemMarketPriceById?.get(itemId) ?? null : null;
+      const category = consumptionCategoryFor(itemId !== null ? ctx.itemTypeById?.get(itemId) : undefined, name, price);
+      if (category === null) {
+        writes.unmapped += 1;
+        break;
+      }
+      const rawQty = pickNumber(data, QTY_KEYS) ?? 1;
+      writes.consumptionEvents.push(consumptionFromCatalog(ctx, itemId, name, category, rawQty, occurredAt, ref, log));
       break;
     }
 

@@ -23,29 +23,53 @@ import type { LogRecord } from "./extract.js";
 
 /**
  * Torn country ids as used by travel log payloads (`destination`, `origin`,
- * `area`). Verified against real flight durations: origin 1 -> destination 11
- * with duration 10860s (181 min, Torn -> UAE) etc.
+ * `area`).
+ *
+ * Source: the official Torn API v2 OpenAPI spec's `CountryEnum`, whose values
+ * are declared in COUNTRY-ID ORDER (not alphabetical):
+ *   Torn(1), Mexico(2), Hawaii(3), South Africa(4), Japan(5), China(6),
+ *   Argentina(7), Switzerland(8), Canada(9), United Kingdom(10), UAE(11),
+ *   Cayman Islands(12).
+ *
+ * Cross-checked against live 180-day account data (2026-09):
+ * - id 8: "Chamois Plushie" + "Ergotamine Ampoule" bought abroad (Swiss
+ *   exclusives) and a real flight to Switzerland — the previous alphabetical
+ *   table mislabeled it "Mexico".
+ * - id 9: "Wolverine Plushie" (Canada).
+ * - id 10: "Heather" flower (United Kingdom).
+ * - id 11: /v2/user/travel reports destination "UAE" for a departure log with
+ *   destination 11; "Camel Plushie" + "Tribulus Omanense" bought in area 11.
  */
 export const TORN_COUNTRY_NAMES: Record<number, string> = {
   1: "Torn",
-  2: "Argentina",
-  3: "Canada",
-  4: "Cayman Islands",
-  5: "China",
-  6: "Hawaii",
-  7: "Japan",
-  8: "Mexico",
-  9: "South Africa",
-  10: "Switzerland",
+  2: "Mexico",
+  3: "Hawaii",
+  4: "South Africa",
+  5: "Japan",
+  6: "China",
+  7: "Argentina",
+  8: "Switzerland",
+  9: "Canada",
+  10: "United Kingdom",
   11: "UAE",
-  12: "United Kingdom",
+  12: "Cayman Islands",
 };
 
 export const TORN_HOME_COUNTRY_ID = 1;
 
+/** Country name for a Torn country id, or null when the id is unmapped. */
 export function countryName(id: number | null | undefined): string | null {
   if (id === null || id === undefined) return null;
   return TORN_COUNTRY_NAMES[id] ?? null;
+}
+
+/**
+ * Display label for a country id. Unknown ids are surfaced explicitly —
+ * they are never silently mapped to a wrong (or placeholder) country.
+ */
+export function countryLabel(id: number | null | undefined): string | null {
+  if (id === null || id === undefined) return null;
+  return TORN_COUNTRY_NAMES[id] ?? `Unknown destination ID ${id}`;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -93,22 +117,22 @@ export function travelTransitionFor(title: string, data: LogRecord): { type: Tra
     const origin = pickCountryId(data, ["origin", "from"]);
     const destination = pickCountryId(data, ["destination", "to"]);
     if (origin !== null && origin !== TORN_HOME_COUNTRY_ID) {
-      return { type: "DEPARTED_ABROAD", countryId: origin, country: countryName(origin) };
+      return { type: "DEPARTED_ABROAD", countryId: origin, country: countryLabel(origin) };
     }
-    return { type: "DEPARTED_TORN", countryId: destination, country: countryName(destination) };
+    return { type: "DEPARTED_TORN", countryId: destination, country: countryLabel(destination) };
   }
 
   if (/^travel arrive\b/.test(t) || /\barriv|land(ed)?\b/.test(t)) {
     const destination = pickCountryId(data, ["destination", "country", "to"]);
     if (destination === TORN_HOME_COUNTRY_ID) {
-      return { type: "ARRIVED_TORN", countryId: destination, country: countryName(destination) };
+      return { type: "ARRIVED_TORN", countryId: destination, country: countryLabel(destination) };
     }
-    return { type: "ARRIVED_ABROAD", countryId: destination, country: countryName(destination) };
+    return { type: "ARRIVED_ABROAD", countryId: destination, country: countryLabel(destination) };
   }
 
   if (/\babroad\b.*\b(buy|bought|purchas\w*)\b|\b(buy|bought|purchas\w*)\b.*\babroad\b|^item abroad\b/.test(t)) {
     const area = pickCountryId(data, ["area", "country", "destination"]);
-    return { type: "ITEM_PURCHASE", countryId: area, country: countryName(area) };
+    return { type: "ITEM_PURCHASE", countryId: area, country: countryLabel(area) };
   }
 
   return null;
@@ -330,7 +354,7 @@ export { INCOME_WORDS, EXPENSE_WORDS, TRANSFER_WORDS };
 /* Domain routing                                                             */
 /* -------------------------------------------------------------------------- */
 
-export type LogRoute = "money" | "rehab" | "travel" | "drugs" | "timeline";
+export type LogRoute = "money" | "rehab" | "travel" | "drugs" | "itemuse" | "timeline";
 
 /**
  * Route a raw log to its structured domain (or "timeline" for timeline-only
@@ -350,6 +374,12 @@ export function routeLog(category: string, title: string): LogRoute {
 
   // Drug use (category "Drugs", titles like "Item use xanax").
   if (c.includes("drug") || isDrugUseTitle(title)) return "drugs";
+
+  // Generic consumable item use ("Item use erotic dvd", energy drinks, candy,
+  // boosters, medical items). Stash boxes pay out cash at use and stay on the
+  // money route; the normalizer skips anything that is not a tracked
+  // consumable.
+  if (/^(item use|used|consumed)\b/i.test(t) && !t.includes("stash")) return "itemuse";
 
   // Money: broad financial surface. Keyword set mirrors the worker's fetch
   // keywords plus the real category names ("Money sending", "Points market",

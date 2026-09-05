@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { autoInterval, resolveDateRange } from "../src/index.js";
+import { autoInterval, periodLabel, resolveDateRange } from "../src/index.js";
 
 const NOW = Date.UTC(2026, 8, 4, 15, 30, 0) / 1000; // 2026-09-04 15:30 UTC
 
@@ -57,5 +57,33 @@ describe("autoInterval", () => {
   });
   it("selects month for years", () => {
     expect(autoInterval({ from: NOW, to: NOW + 800 * day })).toBe("month");
+  });
+});
+
+describe("1D and 14D presets", () => {
+  it("1d covers today only", () => {
+    const r = resolveDateRange({ preset: "1d" }, NOW);
+    expect(r.to - r.from + 1).toBe(86_400);
+    expect(r.from).toBe(Date.UTC(2026, 8, 4) / 1000);
+  });
+
+  it("14d covers the last 14 days inclusive", () => {
+    const r = resolveDateRange({ preset: "14d" }, NOW);
+    expect(r.to - r.from + 1).toBe(14 * 86_400);
+    expect(r.to).toBe(Date.UTC(2026, 8, 4) / 1000 + 86_399);
+  });
+});
+
+describe("periodLabel", () => {
+  it("gives every preset a precise label (no hardcoded 30D)", () => {
+    expect(periodLabel("1d")).toBe("1D");
+    expect(periodLabel("7d")).toBe("7D");
+    expect(periodLabel("14d")).toBe("14D");
+    expect(periodLabel("30d")).toBe("30D");
+    expect(periodLabel("90d")).toBe("90D");
+    expect(periodLabel("this_month")).toBe("This Month");
+    expect(periodLabel("this_year")).toBe("This Year");
+    expect(periodLabel("all")).toBe("All");
+    expect(periodLabel("custom")).toBe("Custom");
   });
 });

@@ -2,9 +2,11 @@ import type {
   ApiKeyStatusResponse,
   DashboardResponse,
   DrugsSummaryResponse,
+  EconomySummaryResponse,
   MeResponse,
   MoneyEventDto,
   MoneySummaryResponse,
+  NetworthResponse,
   Paginated,
   SyncHealthResponse,
   TimelineEventDto,
@@ -81,7 +83,8 @@ export const endpoints = {
   me: () => api.get<MeResponse>("/me"),
   today: () => api.get<TodayResponse>("/today"),
   dashboard: (range: QueryRange) => api.get<DashboardResponse>(`/dashboard?${rangeQuery(range)}`),
-  networth: (range: QueryRange) => api.get<Record<string, unknown>>(`/networth?${rangeQuery(range)}`),
+  networth: (range: QueryRange) => api.get<NetworthResponse>(`/networth?${rangeQuery(range)}`),
+  economy: (range: QueryRange) => api.get<EconomySummaryResponse>(`/economy?${rangeQuery(range)}`),
   moneySummary: (range: QueryRange) => api.get<MoneySummaryResponse>(`/money/summary?${rangeQuery(range)}`),
   moneyEvents: (range: QueryRange, opts: { limit?: number; cursor?: string; category?: string; direction?: string; search?: string }): Promise<Paginated<MoneyEventDto>> => {
     const params = new URLSearchParams({ preset: range.preset, limit: String(opts.limit ?? 50) });

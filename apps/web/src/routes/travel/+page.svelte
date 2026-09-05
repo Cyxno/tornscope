@@ -129,7 +129,7 @@
         <span class="font-medium text-fg">{summary.unattachedPurchases.count} abroad purchase{summary.unattachedPurchases.count === 1 ? "" : "s"}</span>
         ({formatMoneyCompact(summary.unattachedPurchases.spend)} across {summary.unattachedPurchases.itemsBought} items) predate the recoverable
         departure history — Torn keeps travel logs for a limited window, so their trips cannot be reconstructed. Their spend is still
-        counted on the Money page.
+        counted in the Economy page's cash flow.
       </p>
     {/if}
 

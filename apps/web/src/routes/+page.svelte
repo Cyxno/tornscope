@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { DashboardResponse } from "@tornscope/shared";
-  import { formatMoneyCompact, formatKpiValue } from "@tornscope/shared";
+  import { formatMoneyCompact, formatKpiValue, periodLabel } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
   import { dateRange } from "$lib/state.svelte";
   import { formatRelative } from "$lib/reltime";
@@ -35,6 +35,9 @@
     void reloadToken;
     void load();
   });
+
+  /* Labels follow the selected global range — never a hardcoded window. */
+  const period = $derived(periodLabel(dateRange.preset));
 
   /* Hero net worth split into currency symbol + magnitude */
   const nw = $derived.by(() => {
@@ -131,13 +134,21 @@
           {/if}
         </div>
         <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-[13px]">
-          <span class="flex items-baseline gap-1.5 {(data.netGain30d.value ?? 0) >= 0 ? 'text-positive' : 'text-negative'}">
-            <span class="tnum font-semibold">{data.netGain30d.value === null ? "—" : `${(data.netGain30d.value ?? 0) >= 0 ? "+" : ""}${formatMoneyCompact(data.netGain30d.value)}`}</span>
-            <span class="text-fg-faint">net · 30 days</span>
+          <span class="flex items-baseline gap-1.5" class:text-positive={(data.networthChange.value ?? 0) >= 0} class:text-negative={(data.networthChange.value ?? 0) < 0}>
+            <span class="tnum font-semibold">
+              {#if data.networthCoverage === "none"}
+                Insufficient history
+              {:else}
+                {data.networthChange.value === null ? "—" : `${(data.networthChange.value ?? 0) >= 0 ? "+" : ""}${formatMoneyCompact(data.networthChange.value)}`}
+              {/if}
+            </span>
+            <span class="text-fg-faint">
+              {data.networthCoverage === "partial" ? `tracked ${period.toLowerCase()} networth change` : `${period} networth change`}
+            </span>
           </span>
           <span class="flex items-baseline gap-1.5 text-fg-muted">
             <span class="tnum font-semibold text-fg">{formatKpiValue(data.travelProfit)}</span>
-            <span class="text-fg-faint">est. travel profit</span>
+            <span class="text-fg-faint">Estimated Travel Profit</span>
           </span>
           {#if data.lastSyncAt}
             <span class="text-fg-faint">last sync {formatRelative(data.lastSyncAt)}</span>
@@ -146,8 +157,8 @@
       </div>
       <div class="grid grid-cols-2 gap-px border-t border-border bg-border md:grid-cols-4">
         <Stat label="Cash" value={formatKpiValue(data.cash)} provenance="exact" />
-        <Stat label="30d income" value={formatKpiValue(data.income30d)} provenance="derived" tone="positive" sub={data.income30d.availability === "incomplete" ? "some logs unclassified" : null} />
-        <Stat label="30d expenses" value={formatKpiValue(data.expenses30d)} provenance="derived" tone="negative" sub={data.expenses30d.availability === "incomplete" ? "some logs unclassified" : null} />
+        <Stat label="{period} income" value={formatKpiValue(data.income)} provenance="derived" tone="positive" sub={data.income.availability === "incomplete" ? "some logs unclassified" : null} />
+        <Stat label="{period} expenses" value={formatKpiValue(data.expenses)} provenance="derived" tone="negative" sub={data.expenses.availability === "incomplete" ? "some logs unclassified" : null} />
         <Stat label="Rehab spend" value={formatKpiValue(data.rehabSpend)} provenance={data.rehabSpend.provenance} />
       </div>
     </section>

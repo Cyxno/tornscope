@@ -178,6 +178,9 @@
             <p class="mx-auto max-w-sm text-[13px] leading-relaxed text-fg-muted">
               You can start exploring now; the historical import continues in the background.
             </p>
+            <p class="mx-auto max-w-sm text-[11px] leading-relaxed text-fg-faint">
+              TornScope imports up to 180 days of available Torn history. Retention varies by Torn log type.
+            </p>
           </div>
 
           <!-- Resource-level progress (no invented overall percentage) -->

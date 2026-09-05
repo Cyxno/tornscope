@@ -1,6 +1,7 @@
 import { Prisma } from "../generated/client/client.js";
 import type { PrismaClientType } from "../client.js";
 import type {
+  ConsumptionEventInput,
   DrugEventInput,
   MoneyEventInput,
   RehabEventInput,
@@ -27,6 +28,29 @@ export async function insertDrugEvents(db: PrismaClientType, userId: string, eve
       source: "torn_log",
       sourceRef: e.sourceRef,
       raw: e.raw === undefined ? Prisma.JsonNull : (e.raw as Prisma.InputJsonValue),
+    })),
+    skipDuplicates: true,
+  });
+  return result.count;
+}
+
+export async function insertConsumptionEvents(db: PrismaClientType, userId: string, events: ConsumptionEventInput[]): Promise<number> {
+  if (events.length === 0) return 0;
+  const result = await db.consumptionEvent.createMany({
+    data: events.map((e) => ({
+      userId,
+      occurredAt: e.occurredAt,
+      itemId: e.itemId,
+      itemName: e.itemName,
+      category: e.category,
+      quantity: e.quantity,
+      unitValue: e.unitValue,
+      totalValue: e.totalValue,
+      valuationMethod: e.valuationMethod,
+      provenance: e.provenance,
+      source: e.source,
+      sourceRef: e.sourceRef,
+      metadata: e.raw === undefined ? Prisma.JsonNull : (e.raw as Prisma.InputJsonValue),
     })),
     skipDuplicates: true,
   });

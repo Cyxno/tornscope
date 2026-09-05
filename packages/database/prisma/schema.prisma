@@ -69,6 +69,7 @@ model User {
   personalStatSnapshot PersonalStatSnapshot[]
   networthSnapshots    NetworthSnapshot[]
   drugEvents           DrugEvent[]
+  consumptionEvents    ConsumptionEvent[]
   rehabEvents          RehabEvent[]
   travelEvents         TravelEvent[]
   travelItemEvents     TravelItemEvent[]
@@ -260,6 +261,41 @@ model DrugEvent {
   @@unique([userId, source, sourceRef])
   @@index([userId, occurredAt])
   @@index([userId, drugItemId])
+}
+
+/// Value of consumed (used-up) items: drugs, boosters, medical items, energy
+/// drinks, candy, happy-jump items (EDVD) and other consumables.
+///
+/// Consumption is deliberately SEPARATE from MoneyEvent cash flow: the
+/// purchase is a real cash movement (MoneyEvent, expense); the later use
+/// consumes value without any further cash movement. The two are never
+/// summed into one "profit" figure.
+model ConsumptionEvent {
+  id              String   @id @default(cuid())
+  userId          String
+  occurredAt      DateTime
+  itemId          Int?
+  itemName        String?
+  /// drug | booster | medical | energy | candy | happy_jump | temporary | other
+  category        String
+  quantity        Int      @default(1)
+  /// Per-unit consumed value when a price source was available.
+  unitValue       BigInt?
+  totalValue      BigInt?
+  /// acquisition_cost | market_price | catalog_market_price | unknown
+  valuationMethod String   @default("unknown")
+  /// exact | derived | estimated | unknown
+  provenance      String   @default("unknown")
+  /// torn_log (normalized directly) | derived_drug_event (from DrugEvent data)
+  source          String   @default("torn_log")
+  sourceRef       String
+  metadata        Json?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, source, sourceRef])
+  @@index([userId, occurredAt])
+  @@index([userId, category])
 }
 
 /// Rehabilitation visits.
