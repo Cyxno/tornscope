@@ -6,6 +6,8 @@ import {
   type KpiAvailability,
 } from "@tornscope/shared";
 import {
+  aggregateCombatStats,
+  aggregateCrimeStats,
   aggregateMoneyEvents,
   calculateDrugStats,
   calculateNetworthPeriodChange,
@@ -33,7 +35,7 @@ export async function getDashboard(userId: string, rangeInput: DateRangeInput): 
   const from = new Date(range.from * 1000);
   const to = new Date(range.to * 1000);
 
-  const [latestNw, moneyRows, unknownMoneyRows, travelEvents, travelItems, travelTransitions, drugRows, consumptionRows, rehabRows, rehabCandidates, timelineCount, timelineRows, marketPrices, syncStates] = await Promise.all([
+  const [latestNw, moneyRows, unknownMoneyRows, travelEvents, travelItems, travelTransitions, drugRows, consumptionRows, crimeRows, combatRows, rehabRows, rehabCandidates, timelineCount, timelineRows, marketPrices, syncStates] = await Promise.all([
     getLatestNetworth(userId),
     db.moneyEvent.findMany({
       where: { userId, occurredAt: { gte: from, lte: to } },
@@ -56,6 +58,14 @@ export async function getDashboard(userId: string, rangeInput: DateRangeInput): 
     db.consumptionEvent.findMany({
       where: { userId, occurredAt: { gte: from, lte: to } },
       select: { occurredAt: true, category: true, quantity: true, totalValue: true },
+    }),
+    db.crimeEvent.findMany({
+      where: { userId, occurredAt: { gte: from, lte: to } },
+      select: { occurredAt: true, success: true, moneyDelta: true, itemsValue: true },
+    }),
+    db.combatEvent.findMany({
+      where: { userId, occurredAt: { gte: from, lte: to } },
+      select: { occurredAt: true, direction: true, result: true },
     }),
     db.rehabEvent.findMany({
       where: { userId, occurredAt: { gte: from, lte: to } },
@@ -206,6 +216,43 @@ export async function getDashboard(userId: string, rangeInput: DateRangeInput): 
     networthChangePct: nwPeriod.changePct,
     networthCoverage: nwPeriod.coverage,
     networthTrackingSince: nwPeriod.trackedFrom,
+    crimes:
+      crimeRows.length > 0
+        ? (() => {
+            const stats = aggregateCrimeStats(
+              crimeRows.map((r) => ({
+                occurredAt: Math.floor(r.occurredAt.getTime() / 1000),
+                crimeName: null,
+                success: r.success,
+                nerveUsed: null,
+                moneyDelta: bigintToNumber(r.moneyDelta),
+                itemsValue: bigintToNumber(r.itemsValue),
+                jailSeconds: null,
+              })),
+              range.from,
+              range.to
+            );
+            return { attempts: stats.attempts, successRate: stats.successRate, totalValue: stats.totalEstimatedValue };
+          })()
+        : null,
+    combat:
+      combatRows.length > 0
+        ? (() => {
+            const stats = aggregateCombatStats(
+              combatRows.map((r) => ({
+                occurredAt: Math.floor(r.occurredAt.getTime() / 1000),
+                direction: r.direction as "outgoing" | "incoming",
+                opponentId: null,
+                opponentName: null,
+                result: r.result,
+                respectDelta: null,
+              })),
+              range.from,
+              range.to
+            );
+            return { attacksMade: stats.attacksMade, wins: stats.wins };
+          })()
+        : null,
     consumedValue: {
       value: consumedTotal,
       provenance: "estimated",

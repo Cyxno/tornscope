@@ -70,6 +70,8 @@ model User {
   networthSnapshots    NetworthSnapshot[]
   drugEvents           DrugEvent[]
   consumptionEvents    ConsumptionEvent[]
+  crimeEvents          CrimeEvent[]
+  combatEvents         CombatEvent[]
   rehabEvents          RehabEvent[]
   syncCategoryStates   SyncCategoryState[]
   travelEvents         TravelEvent[]
@@ -322,6 +324,70 @@ model DrugEvent {
   @@unique([userId, source, sourceRef])
   @@index([userId, occurredAt])
   @@index([userId, drugItemId])
+}
+
+/// Normalized crime attempt from Torn crime logs.
+///
+/// Success/failure comes from the log title; money_gained/money_lost from the
+/// payload. The cash side is ALSO written to MoneyEvent (category crime) by
+/// the same normalization pass — exactly one ledger row per money-bearing
+/// crime log, so Crimes analytics and the Economy ledger always agree.
+/// Nerve, when present, is exact; item rewards are valued from the Torn item
+/// catalog (estimated) and never invented.
+model CrimeEvent {
+  id            String   @id @default(cuid())
+  userId        String
+  sourceRef     String
+  occurredAt    DateTime
+  /// Torn outcome id from the payload (stable per outcome, opaque).
+  crimeId       Int?
+  crimeName     String?
+  /// Legacy | New crime system, derived from the title shape.
+  crimeCategory String?
+  success       Boolean
+  nerveUsed     Int?
+  moneyDelta    BigInt?
+  itemsValue    BigInt?
+  jailSeconds   Int?
+  hospitalSeconds Int?
+  skillGain     Int?
+  metadata      Json?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, sourceRef])
+  @@index([userId, occurredAt])
+  @@index([userId, success])
+}
+
+/// Normalized combat event from the /v2/user/attacks endpoint.
+///
+/// direction: outgoing (user attacked) | incoming (user was attacked),
+/// decided by which side of the payload names the account. Opponent may be
+/// unknown (Torn nulls some attacker profiles) — rendered as
+/// "Unknown opponent", never fabricated. Mug cash is NOT duplicated here:
+/// it lives in MoneyEvent (category mugging) from the mug logs.
+model CombatEvent {
+  id              String   @id @default(cuid())
+  userId          String
+  sourceRef       String
+  occurredAt      DateTime
+  direction       String
+  opponentId      Int?
+  opponentName    String?
+  result          String
+  attackType      String?
+  moneyDelta      BigInt?
+  respectDelta    Float?
+  hospitalSeconds Int?
+  modifiers       Json?
+  metadata        Json?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, sourceRef])
+  @@index([userId, occurredAt])
+  @@index([userId, direction])
 }
 
 /// Value of consumed (used-up) items: drugs, boosters, medical items, energy

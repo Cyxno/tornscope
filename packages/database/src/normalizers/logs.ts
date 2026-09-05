@@ -147,6 +147,22 @@ export interface MoneyEventInput {
   raw: unknown;
 }
 
+export interface CrimeEventInput {
+  occurredAt: Date;
+  crimeId: number | null;
+  crimeName: string | null;
+  crimeCategory: "new" | "legacy";
+  success: boolean;
+  nerveUsed: number | null;
+  moneyDelta: bigint | null;
+  itemsValue: bigint | null;
+  jailSeconds: number | null;
+  hospitalSeconds: number | null;
+  skillGain: number | null;
+  sourceRef: string;
+  raw: unknown;
+}
+
 export interface TimelineEventInput {
   occurredAt: Date;
   type: string;
@@ -161,6 +177,7 @@ export interface TimelineEventInput {
 export interface NormalizedLogWrites {
   drugEvents: DrugEventInput[];
   consumptionEvents: ConsumptionEventInput[];
+  crimeEvents: CrimeEventInput[];
   rehabEvents: RehabEventInput[];
   /** Individual travel transitions (never full trips). */
   travelTransitions: TravelTransitionInput[];
@@ -285,6 +302,7 @@ export function normalizeLogEntry(log: TornUserLog, ctx: NormalizeContext): Norm
   const writes: NormalizedLogWrites = {
     drugEvents: [],
     consumptionEvents: [],
+    crimeEvents: [],
     rehabEvents: [],
     travelTransitions: [],
     travelItemEvents: [],
@@ -344,6 +362,83 @@ export function normalizeLogEntry(log: TornUserLog, ctx: NormalizeContext): Norm
       // event only: the cash side of buying the drug is (or was) a separate
       // MoneyEvent, and the use itself moves no cash.
       writes.consumptionEvents.push(consumptionFromCatalog(ctx, itemId, drugName, "drug", 1, occurredAt, ref, log));
+      break;
+    }
+
+    case "crimes": {
+      // Normalized crime attempts. Success/failure comes from the title;
+      // money_gained/money_lost from the payload are ALSO written to
+      // MoneyEvent (category crime) — exactly one canonical ledger row per
+      // money-bearing crime log. Item rewards are valued from the catalog
+      // (estimated) and never invented; unknown fields stay null.
+      const t = logTitle.toLowerCase();
+      const isSuccess = /success/.test(t);
+      const isFail = /fail/.test(t);
+      if (!isSuccess && !isFail) {
+        // Skill changes, item deposits/withdrawals, graffiti, hints etc. are
+        // progression bookkeeping, not attempts — timeline only.
+        writes.unmapped += 1;
+        break;
+      }
+      const nerve = pickNumber(data, ["nerve"]);
+      const moneyGained = pickNumber(data, ["money_gained"]);
+      const moneyLost = pickNumber(data, ["money_lost"]);
+      const moneyDelta = moneyGained !== null ? BigInt(Math.round(moneyGained)) : moneyLost !== null ? -BigInt(Math.round(moneyLost)) : null;
+      let itemsValue: bigint | null = null;
+      const itemsGained = data["items_gained"];
+      if (itemsGained !== null && itemsGained !== undefined && typeof itemsGained === "object") {
+        let value = 0n;
+        let any = false;
+        for (const [itemId, qty] of Object.entries(itemsGained as Record<string, unknown>)) {
+          const price = ctx.itemMarketPriceById?.get(Number(itemId));
+          const quantity = typeof qty === "number" ? qty : 1;
+          if (price !== undefined) {
+            value += price * BigInt(Math.max(1, Math.round(quantity)));
+            any = true;
+          }
+        }
+        if (any) itemsValue = value;
+      }
+      const jailSeconds = pickNumber(data, ["jail_time_increased"]);
+      writes.crimeEvents.push({
+        occurredAt,
+        crimeId: pickNumber(data, ["outcome"]),
+        crimeName: pickString(data, ["crime_action"]) ?? null,
+        crimeCategory: t.includes("(new)") ? "new" : "legacy",
+        success: isSuccess,
+        nerveUsed: nerve,
+        moneyDelta,
+        itemsValue,
+        jailSeconds: jailSeconds !== null ? Math.round(jailSeconds) : null,
+        hospitalSeconds: null,
+        skillGain: null,
+        sourceRef: ref,
+        raw: log,
+      });
+      // Canonical cash ledger row for money-bearing crime logs.
+      if (moneyGained !== null && moneyGained > 0) {
+        writes.moneyEvents.push({
+          occurredAt,
+          category: "crime",
+          subcategory: pickString(data, ["crime_action"]) ?? null,
+          direction: "income",
+          amount: BigInt(Math.round(moneyGained)),
+          sourceRef: ref,
+          description: logTitle,
+          raw: log,
+        });
+      } else if (moneyLost !== null && moneyLost > 0) {
+        writes.moneyEvents.push({
+          occurredAt,
+          category: "crime",
+          subcategory: pickString(data, ["crime_action"]) ?? null,
+          direction: "expense",
+          amount: -BigInt(Math.round(moneyLost)),
+          sourceRef: ref,
+          description: logTitle,
+          raw: log,
+        });
+      }
       break;
     }
 

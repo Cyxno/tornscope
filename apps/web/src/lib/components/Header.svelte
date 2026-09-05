@@ -8,6 +8,8 @@
     { href: "/drugs", label: "Drugs" },
     { href: "/money", label: "Economy" },
     { href: "/travel", label: "Travel" },
+    { href: "/crimes", label: "Crimes" },
+    { href: "/combat", label: "Combat" },
     { href: "/timeline", label: "Timeline" },
   ];
 

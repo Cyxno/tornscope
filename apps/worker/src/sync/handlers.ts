@@ -28,6 +28,7 @@ import {
   getSyncCategoryState,
   getSyncCategoryStates,
   upsertSyncCategoryState,
+  insertCombatEvents,
   assembleTripsFromTransitions,
 } from "@tornscope/database";
 import { isCategoryDue, nextCategorySchedule, SCHEDULE_THRESHOLDS } from "./schedule.js";
@@ -573,6 +574,93 @@ export const syncMoneyLogs: SyncHandler = async (args) =>
 /* events (Torn events -> timeline)                                           */
 /* -------------------------------------------------------------------------- */
 
+
+
+/** Normalized combat event (pre-persistence). */
+export interface NormalizedAttack {
+  occurredAt: Date;
+  attackId: number;
+  direction: "incoming" | "outgoing";
+  opponentId: number | null;
+  opponentName: string | null;
+  result: string;
+  respectDelta: number | null;
+  modifiers: Record<string, unknown> | null;
+}
+
+/**
+ * Pure attack payload -> combat event projection. Direction comes from the
+ * payload side naming the account; the opponent may be unknown (Torn nulls
+ * some attacker profiles) and is never fabricated. Respect is the net
+ * gain-loss swing; raw both-direction values stay in metadata.
+ */
+export function normalizeAttack(a: { id: number; started: number; ended?: number; attacker?: { id?: number; name?: string } | null; defender?: { id?: number; name?: string } | null; result: string; respect_gain?: number | null; respect_loss?: number | null; modifiers?: Record<string, unknown> | null }, myId: number): NormalizedAttack {
+  const attackerId = typeof a.attacker?.id === "number" ? a.attacker.id : null;
+  const defenderId = typeof a.defender?.id === "number" ? a.defender.id : null;
+  const incoming = defenderId === myId;
+  const opponent = (incoming ? a.attacker : a.defender) ?? null;
+  const opponentId = typeof opponent?.id === "number" ? opponent.id : null;
+  const opponentName = typeof opponent?.name === "string" ? opponent.name : null;
+  const respectDelta =
+    a.respect_gain !== null && a.respect_gain !== undefined ? (a.respect_gain ?? 0) - (a.respect_loss ?? 0) : a.respect_loss !== null && a.respect_loss !== undefined ? -(a.respect_loss ?? 0) : null;
+  return {
+    occurredAt: new Date((a.ended || a.started) * 1000),
+    attackId: a.id,
+    direction: incoming ? "incoming" : "outgoing",
+    opponentId,
+    opponentName,
+    result: a.result,
+    respectDelta,
+    modifiers: (a.modifiers ?? null) as Record<string, unknown> | null,
+  };
+};
+
+/**
+ * Combat sync from /v2/user/attacks (backward pagination, own resource
+ * cursor). Direction: the payload side naming the account decides
+ * outgoing/incoming; opponents Torn nulls render as "Unknown opponent".
+ * Mug cash is NOT written here — it flows through the mug logs into
+ * MoneyEvent (category mugging), keeping one canonical ledger row.
+ */
+export const syncAttacks: SyncHandler = async (args) => {
+  const ctx = getWorkerContext();
+  const account = await ctx.db.tornAccount.findUnique({ where: { userId: args.userId }, select: { tornId: true } });
+  if (!account) {
+    logger.info({ userId: args.userId }, "attacks sync skipped: no torn account yet");
+    return { records: 0, pagesWalked: 0 };
+  }
+  const myId = account.tornId;
+  const boundaryTs = historyBoundaryTs(args.lastTimestamp, ctx.initialHistoryDays);
+
+  let records = 0;
+  let maxSeen: number | null = null;
+
+  const walk = await args.torn.iterateUserAttacksBackward(
+    { from: boundaryTs, limit: 100 },
+    async (attacks) => {
+      if (attacks.length === 0) return;
+      const inputs = attacks.map((a) => normalizeAttack(a, myId));
+      await insertCombatEvents(ctx.db, args.userId, inputs);
+      records += attacks.length;
+      for (const a of attacks) {
+        const ts = a.ended || a.started;
+        if (ts > (maxSeen ?? 0)) maxSeen = ts;
+      }
+      args.onProgress?.(records);
+    },
+    { maxPages: 200, boundaryTs }
+  );
+  logger.info({ userId: args.userId, pages: walk.pages, stopReason: walk.stopReason, oldest: walk.oldestTimestamp }, "attacks backward walk finished");
+
+  return {
+    records,
+    pagesWalked: walk.pages,
+    lastTimestamp: maxSeen !== null ? BigInt(maxSeen) : args.lastTimestamp,
+    stopReason: walk.stopReason,
+    sourceEarliestAt: walk.oldestTimestamp !== null ? BigInt(walk.oldestTimestamp) : null,
+  };
+};
+
 export const syncEvents: SyncHandler = async (args) => {
   const ctx = getWorkerContext();
   const boundaryTs = historyBoundaryTs(args.lastTimestamp, ctx.initialHistoryDays);
@@ -647,6 +735,7 @@ export const SYNC_HANDLERS: Record<SyncResource, SyncHandler> = {
   rehab: syncRehabLogs,
   money_logs: syncMoneyLogs,
   events: syncEvents,
+  attacks: syncAttacks,
   faction_basic: syncFactionBasic,
   torn_catalog: syncTornCatalog,
 };

@@ -242,6 +242,48 @@
           <Chart option={drugOption} height={260} />
         {/if}
       </Panel>
+      <Panel title="Crimes" caption="Attempts, success rate and value in range" flush>
+        {#if !data.crimes}
+          <StateMessage state="empty" title="No crime attempts in this range" />
+        {:else}
+          <div class="grid grid-cols-3 gap-px bg-border">
+            <div class="bg-surface p-5 text-center">
+              <p class="tnum text-2xl font-semibold text-fg">{data.crimes.attempts}</p>
+              <p class="mt-1 text-[10px] uppercase tracking-[0.14em] text-fg-faint">attempts</p>
+            </div>
+            <div class="bg-surface p-5 text-center">
+              <p class="tnum text-2xl font-semibold text-positive">{data.crimes.successRate !== null ? Math.round(data.crimes.successRate * 100) + "%" : "—"}</p>
+              <p class="mt-1 text-[10px] uppercase tracking-[0.14em] text-fg-faint">success</p>
+            </div>
+            <div class="bg-surface p-5 text-center">
+              <p class="tnum text-2xl font-semibold text-accent">{data.crimes.totalValue !== null ? formatMoneyCompact(data.crimes.totalValue) : "—"}</p>
+              <p class="mt-1 text-[10px] uppercase tracking-[0.14em] text-fg-faint">value (est.)</p>
+            </div>
+          </div>
+          <p class="px-5 pt-3 text-xs text-fg-faint">
+            {period} crime activity — cash exact, item values estimated from the Torn catalog. <a href="/crimes" class="text-accent">Explore →</a>
+          </p>
+        {/if}
+      </Panel>
+      <Panel title="Combat" caption="Attacks made and wins in range" flush>
+        {#if !data.combat}
+          <StateMessage state="empty" title="No combat activity in this range" />
+        {:else}
+          <div class="grid grid-cols-2 gap-px bg-border">
+            <div class="bg-surface p-5 text-center">
+              <p class="tnum text-2xl font-semibold text-fg">{data.combat.attacksMade}</p>
+              <p class="mt-1 text-[10px] uppercase tracking-[0.14em] text-fg-faint">attacks made</p>
+            </div>
+            <div class="bg-surface p-5 text-center">
+              <p class="tnum text-2xl font-semibold text-positive">{data.combat.wins}</p>
+              <p class="mt-1 text-[10px] uppercase tracking-[0.14em] text-fg-faint">wins</p>
+            </div>
+          </div>
+          <p class="px-5 pt-3 text-xs text-fg-faint">
+            {period} combat activity — exact from your Torn attacks record. <a href="/combat" class="text-accent">Explore →</a>
+          </p>
+        {/if}
+      </Panel>
       <Panel title="Travel profit" caption="Estimated profit by departure day" flush>
         {#snippet actions()}
           <a href="/travel" class="pr-4 text-xs font-medium text-accent transition-opacity hover:opacity-80">Explore →</a>

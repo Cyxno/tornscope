@@ -354,7 +354,7 @@ export { INCOME_WORDS, EXPENSE_WORDS, TRANSFER_WORDS };
 /* Domain routing                                                             */
 /* -------------------------------------------------------------------------- */
 
-export type LogRoute = "money" | "rehab" | "travel" | "drugs" | "itemuse" | "timeline";
+export type LogRoute = "money" | "rehab" | "travel" | "drugs" | "itemuse" | "crimes" | "timeline";
 
 /**
  * Route a raw log to its structured domain (or "timeline" for timeline-only
@@ -374,6 +374,10 @@ export function routeLog(category: string, title: string): LogRoute {
 
   // Drug use (category "Drugs", titles like "Item use xanax").
   if (c.includes("drug") || isDrugUseTitle(title)) return "drugs";
+
+  // Crime attempts and consequences (category "Crimes") — normalized to
+  // CrimeEvents with the cash side mirrored into MoneyEvent.
+  if (c === "crimes") return "crimes";
 
   // Generic consumable item use ("Item use erotic dvd", energy drinks, candy,
   // boosters, medical items). Stash boxes pay out cash at use and stay on the

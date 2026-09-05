@@ -244,6 +244,21 @@ export const DashboardResponseSchema = z.object({
   networthCoverage: NetworthCoverageSchema,
   /** Earliest real networth snapshot — charts/labels must not predate it. */
   networthTrackingSince: z.number().nullable(),
+  /** Crimes summary over the selected range (null when no data at all). */
+  crimes: z
+    .object({
+      attempts: z.number(),
+      successRate: z.number().nullable(),
+      totalValue: z.number().nullable(),
+    })
+    .nullable(),
+  /** Combat summary over the selected range (null when no data at all). */
+  combat: z
+    .object({
+      attacksMade: z.number(),
+      wins: z.number(),
+    })
+    .nullable(),
   consumedValue: KpiValueSchema,
   travelProfit: KpiValueSchema,
   drugsUsed: KpiValueSchema,
@@ -335,6 +350,121 @@ export const EconomySummaryResponseSchema = z.object({
   }),
 });
 export type EconomySummaryResponse = z.infer<typeof EconomySummaryResponseSchema>;
+
+/* -------------------------------------------------------------------------- */
+/* Crimes & Combat                                                             */
+/* -------------------------------------------------------------------------- */
+
+export const CrimeEventDtoSchema = z.object({
+  id: z.string(),
+  occurredAt: z.number(),
+  crimeName: z.string().nullable(),
+  crimeCategory: z.string().nullable(),
+  success: z.boolean(),
+  nerveUsed: z.number().nullable(),
+  moneyDelta: z.number().nullable(),
+  itemsValue: z.number().nullable(),
+  jailSeconds: z.number().nullable(),
+});
+export type CrimeEventDto = z.infer<typeof CrimeEventDtoSchema>;
+
+export const CrimesSummaryResponseSchema = z.object({
+  range: z.object({ from: z.number(), to: z.number() }),
+  attempts: z.number(),
+  successful: z.number(),
+  failed: z.number(),
+  successRate: z.number().nullable(),
+  moneyGained: z.number(),
+  moneyLost: z.number(),
+  netCrimeCash: z.number(),
+  estimatedItemsValue: z.number().nullable(),
+  totalEstimatedValue: z.number().nullable(),
+  nerveUsed: z.number().nullable(),
+  valuePerNerve: z.number().nullable(),
+  jailedCount: z.number(),
+  totalJailSeconds: z.number(),
+  crimesPerDay: z.number(),
+  byCrime: z.array(
+    z.object({
+      crime: z.string(),
+      attempts: z.number(),
+      successes: z.number(),
+      successRate: z.number().nullable(),
+      cashGained: z.number(),
+      cashLost: z.number(),
+      estimatedItemsValue: z.number().nullable(),
+      netValue: z.number().nullable(),
+      nerveUsed: z.number().nullable(),
+      valuePerNerve: z.number().nullable(),
+    })
+  ),
+  dailySeries: z.array(z.object({ t: z.number(), attempts: z.number(), successes: z.number(), value: z.number() })),
+  coverage: z.object({
+    trackingSince: z.number().nullable(),
+    earliestStored: z.number().nullable(),
+    latestStored: z.number().nullable(),
+  }),
+});
+export type CrimesSummaryResponse = z.infer<typeof CrimesSummaryResponseSchema>;
+
+export const CrimesTimelineResponseSchema = z.object({
+  nextCursor: z.string().nullable(),
+  range: z.object({ from: z.number(), to: z.number() }),
+  items: z.array(CrimeEventDtoSchema),
+});
+export type CrimesTimelineResponse = z.infer<typeof CrimesTimelineResponseSchema>;
+
+export const CombatEventDtoSchema = z.object({
+  id: z.string(),
+  occurredAt: z.number(),
+  direction: z.enum(["outgoing", "incoming"]),
+  opponentName: z.string().nullable(),
+  result: z.string(),
+  respectDelta: z.number().nullable(),
+});
+export type CombatEventDto = z.infer<typeof CombatEventDtoSchema>;
+
+export const OpponentRowSchema = z.object({
+  opponentId: z.number().nullable(),
+  opponent: z.string(),
+  attacks: z.number(),
+  wins: z.number(),
+  losses: z.number(),
+  winRate: z.number().nullable(),
+  lastEncounter: z.number(),
+});
+
+export const CombatSummaryResponseSchema = z.object({
+  range: z.object({ from: z.number(), to: z.number() }),
+  attacksMade: z.number(),
+  attacksReceived: z.number(),
+  wins: z.number(),
+  losses: z.number(),
+  winRate: z.number().nullable(),
+  mugsMade: z.number(),
+  mugsReceived: z.number(),
+  moneyMugged: KpiValueSchema,
+  moneyLostToMugs: KpiValueSchema,
+  hospitalizationsCaused: z.number(),
+  hospitalizationsReceived: z.number(),
+  respectGained: z.number().nullable(),
+  respectLost: z.number().nullable(),
+  byOpponent: z.array(OpponentRowSchema),
+  dailySeries: z.array(z.object({ t: z.number(), made: z.number(), received: z.number(), wins: z.number(), losses: z.number() })),
+  coverage: z.object({
+    trackingSince: z.number().nullable(),
+    earliestStored: z.number().nullable(),
+    latestStored: z.number().nullable(),
+  }),
+});
+export type CombatSummaryResponse = z.infer<typeof CombatSummaryResponseSchema>;
+
+export const CombatTimelineResponseSchema = z.object({
+  nextCursor: z.string().nullable(),
+  range: z.object({ from: z.number(), to: z.number() }),
+  items: z.array(CombatEventDtoSchema),
+});
+export type CombatTimelineResponse = z.infer<typeof CombatTimelineResponseSchema>;
 
 export const NetworthResponseSchema = z.object({
   range: z.object({ from: z.number(), to: z.number(), interval: z.string() }),

@@ -2,6 +2,10 @@ import type {
   ApiKeyStatusResponse,
   DashboardResponse,
   DrugsSummaryResponse,
+  CombatSummaryResponse,
+  CombatTimelineResponse,
+  CrimesSummaryResponse,
+  CrimesTimelineResponse,
   EconomySummaryResponse,
   MeResponse,
   MoneyEventDto,
@@ -99,6 +103,22 @@ export const endpoints = {
   drugsSummary: (range: QueryRange, drugs: string[] | null): Promise<DrugsSummaryResponse> =>
     api.get(`/drugs/summary?${rangeQuery(range, drugs && drugs.length > 0 ? { drugs: drugs.join(",") } : {})}`),
   travelSummary: (range: QueryRange) => api.get<TravelSummaryResponse>(`/travel/summary?${rangeQuery(range)}`),
+  crimesSummary: (range: QueryRange) => api.get<CrimesSummaryResponse>(`/crimes/summary?${rangeQuery(range)}`),
+  crimesTimeline: (range: QueryRange, limit = 50, cursor?: string): Promise<CrimesTimelineResponse> => {
+    const params = new URLSearchParams({ preset: range.preset, limit: String(limit) });
+    if (range.from) params.set("from", String(range.from));
+    if (range.to) params.set("to", String(range.to));
+    if (cursor) params.set("cursor", cursor);
+    return api.get(`/crimes/timeline?${params.toString()}`);
+  },
+  combatSummary: (range: QueryRange) => api.get<CombatSummaryResponse>(`/combat/summary?${rangeQuery(range)}`),
+  combatTimeline: (range: QueryRange, limit = 50, cursor?: string): Promise<CombatTimelineResponse> => {
+    const params = new URLSearchParams({ preset: range.preset, limit: String(limit) });
+    if (range.from) params.set("from", String(range.from));
+    if (range.to) params.set("to", String(range.to));
+    if (cursor) params.set("cursor", cursor);
+    return api.get(`/combat/timeline?${params.toString()}`);
+  },
   travelHistory: (range: QueryRange, limit = 50): Promise<Paginated<TravelTripDto>> => api.get(`/travel/history?${rangeQuery(range)}&limit=${limit}`),
   timeline: (range: QueryRange, opts: { limit?: number; cursor?: string; type?: string } = {}): Promise<Paginated<TimelineEventDto>> => {
     const params = new URLSearchParams({ preset: range.preset, limit: String(opts.limit ?? 50) });

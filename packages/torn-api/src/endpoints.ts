@@ -228,6 +228,28 @@ export const UserEventSchema = loose({
 });
 export type TornUserEvent = z.infer<typeof UserEventSchema>;
 
+/** One combat attack from /v2/user/attacks (loose: keep every field). */
+export const UserAttackSchema = loose({
+  id: z.number(),
+  code: z.string().optional(),
+  started: z.number(),
+  ended: z.number(),
+  attacker: loose({}).nullable().optional(),
+  defender: loose({}).nullable().optional(),
+  result: z.string(),
+  respect_gain: z.number().nullable().optional(),
+  respect_loss: z.number().nullable().optional(),
+  chain: z.number().nullable().optional(),
+  is_interrupted: z.boolean().nullable().optional(),
+  is_stealthed: z.boolean().nullable().optional(),
+  is_raid: z.boolean().nullable().optional(),
+  is_ranked_war: z.boolean().nullable().optional(),
+  is_territory_war: z.boolean().nullable().optional(),
+  modifiers: loose({}).nullable().optional(),
+  finishing_hit_effects: z.array(loose({})).nullable().optional(),
+});
+export type TornUserAttack = z.infer<typeof UserAttackSchema>;
+
 /**
  * donator_status arrives as a number on some endpoints and as a string
  * ("Donator"/"Subscriber") on others. Normalize to the legacy int code.
@@ -489,6 +511,36 @@ export class TornEndpoints {
         boundaryTs: opts.boundaryTs,
         pageSize: query.limit ?? 100,
         rowTimestamps: (data) => (Array.isArray(data.events) ? (data.events as Array<{ timestamp?: number }>).map((e) => e.timestamp).filter((t): t is number => typeof t === "number") : []),
+      }
+    );
+  }
+
+  /**
+   * Walk attack history BACKWARD (newest page first, following links.prev)
+   * down to boundaryTs — /user/attacks paginates like /user/log.
+   */
+  async iterateUserAttacksBackward(
+    query: { from?: number; to?: number; limit?: number },
+    onPage: (attacks: TornUserAttack[], metadata: TornMetadata | undefined) => boolean | void | Promise<boolean | void>,
+    opts: { maxPages?: number; boundaryTs?: number } = {}
+  ): Promise<BackwardPaginationResult> {
+    const params: TornRequestParams = {
+      from: query.from,
+      to: query.to,
+      limit: query.limit ?? 100,
+    };
+    return this.client.paginateBackward(
+      "/user/attacks",
+      params,
+      ({ data, metadata }) => {
+        const parsed = z.array(UserAttackSchema).parse(Array.isArray(data.attacks) ? data.attacks : []);
+        return onPage(parsed, metadata);
+      },
+      {
+        maxPages: opts.maxPages,
+        boundaryTs: opts.boundaryTs,
+        pageSize: query.limit ?? 100,
+        rowTimestamps: (data) => (Array.isArray(data.attacks) ? (data.attacks as Array<{ ended?: number }>).map((a) => a.ended).filter((t): t is number => typeof t === "number") : []),
       }
     );
   }

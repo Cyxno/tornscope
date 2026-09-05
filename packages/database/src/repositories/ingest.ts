@@ -2,6 +2,7 @@ import { Prisma } from "../generated/client/client.js";
 import type { PrismaClientType } from "../client.js";
 import type {
   ConsumptionEventInput,
+  CrimeEventInput,
   DrugEventInput,
   MoneyEventInput,
   RehabEventInput,
@@ -50,6 +51,64 @@ export async function insertConsumptionEvents(db: PrismaClientType, userId: stri
       provenance: e.provenance,
       source: e.source,
       sourceRef: e.sourceRef,
+      metadata: e.raw === undefined ? Prisma.JsonNull : (e.raw as Prisma.InputJsonValue),
+    })),
+    skipDuplicates: true,
+  });
+  return result.count;
+}
+
+export async function insertCrimeEvents(db: PrismaClientType, userId: string, events: CrimeEventInput[]): Promise<number> {
+  if (events.length === 0) return 0;
+  const result = await db.crimeEvent.createMany({
+    data: events.map((e) => ({
+      userId,
+      occurredAt: e.occurredAt,
+      crimeId: e.crimeId,
+      crimeName: e.crimeName,
+      crimeCategory: e.crimeCategory,
+      success: e.success,
+      nerveUsed: e.nerveUsed,
+      moneyDelta: e.moneyDelta,
+      itemsValue: e.itemsValue,
+      jailSeconds: e.jailSeconds,
+      hospitalSeconds: e.hospitalSeconds,
+      skillGain: e.skillGain,
+      sourceRef: e.sourceRef,
+      metadata: e.raw === undefined ? Prisma.JsonNull : (e.raw as Prisma.InputJsonValue),
+    })),
+    skipDuplicates: true,
+  });
+  return result.count;
+}
+
+/** Combat event from the /v2/user/attacks endpoint (source torn_api). */
+export interface CombatEventInput {
+  occurredAt: Date;
+  attackId: number;
+  direction: "outgoing" | "incoming";
+  opponentId: number | null;
+  opponentName: string | null;
+  result: string;
+  respectDelta: number | null;
+  modifiers: Record<string, unknown> | null;
+  raw: unknown;
+}
+
+export async function insertCombatEvents(db: PrismaClientType, userId: string, events: CombatEventInput[]): Promise<number> {
+  if (events.length === 0) return 0;
+  const result = await db.combatEvent.createMany({
+    data: events.map((e) => ({
+      userId,
+      occurredAt: e.occurredAt,
+      direction: e.direction,
+      opponentId: e.opponentId,
+      opponentName: e.opponentName,
+      result: e.result,
+      respectDelta: e.respectDelta,
+      modifiers: e.modifiers === null ? Prisma.JsonNull : (e.modifiers as Prisma.InputJsonValue),
+      source: "torn_api",
+      sourceRef: `attack:${e.attackId}`,
       metadata: e.raw === undefined ? Prisma.JsonNull : (e.raw as Prisma.InputJsonValue),
     })),
     skipDuplicates: true,

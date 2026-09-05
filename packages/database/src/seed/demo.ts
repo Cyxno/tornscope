@@ -363,7 +363,62 @@ async function main(): Promise<void> {
   }
   await db.timelineEvent.createMany({ data: tornEventRows, skipDuplicates: true });
 
+  // ---- Crimes & Combat (simulated, demo user only) ----
+  const crimeRows = Array.from({ length: 240 }, (_, i) => {
+    const ts = new Date((now - (i % 170) * DAY - (i % 7) * 3600) * 1000);
+    const success = i % 3 !== 0;
+    const money = success && i % 4 === 0 ? (i % 9) * 125_000 + 40_000 : null;
+    return {
+      userId: user.id,
+      occurredAt: ts,
+      crimeId: 1000 + (i % 12),
+      crimeName: i % 2 === 0 ? "copying DVDs" : "shoplifting from the Jewelry Store",
+      crimeCategory: i % 2 === 0 ? "legacy" : "new",
+      success,
+      nerveUsed: 2 + (i % 4),
+      moneyDelta: money !== null ? BigInt(money) : null,
+      itemsValue: success && i % 5 === 0 ? BigInt((i % 7) * 9_500) : null,
+      jailSeconds: !success && i % 8 === 0 ? 3_600 : null,
+      hospitalSeconds: null,
+      skillGain: null,
+      source: "demo",
+      sourceRef: `demo:crime:${i}`,
+      metadata: { simulated: true },
+    };
+  });
+  await db.crimeEvent.createMany({ data: crimeRows, skipDuplicates: true });
+
+  const opponents: Array<[number, string | null, string]> = [
+    [777001, "DEMO_Rival", "Attacked"],
+    [777002, "DEMO_Target", "Mugged"],
+    [777003, "DEMO_Bully", "Lost"],
+    [777004, "DEMO_Ghost", "Hospitalized"],
+    [777005, null, "Attacked"],
+  ];
+  const combatRows = Array.from({ length: 120 }, (_, i) => {
+    const ts = new Date((now - (i % 160) * DAY - (i % 5) * 5400) * 1000);
+    const opponentTuple = opponents[i % opponents.length]!;
+    const [opponentId, opponentName, result] = opponentTuple;
+    const incoming = i % 9 === 0;
+    return {
+      userId: user.id,
+      occurredAt: ts,
+      direction: incoming ? "incoming" : "outgoing",
+      opponentId: opponentId,
+      opponentName: opponentName,
+      result: result,
+      respectDelta: i % 3 !== 0 ? 1.5 + (i % 10) / 10 : 0,
+      modifiers: { simulated: true },
+      source: "demo",
+      sourceRef: `demo:attack:${i}`,
+      metadata: { simulated: true },
+    };
+  });
+  await db.combatEvent.createMany({ data: combatRows, skipDuplicates: true });
+
   const counts = {
+    crimes: crimeRows.length,
+    combat: combatRows.length,
     drugs: drugRows.length,
     rehab: rehabRows.length,
     money: moneyRows.length,

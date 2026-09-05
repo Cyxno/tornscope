@@ -20,6 +20,7 @@ import { getDrugsSummary } from "./services/drugs.js";
 import { getTravelHistory, getTravelSummary } from "./services/travel.js";
 import { getNetworth } from "./services/networth.js";
 import { getEconomySummary } from "./services/economy.js";
+import { getCrimesSummary, getCrimesTimeline, getCombatSummary, getCombatTimeline } from "./services/crimesCombat.js";
 import { getTimeline } from "./services/timeline.js";
 import { getDashboard } from "./services/dashboard.js";
 import { getToday } from "./services/today.js";
@@ -128,6 +129,32 @@ export function registerRoutes(app: FastifyInstance): void {
       dailySeries: summary.dailySeries,
       byDrug: summary.byDrug,
     };
+  });
+
+  app.get("/api/crimes/summary", async (req) => {
+    const user = await resolveCurrentUser();
+    const range = parseRange(req.query as Record<string, unknown>);
+    return getCrimesSummary(user.id, range);
+  });
+
+  app.get("/api/crimes/timeline", async (req) => {
+    const user = await resolveCurrentUser();
+    const range = parseRange(req.query as Record<string, unknown>);
+    const pagination = parsePagination(req.query as Record<string, unknown>);
+    return getCrimesTimeline(user.id, range, pagination.limit, pagination.cursor);
+  });
+
+  app.get("/api/combat/summary", async (req) => {
+    const user = await resolveCurrentUser();
+    const range = parseRange(req.query as Record<string, unknown>);
+    return getCombatSummary(user.id, range);
+  });
+
+  app.get("/api/combat/timeline", async (req) => {
+    const user = await resolveCurrentUser();
+    const range = parseRange(req.query as Record<string, unknown>);
+    const pagination = parsePagination(req.query as Record<string, unknown>);
+    return getCombatTimeline(user.id, range, pagination.limit, pagination.cursor);
   });
 
   app.get("/api/rehab", async (req) => {
