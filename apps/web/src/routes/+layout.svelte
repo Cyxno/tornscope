@@ -17,8 +17,14 @@
   });
 
   // First-run flow: without a connected Torn player, route to /welcome.
+  // Settings stays reachable — it hosts the legacy owner recovery flow.
   $effect(() => {
-    if (me.loaded && me.data?.needsOnboarding && page.url.pathname !== "/welcome") {
+    if (
+      me.loaded &&
+      me.data?.needsOnboarding &&
+      page.url.pathname !== "/welcome" &&
+      page.url.pathname !== "/settings"
+    ) {
       void goto("/welcome");
     }
   });

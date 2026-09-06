@@ -198,23 +198,25 @@ export async function bindLegacyOwner(req: FastifyRequest, reply: FastifyReply, 
 
   // Bind: point the current browser's session at the owner profile. In
   // recovery mode, prior active owner sessions are revoked first so a stale
-  // or leaked browser session cannot share the profile silently.
+  // or leaked browser session cannot share the profile silently. Works even
+  // when the browser has NO valid session (dead/stale cookie): a new session
+  // bound to the owner is created here — the secret token is the only gate,
+  // which is why the route itself is rate-limited.
   if (recoveryMode) {
     await db.userSession.updateMany({ where: { userId: owner.id, revokedAt: null }, data: { revokedAt: new Date() } });
   }
   const cookies = parseCookies(req.headers.cookie);
   const existingToken = cookies[SESSION_COOKIE];
   const fresh = newSessionToken();
+  let bound = false;
   if (existingToken) {
     const session = await db.userSession.findUnique({ where: { tokenHash: hashToken(existingToken) } });
     if (session && !session.revokedAt) {
       await db.userSession.update({ where: { id: session.id }, data: { userId: owner.id } });
-      reply.header("Set-Cookie", serializeSessionCookie(existingToken, requestIsSecure(req), SESSION_TTL_SECONDS));
-    } else {
-      await db.userSession.create({ data: { userId: owner.id, tokenHash: hashToken(fresh) } });
-      reply.header("Set-Cookie", serializeSessionCookie(fresh, requestIsSecure(req), SESSION_TTL_SECONDS));
+      bound = true;
     }
-  } else {
+  }
+  if (!bound) {
     await db.userSession.create({ data: { userId: owner.id, tokenHash: hashToken(fresh) } });
     reply.header("Set-Cookie", serializeSessionCookie(fresh, requestIsSecure(req), SESSION_TTL_SECONDS));
   }
@@ -227,15 +229,21 @@ export async function bindLegacyOwner(req: FastifyRequest, reply: FastifyReply, 
 }
 
 /** Whether the bind flow is still possible (token configured + not claimed). */
-export async function ownerBindAvailable(): Promise<boolean> {
+/**
+ * Whether the LEGACY OWNER RECOVERY/BINDING section is meaningful for the
+ * given viewer: it is hidden from the owner themselves (nothing to restore)
+ * and shown to everyone else only while a token is configured server-side.
+ */
+export async function ownerBindAvailableFor(viewerUserId: string): Promise<boolean> {
   if (!env.ownerBindEnabled) return false;
   const recoveryConfigured = Boolean(process.env.OWNER_RECOVERY_TOKEN);
-  if (!process.env.OWNER_BIND_TOKEN && !recoveryConfigured) return false;
+  const bindOpen = Boolean(process.env.OWNER_BIND_TOKEN);
+  if (!bindOpen && !recoveryConfigured) return false;
   const db = getPrismaClient();
   const owner = await db.user.findFirst({ where: { role: "owner", isDemo: false }, orderBy: { createdAt: "asc" }, select: { id: true } });
   if (!owner) return false;
+  if (viewerUserId === owner.id) return false; // the owner needs no recovery
   const bound = await db.appSetting.findUnique({ where: { userId_key: { userId: owner.id, key: OWNER_BOUND_KEY } } });
-  // Either normal binding is still open, or recovery mode is configured.
   return !bound || recoveryConfigured;
 }
 

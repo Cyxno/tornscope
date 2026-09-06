@@ -62,8 +62,12 @@ export function registerRoutes(app: FastifyInstance): void {
   app.addHook("preHandler", async (req, reply) => {
     // Health checks (bots/monitors) never create profiles or need identity.
     const url = (req.raw.url ?? "").split("?")[0]!;
-    if (url === "/api/health" || url === "/") {
-      (req as unknown as { currentUserValue: SessionUser | null }).currentUserValue = { id: "", displayName: "", role: "anonymous", isDemo: false, timezone: "UTC" };
+    if (url === "/api/health" || url === "/" || url === "/api/session/bind-owner") {
+      // bind-owner deliberately works WITHOUT a session: a browser whose
+      // cookie is stale and which is rate-limited must still be able to
+      // present the recovery token (creation limiter must not block it).
+      // Origin protection still applies.
+      assertSameOrigin(req);
       return;
     }
     (req as unknown as { currentUserValue: SessionUser | null }).currentUserValue = await resolveSessionUser(req, reply);

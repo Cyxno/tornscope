@@ -17,12 +17,17 @@
   let bindToken = $state("");
   let deletingProfile = $state(false);
 
-  async function load() {
+  async function load(attempt = 0): Promise<void> {
     try {
       [status, me] = await Promise.all([endpoints.apiKeyStatus(), endpoints.me()]);
+      loading = false;
     } catch (err) {
+      if (attempt < 2) {
+        await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+        await load(attempt + 1);
+        return;
+      }
       message = { tone: "err", text: err instanceof ApiClientError ? err.message : (err as Error).message };
-    } finally {
       loading = false;
     }
   }

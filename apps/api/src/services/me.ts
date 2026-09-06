@@ -2,7 +2,7 @@ import type { ApiKeyStatusResponse, MeResponse } from "@tornscope/shared";
 import { deriveSetupPhase, SYNC_RESOURCES, buildSyncJobId, SYNC_JOB_NAME, DEMO_USER_EMAIL, deriveKeyCapabilities, type KeyCapabilities } from "@tornscope/shared";
 import { normalizeDonatorStatus } from "@tornscope/torn-api";
 import { ensureSyncStates, getPrismaClient, upsertTornAccount } from "@tornscope/database";
-import { ownerBindAvailable } from "../auth.js";
+import { ownerBindAvailableFor } from "../auth.js";
 import { getApiContext } from "../context.js";
 import { errors, AppError } from "../errors.js";
 
@@ -81,7 +81,7 @@ export async function getMe(user: { id: string; displayName: string; timezone: s
     timezone: user.timezone,
     isDemo: user.isDemo,
     capabilities: capabilitiesRaw,
-    ownerBindAvailable: await ownerBindAvailable(),
+    ownerBindAvailable: await ownerBindAvailableFor(user.id),
     torn: account
       ? {
           tornId: account.tornId,
