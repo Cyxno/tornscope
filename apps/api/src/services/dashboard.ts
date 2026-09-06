@@ -9,6 +9,7 @@ import {
   aggregateCombatStats,
   aggregateCrimeStats,
   aggregateMoneyEvents,
+  aggregateMoneySemantics,
   calculateDrugStats,
   calculateNetworthPeriodChange,
   calculateRehabStats,
@@ -113,6 +114,7 @@ export async function getDashboard(userId: string, rangeInput: DateRangeInput): 
     source: r.source,
   }));
   const agg = aggregateMoneyEvents(moneyEvents, range.from, range.to, autoInterval(range));
+  const fin = aggregateMoneySemantics(moneyEvents, range.from, range.to);
 
   const trips = buildTripsForDashboard(travelEvents, travelItems, marketPrices);
   const travel = calculateTravelProfit(trips, range.from, range.to);
@@ -273,6 +275,31 @@ export async function getDashboard(userId: string, rangeInput: DateRangeInput): 
     networthChangePct: nwPeriod.changePct,
     networthCoverage: nwPeriod.coverage,
     networthTrackingSince: nwPeriod.trackedFrom,
+    financial: {
+      cashInflow: {
+        value: moneyAvailability === "unavailable" ? null : fin.cashInflow,
+        provenance: "derived",
+        availability: moneyAvailability,
+      },
+      cashOutflow: {
+        value: moneyAvailability === "unavailable" ? null : fin.cashOutflow,
+        provenance: "derived",
+        availability: moneyAvailability,
+      },
+      trueIncome: fin.trueIncome,
+      trueExpense: fin.trueExpense,
+      assetSales: fin.assetInflow,
+      assetPurchases: fin.assetOutflow,
+      unknownValue: fin.unknownValue,
+      economicGain: {
+        // The defensible economic measure: official net worth snapshot change.
+        value: nwPeriod.change,
+        provenance: "exact",
+        // Partial coverage = the tracked window is shorter than the range.
+        availability: nwPeriod.coverage === "none" ? "unavailable" : nwPeriod.coverage === "partial" ? "incomplete" : "ok",
+      },
+      economicGainBaselineAt: nwPeriod.baseline?.capturedAt ?? nwPeriod.trackedFrom ?? null,
+    },
     faction: factionSummary,
     crimes:
       crimeRows.length > 0

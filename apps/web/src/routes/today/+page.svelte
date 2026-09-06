@@ -182,13 +182,19 @@
   /**
    * Torn links come from the shared, audited TORN_URLS registry (travel.php
    * is dead — the hub is page.php?sid=travel). Cooldown rows open the
-   * inventory page where drugs / medical items / boosters are used.
+   * inventory page where drugs / medical items / boosters are used. Bars link
+   * only where a stable destination exists: Energy -> Gym, Nerve -> Crimes.
+   * Happy and Life have no useful stable page, so they get none.
    */
   const TORN_TRAVEL_LINK = TORN_URLS.travel;
   const TORN_ITEM_LINKS: Record<string, string> = {
     drug: TORN_URLS.items,
     medical: TORN_URLS.items,
     booster: TORN_URLS.items,
+  };
+  const BAR_LINKS: Partial<Record<string, string>> = {
+    energy: TORN_URLS.gym,
+    nerve: TORN_URLS.crimes,
   };
 </script>
 
@@ -268,8 +274,15 @@
       <p class="pt-4 text-[11px] font-semibold uppercase tracking-[0.2em] text-fg-faint">Live state</p>
       <div>
         {#each bars as bar, i (i)}
+          {@const barLink = bar ? BAR_LINKS[bar.key] : undefined}
           <div class="flex flex-col gap-2 border-b border-border/60 py-4 last:border-0 md:flex-row md:items-center md:gap-6">
-            <span class="w-20 shrink-0 text-[13px] font-medium text-fg">{bar?.label ?? "—"}</span>
+            {#if barLink}
+              <a href={barLink} target="_blank" rel="noopener noreferrer" class="w-20 shrink-0 text-[13px] font-medium text-fg transition-colors hover:text-accent">
+                {bar?.label ?? "—"} <span class="text-[10px] uppercase tracking-wide text-fg-faint">↗</span>
+              </a>
+            {:else}
+              <span class="w-20 shrink-0 text-[13px] font-medium text-fg">{bar?.label ?? "—"}</span>
+            {/if}
             {#if bar}
               <div class="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-surface-2" role="progressbar" aria-label={bar.label} aria-valuenow={bar.percent} aria-valuemin={0} aria-valuemax={100}>
                 <div

@@ -156,7 +156,13 @@
               {/if}
             </span>
             <span class="text-fg-faint">
-              {data.networthCoverage === "partial" ? `tracked ${period.toLowerCase()} networth change` : `${period} networth change`}
+              {#if data.networthCoverage === "none"}
+                networth change
+              {:else if data.networthCoverage === "partial" && data.financial.economicGainBaselineAt !== null}
+                economic gain/loss · tracked from {formatDate(data.financial.economicGainBaselineAt)} — partial coverage of the selected range
+              {:else}
+                {period} economic gain/loss
+              {/if}
             </span>
           </span>
           <span class="flex items-baseline gap-1.5 text-fg-muted">
@@ -181,8 +187,20 @@
       </div>
       <div class="grid grid-cols-2 gap-px border-t border-border bg-border md:grid-cols-4">
         <Stat label="Cash" value={formatKpiValue(data.cash)} provenance="exact" />
-        <Stat label="{period} income" value={formatKpiValue(data.income)} provenance="derived" tone="positive" sub={data.income.availability === "incomplete" ? "some logs unclassified" : null} />
-        <Stat label="{period} expenses" value={formatKpiValue(data.expenses)} provenance="derived" tone="negative" sub={data.expenses.availability === "incomplete" ? "some logs unclassified" : null} />
+        <Stat
+          label="{period} Cash Inflow"
+          value={formatKpiValue(data.financial.cashInflow)}
+          provenance="derived"
+          tone="positive"
+          sub={`earned ${formatMoneyCompact(data.financial.trueIncome)} · asset sales ${formatMoneyCompact(data.financial.assetSales)}`}
+        />
+        <Stat
+          label="{period} Cash Outflow"
+          value={formatKpiValue(data.financial.cashOutflow)}
+          provenance="derived"
+          tone="negative"
+          sub={`true expenses ${formatMoneyCompact(data.financial.trueExpense)} · asset purchases ${formatMoneyCompact(data.financial.assetPurchases)}`}
+        />
         <Stat label="Rehab spend" value={formatKpiValue(data.rehabSpend)} provenance={data.rehabSpend.provenance} />
       </div>
     </section>
@@ -205,7 +223,7 @@
     <!-- Flow + activity -->
     <section class="grid gap-6 lg:grid-cols-6">
       <div class="lg:col-span-2">
-        <Panel title="Money came from" caption="Cash income in range — sales proceeds are cash, not profit">
+        <Panel title="Cash inflow" caption="Everything that entered the wallet — earnings and asset sales are different things">
           {#if topIncome.length === 0}
             <StateMessage state="empty" title="No money events in this range" />
           {:else}
@@ -224,15 +242,16 @@
             </ul>
             {#if soldInventoryIncome > 0}
               <p class="mt-4 border-t border-border pt-3 text-[11px] leading-relaxed text-fg-faint">
-                Includes {formatMoneyCompact(soldInventoryIncome)} received from selling items (bazaar, item market, trades).
-                That is inventory turning into cash — not profit; the Networth Change above shows the real economic effect.
+                Includes {formatMoneyCompact(soldInventoryIncome)} from selling assets (bazaar, item market, trades) — that is
+                <span class="text-fg-muted">Asset Movement</span>, not earnings. It does not count as profit: the items left your inventory.
+                True economic gain is the Net Worth Change above.
               </p>
             {/if}
           {/if}
         </Panel>
       </div>
       <div class="lg:col-span-2">
-        <Panel title="Money spent on" caption="Cash expenses in range — the other side of the ledger">
+        <Panel title="Cash outflow" caption="Everything that left the wallet — true expenses and asset purchases are different things">
           {#if topExpenses.length === 0}
             <StateMessage state="empty" title="No cash expenses in this range" />
           {:else}
@@ -249,6 +268,13 @@
                 </li>
               {/each}
             </ul>
+            {#if data.financial.assetPurchases > 0}
+              <p class="mt-4 border-t border-border pt-3 text-[11px] leading-relaxed text-fg-faint">
+                {formatMoneyCompact(data.financial.assetPurchases)} of this bought assets you still own (items, points, stocks,
+                bank deposits) — <span class="text-fg-muted">Asset Movement</span>, not economic loss. True expenses:
+                {formatMoneyCompact(data.financial.trueExpense)}.
+              </p>
+            {/if}
           {/if}
         </Panel>
       </div>

@@ -58,6 +58,7 @@ export const CONSUMPTION_CATEGORIES = [
   "candy",
   "happy_jump",
   "temporary",
+  "drug_pack",
   "other",
 ] as const;
 export type ConsumptionCategory = (typeof CONSUMPTION_CATEGORIES)[number];
@@ -254,6 +255,10 @@ export function consumptionCategoryFor(
 ): ConsumptionCategory | null {
   const t = catalogType?.toLowerCase();
   if (t === "special") return specialItemCategory(itemName);
+  // Named refinements first: high-value containers and multi-item boxes must
+  // never dissolve into the unexplained "other" bucket.
+  if (/drug pack/i.test(itemName)) return "drug_pack";
+  if (/medical supplies/i.test(itemName)) return "medical";
   const mapped = t ? CONSUMABLE_TYPE_CATEGORY[t] : undefined;
   if (mapped) return mapped;
   if (t === undefined) {

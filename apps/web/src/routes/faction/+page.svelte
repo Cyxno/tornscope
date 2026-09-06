@@ -1,6 +1,6 @@
 <script lang="ts">
-  import type { FactionOverviewResponse, FactionRankedWarsResponse, FactionMembersResponse, FactionChainsResponse, FactionOcsResponse, FactionLedgerResponse } from "@tornscope/shared";
-  import { formatMoneyCompact, formatDateTime, formatSignedMoney, formatDuration, formatDate } from "@tornscope/shared";
+  import type { FactionOverviewResponse, FactionRankedWarsResponse, FactionMembersResponse, FactionOcsResponse, FactionLedgerResponse } from "@tornscope/shared";
+  import { formatMoneyCompact, formatDateTime, formatSignedMoney, formatDate } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
   import { dateRange } from "$lib/state.svelte";
   import PageHeader from "$lib/components/PageHeader.svelte";
@@ -9,13 +9,12 @@
   import SegmentedDateRange from "$lib/components/SegmentedDateRange.svelte";
   import StateMessage from "$lib/components/StateMessage.svelte";
 
-  type Tab = "overview" | "wars" | "members" | "chains" | "oc" | "ledger";
+  type Tab = "overview" | "wars" | "members" | "oc" | "ledger";
 
   let tab = $state<Tab>("overview");
   let overview = $state<FactionOverviewResponse | null>(null);
   let wars = $state<FactionRankedWarsResponse | null>(null);
   let members = $state<FactionMembersResponse | null>(null);
-  let chains = $state<FactionChainsResponse | null>(null);
   let ocs = $state<FactionOcsResponse | null>(null);
   let ledger = $state<FactionLedgerResponse | null>(null);
   let loading = $state(true);
@@ -30,7 +29,6 @@
       overview = await endpoints.factionOverview(range);
       if (tab === "wars") wars = await endpoints.factionRankedWars(range);
       if (tab === "members") members = await endpoints.factionMembers(range);
-      if (tab === "chains") chains = await endpoints.factionChains(range);
       if (tab === "oc") ocs = await endpoints.factionOcs(range);
       if (tab === "ledger") ledger = await endpoints.factionLedger(range);
     } catch (err) {
@@ -52,11 +50,12 @@
     void load();
   });
 
+  // Chains were folded into Overview (latest chain); the chains API and stored
+  // data remain available — the tab only hid rows of numbers with no action.
   const tabs: Array<{ id: Tab; label: string }> = [
     { id: "overview", label: "Overview" },
     { id: "wars", label: "Ranked Wars" },
     { id: "members", label: "Members" },
-    { id: "chains", label: "Chains" },
     { id: "oc", label: "Organized Crime" },
     { id: "ledger", label: "Finance" },
   ];
@@ -79,7 +78,7 @@
   <PageHeader
     eyebrow="Faction"
     title={overview?.faction.name ?? "Faction"}
-    description="Ranked wars, members, chains, organized crime and faction finance — exact where Torn provides it, honest where it doesn't."
+    description="Your faction at a glance — wars, roster, organized crime and the money that actually reached you."
   >
     {#snippet actions()}
       <SegmentedDateRange />
@@ -251,39 +250,6 @@
           <p class="px-6 pt-3 text-xs text-fg-faint">War attacks/respect are only attributable to your own attacks (Torn attack rows carry no faction-member ids) — everyone else keeps honest zeros.</p>
         {/if}
       </Panel>
-    {:else if tab === "chains" && chains}
-      <Panel title="Faction chains" caption="Historical chains with your participation" flush>
-        {#if chains.chains.length === 0}
-          <StateMessage state="empty" title="No chains stored in this range" hint="Chains sync from the faction chains endpoint." />
-        {:else}
-          <div class="overflow-x-auto">
-            <table class="w-full text-left text-[13px]">
-              <thead>
-                <tr class="border-b border-border text-[11px] uppercase tracking-[0.12em] text-fg-faint">
-                  <th class="py-2.5 pl-6 pr-4 font-medium">Started</th>
-                  <th class="py-2.5 pr-4 text-right font-medium">Max chain</th>
-                  <th class="py-2.5 pr-4 text-right font-medium">Respect</th>
-                  <th class="py-2.5 pr-4 text-right font-medium">Duration</th>
-                  <th class="py-2.5 pr-4 text-right font-medium">My attacks</th>
-                  <th class="py-2.5 pr-6 text-right font-medium">My respect</th>
-                </tr>
-              </thead>
-              <tbody>
-                {#each chains.chains as c (c.chainId)}
-                  <tr class="border-b border-border/50 last:border-0 hover:bg-surface-2/50">
-                    <td class="tnum whitespace-nowrap py-2.5 pl-6 pr-4 text-xs text-fg-faint">{formatDateTime(c.startedAt)}</td>
-                    <td class="tnum py-2.5 pr-4 text-right font-medium text-fg">{c.chain}</td>
-                    <td class="tnum py-2.5 pr-4 text-right text-fg-muted">{c.respect?.toFixed(1) ?? "—"}</td>
-                    <td class="tnum py-2.5 pr-4 text-right text-fg-muted">{formatDuration(c.durationSeconds)}</td>
-                    <td class="tnum py-2.5 pr-4 text-right text-fg-muted">{c.myAttacks}</td>
-                    <td class="tnum py-2.5 pr-6 text-right text-fg-muted">{c.myRespect.toFixed(1)}</td>
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
-          </div>
-        {/if}
-      </Panel>
     {:else if tab === "oc" && ocs}
       {@const active = ocs.ocs.filter((o) => o.state === "active")}
       {@const completed = ocs.ocs.filter((o) => o.state === "completed")}
@@ -405,32 +371,10 @@
         {/if}
       </Panel>
     {:else if tab === "ledger" && ledger}
-      <Panel title="Faction bank over time" caption="Snapshots of the faction balance (adaptive schedule)" flush>
-        {#if ledger.snapshots.length === 0}
-          <StateMessage state="empty" title="No balance snapshots in this range" hint="Snapshots accumulate as the faction sync runs." />
-        {:else}
-          <div class="overflow-x-auto">
-            <table class="w-full text-left text-[13px]">
-              <thead>
-                <tr class="border-b border-border text-[11px] uppercase tracking-[0.12em] text-fg-faint">
-                  <th class="py-2.5 pl-6 pr-4 font-medium">Captured</th>
-                  <th class="py-2.5 pr-4 text-right font-medium">Faction money</th>
-                  <th class="py-2.5 pr-6 text-right font-medium">Points</th>
-                </tr>
-              </thead>
-              <tbody>
-                {#each ledger.snapshots.slice(-30).reverse() as s (s.capturedAt)}
-                  <tr class="border-b border-border/50 last:border-0">
-                    <td class="tnum whitespace-nowrap py-2.5 pl-6 pr-4 text-xs text-fg-faint">{formatDateTime(s.capturedAt)}</td>
-                    <td class="tnum py-2.5 pr-4 text-right font-medium text-fg">{formatMoneyCompact(s.money)}</td>
-                    <td class="tnum py-2.5 pr-6 text-right text-fg-muted">{s.points ?? "—"}</td>
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
-          </div>
-        {/if}
-      </Panel>
+      <p class="text-xs text-fg-faint">
+        Faction bank snapshots stay collected in the background (latest: {ledger.snapshots.length > 0 ? `${formatMoneyCompact(ledger.snapshots[ledger.snapshots.length - 1]!.money)} · ${formatDate(ledger.snapshots[ledger.snapshots.length - 1]!.capturedAt)}` : "—"})
+        — the actionable view is your labeled income below.
+      </p>
       <Panel title="My faction income" caption="Canonical personal ledger rows — labelled by their actual source" flush>
         {#if ledger.payouts.length === 0}
           <StateMessage state="empty" title="No faction income in this range" />

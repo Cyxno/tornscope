@@ -60,7 +60,45 @@ export const TORN_URLS = {
   items: "https://www.torn.com/item.php",
   bank: "https://www.torn.com/bank.php",
   education: "https://www.torn.com/education.php",
+  /** Live-bar quick links (audited 2026-09): gym + crimes hubs are stable. */
+  gym: "https://www.torn.com/gym.php",
+  crimes: "https://www.torn.com/page.php?sid=crimes",
 } as const;
+
+/* -------------------------------------------------------------------------- */
+/* Combat feed semantics (user-perspective verb + outcome)                     */
+/* -------------------------------------------------------------------------- */
+
+export type CombatOutcome = "won" | "lost" | "neutral";
+
+/**
+ * User-perspective semantics for one attack record.
+ *
+ * Torn's `result` is written from the ATTACKER's point of view, so the feed
+ * verb must follow DIRECTION, not the raw result string:
+ *   outgoing -> "Attacked"   (did my attack succeed?)
+ *   incoming -> "Defended"   (did my defense hold?)
+ * Color/status carries the outcome; the raw result (Mugged, Hospitalized,
+ * Lost, Stalemate, ...) stays as context.
+ */
+export function combatEventSemantics(
+  direction: "outgoing" | "incoming",
+  result: string
+): { verb: string; outcome: CombatOutcome; context: string | null } {
+  const win = new Set(["Attacked", "Mugged", "Hospitalized", "Arrested", "Special"]);
+  const attackerLost = new Set(["Lost", "Defended"]);
+  const outgoing = direction === "outgoing";
+  let outcome: CombatOutcome;
+  if (outgoing) {
+    outcome = win.has(result) ? "won" : attackerLost.has(result) ? "lost" : "neutral";
+  } else {
+    // Incoming: attacker success = my loss; Lost/Defended = my defense held.
+    outcome = win.has(result) ? "lost" : attackerLost.has(result) ? "won" : "neutral";
+  }
+  // Context chip only when the result adds information beyond the verb.
+  const context = result && !/^(attacked|defended)$/i.test(result) ? result : null;
+  return { verb: outgoing ? "Attacked" : "Defended", outcome, context };
+}
 
 /** Central money ledger categories. */
 export const MONEY_CATEGORIES = [

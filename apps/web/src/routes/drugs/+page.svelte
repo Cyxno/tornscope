@@ -133,11 +133,31 @@
     <!-- Quiet stat strip -->
     <div class="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border shadow-panel md:grid-cols-5">
       <Stat label="Total uses" value={String(data.overall.totalUses)} provenance="exact" tone="accent" />
+      <Stat
+        label="Xanax / day"
+        value={data.overall.xanaxPerDay !== null ? String(data.overall.xanaxPerDay) : "—"}
+        provenance="derived"
+        sub={data.overall.coverage === "partial" ? `partial: ${data.overall.coveredDays}d covered` : data.overall.coveredDays !== null ? `${data.overall.coveredDays}d covered` : null}
+      />
       <Stat label="Overdoses" value={String(data.overall.overdoses)} provenance="exact" tone={data.overall.overdoses > 0 ? "negative" : "neutral"} />
-      <Stat label="Overdose rate" value={`${(data.overall.overdoseRate * 100).toFixed(1)}%`} provenance="derived" />
       <Stat label="Estimated spend" value={formatMoneyCompact(data.overall.estimatedSpend.value)} provenance="estimated" />
       <Stat label="Avg cost / use" value={formatMoneyCompact(data.overall.averageCostPerUse.value)} provenance="estimated" />
     </div>
+
+    {#if data.xanaxFunding.used > 0}
+      <p class="rounded-xl border border-border bg-surface px-5 py-3 text-xs leading-relaxed text-fg-muted">
+        <span class="font-medium text-fg">Xanax funding:</span>
+        {data.xanaxFunding.used} used —
+        {data.xanaxFunding.personal} personally funded
+        {#if data.xanaxFunding.factionSponsored > 0}
+          · <span class="text-positive">{data.xanaxFunding.factionSponsored} faction-sponsored</span> (linked to faction armory/transfer records; not personal cost)
+        {/if}
+        {#if data.xanaxFunding.unknownFunded > 0}
+          · {data.xanaxFunding.unknownFunded} from untraceable sources (gifts)
+        {/if}.
+        <span class="text-fg-faint">A use is only called sponsored when a faction transfer record names Xanax within the match window — war timing alone is never treated as sponsorship.</span>
+      </p>
+    {/if}
 
     <!-- Hero chart -->
     <Panel title="Daily drug use" caption="Successful uses vs overdoses — scroll or pinch inside the chart to zoom" flush>
@@ -158,21 +178,38 @@
         {/if}
       </Panel>
 
-      <Panel title="Rehab" caption="Visits, spend and recent history">
+      <Panel title="Rehab" caption="Hospital trips (sessions clustered within 12h), spend and trend">
         <div class="grid grid-cols-3 gap-4">
           <div>
-            <p class="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint">Trips</p>
+            <p class="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint">Hospital trips</p>
             <p class="tnum mt-1 text-xl font-semibold text-fg">{data.rehab.trips}</p>
+            <p class="tnum text-[11px] text-fg-faint">{data.rehab.sessions} sessions</p>
+          </div>
+          <div>
+            <p class="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint">Sessions / trip</p>
+            <p class="tnum mt-1 text-xl font-semibold text-fg">{data.rehab.averageSessionsPerTrip ?? "—"}</p>
+            <p class="tnum text-[11px] text-fg-faint">{data.rehab.averageCostPerSession.value !== null ? `${formatMoneyCompact(data.rehab.averageCostPerSession.value).replace("-", "")}/session` : ""}</p>
           </div>
           <div>
             <p class="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint">Total spend</p>
             <p class="tnum mt-1 text-xl font-semibold text-negative">{data.rehab.totalSpend.value !== null ? `-${formatMoneyCompact(data.rehab.totalSpend.value).replace("-", "")}` : "—"}</p>
-          </div>
-          <div>
-            <p class="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint">Latest</p>
-            <p class="tnum mt-1 text-sm font-medium text-fg">{data.rehab.latestAt ? formatDateTime(data.rehab.latestAt) : "—"}</p>
+            <p class="tnum text-[11px] text-fg-faint">{data.rehab.averageCostPerTrip.value !== null ? `${formatMoneyCompact(data.rehab.averageCostPerTrip.value).replace("-", "")}/trip` : ""}</p>
           </div>
         </div>
+        {#if data.rehab.tripTrend.length >= 2}
+          <div class="mt-4">
+            <p class="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint">Cost per trip (oldest → newest)</p>
+            <div class="mt-2 flex items-end gap-1.5">
+              {#each data.rehab.tripTrend.slice(-16) as trip, i (trip.startedAt)}
+                {@const maxCost = Math.max(...data.rehab.tripTrend.slice(-16).map((t) => t.cost ?? 0), 1)}
+                <div class="group relative flex-1" title="{formatDateTime(trip.startedAt)} · {trip.sessions} session{trip.sessions === 1 ? '' : 's'} · {trip.cost !== null ? `-${formatMoneyCompact(trip.cost)}` : 'cost unknown'}">
+                  <div class="w-full rounded-t bg-negative/60 transition-colors group-hover:bg-negative" style="height: {Math.max(4, Math.round(((trip.cost ?? 0) / maxCost) * 64))}px"></div>
+                </div>
+              {/each}
+            </div>
+            <p class="mt-1 text-[11px] text-fg-faint">Rehab cost rises as addiction deepens — each consecutive session within a trip costs more.</p>
+          </div>
+        {/if}
         {#if data.rehab.recent.length === 0}
           <div class="mt-4">
             <StateMessage state="empty" title="No rehab visits in this range" />

@@ -1,7 +1,79 @@
 import { autoInterval, resolveDateRange, type DateRangeInput, type EconomySummaryResponse, type KpiAvailability, type MoneyCategory } from "@tornscope/shared";
-import { aggregateMoneyEvents, aggregateConsumption, calculateTravelProfit, type ConsumptionEventLike } from "@tornscope/analytics";
+import { aggregateMoneyEvents, aggregateMoneySemantics, aggregateConsumption, calculateTravelProfit, type ConsumptionEventLike } from "@tornscope/analytics";
 import { bigintToNumber, getPrismaClient, loadMarketPrices } from "@tornscope/database";
 import { getNetworthPeriodForRange } from "./networth.js";
+
+/** Sale categories whose proceeds are asset conversions, not earnings. */
+const SALE_CATEGORIES = new Set(["bazaar", "items", "trading", "auction"]);
+
+/**
+ * Value the inventory removed by item SALES. Torn's sale logs carry the exact
+ * item ids/quantities (metadata.data.items); catalog market prices give the
+ * estimated asset value that left the inventory. The difference against the
+ * cash received is the ESTIMATED economic result of selling — never labeled
+ * as trading profit, because the acquisition cost basis is unknown.
+ */
+function valueSoldInventory(
+  rows: Array<{ category: string; direction: string; amount: bigint; metadata: unknown }>,
+  marketPrices: Map<number, bigint>
+): { cashReceived: number; inventoryValueRemoved: number | null; rowsValued: number; rowsTotal: number } {
+  let cashReceived = 0;
+  let inventoryValue = 0;
+  let rowsValued = 0;
+  let rowsTotal = 0;
+  for (const r of rows) {
+    if (!SALE_CATEGORIES.has(r.category) || r.direction !== "income") continue;
+    rowsTotal += 1;
+    cashReceived += bigintToNumber(r.amount) ?? 0;
+    const meta = (r.metadata ?? {}) as { data?: { items?: Array<{ id?: number; qty?: number }> } };
+    const items = meta.data?.items;
+    if (!Array.isArray(items) || items.length === 0) continue;
+    let valued = 0;
+    let known = true;
+    for (const item of items) {
+      const price = typeof item.id === "number" ? marketPrices.get(item.id) : undefined;
+      const qty = typeof item.qty === "number" ? item.qty : 0;
+      if (price === undefined) {
+        known = false;
+        continue;
+      }
+      valued += Number(price) * qty;
+    }
+    if (known && valued > 0) {
+      inventoryValue += valued;
+      rowsValued += 1;
+    }
+  }
+  return { cashReceived, inventoryValueRemoved: rowsValued > 0 ? inventoryValue : null, rowsValued, rowsTotal };
+}
+
+/** Non-cash wealth gains: item rewards from crimes and organized crimes (est.). */
+async function nonCashWealthGains(db: ReturnType<typeof getPrismaClient>, userId: string, from: Date, to: Date): Promise<number | null> {
+  const [crimeItems, ocs, marketPrices] = await Promise.all([
+    db.crimeEvent.aggregate({
+      where: { userId, occurredAt: { gte: from, lte: to }, itemsValue: { not: null } },
+      _sum: { itemsValue: true },
+    }),
+    db.organizedCrime.findMany({
+      where: { userId, executedAt: { gte: from, lte: to } },
+      select: { rewards: true },
+    }),
+    loadMarketPrices(db),
+  ]);
+  let total = Number(crimeItems._sum.itemsValue ?? 0n);
+  let any = (crimeItems._sum.itemsValue ?? 0n) > 0n;
+  for (const oc of ocs) {
+    const rewards = (oc.rewards ?? {}) as { items?: Array<{ id?: number; quantity?: number }> };
+    if (!Array.isArray(rewards.items)) continue;
+    for (const item of rewards.items) {
+      const price = typeof item.id === "number" ? marketPrices.get(item.id) : undefined;
+      if (price === undefined) continue;
+      total += Number(price) * (typeof item.quantity === "number" ? item.quantity : 1);
+      any = true;
+    }
+  }
+  return any ? total : null;
+}
 
 /**
  * Economy view: the three financial concepts, cleanly separated.
@@ -26,7 +98,7 @@ export async function getEconomySummary(userId: string, rangeInput: DateRangeInp
   const [moneyRows, unknownCount, consumptionRows, travelEvents, travelItems, marketPrices, nwPeriod, syncStates] = await Promise.all([
     db.moneyEvent.findMany({
       where: { userId, occurredAt: { gte: from, lte: to } },
-      select: { id: true, occurredAt: true, category: true, subcategory: true, direction: true, amount: true },
+      select: { id: true, occurredAt: true, category: true, subcategory: true, direction: true, amount: true, description: true, metadata: true },
     }),
     db.moneyEvent.count({ where: { userId, direction: "unknown", occurredAt: { gte: from, lte: to } } }),
     db.consumptionEvent.findMany({
@@ -55,8 +127,13 @@ export async function getEconomySummary(userId: string, rangeInput: DateRangeInp
     subcategory: r.subcategory,
     direction: r.direction as "income" | "expense" | "neutral" | "unknown",
     amount: bigintToNumber(r.amount) ?? 0,
+    description: r.description,
   }));
   const flow = aggregateMoneyEvents(moneyEvents, range.from, range.to, autoInterval(range));
+  const semantics = aggregateMoneySemantics(moneyEvents, range.from, range.to);
+  const sold = valueSoldInventory(moneyRows, marketPrices);
+  const salesEconomicResult = sold.inventoryValueRemoved !== null ? sold.cashReceived - sold.inventoryValueRemoved : null;
+  const nonCash = await nonCashWealthGains(db, userId, from, to);
   const cashAvailability: KpiAvailability =
     unknownCount > 0 ? "incomplete" : moneyRows.length === 0 ? "unavailable" : importing ? "importing" : "ok";
 
@@ -85,6 +162,21 @@ export async function getEconomySummary(userId: string, rangeInput: DateRangeInp
       unclassifiedCount: unknownCount,
       incomeByCategory: flow.incomeByCategory.map((c) => ({ category: c.category as MoneyCategory, total: c.total })),
       expensesByCategory: flow.expensesByCategory.map((c) => ({ category: c.category as MoneyCategory, total: c.total })),
+      // Earned vs converted: inflow/outflow split by economic meaning.
+      trueIncome: semantics.trueIncome,
+      trueExpense: semantics.trueExpense,
+      assetInflow: semantics.assetInflow,
+      assetOutflow: semantics.assetOutflow,
+    },
+    sales: {
+      cashReceived: sold.cashReceived,
+      inventoryValueRemoved: sold.inventoryValueRemoved,
+      economicResult: salesEconomicResult,
+      provenance: sold.inventoryValueRemoved !== null ? "estimated" : "unavailable",
+    },
+    nonCashGains: {
+      value: nonCash,
+      provenance: nonCash !== null ? "estimated" : "unavailable",
     },
     consumption: {
       uses: consumption.uses,

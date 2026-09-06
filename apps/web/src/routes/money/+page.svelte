@@ -72,14 +72,15 @@
   const period = $derived(periodLabel(dateRange.preset));
 
   const CONSUMPTION_LABELS: Record<string, string> = {
-    drug: "Drugs",
+    drug: "Drugs consumed",
     booster: "Boosters",
-    medical: "Medical",
+    medical: "Medical items",
     happy_jump: "Happy items",
     energy: "Energy drinks",
     candy: "Candy",
     temporary: "Temporary items",
-    other: "Other",
+    drug_pack: "Drug packs (multi-item boxes)",
+    other: "Other consumables",
   };
 
   const topConsumedValue = $derived(economy?.consumption.byCategory[0]?.totalValue || 1);
@@ -112,15 +113,15 @@
   const expenseBreakdown = $derived(
     (economy?.cashFlow.expensesByCategory ?? []).map((row) => ({
       label: EXPENSE_LABELS[row.category] ?? row.category,
+      category: String(row.category),
       total: row.total,
     }))
   );
 
   /**
    * Cash received from SELLING inventory (bazaar / item market / trades /
-   * auctions). Part of cash income by definition, but NOT economic gain:
-   * the items left the inventory. The net worth change in section C is where
-   * that value movement lands; the two are never merged into one "profit".
+   * auctions). Part of cash inflow by definition, but NOT economic gain:
+   * the items left the inventory.
    */
   const SALES_CATEGORIES = new Set(["bazaar", "items", "trading", "auction"]);
   const soldInventoryIncome = $derived(
@@ -129,6 +130,38 @@
   const operationalIncome = $derived(
     (economy?.cashFlow.incomeByCategory ?? []).filter((c) => !SALES_CATEGORIES.has(String(c.category))).reduce((s, c) => s + c.total, 0)
   );
+
+  /** Cash spent on assets still owned (items, points, stocks, banks). */
+  const ASSET_BUY_CATEGORIES = new Set(["bazaar", "items", "trading", "auction", "points", "stock", "travel", "plushie", "flower", "drugs"]);
+  const assetPurchases = $derived(
+    (economy?.cashFlow.expensesByCategory ?? []).filter((c) => ASSET_BUY_CATEGORIES.has(String(c.category))).reduce((s, c) => s + c.total, 0)
+  );
+  const trueExpenses = $derived(
+    (economy?.cashFlow.expensesByCategory ?? []).filter((c) => !ASSET_BUY_CATEGORIES.has(String(c.category))).reduce((s, c) => s + c.total, 0)
+  );
+
+  /** Distinct pie palettes: inflow (greens/teals) vs outflow (reds/ambers). */
+  const INFLOW_PALETTE = ["#2dd4bf", "#14b8a6", "#3fd68f", "#5eead4", "#8fd6c0", "#a7f3d0", "#6ee7b7", "#34d399"];
+  const OUTFLOW_PALETTE = ["#f87171", "#fb923c", "#f0b24a", "#e879a0", "#d4a5a5", "#c084fc", "#fca5a5", "#fbbf24"];
+
+  function labelledDonut(rows: Array<{ category: string; total: number }>, palette: string[], name: string) {
+    const top = rows.slice(0, 8);
+    return {
+      tooltip: { ...TOOLTIP, trigger: "item", formatter: "{b}: {c} ({d}%)" },
+      legend: { ...LEGEND, type: "scroll", orient: "vertical", right: 2, top: "middle", textStyle: { color: C.label, fontSize: 10.5 } },
+      series: [
+        {
+          name,
+          type: "pie",
+          radius: ["48%", "72%"],
+          center: ["34%", "50%"],
+          label: { show: false },
+          itemStyle: { borderRadius: 4, borderColor: "#151518", borderWidth: 2 },
+          data: top.map((r, i) => ({ name: r.category, value: r.total, itemStyle: { color: palette[i % palette.length] } })),
+        },
+      ],
+    };
+  }
 
   const cumulativeOption = $derived.by(() => {
     if (!summary || summary.cumulativeNetSeries.length === 0) return null;
@@ -155,13 +188,13 @@
     if (!summary || summary.flowSeries.length === 0) return null;
     return {
       tooltip: { ...TOOLTIP, trigger: "axis" },
-      legend: { ...LEGEND, data: ["Income", "Expenses"], top: 0, right: 0 },
+      legend: { ...LEGEND, data: ["Cash inflow", "Cash outflow"], top: 0, right: 0 },
       grid: GRID,
       xAxis: timeAxis(summary.flowSeries.map((p) => dayLabel(p.t))),
       yAxis: valueAxis(),
       series: [
-        { name: "Income", type: "bar", data: summary.flowSeries.map((p) => p.income), barMaxWidth: 12, itemStyle: { color: C.positive, borderRadius: [3, 3, 0, 0] } },
-        { name: "Expenses", type: "bar", data: summary.flowSeries.map((p) => -p.expenses), barMaxWidth: 12, itemStyle: { color: C.negative, borderRadius: [3, 3, 0, 0] } },
+        { name: "Cash inflow", type: "bar", data: summary.flowSeries.map((p) => p.income), barMaxWidth: 12, itemStyle: { color: C.positive, borderRadius: [3, 3, 0, 0] } },
+        { name: "Cash outflow", type: "bar", data: summary.flowSeries.map((p) => -p.expenses), barMaxWidth: 12, itemStyle: { color: C.negative, borderRadius: [3, 3, 0, 0] } },
       ],
     };
   });
@@ -169,23 +202,6 @@
   function networthChangeLabel(): string {
     if (!economy) return "Networth Change";
     return economy.networth.coverage === "partial" ? "Tracked period change" : `${period} Networth Change`;
-  }
-
-  function donut(rows: Array<{ category: string; total: number }>, color: string) {
-    const top = rows.slice(0, 6);
-    return {
-      tooltip: { ...TOOLTIP, trigger: "item", formatter: "{b}: {c} ({d}%)" },
-      series: [
-        {
-          type: "pie",
-          radius: ["56%", "80%"],
-          center: ["50%", "50%"],
-          label: { show: false },
-          itemStyle: { borderRadius: 4, borderColor: "#151518", borderWidth: 2 },
-          data: top.map((r) => ({ name: r.category, value: r.total, itemStyle: { color } })),
-        },
-      ],
-    };
   }
 </script>
 
@@ -207,10 +223,10 @@
   {:else if summary && economy}
     <!-- ═══ A. Cash flow ═══ -->
     <section class="space-y-6">
-      <h2 class="text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-faint">A · Cash Flow — real money in and out</h2>
+      <h2 class="text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-faint">A · Cash Flow — money that moved through your wallet</h2>
       <div class="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border shadow-panel md:grid-cols-4">
-        <Stat label="{period} income" value={formatKpiValue(economy.cashFlow.income)} provenance="exact" tone="positive" sub={economy.cashFlow.unclassifiedCount > 0 ? `${economy.cashFlow.unclassifiedCount} unclassified` : null} />
-        <Stat label="{period} Cash Expenses" value={formatKpiValue(economy.cashFlow.expenses)} provenance="exact" tone="negative" sub={economy.cashFlow.unclassifiedCount > 0 ? `${economy.cashFlow.unclassifiedCount} unclassified` : null} />
+        <Stat label="{period} Cash Inflow" value={formatKpiValue(economy.cashFlow.income)} provenance="exact" tone="positive" sub={`earned ${formatMoneyCompact(economy.cashFlow.trueIncome)} · asset sales ${formatMoneyCompact(economy.cashFlow.assetInflow)}`} />
+        <Stat label="{period} Cash Outflow" value={formatKpiValue(economy.cashFlow.expenses)} provenance="exact" tone="negative" sub={`true expenses ${formatMoneyCompact(economy.cashFlow.trueExpense)} · asset purchases ${formatMoneyCompact(economy.cashFlow.assetOutflow)}`} />
         <Stat label="{period} Net Cash Flow" value={formatKpiValue(economy.cashFlow.netCashFlow)} provenance="exact" tone={(economy.cashFlow.netCashFlow.value ?? 0) >= 0 ? "positive" : "negative"} />
         <Stat
           label="Top expense"
@@ -220,18 +236,41 @@
         />
       </div>
 
-      {#if soldInventoryIncome > 0}
-        <p class="rounded-xl border border-border bg-surface px-5 py-3 text-xs leading-relaxed text-fg-muted">
-          <span class="font-medium text-fg">Cash Income split:</span>
-          {formatMoneyCompact(operationalIncome)} from wages, payouts and other earnings
-          <span class="mx-1.5 text-border-strong">·</span>
-          {formatMoneyCompact(soldInventoryIncome)} from selling items (bazaar, item market, trades, auctions).
-          <span class="text-fg-faint">Sales proceeds are cash income, not economic gain — the inventory value left your stock.
-          The {period.toLowerCase()} Networth Change in section C reflects that asset movement; this page never calls sales “profit”.</span>
+      <p class="rounded-xl border border-border bg-surface px-5 py-3 text-xs leading-relaxed text-fg-muted">
+        <span class="font-medium text-fg">Reading these numbers:</span>
+        earned money {formatMoneyCompact(operationalIncome)} raised your wealth directly
+        <span class="mx-1 text-border-strong">·</span>
+        {formatMoneyCompact(soldInventoryIncome)} is asset sales (items → cash — conversion, not profit)
+        <span class="mx-1 text-border-strong">·</span>
+        {formatMoneyCompact(assetPurchases)} bought assets you still own (cash → items/points/stocks — conversion, not loss)
+        <span class="mx-1 text-border-strong">·</span>
+        {formatMoneyCompact(trueExpenses)} left for good (rehab, fees, upkeep, muggings).
+      </p>
+
+      {#if economy.sales.cashReceived > 0}
+        <div class="grid grid-cols-1 gap-px overflow-hidden rounded-xl border border-border bg-border md:grid-cols-3">
+          <div class="bg-surface p-5 text-center">
+            <p class="text-[10px] uppercase tracking-[0.14em] text-fg-faint">Asset sales — cash received</p>
+            <p class="tnum mt-1 text-xl font-semibold text-fg">{formatMoneyCompact(economy.sales.cashReceived)}</p>
+          </div>
+          <div class="bg-surface p-5 text-center">
+            <p class="text-[10px] uppercase tracking-[0.14em] text-fg-faint">Est. inventory value sold</p>
+            <p class="tnum mt-1 text-xl font-semibold text-fg-muted">{economy.sales.inventoryValueRemoved !== null ? formatMoneyCompact(economy.sales.inventoryValueRemoved) : "Unavailable"}</p>
+          </div>
+          <div class="bg-surface p-5 text-center">
+            <p class="text-[10px] uppercase tracking-[0.14em] text-fg-faint">Est. economic result of sales</p>
+            <p class="tnum mt-1 text-xl font-semibold {((economy.sales.economicResult ?? 0) >= 0 ? 'text-positive' : 'text-negative')}">
+              {economy.sales.economicResult !== null ? formatSignedMoney(economy.sales.economicResult) : "Partial"}
+            </p>
+          </div>
+        </div>
+        <p class="text-xs text-fg-faint">
+          Estimated from Torn catalog market prices for the exact items in each sale log — never called “trading profit”,
+          because your acquisition cost basis is unknown. Net worth change below settles the real effect.
         </p>
       {/if}
 
-      <Panel title="Cash expense breakdown" caption="Where the Cash Expenses total goes — consumed inventory is NOT part of this">
+      <Panel title="Cash outflow by category" caption="Where the Cash Outflow total goes — consumed inventory is NOT part of this">
         {#if economy.cashFlow.expensesByCategory.length === 0}
           <StateMessage state="empty" title="No cash expenses in this range" />
         {:else}
@@ -240,6 +279,7 @@
               <thead>
                 <tr class="border-b border-border text-[11px] uppercase tracking-[0.12em] text-fg-faint">
                   <th class="py-2.5 pr-4 font-medium">Category</th>
+                  <th class="py-2.5 pr-4 font-medium">Meaning</th>
                   <th class="py-2.5 pr-4 text-right font-medium">Cash out</th>
                   <th class="py-2.5 text-right font-medium">Share</th>
                 </tr>
@@ -248,12 +288,15 @@
                 {#each expenseBreakdown as row (row.label)}
                   <tr class="border-b border-border/50 last:border-0">
                     <td class="py-2.5 pr-4 text-fg">{row.label}</td>
+                    <td class="py-2.5 pr-4 text-xs {ASSET_BUY_CATEGORIES.has(row.category) ? 'text-fg-faint' : 'text-warning'}">
+                      {ASSET_BUY_CATEGORIES.has(row.category) ? "asset purchase" : "true expense"}
+                    </td>
                     <td class="tnum py-2.5 pr-4 text-right text-fg-muted">{formatMoneyCompact(row.total)}</td>
                     <td class="tnum py-2.5 text-right text-fg-faint">{Math.round((row.total / (economy.cashFlow.expenses.value || 1)) * 100)}%</td>
                   </tr>
                 {/each}
                 <tr class="font-semibold">
-                  <td class="py-2.5 pr-4 text-fg">Total Cash Expenses</td>
+                  <td class="py-2.5 pr-4 text-fg" colspan="2">Total Cash Outflow</td>
                   <td class="tnum py-2.5 pr-4 text-right text-negative">{formatMoneyCompact(economy.cashFlow.expenses.value ?? 0)}</td>
                   <td class="tnum py-2.5 text-right text-fg-faint">100%</td>
                 </tr>
@@ -264,22 +307,22 @@
       </Panel>
     </section>
 
-    <!-- ═══ B. Consumption ═══ -->
+    <!-- ═══ B. Asset value moved or consumed ═══ -->
     <section class="space-y-6">
-      <h2 class="text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-faint">B · Consumed Inventory — items used up (separate from cash)</h2>
+      <h2 class="text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-faint">B · Asset Value Moved or Consumed — value leaving your inventory (not cash)</h2>
       <p class="max-w-3xl text-[13px] leading-relaxed text-fg-muted">
-        Consumed value represents inventory used during the period and may have been purchased earlier, so it is separate from current cash expenses.
-        A Xanax bought for $840k is a cash expense the moment it is bought; using it later consumes $840k of inventory value and moves no cash.
-        The two are never added together.
+        Value that left your inventory during the period: items USED UP (consumed), items SOLD (already counted as asset sales in
+        section A), and items otherwise removed. These are movements of owned value, never cash expenses and never profit —
+        a Xanax bought for $840k was a cash movement when bought; using it later moves value out of inventory.
       </p>
       <div class="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border shadow-panel md:grid-cols-4">
-        <Stat label="Total Consumed Value" value={formatKpiValue(economy.consumption.totalValue)} provenance="estimated" tone="negative" sub={economy.consumption.valueUnknownCount > 0 ? `${economy.consumption.valueUnknownCount} uses without a price` : null} />
+        <Stat label="Consumed value (est.)" value={formatKpiValue(economy.consumption.totalValue)} provenance="estimated" tone="negative" sub={economy.consumption.valueUnknownCount > 0 ? `${economy.consumption.valueUnknownCount} uses without a price` : null} />
         <Stat label="Drugs consumed" value={economy.consumption.drugValue !== null ? formatMoneyCompact(economy.consumption.drugValue) : formatKpiValue({ value: null, availability: economy.consumption.uses === 0 ? "unavailable" : "incomplete" })} provenance="estimated" tone="negative" />
-        <Stat label="Consumption events" value={String(economy.consumption.uses)} provenance="exact" />
-        <Stat label="{period} Networth Change" value={economy.networth.coverage === "none" ? "Insufficient history" : formatSignedMoney(economy.networth.change.value)} provenance="exact" tone={(economy.networth.change.value ?? 0) >= 0 ? "positive" : "negative"} sub={networthChangeLabel() !== `${period} Networth Change` ? "incomplete history for this period" : (economy.networth.changePct !== null ? `${economy.networth.changePct >= 0 ? "+" : ""}${economy.networth.changePct.toFixed(2)}%` : null)} />
+        <Stat label="Inventory sold (est.)" value={economy.sales.inventoryValueRemoved !== null ? formatMoneyCompact(economy.sales.inventoryValueRemoved) : "Unavailable"} provenance="estimated" sub={`sales received ${formatMoneyCompact(economy.sales.cashReceived)}`} />
+        <Stat label="Non-cash wealth gained (est.)" value={economy.nonCashGains.value !== null ? formatMoneyCompact(economy.nonCashGains.value) : "—"} provenance={economy.nonCashGains.provenance === "estimated" ? "estimated" : "exact"} sub="crime & OC item rewards" />
       </div>
 
-      <Panel title="Consumed Inventory by category" caption="What your item use cost you — valued from Torn catalog market prices">
+      <Panel title="Consumed inventory by category" caption="Items USED UP — valued from Torn catalog market prices at use time">
         {#if economy.consumption.byCategory.length === 0}
           <StateMessage state="empty" title="No consumption recorded in this range" hint="Item uses appear here as the sync collects logs." />
         {:else}
@@ -310,24 +353,28 @@
       </Panel>
     </section>
 
-    <!-- ═══ C. Networth ═══ -->
+    <!-- ═══ C. Economic effect ═══ -->
     <section class="space-y-6">
-      <h2 class="text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-faint">C · Networth — Torn snapshots, including inventory appreciation</h2>
+      <h2 class="text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-faint">C · Economic Effect — what actually happened to your total wealth</h2>
       {#if economy.networth.trackingSince !== null}
         <p class="text-xs text-fg-faint">Tracking since {formatDate(economy.networth.trackingSince)} — networth history before that point does not exist and is never fabricated.</p>
       {/if}
       <div class="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border shadow-panel md:grid-cols-4">
         <Stat label="Current networth" value={formatKpiValue(economy.networth.current)} provenance="exact" tone="accent" />
         <Stat
-          label={networthChangeLabel()}
+          label={economy.networth.coverage === "partial" ? "Economic gain/loss (partial)" : networthChangeLabel()}
           value={economy.networth.coverage === "none" ? "Insufficient history" : formatSignedMoney(economy.networth.change.value)}
           provenance="exact"
           tone={(economy.networth.change.value ?? 0) >= 0 ? "positive" : "negative"}
-          sub={economy.networth.changePct !== null ? `${economy.networth.changePct >= 0 ? "+" : ""}${economy.networth.changePct.toFixed(2)}%` : null}
+          sub={economy.networth.coverage === "partial" && economy.networth.baselineAt !== null ? `measured from ${formatDate(economy.networth.baselineAt)} — covers part of the range` : economy.networth.changePct !== null ? `${economy.networth.changePct >= 0 ? "+" : ""}${economy.networth.changePct.toFixed(2)}%` : null}
         />
         <Stat label="Estimated Travel Profit" value={formatKpiValue(economy.travel.estimatedProfit)} provenance="estimated" tone={(economy.travel.estimatedProfit.value ?? 0) >= 0 ? "positive" : "negative"} />
         <Stat label="Travel profit / hour" value={formatKpiValue(economy.travel.profitPerHour)} provenance="estimated" sub={economy.travel.trips > 0 ? `${economy.travel.trips} trip${economy.travel.trips === 1 ? "" : "s"}` : null} />
       </div>
+      <p class="text-xs text-fg-faint">
+        Economic gain/loss comes from official net worth snapshots — the only measure that already includes inventory
+        appreciation, sales and consumption together. Cash flow (A) and asset movement (B) never add up to it on their own.
+      </p>
 
       {#if economy.networth.byCategory.length > 0}
         <Panel title="Networth by category" caption="Torn-provided categories — baseline is the closest snapshot at or before the period start">
@@ -378,25 +425,25 @@
     </Panel>
 
     <section class="grid gap-6 lg:grid-cols-2">
-      <Panel title="Income vs expenses" caption="Per-day cash flow in both directions" flush>
+      <Panel title="Cash inflow vs outflow" caption="Per-day cash movement in both directions" flush>
         {#if !flowOption}
           <StateMessage state="empty" title="No flow to show" />
         {:else}
           <Chart option={flowOption} height={280} />
         {/if}
       </Panel>
-      <Panel title="Balance of categories" caption="Income share (teal) vs expense share (red)">
+      <Panel title="Inflow vs outflow mix" caption="Distinct palettes + legend: inflow categories (left) vs outflow categories (right)">
         {#if summary.incomeByCategory.length === 0 && summary.expensesByCategory.length === 0}
           <StateMessage state="empty" title="No categories to break down" />
         {:else}
           <div class="grid grid-cols-2 gap-4">
             <div>
-              <Chart option={donut(summary.incomeByCategory, C.positive)} height={200} />
-              <p class="mt-1 text-center text-[11px] uppercase tracking-[0.14em] text-fg-faint">Income</p>
+              <Chart option={labelledDonut(summary.incomeByCategory, INFLOW_PALETTE, "Cash inflow")} height={220} />
+              <p class="mt-1 text-center text-[11px] uppercase tracking-[0.14em] text-positive">Cash inflow</p>
             </div>
             <div>
-              <Chart option={donut(summary.expensesByCategory, C.negative)} height={200} />
-              <p class="mt-1 text-center text-[11px] uppercase tracking-[0.14em] text-fg-faint">Expenses</p>
+              <Chart option={labelledDonut(summary.expensesByCategory, OUTFLOW_PALETTE, "Cash outflow")} height={220} />
+              <p class="mt-1 text-center text-[11px] uppercase tracking-[0.14em] text-negative">Cash outflow</p>
             </div>
           </div>
         {/if}

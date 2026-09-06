@@ -289,6 +289,35 @@ export const DashboardResponseSchema = z.object({
   travelProfit: KpiValueSchema,
   drugsUsed: KpiValueSchema,
   rehabSpend: KpiValueSchema,
+  /**
+   * Economic semantics over the selected range. Cash inflow/outflow include
+   * asset conversions; earned vs asset splits make it impossible to read
+   * bazaar sales as profit.
+   */
+  financial: z.object({
+    /** All cash that entered the wallet (earned + asset sales). */
+    cashInflow: KpiValueSchema,
+    /** All cash that left the wallet (true expenses + asset purchases). */
+    cashOutflow: KpiValueSchema,
+    /** Earned/received money — raises total economic value directly. */
+    trueIncome: z.number(),
+    /** Spent/lost money — lowers total economic value directly. */
+    trueExpense: z.number(),
+    /** Cash received from selling assets (items, points, stocks). */
+    assetSales: z.number(),
+    /** Cash spent acquiring assets (still owned in another form). */
+    assetPurchases: z.number(),
+    /** Unclassified cash magnitude (never silently zero). */
+    unknownValue: z.number(),
+    /**
+     * Economic gain/loss measured by official net worth snapshots. Partial
+     * when tracking does not cover the whole selected range — the value then
+     * reflects the tracked window only.
+     */
+    economicGain: KpiValueSchema,
+    /** Net worth snapshot the gain is measured from (unix seconds, null = n/a). */
+    economicGainBaselineAt: z.number().nullable(),
+  }),
   networthSeries: z.array(z.object({ t: z.number(), total: z.number() })),
   incomeByCategory: z.array(z.object({ category: MoneyCategorySchema, total: z.number() })),
   expensesByCategory: z.array(z.object({ category: MoneyCategorySchema, total: z.number() })),
@@ -340,6 +369,26 @@ export const EconomySummaryResponseSchema = z.object({
     unclassifiedCount: z.number(),
     incomeByCategory: z.array(z.object({ category: MoneyCategorySchema, total: z.number() })),
     expensesByCategory: z.array(z.object({ category: MoneyCategorySchema, total: z.number() })),
+    /** Earned money (raises total value) vs asset-sale proceeds (conversion). */
+    trueIncome: z.number(),
+    trueExpense: z.number(),
+    assetInflow: z.number(),
+    assetOutflow: z.number(),
+  }),
+  /** Item sales: cash received vs estimated market value of items removed. */
+  sales: z.object({
+    /** Cash received from bazaar / item market / trading / auction sales. */
+    cashReceived: z.number(),
+    /** Catalog market value of identified sold items (null when no item data). */
+    inventoryValueRemoved: z.number().nullable(),
+    /** cashReceived − inventoryValueRemoved; null when valuation unavailable. */
+    economicResult: z.number().nullable(),
+    provenance: z.enum(["estimated", "unavailable"]),
+  }),
+  /** Wealth gained without cash movement (crime/OC item rewards, est.). */
+  nonCashGains: z.object({
+    value: z.number().nullable(),
+    provenance: z.enum(["estimated", "unavailable"]),
   }),
   consumption: z.object({
     uses: z.number(),
@@ -801,6 +850,20 @@ export const DrugsSummaryResponseSchema = z.object({
     overdoseRate: z.number(),
     estimatedSpend: KpiValueSchema,
     averageCostPerUse: KpiValueSchema,
+    /** Average Xanax uses per COVERED day in the selected range. */
+    xanaxPerDay: z.number().nullable(),
+    /** Days actually covered by drug data inside the range (partial coverage < range length). */
+    coveredDays: z.number().nullable(),
+    coverage: z.enum(["full", "partial", "unavailable"]),
+  }),
+  /** Xanax funding split: faction-sponsored uses are never personal cost. */
+  xanaxFunding: z.object({
+    used: z.number(),
+    personal: z.number(),
+    /** Linked to a faction armory / faction transfer record. */
+    factionSponsored: z.number(),
+    /** Received from untraceable sources (gifts) within the match window. */
+    unknownFunded: z.number(),
   }),
   byDrug: z.array(
     z.object({
@@ -814,9 +877,23 @@ export const DrugsSummaryResponseSchema = z.object({
   dailySeries: z.array(z.object({ t: z.number(), good: z.number(), bad: z.number() })),
   rehab: z.object({
     totalSpend: KpiValueSchema,
+    /** Clustered hospital trips (sessions grouped within 12h of each other). */
     trips: z.number(),
+    /** Individual rehab actions (Torn log level). */
+    sessions: z.number(),
+    averageSessionsPerTrip: z.number().nullable(),
+    averageCostPerSession: KpiValueSchema,
+    averageCostPerTrip: KpiValueSchema,
     latestAt: z.number().nullable(),
     averageSpend: KpiValueSchema,
+    /** Per-trip cost trend, oldest first (cost rises as addiction deepens). */
+    tripTrend: z.array(
+      z.object({
+        startedAt: z.number(),
+        sessions: z.number(),
+        cost: z.number().nullable(),
+      })
+    ),
     recent: z.array(
       z.object({
         occurredAt: z.number(),

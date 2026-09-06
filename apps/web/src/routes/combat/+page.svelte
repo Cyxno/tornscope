@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { CombatSummaryResponse, CombatTimelineResponse } from "@tornscope/shared";
-  import { formatMoneyCompact, formatDateTime, formatKpiValue, periodLabel, formatDate } from "@tornscope/shared";
+  import { formatMoneyCompact, formatDateTime, formatKpiValue, periodLabel, formatDate, combatEventSemantics } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
   import { dateRange } from "$lib/state.svelte";
   import PageHeader from "$lib/components/PageHeader.svelte";
@@ -211,7 +211,7 @@
       {/if}
     </Panel>
 
-    <Panel title="Combat feed" caption="Newest first — exact results from your attacks record" flush>
+    <Panel title="Combat feed" caption="Verbs follow YOUR perspective — Attacked (you acted), Defended (you were attacked); color shows the outcome" flush>
       {#if !timeline || timeline.items.length === 0}
         <div class="px-6 pb-6 pt-2"><StateMessage state="empty" title="No combat events in this range" /></div>
       {:else}
@@ -221,28 +221,26 @@
               <tr class="border-b border-border text-[11px] uppercase tracking-[0.12em] text-fg-faint">
                 <th class="py-2.5 pl-6 pr-4 font-medium">When</th>
                 <th class="py-2.5 pr-4 font-medium">Event</th>
+                <th class="py-2.5 pr-4 font-medium">Verb</th>
                 <th class="py-2.5 pr-4 font-medium">Result</th>
                 <th class="py-2.5 pr-6 text-right font-medium">Respect</th>
               </tr>
             </thead>
             <tbody>
               {#each timeline.items as ev (ev.id)}
+                {@const sem = combatEventSemantics(ev.direction, ev.result)}
                 <tr class="border-b border-border/50 last:border-0 hover:bg-surface-2/50">
                   <td class="tnum whitespace-nowrap py-2.5 pl-6 pr-4 text-xs text-fg-faint">{formatDateTime(ev.occurredAt)}</td>
                   <td class="py-2.5 pr-4 text-fg">
-                    {#if ev.direction === "outgoing"}
-                      {ev.result === "Mugged" ? "Mugged" : "Attacked"}
-                      <span class="font-medium">{ev.opponentName ?? "Unknown opponent"}</span>
-                    {:else}
-                      {ev.result === "Mugged" ? "Mugged by" : "Attacked by"}
-                      <span class="font-medium">{ev.opponentName ?? "Unknown opponent"}</span>
-                    {/if}
+                    {ev.direction === "outgoing" ? "vs" : "by"}
+                    <span class="font-medium">{ev.opponentName ?? "Unknown opponent"}</span>
                   </td>
                   <td class="py-2.5 pr-4">
-                    <span class={`rounded-full border px-2 py-0.5 text-[11px] ${["Mugged", "Hospitalized", "Attacked"].includes(ev.result) && ev.direction === "outgoing" ? "border-positive/30 bg-positive/10 text-positive" : ev.result === "Lost" ? "border-negative/30 bg-negative/10 text-negative" : "border-border bg-surface-2 text-fg-muted"}`}>
-                      {ev.result}
+                    <span class={`rounded-full border px-2 py-0.5 text-[11px] font-semibold uppercase ${sem.outcome === "won" ? "border-positive/30 bg-positive/10 text-positive" : sem.outcome === "lost" ? "border-negative/30 bg-negative/10 text-negative" : "border-border bg-surface-2 text-fg-muted"}`}>
+                      {sem.verb}
                     </span>
                   </td>
+                  <td class="py-2.5 pr-4 text-fg-muted">{sem.context ?? "—"}</td>
                   <td class="tnum py-2.5 pr-6 text-right text-fg-muted">{ev.respectDelta !== null ? (ev.respectDelta >= 0 ? "+" : "") + ev.respectDelta.toFixed(2) : "—"}</td>
                 </tr>
               {/each}
