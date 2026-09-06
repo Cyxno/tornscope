@@ -27,11 +27,15 @@ export async function getSyncStatus(userId: string) {
 /**
  * Full sync + system health for the Sync Status page:
  * - per-resource rows with phase, cursor state and last safe error
- * - PostgreSQL / Redis reachability + worker heartbeat
- * - BullMQ queue depths (waiting/active/completed/failed/delayed)
- * - deployed build commit (injected at Docker build time, never hand-edited)
+ * - PostgreSQL / Redis reachability + worker heartbeat + queue depths and the
+ *   build commit ONLY for the server owner — anonymous guests get the
+ *   personal sync rows without infrastructure topology.
  */
-export async function getSyncHealth(userId: string) {
+export async function getSyncHealth(userId: string, opts: { isOwner?: boolean } = {}): Promise<Awaited<ReturnType<typeof buildSyncHealth>>> {
+  return buildSyncHealth(userId, Boolean(opts.isOwner));
+}
+
+async function buildSyncHealth(userId: string, isOwner: boolean) {
   const db = getPrismaClient();
   const ctx = getApiContext();
   const states: SyncStateRow[] = await getSyncStates(db, userId);
@@ -39,14 +43,16 @@ export async function getSyncHealth(userId: string) {
   const countTypes = ["waiting", "active", "completed", "failed", "delayed"] as const;
   const redis = await queueRedis(ctx.syncQueue);
   const [syncCounts, schedulerCounts, postgresOk, redisOk, heartbeat, credential] = await Promise.all([
-    ctx.syncQueue.getJobCounts(...countTypes).catch(() => null),
-    ctx.schedulerQueue.getJobCounts(...countTypes).catch(() => null),
-    db.$queryRaw`SELECT 1`.then(() => true).catch(() => false),
-    redis.ping().then(() => true).catch(() => false),
-    redis
-      .get(WORKER_HEARTBEAT_KEY)
-      .then((v: string | null) => (v ? Number(v) : null))
-      .catch(() => null),
+    isOwner ? ctx.syncQueue.getJobCounts(...countTypes).catch(() => null) : Promise.resolve(null),
+    isOwner ? ctx.schedulerQueue.getJobCounts(...countTypes).catch(() => null) : Promise.resolve(null),
+    isOwner ? db.$queryRaw`SELECT 1`.then(() => true).catch(() => false) : Promise.resolve(false),
+    isOwner ? redis.ping().then(() => true).catch(() => false) : Promise.resolve(false),
+    isOwner
+      ? redis
+          .get(WORKER_HEARTBEAT_KEY)
+          .then((v: string | null) => (v ? Number(v) : null))
+          .catch(() => null)
+      : Promise.resolve(null),
     db.apiCredential.findUnique({ where: { userId }, select: { revokedAt: true } }),
   ]);
 
@@ -84,24 +90,30 @@ export async function getSyncHealth(userId: string) {
   return {
     running: states.some((s) => s.status === "running"),
     build: { commit: process.env.GIT_SHA ?? "dev" },
-    system: {
-      postgres: postgresOk ? "up" : "down",
-      redis: redisOk ? "up" : "down",
-      worker: {
-        online: heartbeat !== null && Date.now() - heartbeat < 180_000,
-        lastHeartbeatAt: heartbeat !== null ? Math.floor(heartbeat / 1000) : null,
-      },
-      tornApi: {
-        // No active probe (request budget); the last recorded sync error is
-        // the reliable signal for Torn-side problems.
-        lastError: lastErrorState ? { resource: lastErrorState.resource, message: lastErrorState.errorMessage } : null,
-      },
-    },
-    queues: {
-      sync: syncCounts,
-      scheduler: schedulerCounts,
-      note: "BullMQ re-queues stalled jobs automatically; they reappear under active/waiting.",
-    },
+    // Infrastructure topology is owner-only; guests get null and the UI shows
+    // a permission state instead of fake status dots.
+    system: isOwner
+      ? {
+          postgres: postgresOk ? "up" : "down",
+          redis: redisOk ? "up" : "down",
+          worker: {
+            online: heartbeat !== null && Date.now() - heartbeat < 180_000,
+            lastHeartbeatAt: heartbeat !== null ? Math.floor(heartbeat / 1000) : null,
+          },
+          tornApi: {
+            // No active probe (request budget); the last recorded sync error is
+            // the reliable signal for Torn-side problems.
+            lastError: lastErrorState ? { resource: lastErrorState.resource, message: lastErrorState.errorMessage } : null,
+          },
+        }
+      : null,
+    queues: isOwner
+      ? {
+          sync: syncCounts,
+          scheduler: schedulerCounts,
+          note: "BullMQ re-queues stalled jobs automatically; they reappear under active/waiting.",
+        }
+      : null,
     setupPhase: deriveSetupPhase({
       hasApiKey: Boolean(credential && !credential.revokedAt),
       resources: states.map((s) => ({

@@ -204,10 +204,15 @@ export async function assembleTripsFromTransitions(db: PrismaClientType, userId:
   }
 
   // Assembly rows whose departure transition disappeared (should not happen
-  // outside targeted deletions) are removed so no ghosts survive.
-  await db.travelEvent.deleteMany({
-    where: { userId, source: "trip", ...(tripIds.length > 0 ? { id: { notIn: tripIds } } : {}) },
-  });
+  // outside targeted deletions) are removed so no ghosts survive. With NO
+  // transitions at all the assembly produced nothing — skip the sweep: a
+  // transient empty transition set (concurrent renormalize delete window)
+  // must not wipe every stored trip.
+  if (tripIds.length > 0) {
+    await db.travelEvent.deleteMany({
+      where: { userId, source: "trip", id: { notIn: tripIds } },
+    });
+  }
 
   // Link abroad purchases to their trip. A purchase matches a trip when it
   // falls inside the trip's window [departed - slack, windowEnd + slack] and

@@ -188,7 +188,7 @@ export async function getFactionOverview(userId: string, rangeInput: DateRangeIn
           myRespect: currentWarStats.respect,
         }
       : null,
-    currentChain: chainRow ? { chain: chainRow.chain, max: null, startedAt: chainRow.startedAt.getTime() / 1000 } : null,
+    currentChain: chainRow ? { chain: chainRow.chain, max: null, startedAt: Math.floor(chainRow.startedAt.getTime() / 1000) } : null,
     balance: balanceRow
       ? {
           money: bigintToNumber(balanceRow.money),
@@ -228,14 +228,16 @@ export async function getFactionRankedWars(userId: string, rangeInput: DateRange
       // Match payouts for THIS war: candidate = faction income (no OC scenario)
       // within this war's settlement window. Known payout total = sum matched.
       let knownPayoutTotal = 0;
-      let personal = 0;
+      let personal: number | null = null;
       let linkage: RankedWarRow["linkage"] = "unmatched";
       for (const p of payouts) {
         if (p.scenario) continue;
         const m = matchPayout(p, completedWars, { settlementDays });
         if (m.matchedWarId !== w.tornWarId || !["exact", "strong", "time_window"].includes(m.matchType)) continue;
         knownPayoutTotal += p.amount;
-        if (personal === 0) personal = p.amount;
+        // First matched payout = this player's share. Unmatched wars stay
+        // null: a green "$0" would fake knowledge the data does not have.
+        if (personal === null) personal = p.amount;
         if (m.matchType !== "unmatched") linkage = m.matchType as RankedWarRow["linkage"];
       }
       return {
@@ -363,11 +365,11 @@ export async function getFactionChains(userId: string, rangeInput: DateRangeInpu
 }
 
 /** Organized crimes with personal participation and exact rewards. */
-export async function getFactionOcs(userId: string, rangeInput: DateRangeInput, myTornId: number | null): Promise<FactionOcsResponse> {
+export async function getFactionOcs(userId: string, rangeInput: DateRangeInput): Promise<FactionOcsResponse> {
   const db = getPrismaClient();
   const range = resolveDateRange(rangeInput);
   const account = await db.tornAccount.findUnique({ where: { userId }, select: { tornId: true } });
-  const resolved = myTornId ?? account?.tornId ?? null;
+  const resolved = account?.tornId ?? null;
 
   // Everything stored: active (planning/recruiting), completed and expired.
   const ocs = await db.organizedCrime.findMany({

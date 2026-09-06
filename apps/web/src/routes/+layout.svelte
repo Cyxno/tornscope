@@ -30,9 +30,16 @@
   });
 
   async function exitDemo() {
-    await endpoints.setDemoView(false);
-    await refreshMe();
-    await goto("/");
+    try {
+      await endpoints.setDemoView(false);
+      await refreshMe();
+      await goto("/");
+    } catch (err) {
+      // Leaving demo must not die silently (an unhandled rejection would keep
+      // the banner up with no feedback); surface why it failed.
+      console.error("exitDemo failed", err);
+      alert(err instanceof Error ? err.message : "Could not leave demo view — try again.");
+    }
   }
 </script>
 

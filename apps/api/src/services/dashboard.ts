@@ -12,13 +12,12 @@ import {
   aggregateMoneySemantics,
   buildWalletBridge,
   calculateDrugStats,
-  calculateNetworthPeriodChange,
   calculateRehabStats,
   calculateTravelProfit,
   buildDailyTravelProfit,
 } from "@tornscope/analytics";
 import { bigintToNumber, getPrismaClient, loadMarketPrices } from "@tornscope/database";
-import { getLatestNetworth } from "./networth.js";
+import { getLatestNetworth, getNetworthPeriodForRange } from "./networth.js";
 
 /**
  * Overview dashboard: KPIs + widget series in one query pass.
@@ -42,7 +41,7 @@ export async function getDashboard(userId: string, rangeInput: DateRangeInput): 
     getLatestNetworth(userId),
     db.moneyEvent.findMany({
       where: { userId, occurredAt: { gte: from, lte: to } },
-      select: { id: true, occurredAt: true, category: true, subcategory: true, direction: true, amount: true, description: true, source: true },
+      select: { id: true, occurredAt: true, category: true, subcategory: true, direction: true, amount: true, description: true, source: true, metadata: true },
     }),
     db.moneyEvent.count({ where: { userId, direction: "unknown", occurredAt: { gte: from, lte: to } } }),
     db.travelEvent.findMany({
@@ -150,17 +149,13 @@ export async function getDashboard(userId: string, rangeInput: DateRangeInput): 
     range.to
   );
 
-  const [nwSeriesRows, nwPeriodRows] = await Promise.all([
+  const [nwSeriesRows, nwPeriod] = await Promise.all([
     db.networthSnapshot.findMany({
       where: { userId, capturedAt: { gte: from, lte: to } },
       orderBy: { capturedAt: "asc" },
       select: { capturedAt: true, total: true },
     }),
-    db.networthSnapshot.findMany({
-      where: { userId, capturedAt: { lte: to } },
-      orderBy: { capturedAt: "asc" },
-      select: { capturedAt: true, total: true },
-    }),
+    getNetworthPeriodForRange(userId, range.from, range.to),
   ]);
   // Wallet bridge endpoints: first snapshot at/before the range start and the
   // latest snapshot at/before the range end.
@@ -176,21 +171,28 @@ export async function getDashboard(userId: string, rangeInput: DateRangeInput): 
       select: { capturedAt: true, wallet: true },
     }),
   ]);
+  // OC payouts are credited to the FACTION MEMBER BALANCE, never the wallet
+  // (verified against live faction-balance snapshots: the balance rises by
+  // the payout amount while the wallet does not move). They must stay out of
+  // wallet flows or the bridge reports a phantom unreconciled gap of exactly
+  // the payout. They remain income in the P&L — the money is owned, just not
+  // wallet cash (Extended Wealth tracks the balance).
+  const factionBalanceCredits = moneyRows
+    .filter((r) => r.category === "faction" && r.direction === "income")
+    .reduce((sum, r) => {
+      const meta = (r.metadata ?? {}) as { data?: { scenario?: string } };
+      return meta.data?.scenario ? sum + (bigintToNumber(r.amount) ?? 0) : sum;
+    }, 0);
   const wallet = buildWalletBridge(
-    moneyRows.map((r) => ({ amount: bigintToNumber(r.amount) ?? 0, direction: r.direction as "income" | "expense" | "neutral" | "unknown", category: r.category })),
+    moneyRows
+      .filter((r) => {
+        if (r.category !== "faction" || r.direction !== "income") return true;
+        return !((r.metadata ?? {}) as { data?: { scenario?: string } }).data?.scenario;
+      })
+      .map((r) => ({ amount: bigintToNumber(r.amount) ?? 0, direction: r.direction as "income" | "expense" | "neutral" | "unknown", category: r.category })),
     walletStart ? bigintToNumber(walletStart.wallet) : null,
-    walletEnd ? bigintToNumber(walletEnd.wallet) : null
-  );
-  const nwPeriod = calculateNetworthPeriodChange(
-    nwPeriodRows.map((r) => ({
-      capturedAt: Math.floor(r.capturedAt.getTime() / 1000),
-      total: bigintToNumber(r.total) ?? 0,
-      pending: 0, wallet: 0, vault: 0, bookie: 0, cityBank: 0, caymanBank: 0, piggyBank: 0,
-      inventory: 0, displayCase: 0, bazaar: 0, trades: 0, itemMarket: 0, auctionHouse: 0, enlistedCars: 0,
-      property: 0, stockMarket: 0, company: 0, points: 0,
-    })),
-    range.from,
-    range.to
+    walletEnd ? bigintToNumber(walletEnd.wallet) : null,
+    factionBalanceCredits
   );
 
   // --- availability per KPI (importing wins; then data evidence) ---
@@ -330,6 +332,7 @@ export async function getDashboard(userId: string, rangeInput: DateRangeInput): 
       walletOutflow: wallet.walletOutflow,
       bankDeposits: wallet.bankDeposits,
       bankWithdrawals: wallet.bankWithdrawals,
+      factionBalanceCredits: wallet.factionBalanceCredits,
       unreconciled: wallet.unreconciled,
       coverage: wallet.coverage,
       startingSnapshotAt: walletStart ? Math.floor(walletStart.capturedAt.getTime() / 1000) : null,

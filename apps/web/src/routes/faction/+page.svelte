@@ -103,7 +103,7 @@
 
     {#if tab === "overview"}
       <div class="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border shadow-panel md:grid-cols-4">
-        <Stat label="Respect" value={overview.faction.respect !== null ? overview.faction.respect.toLocaleString() : "—"} provenance="exact" tone="accent" sub={overview.faction.members !== null ? `${overview.faction.members} members` : null} />
+        <Stat label="Respect" value={overview.faction.respect !== null ? overview.faction.respect.toLocaleString("en-US") : "—"} provenance="exact" tone="accent" sub={overview.faction.members !== null ? `${overview.faction.members} members` : null} />
         <Stat label="Best chain" value={overview.faction.bestChain !== null ? String(overview.faction.bestChain) : "—"} provenance="exact" sub={overview.currentChain ? `latest chain ${overview.currentChain.chain}` : null} />
         <Stat label="Wars in range" value={String(overview.wars.total)} provenance="exact" sub={`${overview.wars.wins}W · ${overview.wars.losses}L${overview.wars.ongoing > 0 ? ` · ${overview.wars.ongoing} ongoing` : ""}`} />
         <Stat

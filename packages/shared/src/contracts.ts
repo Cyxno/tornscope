@@ -358,6 +358,12 @@ export const DashboardResponseSchema = z.object({
     walletOutflow: z.number(),
     bankDeposits: z.number(),
     bankWithdrawals: z.number(),
+    /**
+     * Value paid into the FACTION MEMBER BALANCE in this range (OC payouts).
+     * Never wallet cash — excluded from inflow/outflow above; the money is
+     * still owned and shows up in Extended Wealth via the faction balance.
+     */
+    factionBalanceCredits: z.number(),
     unreconciled: z.number().nullable(),
     coverage: z.enum(["full", "partial", "unavailable"]),
     startingSnapshotAt: z.number().nullable(),
@@ -1078,22 +1084,31 @@ export type SyncStatusResponse = z.infer<typeof SyncStatusResponseSchema>;
 export const SyncHealthResponseSchema = z.object({
   running: z.boolean(),
   build: z.object({ commit: z.string() }),
-  system: z.object({
-    postgres: z.string(),
-    redis: z.string(),
-    worker: z.object({
-      online: z.boolean(),
-      lastHeartbeatAt: z.number().nullable(),
-    }),
-    tornApi: z.object({
-      lastError: z.object({ resource: z.string(), message: z.string().nullable() }).nullable(),
-    }),
-  }),
-  queues: z.object({
-    sync: z.record(z.string(), z.number()).nullable(),
-    scheduler: z.record(z.string(), z.number()).nullable(),
-    note: z.string(),
-  }),
+  /**
+   * Infrastructure topology (postgres/redis/worker/queues) is disclosed ONLY
+   * to the server owner; other viewers get null and the UI shows a
+   * permission state instead of fake status.
+   */
+  system: z
+    .object({
+      postgres: z.string(),
+      redis: z.string(),
+      worker: z.object({
+        online: z.boolean(),
+        lastHeartbeatAt: z.number().nullable(),
+      }),
+      tornApi: z.object({
+        lastError: z.object({ resource: z.string(), message: z.string().nullable() }).nullable(),
+      }),
+    })
+    .nullable(),
+  queues: z
+    .object({
+      sync: z.record(z.string(), z.number()).nullable(),
+      scheduler: z.record(z.string(), z.number()).nullable(),
+      note: z.string(),
+    })
+    .nullable(),
   setupPhase: z.enum(["no_key", "queued", "syncing", "partial", "caught_up", "failed"]),
   /** Requested history window (worker config) coverage is judged against. */
   requestedHistoryDays: z.number(),

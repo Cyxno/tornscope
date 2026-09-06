@@ -68,13 +68,15 @@ export async function runMaintenance(opts: MaintenanceOptions): Promise<Maintena
   const db = getPrismaClient();
 
   // Expired/revoked sessions: revoke older than the retention window.
+  // Idle-but-unrevoked sessions of real profiles (the owner!) must survive:
+  // the owner returning after weeks away must not find their browser logged
+  // out — recovery would require the recovery token. Guest idle sessions are
+  // covered by profile cleanup below (it only deletes profiles with NO active
+  // session and NO history).
   const sessionCutoff = new Date(Date.now() - Math.max(opts.revokedSessionRetentionDays, 1) * 86_400_000);
   const sessionsDeleted = await db.userSession.deleteMany({
     where: {
-      OR: [
-        { revokedAt: { not: null, lt: sessionCutoff } },
-        { lastSeenAt: { lt: sessionCutoff } },
-      ],
+      revokedAt: { not: null, lt: sessionCutoff },
     },
   });
 

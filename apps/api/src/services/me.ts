@@ -36,20 +36,12 @@ function buildCommit(): string {
 }
 
 /**
- * Clear the demo-view flag for ONE owner user only — never globally. With
- * several local owner accounts, toggling one must not touch the others.
+ * Clear the demo-view flag for ONE user only. With browser-bound profiles,
+ * another profile's demo toggle is none of this request's business — an
+ * unscoped delete across every profile is never legitimate.
  */
-async function clearDemoViewFlag(db: ReturnType<typeof getPrismaClient>, userId?: string): Promise<void> {
-  if (userId) {
-    await db.appSetting.deleteMany({ where: { userId, key: DEMO_VIEW_KEY } });
-    return;
-  }
-  // No explicit owner passed (legacy callers): clear every owner's flag but
-  // never the demo user's own row.
-  const demo = await db.user.findUnique({ where: { email: DEMO_USER_EMAIL }, select: { id: true } });
-  await db.appSetting.deleteMany({
-    where: { key: DEMO_VIEW_KEY, ...(demo ? { userId: { not: demo.id } } : {}) },
-  });
+async function clearDemoViewFlag(db: ReturnType<typeof getPrismaClient>, userId: string): Promise<void> {
+  await db.appSetting.deleteMany({ where: { userId, key: DEMO_VIEW_KEY } });
 }
 
 /** GET /api/me */
@@ -144,7 +136,7 @@ export async function getApiKeyStatus(userId: string): Promise<ApiKeyStatusRespo
  * Promise.allSettled while BullMQ was rejecting every job id.
  */
 export async function saveApiKey(
-  user: { id: string },
+  user: { id: string; isDemo: boolean },
   apiKey: string,
   opts: { confirmNewProfile?: boolean } = {}
 ): Promise<{ status: ApiKeyStatusResponse; newProfileId: string | null }> {
@@ -165,10 +157,16 @@ function capabilitiesFromInfo(info: {
 }
 
 async function saveApiKeyInner(
-  user: { id: string },
+  user: { id: string; isDemo: boolean },
   apiKey: string,
   opts: { confirmNewProfile?: boolean }
 ): Promise<{ status: ApiKeyStatusResponse; newProfileId: string | null }> {
+  // The demo profile is a shared synthetic dataset: a real key must never be
+  // attached to it (it would overwrite the demo identity, start Torn syncing
+  // for the demo user and put the key on a profile no session can revoke).
+  if (user.isDemo) {
+    throw errors.forbidden("Leave demo view before connecting a real API key.");
+  }
   let createdNewProfile = false;
   const ctx = getApiContext();
   const db = ctx.db;
@@ -216,7 +214,7 @@ async function saveApiKeyInner(
     const { randomBytes } = await import("node:crypto");
     createdNewProfile = true;
     const fresh = await db.user.create({ data: { displayName: `Guest ${randomBytes(3).toString("hex")}`, role: "user" } });
-    user = { id: fresh.id };
+    user = { id: fresh.id, isDemo: false };
     // The route rebinds the current browser session to `fresh.id` (the cookie
     // keeps working; the old profile stays orphaned but intact).
   }
@@ -333,11 +331,12 @@ export async function deleteApiKey(userId: string): Promise<void> {
  */
 export async function deleteProfile(userId: string): Promise<void> {
   const db = getPrismaClient();
-  const target = await db.user.findUnique({ where: { id: userId }, select: { role: true } });
-  if (target?.role === "owner") {
-    // The legacy owner profile holds the original dataset — one-click
-    // deletion through the normal flow must never be possible.
-    throw errors.forbidden("The legacy owner profile cannot be deleted through this action.");
+  const target = await db.user.findUnique({ where: { id: userId }, select: { role: true, isDemo: true } });
+  if (target?.role === "owner" || target?.isDemo) {
+    // The legacy owner profile holds the original dataset and the demo
+    // profile is the SHARED synthetic dataset — one-click deletion through
+    // the normal flow must never be possible for either.
+    throw errors.forbidden("This profile cannot be deleted through this action.");
   }
   // ApiCredential/AppSetting may lack FK cascades (global settings table) —
   // remove them explicitly before the user row.

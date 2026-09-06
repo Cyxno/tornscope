@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from "svelte";
+  import { onMount } from "svelte";
   import { formatDateTime, formatDate, type SyncHealthResponse } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
   import { formatRelative } from "$lib/reltime";
@@ -96,9 +96,13 @@
     }
   }
 
-  void load();
-  const poll = setInterval(() => void load(), 10_000);
-  onDestroy(() => clearInterval(poll));
+  // Client-only bootstrap: top-level calls would also run during SSR, where
+  // the relative /api fetch fails. The interval handle is cleaned up on unmount.
+  onMount(() => {
+    void load();
+    const poll = setInterval(() => void load(), 10_000);
+    return () => clearInterval(poll);
+  });
 
   async function syncNow(resource: string, force = false) {
     syncing[resource] = true;
@@ -220,7 +224,9 @@
   {:else if error}
     <StateMessage state="error" title="Could not load sync status" hint={error} action={{ label: "Retry", run: () => void load() }} />
   {:else if health}
-    <!-- System health -->
+    <!-- System health: infrastructure topology is owner-only; other viewers
+         get a permission state instead of fake status dots. -->
+    {#if health.system}
     <div class="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border shadow-panel md:grid-cols-4">
       <div class="bg-surface p-5">
         <div class="flex items-center justify-between"><span class="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint">PostgreSQL</span><span class="h-2 w-2 rounded-full {systemDot(health.system.postgres)}"></span></div>
@@ -243,7 +249,13 @@
         {/if}
       </div>
     </div>
+    {:else}
+    <div class="rounded-xl border border-border bg-surface px-5 py-4 text-[13px] text-fg-muted">
+      Server infrastructure status is visible to the server owner only — your own sync progress is shown below.
+    </div>
+    {/if}
 
+    {#if health.queues}
     <!-- Queue health -->
     <section class="grid gap-6 lg:grid-cols-2">
       <Panel title="Sync queue" caption="BullMQ · tornscope-sync">
@@ -276,6 +288,7 @@
         {/if}
       </Panel>
     </section>
+    {/if}
 
     <!-- Resources -->
     <Panel title="Resources" caption="Manual syncs are queued and rate-limited to protect your Torn API budget">
@@ -330,7 +343,7 @@
                 </div>
                 <div>
                   <p class="text-[10px] uppercase tracking-[0.12em] text-fg-faint">Records</p>
-                  <p class="tnum mt-0.5 text-fg-muted">{row.recordsCollected.toLocaleString()}</p>
+                  <p class="tnum mt-0.5 text-fg-muted">{row.recordsCollected.toLocaleString("en-US")}</p>
                 </div>
                 <div>
                   <p class="text-[10px] uppercase tracking-[0.12em] text-fg-faint">API pages</p>

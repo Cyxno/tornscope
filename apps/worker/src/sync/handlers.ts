@@ -3,6 +3,7 @@ import type { SyncResource } from "@tornscope/shared";
 import {
   encryptionFromEnv,
   insertConsumptionEvents,
+  insertCrimeEvents,
   insertDrugEvents,
   insertMoneyEvents,
   insertNetworthSnapshot,
@@ -252,12 +253,14 @@ export interface ResolvedCategory {
 }
 
 /** Resolve log categories whose titles match any keyword (catalog-driven). */
-async function resolveCategoryIds(keywords: readonly string[]): Promise<ResolvedCategory[]> {
+async function resolveCategoryIds(userId: string, keywords: readonly string[]): Promise<ResolvedCategory[]> {
   const ctx = getWorkerContext();
   let categories = await getLogCategories(ctx.db);
   if (!categories) {
     // Catalog not synced yet - bootstrap it inline so the first sync works.
-    await syncTornCatalog({ userId: "", apiKey: "", torn: ctx.torn(await getCurrentApiKey()), lastTimestamp: null });
+    // The catalog is global, but the key that fetches it belongs to THIS
+    // job's user: one user's credential must never be spent for another's.
+    await syncTornCatalog({ userId: "", apiKey: "", torn: ctx.torn(await getCurrentApiKey(userId)), lastTimestamp: null });
     categories = await getLogCategories(ctx.db);
   }
   if (!categories) return [];
@@ -266,10 +269,11 @@ async function resolveCategoryIds(keywords: readonly string[]): Promise<Resolved
     .map((c) => ({ id: c.id, title: c.title }));
 }
 
-async function getCurrentApiKey(): Promise<string> {
+/** Decrypt the credential of THIS job's user only (never "any latest key"). */
+async function getCurrentApiKey(userId: string): Promise<string> {
   const ctx = getWorkerContext();
   const credential = await ctx.db.apiCredential.findFirst({
-    where: { revokedAt: null },
+    where: { userId, revokedAt: null },
     orderBy: { createdAt: "desc" },
   });
   if (!credential) return "";
@@ -447,6 +451,7 @@ async function syncLogsByCategories(args: SyncHandlerArgs, resource: SyncResourc
             await insertTravelTransitions(ctx.db, args.userId, normalized.travelTransitions);
             await insertTravelItemEvents(ctx.db, args.userId, normalized.travelItemEvents);
             await insertMoneyEvents(ctx.db, args.userId, normalized.moneyEvents);
+            await insertCrimeEvents(ctx.db, args.userId, normalized.crimeEvents);
             categoryRecords += 1;
             if (log.timestamp > maxTimestamp) maxTimestamp = log.timestamp;
           }
@@ -517,8 +522,10 @@ async function syncLogsByCategories(args: SyncHandlerArgs, resource: SyncResourc
   }
 
   // Trips are assembled from transitions, never written per log — rebuild
-  // them after any travel-domain fetch so new flights close out.
-  if (categoryIds.length > 0) {
+  // them after a travel-domain fetch so new flights close out. Other log
+  // resources never produce flight transitions; re-assembling there would
+  // reload every transition + purchase for nothing.
+  if (categoryIds.length > 0 && (resource === "travel" || resource === "rehab")) {
     const assembly = await assembleTripsFromTransitions(ctx.db, args.userId);
     if (assembly.trips > 0) {
       logger.debug({ userId: args.userId, trips: assembly.trips, unmatched: assembly.unmatchedTransitions }, "travel trips assembled");
@@ -557,23 +564,23 @@ export function aggregateStopReason(reasons: BackwardStopReason[]): BackwardStop
 // and other consumables) is filed under the dedicated "Item use ..." log
 // categories. They are fetched with the drugs resource so consumption
 // economics cover every consumable, not only drugs.
-export const syncDrugLogs: SyncHandler = async (args) => syncLogsByCategories(args, "drugs", await resolveCategoryIds(["drug", "item use"]));
+export const syncDrugLogs: SyncHandler = async (args) => syncLogsByCategories(args, "drugs", await resolveCategoryIds(args.userId, ["drug", "item use"]));
 
 // Torn has NO rehab log category: rehab visits are filed under the "Travel"
 // category with the title "Rehab". The keyword list therefore mirrors the
 // travel resource; the normalizer routes by title.
 export const syncRehabLogs: SyncHandler = async (args) =>
-  syncLogsByCategories(args, "rehab", await resolveCategoryIds(["travel", "abroad", "fly", "flight", "rehab", "rehabilitation"]));
+  syncLogsByCategories(args, "rehab", await resolveCategoryIds(args.userId, ["travel", "abroad", "fly", "flight", "rehab", "rehabilitation"]));
 
 export const syncTravelLogs: SyncHandler = async (args) =>
-  syncLogsByCategories(args, "travel", await resolveCategoryIds(["travel", "abroad", "fly", "flight"]));
+  syncLogsByCategories(args, "travel", await resolveCategoryIds(args.userId, ["travel", "abroad", "fly", "flight"]));
 
 // Financial surface. Beyond the obvious money keywords this includes the real
 // category names observed in a live 180-day history: "Company", "Job",
 // "Property", "Shops", "Item market", "Donator", "Offshore bank", "Piggy
 // bank", "Loan". The normalizer decides which entries are actual movements.
 export const syncMoneyLogs: SyncHandler = async (args) =>
-  syncLogsByCategories(args, "money_logs", await resolveCategoryIds([
+  syncLogsByCategories(args, "money_logs", await resolveCategoryIds(args.userId, [
     "trade", "money", "bazaar", "bank", "casino", "stock", "salary", "points", "auction", "crime", "mug", "payout",
     "company", "job", "property", "shop", "item market", "donator", "offshore", "piggy", "loan", "upkeep", "faction", "attacking",
   ]));
@@ -858,8 +865,11 @@ export async function walkFactionArmoryNews(
         raw: { text: n.text },
       });
     }
-    stored += await upsertFactionArmoryEvents(db, args.userId, inputs);
-    newOnPage = inputs.length;
+    // The upsert returns how many rows were GENUINELY new. Parsing again on
+    // an already-stored page must not count as progress — otherwise this walk
+    // would never early-stop and would burn Torn quota every hour forever.
+    newOnPage = await upsertFactionArmoryEvents(db, args.userId, inputs);
+    stored += newOnPage;
     oldest = pageOldest === Infinity ? oldest : pageOldest;
     // Older-than-everything page: every parsed entry was already stored.
     if (newOnPage === 0) break;

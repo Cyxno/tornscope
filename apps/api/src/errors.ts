@@ -1,3 +1,5 @@
+import { logger } from "./env.js";
+
 /** Application error with a stable code for the API error envelope. */
 export class AppError extends Error {
   constructor(
@@ -40,6 +42,10 @@ export function mapTornError(err: unknown): AppError {
     case "network":
       return errors.tornUnavailable(message);
     default:
-      return errors.internal(message);
+      // Unknown failure: the raw message may contain Prisma/schema internals
+      // (e.g. a DB error bubbling through the save-key flow) — log it here,
+      // never leak it to the client.
+      logger.error({ err: err instanceof Error ? err.stack : err }, "unmapped error surfaced through mapTornError");
+      return errors.internal("Unexpected error while contacting Torn. Check the server logs for details.");
   }
 }

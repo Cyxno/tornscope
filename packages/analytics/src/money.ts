@@ -158,6 +158,13 @@ export interface WalletBridge {
   bankDeposits: number;
   /** Bank → wallet movements (withdrawals/maturities, neutral). */
   bankWithdrawals: number;
+  /**
+   * Value received into the FACTION MEMBER BALANCE, not the wallet (Torn
+   * credits OC payouts there). Excluded from wallet flows because the wallet
+   * never sees it; the money is still owned — it is part of Extended Wealth
+   * via the faction balance, never counted as spending or loss.
+   */
+  factionBalanceCredits: number;
   /** actual − expected; null when coverage is incomplete. */
   unreconciled: number | null;
   coverage: "full" | "partial" | "unavailable";
@@ -173,7 +180,12 @@ const BANK_TRANSFER_CATEGORIES = new Set(["city_bank", "cayman_bank", "piggy_ban
  * "full" only when both endpoint snapshots exist — the bridge never forces
  * equality when source coverage is incomplete.
  */
-export function buildWalletBridge(flows: readonly WalletFlowRow[], startingCash: number | null, actualEndingCash: number | null): WalletBridge {
+export function buildWalletBridge(
+  flows: readonly WalletFlowRow[],
+  startingCash: number | null,
+  actualEndingCash: number | null,
+  factionBalanceCredits = 0
+): WalletBridge {
   let walletInflow = 0;
   let walletOutflow = 0;
   let bankDeposits = 0;
@@ -214,6 +226,7 @@ export function buildWalletBridge(flows: readonly WalletFlowRow[], startingCash:
     walletOutflow,
     bankDeposits,
     bankWithdrawals,
+    factionBalanceCredits,
     unreconciled,
     coverage,
     provenance: "exact",

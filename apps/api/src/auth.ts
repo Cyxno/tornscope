@@ -151,7 +151,10 @@ async function createAnonymousSession(db: ReturnType<typeof getPrismaClient>, re
   // Session-abuse guard: bots hammering the API without cookies must not be
   // able to grow the users table unbounded. Existing valid sessions are
   // unaffected — this only gates NEW profile creation.
-  const ip = (req.headers["x-forwarded-for"]?.toString().split(",")[0]?.trim()) ?? req.ip ?? "unknown";
+  // req.ip (never the raw X-Forwarded-For header): Fastify resolves the
+  // trusted proxy chain when TRUST_PROXY is on, so a direct client cannot
+  // mint a fresh spoofed IP per request.
+  const ip = req.ip ?? "unknown";
   const now = Date.now();
   const hits = (profileCreationHits.get(ip) ?? []).filter((t) => now - t < 3600_000);
   if (hits.length >= PROFILE_CREATION_LIMIT) {
@@ -242,24 +245,30 @@ export async function bindLegacyOwner(req: FastifyRequest, reply: FastifyReply, 
   // when the browser has NO valid session (dead/stale cookie): a new session
   // bound to the owner is created here — the secret token is the only gate,
   // which is why the route itself is rate-limited.
+  //
+  // Privilege elevation ALWAYS rotates the token: the browser's old (guest)
+  // session row is revoked and a fresh token is minted, so anyone who
+  // learned the guest token gains nothing by it afterwards.
   if (recoveryMode) {
     await db.userSession.updateMany({ where: { userId: owner.id, revokedAt: null }, data: { revokedAt: new Date() } });
   }
   const cookies = parseCookies(req.headers.cookie);
   const existingToken = cookies[SESSION_COOKIE];
   const fresh = newSessionToken();
-  let bound = false;
   if (existingToken) {
     const session = await db.userSession.findUnique({ where: { tokenHash: hashToken(existingToken) } });
     if (session && !session.revokedAt) {
-      await db.userSession.update({ where: { id: session.id }, data: { userId: owner.id } });
-      bound = true;
+      await db.userSession.update({
+        where: { id: session.id },
+        data: { userId: owner.id, tokenHash: hashToken(fresh), revokedAt: null, lastSeenAt: new Date() },
+      });
+      reply.header("Set-Cookie", serializeSessionCookie(fresh, requestIsSecure(req), SESSION_TTL_SECONDS));
+      (req as unknown as { sessionProfileId?: string }).sessionProfileId = owner.id;
+      return owner;
     }
   }
-  if (!bound) {
-    await db.userSession.create({ data: { userId: owner.id, tokenHash: hashToken(fresh) } });
-    reply.header("Set-Cookie", serializeSessionCookie(fresh, requestIsSecure(req), SESSION_TTL_SECONDS));
-  }
+  await db.userSession.create({ data: { userId: owner.id, tokenHash: hashToken(fresh) } });
+  reply.header("Set-Cookie", serializeSessionCookie(fresh, requestIsSecure(req), SESSION_TTL_SECONDS));
 
   if (!already) {
     await db.appSetting.create({ data: { userId: owner.id, key: OWNER_BOUND_KEY, value: true } });
@@ -336,11 +345,20 @@ export async function revokeSessionsFor(db: ReturnType<typeof getPrismaClient>, 
   await db.userSession.updateMany({ where: { userId }, data: { revokedAt: new Date() } });
 }
 
-/** Rebind the current browser's session to another profile (identity conflict flow). */
-export async function rebindCurrentSession(req: FastifyRequest, db: ReturnType<typeof getPrismaClient>, newUserId: string): Promise<void> {
+/**
+ * Rebind the current browser's session to another profile (identity conflict
+ * flow). The token is rotated: the session now points at a different
+ * profile's data, so the old token value must not stay valid.
+ */
+export async function rebindCurrentSession(req: FastifyRequest, reply: FastifyReply, db: ReturnType<typeof getPrismaClient>, newUserId: string): Promise<void> {
   const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];
   if (!token) return;
   const session = await db.userSession.findUnique({ where: { tokenHash: hashToken(token) } });
   if (!session || session.revokedAt) return;
-  await db.userSession.update({ where: { id: session.id }, data: { userId: newUserId } });
+  const fresh = newSessionToken();
+  await db.userSession.update({
+    where: { id: session.id },
+    data: { userId: newUserId, tokenHash: hashToken(fresh), lastSeenAt: new Date() },
+  });
+  reply.header("Set-Cookie", serializeSessionCookie(fresh, requestIsSecure(req), SESSION_TTL_SECONDS));
 }

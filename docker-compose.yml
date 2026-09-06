@@ -6,7 +6,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-tornscope}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tornscope}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB:-tornscope}
     volumes:
       - postgres-data:/var/lib/postgresql/data
@@ -38,7 +38,7 @@ services:
         GIT_SHA: ${GIT_SHA:-dev}
       target: migrator
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-tornscope}:${POSTGRES_PASSWORD:-tornscope}@postgres:5432/${POSTGRES_DB:-tornscope}?schema=public
+      DATABASE_URL: postgresql://${POSTGRES_USER:-tornscope}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-tornscope}?schema=public
     command: ["npx", "prisma", "migrate", "deploy"]
     depends_on:
       postgres:
@@ -53,7 +53,7 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://${POSTGRES_USER:-tornscope}:${POSTGRES_PASSWORD:-tornscope}@postgres:5432/${POSTGRES_DB:-tornscope}?schema=public
+      DATABASE_URL: postgresql://${POSTGRES_USER:-tornscope}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-tornscope}?schema=public
       REDIS_URL: redis://redis:6379
       TORN_API_BASE_URL: ${TORN_API_BASE_URL:-https://api.torn.com/v2}
       TORN_API_MIN_REQUEST_INTERVAL_MS: ${TORN_API_MIN_REQUEST_INTERVAL_MS:-700}
@@ -82,7 +82,7 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://${POSTGRES_USER:-tornscope}:${POSTGRES_PASSWORD:-tornscope}@postgres:5432/${POSTGRES_DB:-tornscope}?schema=public
+      DATABASE_URL: postgresql://${POSTGRES_USER:-tornscope}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-tornscope}?schema=public
       REDIS_URL: redis://redis:6379
       TORN_API_BASE_URL: ${TORN_API_BASE_URL:-https://api.torn.com/v2}
       TORN_API_MIN_REQUEST_INTERVAL_MS: ${TORN_API_MIN_REQUEST_INTERVAL_MS:-700}

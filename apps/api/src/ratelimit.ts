@@ -29,9 +29,15 @@ export function checkRateLimit(bucket: string, subject: string, limit: number, w
   return { ok: true, retryAfterSeconds: 0 };
 }
 
-/** Best-effort client IP (behind the reverse proxy, x-forwarded-for first). */
+/**
+ * Best-effort client IP for rate-limit identity.
+ *
+ * Always req.ip: Fastify computes it from the socket, honoring trustProxy —
+ * when TRUST_PROXY is on, a trusted adjacent proxy's X-Forwarded-For chain
+ * is resolved properly. Never read the raw header here: a direct client
+ * could spoof a fresh X-Forwarded-For per request and get a clean bucket
+ * every time.
+ */
 export function clientIp(req: { headers: Record<string, unknown>; ip?: string }): string {
-  const fwd = req.headers["x-forwarded-for"];
-  if (typeof fwd === "string" && fwd.length > 0) return fwd.split(",")[0]!.trim();
   return req.ip ?? "unknown";
 }

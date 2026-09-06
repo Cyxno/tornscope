@@ -48,8 +48,14 @@ function valueSoldInventory(
 }
 
 /** Non-cash wealth gains: item rewards from crimes and organized crimes (est.). */
-async function nonCashWealthGains(db: ReturnType<typeof getPrismaClient>, userId: string, from: Date, to: Date): Promise<number | null> {
-  const [crimeItems, ocs, marketPrices] = await Promise.all([
+async function nonCashWealthGains(
+  db: ReturnType<typeof getPrismaClient>,
+  userId: string,
+  from: Date,
+  to: Date,
+  marketPrices: Map<number, bigint>
+): Promise<number | null> {
+  const [crimeItems, ocs] = await Promise.all([
     db.crimeEvent.aggregate({
       where: { userId, occurredAt: { gte: from, lte: to }, itemsValue: { not: null } },
       _sum: { itemsValue: true },
@@ -58,7 +64,6 @@ async function nonCashWealthGains(db: ReturnType<typeof getPrismaClient>, userId
       where: { userId, executedAt: { gte: from, lte: to } },
       select: { rewards: true },
     }),
-    loadMarketPrices(db),
   ]);
   let total = Number(crimeItems._sum.itemsValue ?? 0n);
   let any = (crimeItems._sum.itemsValue ?? 0n) > 0n;
@@ -98,7 +103,10 @@ export async function getEconomySummary(userId: string, rangeInput: DateRangeInp
   const [moneyRows, unknownCount, consumptionRows, travelEvents, travelItems, marketPrices, nwPeriod, syncStates] = await Promise.all([
     db.moneyEvent.findMany({
       where: { userId, occurredAt: { gte: from, lte: to } },
-      select: { id: true, occurredAt: true, category: true, subcategory: true, direction: true, amount: true, description: true, metadata: true },
+      // No metadata here: the raw payload is only needed for valuing SOLD
+      // inventory, which gets its own targeted query below. Loading it for
+      // every row shipped the full raw log JSONB on every Economy view.
+      select: { id: true, occurredAt: true, category: true, subcategory: true, direction: true, amount: true, description: true },
     }),
     db.moneyEvent.count({ where: { userId, direction: "unknown", occurredAt: { gte: from, lte: to } } }),
     db.consumptionEvent.findMany({
@@ -131,9 +139,14 @@ export async function getEconomySummary(userId: string, rangeInput: DateRangeInp
   }));
   const flow = aggregateMoneyEvents(moneyEvents, range.from, range.to, autoInterval(range));
   const semantics = aggregateMoneySemantics(moneyEvents, range.from, range.to);
-  const sold = valueSoldInventory(moneyRows, marketPrices);
+  // Sale valuation needs the raw payloads of the (few) sale rows only.
+  const saleRows = await db.moneyEvent.findMany({
+    where: { userId, occurredAt: { gte: from, lte: to }, category: { in: [...SALE_CATEGORIES] }, direction: "income" },
+    select: { category: true, direction: true, amount: true, metadata: true },
+  });
+  const sold = valueSoldInventory(saleRows, marketPrices);
   const salesEconomicResult = sold.inventoryValueRemoved !== null ? sold.cashReceived - sold.inventoryValueRemoved : null;
-  const nonCash = await nonCashWealthGains(db, userId, from, to);
+  const nonCash = await nonCashWealthGains(db, userId, from, to, marketPrices);
   const cashAvailability: KpiAvailability =
     unknownCount > 0 ? "incomplete" : moneyRows.length === 0 ? "unavailable" : importing ? "importing" : "ok";
 

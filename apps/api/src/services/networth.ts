@@ -80,35 +80,63 @@ function toFields(row: SnapshotRow): NetworthSnapshotFields {
  * start; when tracking began after the range started, coverage is "partial"
  * (Tracked period change) and with no usable history "none" (Insufficient
  * history) — never a misleading 0.
+ *
+ * The change metrics only ever compare ANCHOR snapshots (latest at/before a
+ * timestamp, earliest ever), so the queries fetch those anchors directly —
+ * loading the entire snapshot history (20 bigint columns per row) per request
+ * is unnecessary.
  */
 export async function getNetworth(userId: string, rangeInput: DateRangeInput): Promise<NetworthResponse> {
   const db = getPrismaClient();
   const range = resolveDateRange(rangeInput);
+  const now = Math.floor(Date.now() / 1000);
+  const referenceNow = Math.max(now, range.to);
+  const yearStart = Math.floor(Date.UTC(new Date().getUTCFullYear(), 0, 1) / 1000);
+  const DAY = 86_400;
 
-  const [rows, allRows] = await Promise.all([
+  const snapAtOrBefore = (ts: number) =>
+    db.networthSnapshot.findFirst({
+      where: { userId, capturedAt: { lte: new Date(ts * 1000) } },
+      orderBy: { capturedAt: "desc" },
+      select: SNAPSHOT_SELECT,
+    });
+
+  const [rows, firstEver, latest, at7d, at30d, atYtd, atFrom, atTo] = await Promise.all([
     db.networthSnapshot.findMany({
       where: { userId, capturedAt: { gte: new Date(range.from * 1000), lte: new Date(range.to * 1000) } },
       orderBy: { capturedAt: "asc" },
       select: SNAPSHOT_SELECT,
     }),
-    db.networthSnapshot.findMany({
-      where: { userId, capturedAt: { lte: new Date(range.to * 1000) } },
-      orderBy: { capturedAt: "asc" },
-      select: SNAPSHOT_SELECT,
-    }),
+    db.networthSnapshot.findFirst({ where: { userId }, orderBy: { capturedAt: "asc" }, select: SNAPSHOT_SELECT }),
+    snapAtOrBefore(referenceNow),
+    snapAtOrBefore(referenceNow - 7 * DAY),
+    snapAtOrBefore(referenceNow - 30 * DAY),
+    snapAtOrBefore(yearStart),
+    snapAtOrBefore(range.from),
+    snapAtOrBefore(range.to),
   ]);
 
-  const allFields = allRows.map(toFields);
-  const now = Math.floor(Date.now() / 1000);
-  const yearStart = Math.floor(Date.UTC(new Date().getUTCFullYear(), 0, 1) / 1000);
-  const changes = calculateNetworthChanges(allFields, Math.max(now, range.to), yearStart);
+  // Anchors for the change metrics — exactly the snapshots the analytics can
+  // select (latest at/before each anchor, plus the first ever).
+  const changeAnchors = [firstEver, atYtd, at30d, at7d, latest]
+    .filter((r): r is SnapshotRow => r !== null)
+    .map(toFields)
+    .sort((a, b) => a.capturedAt - b.capturedAt);
+  const changes = calculateNetworthChanges(changeAnchors, referenceNow, yearStart);
 
-  const period = calculateNetworthPeriodChange(allFields, range.from, range.to);
+  // Anchors for the period change: baseline (≤ from), current (≤ to), the
+  // first snapshot inside the range (partial-coverage case) and the first
+  // ever (trackedFrom).
+  const periodAnchors = [firstEver, atFrom, atTo, rows[0] ?? null]
+    .filter((r): r is SnapshotRow => r !== null)
+    .map(toFields)
+    .sort((a, b) => a.capturedAt - b.capturedAt);
+  const period = calculateNetworthPeriodChange(periodAnchors, range.from, range.to);
 
   // Chart series: every real snapshot in the range exactly as stored,
   // chronologically sorted (buildNetworthSeries never repeats the latest
   // value or collapses points into buckets).
-  const fieldsByTs = new Map<number, NetworthSnapshotFields>(allRows.map((r) => [Math.floor(r.capturedAt.getTime() / 1000), toFields(r)]));
+  const fieldsByTs = new Map<number, NetworthSnapshotFields>(rows.map((r) => [Math.floor(r.capturedAt.getTime() / 1000), toFields(r)]));
   const series = buildNetworthSeries(
     rows.map((r) => ({ capturedAt: Math.floor(r.capturedAt.getTime() / 1000), total: bigintToNumber(r.total) ?? 0 })),
     range.from,
@@ -172,14 +200,32 @@ export async function getLatestNetworth(userId: string) {
 
 /**
  * Networth period change over an arbitrary [from, to] window — shared by the
- * networth and dashboard/economy read paths so they always agree.
+ * networth and dashboard/economy read paths so they always agree. Only the
+ * anchor snapshots the calculation can select are fetched.
  */
 export async function getNetworthPeriodForRange(userId: string, from: number, to: number) {
   const db = getPrismaClient();
-  const rows = await db.networthSnapshot.findMany({
-    where: { userId, capturedAt: { lte: new Date(to * 1000) } },
-    orderBy: { capturedAt: "asc" },
-    select: SNAPSHOT_SELECT,
-  });
-  return calculateNetworthPeriodChange(rows.map(toFields), from, to);
+  const [firstEver, atFrom, atTo, firstIn] = await Promise.all([
+    db.networthSnapshot.findFirst({ where: { userId }, orderBy: { capturedAt: "asc" }, select: SNAPSHOT_SELECT }),
+    db.networthSnapshot.findFirst({
+      where: { userId, capturedAt: { lte: new Date(from * 1000) } },
+      orderBy: { capturedAt: "desc" },
+      select: SNAPSHOT_SELECT,
+    }),
+    db.networthSnapshot.findFirst({
+      where: { userId, capturedAt: { lte: new Date(to * 1000) } },
+      orderBy: { capturedAt: "desc" },
+      select: SNAPSHOT_SELECT,
+    }),
+    db.networthSnapshot.findFirst({
+      where: { userId, capturedAt: { gte: new Date(from * 1000), lte: new Date(to * 1000) } },
+      orderBy: { capturedAt: "asc" },
+      select: SNAPSHOT_SELECT,
+    }),
+  ]);
+  const anchors = [firstEver, atFrom, atTo, firstIn]
+    .filter((r): r is SnapshotRow => r !== null)
+    .map(toFields)
+    .sort((a, b) => a.capturedAt - b.capturedAt);
+  return calculateNetworthPeriodChange(anchors, from, to);
 }

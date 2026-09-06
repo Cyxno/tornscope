@@ -72,6 +72,8 @@ services:
       OWNER_BIND_TOKEN: ${OWNER_BIND_TOKEN:-}
       # One-time recovery token for the owner browser (remove after use).
       OWNER_RECOVERY_TOKEN: ${OWNER_RECOVERY_TOKEN:-}
+      # Set OWNER_BIND_ENABLED=false once the owner browser is bound.
+      OWNER_BIND_ENABLED: ${OWNER_BIND_ENABLED:-}
       # Extra origins accepted for cookie-authenticated mutations (comma separated).
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
       APP_BASE_URL: ${APP_BASE_URL:-http://192.168.1.2:5173}
@@ -104,6 +106,11 @@ services:
       TORN_API_BASE_URL: ${TORN_API_BASE_URL:-https://api.torn.com/v2}
       TORN_API_MIN_REQUEST_INTERVAL_MS: ${TORN_API_MIN_REQUEST_INTERVAL_MS:-700}
       API_KEY_ENCRYPTION_KEY: ${API_KEY_ENCRYPTION_KEY:?set API_KEY_ENCRYPTION_KEY in .env}
+      # The worker owns the real backfill window — it must match what the
+      # Sync Status page advertises.
+      TORN_SYNC_INITIAL_HISTORY_DAYS: ${TORN_SYNC_INITIAL_HISTORY_DAYS:-180}
+      # Abandoned anonymous profiles are cleaned up by worker maintenance.
+      GUEST_PROFILE_RETENTION_DAYS: ${GUEST_PROFILE_RETENTION_DAYS:-60}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     depends_on:
       migrate:
@@ -124,7 +131,17 @@ services:
       PORT: 5173
       API_BASE_URL: http://api:3000
       ORIGIN: ${ORIGIN:-http://192.168.1.2:5173}
+      # adapter-node trusts these forwarded headers so SvelteKit's url reflects
+      # the public scheme/host — required for the API to mark the session
+      # cookie Secure once the site is served over HTTPS.
+      PROTOCOL_HEADER: x-forwarded-proto
+      HOST_HEADER: x-forwarded-host
     ports:
       - "5173:5173"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:5173/').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
     depends_on:
       - api

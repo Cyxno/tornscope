@@ -27,6 +27,9 @@ export async function getTimeline(userId: string, rangeInput: DateRangeInput, fi
     where,
     orderBy: [{ occurredAt: "desc" }, { id: "desc" }],
     take: filters.limit,
+    // metadata is the raw Torn log payload (kept for renormalize) — never
+    // shipped to the timeline page.
+    select: { id: true, occurredAt: true, type: true, category: true, title: true, description: true, amount: true, source: true },
   });
 
   return {

@@ -72,6 +72,14 @@ export function registerRoutes(app: FastifyInstance): void {
     }
     (req as unknown as { currentUserValue: SessionUser | null }).currentUserValue = await resolveSessionUser(req, reply);
     assertSameOrigin(req);
+    // The demo profile is a SHARED synthetic dataset. While the session is
+    // resolved to it, no mutation may reach route logic — leaving demo view
+    // (the one toggle that acts on the visitor's real profile) is exempt.
+    // This blocks key save/delete, sync triggers and profile deletion against
+    // the demo identity.
+    if (currentUser(req).isDemo && req.method !== "GET" && req.method !== "HEAD" && url !== "/api/demo-view") {
+      throw errors.conflict("This is the shared demo view — leave demo mode before changing anything.");
+    }
   });
 
   app.get("/api/health", async () => ({ status: "ok" }));
@@ -213,8 +221,9 @@ export function registerRoutes(app: FastifyInstance): void {
   app.get("/api/faction/organized-crimes", async (req) => {
     const user = currentUser(req);
     const range = parseRange(req.query as Record<string, unknown>);
-    const q = req.query as Record<string, unknown>;
-    return getFactionOcs(user.id, range, q.myId === undefined ? null : Number(q.myId));
+    // "My" identity comes ONLY from this profile's linked Torn account —
+    // never from a query parameter (ownership is never client-supplied).
+    return getFactionOcs(user.id, range);
   });
 
   app.get("/api/faction/ledger", async (req) => {
@@ -284,10 +293,11 @@ export function registerRoutes(app: FastifyInstance): void {
     return getSyncStatus(user.id);
   });
 
-  // Full sync + system health for the Sync Status page.
+  // Full sync + system health for the Sync Status page. Infrastructure
+  // topology (system/queues) is included only for the server owner.
   app.get("/api/sync/health", async (req) => {
     const user = currentUser(req);
-    return getSyncHealth(user.id);
+    return getSyncHealth(user.id, { isOwner: user.role === "owner" && !user.isDemo });
   });
 
   app.post("/api/sync/run", async (req) => {
@@ -339,7 +349,7 @@ export function registerRoutes(app: FastifyInstance): void {
     try {
       const result = await saveApiKey(user, body.data.key, { confirmNewProfile: body.data.confirmNewProfile === true });
       // Identity-conflict resolution: rebind this browser to the new profile.
-      if (result.newProfileId) await rebindCurrentSession(req, getPrismaClient(), result.newProfileId);
+      if (result.newProfileId) await rebindCurrentSession(req, reply, getPrismaClient(), result.newProfileId);
       return result.status;
     } catch (err) {
       handleRouteError(err);

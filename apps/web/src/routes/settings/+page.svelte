@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { ApiKeyStatusResponse, KeyCapabilitiesDto, MeResponse } from "@tornscope/shared";
   import { capabilityLevel } from "@tornscope/shared";
+  import { onMount } from "svelte";
   import { endpoints, ApiClientError } from "$lib/api";
   import { formatRelative } from "$lib/reltime";
   import PageHeader from "$lib/components/PageHeader.svelte";
@@ -32,7 +33,11 @@
     }
   }
 
-  void load();
+  // Client-only: a top-level call here would also run during SSR, where the
+  // relative /api fetch fails and the retry sleeps would stall the response.
+  onMount(() => {
+    void load();
+  });
 
   async function save(confirmNewProfile = false) {
     saving = true;

@@ -13,9 +13,15 @@ import { env } from "$env/dynamic/private";
  * - the forwarded protocol is passed through so the API can mark the
  *   session cookie Secure only when the public origin is HTTPS.
  */
-const handler: RequestHandler = async ({ request, params, url }) => {
+const handler: RequestHandler = async ({ request, params, url, getClientAddress }) => {
   const base = env.API_BASE_URL ?? "http://localhost:3000";
-  const target = new URL(`/api/${params.path ?? ""}`, base);
+  // Re-encode each segment: a path like /api/%2e%2e/ must not normalize into
+  // a different target on the API side.
+  const safePath = (params.path ?? "")
+    .split("/")
+    .map((segment) => encodeURIComponent(decodeURIComponent(segment)))
+    .join("/");
+  const target = new URL(`/api/${safePath}`, base);
   url.searchParams.forEach((value, key) => target.searchParams.set(key, value));
 
   const headers: Record<string, string> = {
@@ -24,6 +30,10 @@ const handler: RequestHandler = async ({ request, params, url }) => {
   };
   const cookie = request.headers.get("cookie");
   if (cookie) headers.cookie = cookie;
+  // The API is a trusted single hop behind THIS proxy: forward the real
+  // client address so per-IP rate limits key on actual visitors, not on the
+  // web container's IP (all visitors would otherwise share one bucket).
+  headers["x-forwarded-for"] = getClientAddress();
   // Let the API see how the browser reached us (https or not).
   headers["x-forwarded-proto"] = url.protocol.replace(":", "");
   if (url.host) headers["x-forwarded-host"] = url.host;

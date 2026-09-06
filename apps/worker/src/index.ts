@@ -24,7 +24,18 @@ const HEARTBEAT_TTL_SECONDS = 180;
 
 async function main(): Promise<void> {
   if (!env.databaseUrl) throw new Error("DATABASE_URL is required");
-  logger.info({ redisUrl: env.redisUrl }, "starting tornscope worker");
+  // Never log credentials possibly embedded in the URL (redis://:pass@host).
+  const sanitizedRedisUrl = (() => {
+    try {
+      const u = new URL(env.redisUrl);
+      if (u.password) u.password = "«redacted»";
+      if (u.username && u.username !== "") u.username = "«redacted»";
+      return u.toString();
+    } catch {
+      return "«unparseable»";
+    }
+  })();
+  logger.info({ redisUrl: sanitizedRedisUrl }, "starting tornscope worker");
 
   const syncQueue = createSyncQueue(env.redisUrl);
   const schedulerQueue = createSchedulerQueue(env.redisUrl);

@@ -59,6 +59,12 @@ export async function buildServer(): Promise<FastifyInstance> {
     reply.status(404).send({ error: { code: "not_found", message: "Route not found" } });
   });
 
+  // Deployed build identity on every API response — the web proxy forwards
+  // it to the browser, making build drift visible from the client.
+  app.addHook("onSend", async (_req, reply) => {
+    reply.header("x-tornscope-build", process.env.GIT_SHA ?? "dev");
+  });
+
   app.get("/", async () => ({ name: "TornScope API", status: "ok" }));
 
   registerRoutes(app as FastifyInstance);

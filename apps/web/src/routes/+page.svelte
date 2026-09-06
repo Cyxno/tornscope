@@ -252,6 +252,12 @@
           = expected {formatMoneyCompact(data.wallet.expectedEndingCash ?? 0)}
           <span class="mx-1.5 text-border-strong">·</span>
           actual wallet now {formatMoneyCompact(data.wallet.actualEndingCash ?? 0)}
+          {#if data.wallet.factionBalanceCredits > 0}
+            <span class="mx-1.5 text-border-strong">·</span>
+            <span class="text-fg-faint">
+              OC payouts {formatMoneyCompact(data.wallet.factionBalanceCredits)} went to your faction balance (withdrawable there), not your wallet
+            </span>
+          {/if}
           {#if data.wallet.unreconciled !== null}
             <span class="mx-1.5 text-border-strong">·</span>
             <span class={Math.abs(data.wallet.unreconciled) < 1000 ? "text-fg-faint" : "text-warning"}>
