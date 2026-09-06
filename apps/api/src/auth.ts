@@ -187,9 +187,18 @@ export async function bindLegacyOwner(req: FastifyRequest, reply: FastifyReply, 
   if (!owner) throw new AppError("bind_no_owner", "No legacy owner profile exists.", 404);
 
   const already = await db.appSetting.findUnique({ where: { userId_key: { userId: owner.id, key: OWNER_BOUND_KEY } } });
-  if (already) throw new AppError("bind_already_claimed", "The legacy owner profile has already been bound to a browser.", 409);
+  const recoveryToken = process.env.OWNER_RECOVERY_TOKEN ?? "";
+  const recoveryMode = Boolean(already) && recoveryToken !== "" && safeEquals(token, recoveryToken);
+  if (already && !recoveryMode) {
+    throw new AppError("bind_already_claimed", "The legacy owner profile has already been bound to a browser.", 409);
+  }
 
-  // Bind: point the current browser's session at the owner profile.
+  // Bind: point the current browser's session at the owner profile. In
+  // recovery mode, prior active owner sessions are revoked first so a stale
+  // or leaked browser session cannot share the profile silently.
+  if (recoveryMode) {
+    await db.userSession.updateMany({ where: { userId: owner.id, revokedAt: null }, data: { revokedAt: new Date() } });
+  }
   const cookies = parseCookies(req.headers.cookie);
   const existingToken = cookies[SESSION_COOKIE];
   const fresh = newSessionToken();
@@ -207,19 +216,24 @@ export async function bindLegacyOwner(req: FastifyRequest, reply: FastifyReply, 
     reply.header("Set-Cookie", serializeSessionCookie(fresh, requestIsSecure(req), SESSION_TTL_SECONDS));
   }
 
-  await db.appSetting.create({ data: { userId: owner.id, key: OWNER_BOUND_KEY, value: true } });
+  if (!already) {
+    await db.appSetting.create({ data: { userId: owner.id, key: OWNER_BOUND_KEY, value: true } });
+  }
   (req as unknown as { sessionProfileId?: string }).sessionProfileId = owner.id;
   return owner;
 }
 
 /** Whether the bind flow is still possible (token configured + not claimed). */
 export async function ownerBindAvailable(): Promise<boolean> {
-  if (!env.ownerBindEnabled || !process.env.OWNER_BIND_TOKEN) return false;
+  if (!env.ownerBindEnabled) return false;
+  const recoveryConfigured = Boolean(process.env.OWNER_RECOVERY_TOKEN);
+  if (!process.env.OWNER_BIND_TOKEN && !recoveryConfigured) return false;
   const db = getPrismaClient();
   const owner = await db.user.findFirst({ where: { role: "owner", isDemo: false }, orderBy: { createdAt: "asc" }, select: { id: true } });
   if (!owner) return false;
   const bound = await db.appSetting.findUnique({ where: { userId_key: { userId: owner.id, key: OWNER_BOUND_KEY } } });
-  return !bound;
+  // Either normal binding is still open, or recovery mode is configured.
+  return !bound || recoveryConfigured;
 }
 
 /**

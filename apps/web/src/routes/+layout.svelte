@@ -48,6 +48,14 @@
   {/if}
 
   <main class="mx-auto w-full max-w-6xl flex-1 px-5 py-10 sm:px-6 sm:py-12">
+    {#if me.loaded && me.error}
+      <div class="mb-8 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-negative/25 bg-negative/5 px-5 py-3">
+        <p class="text-[13px] text-negative">Could not reach the TornScope API: {me.error}</p>
+        <button class="rounded-full border border-border px-4 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:border-accent hover:text-accent" onclick={() => void refreshMe()}>
+          Retry
+        </button>
+      </div>
+    {/if}
     {@render children()}
   </main>
 

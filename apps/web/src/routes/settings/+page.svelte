@@ -244,7 +244,7 @@
   </Panel>
 
   {#if me?.ownerBindAvailable}
-    <Panel title="Legacy owner binding" caption="One-time: attach the existing owner dataset to this browser">
+    <Panel title="Legacy owner binding" caption="One-time recovery: attach the existing owner dataset to this browser (works even after the first bind)">
       <div class="flex max-w-xl gap-2.5">
         <input
           type="password"

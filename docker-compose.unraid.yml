@@ -70,6 +70,8 @@ services:
       API_KEY_ENCRYPTION_KEY: ${API_KEY_ENCRYPTION_KEY:?set API_KEY_ENCRYPTION_KEY in .env}
       # One-time token that binds the legacy owner profile to a browser.
       OWNER_BIND_TOKEN: ${OWNER_BIND_TOKEN:-}
+      # One-time recovery token for the owner browser (remove after use).
+      OWNER_RECOVERY_TOKEN: ${OWNER_RECOVERY_TOKEN:-}
       # Extra origins accepted for cookie-authenticated mutations (comma separated).
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
       APP_BASE_URL: ${APP_BASE_URL:-http://192.168.1.2:5173}
