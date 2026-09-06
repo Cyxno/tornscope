@@ -129,16 +129,6 @@
         </Panel>
       {/if}
 
-      {#if overview.balance}
-        <Panel title="Faction bank" caption="Snapshot from Torn faction balance" flush>
-          <div class="grid grid-cols-2 gap-px bg-border md:grid-cols-3">
-            <div class="bg-surface p-5 text-center"><p class="text-[10px] uppercase tracking-[0.14em] text-fg-faint">Faction money</p><p class="tnum mt-1 font-semibold text-fg">{formatMoneyCompact(overview.balance.money)}</p></div>
-            <div class="bg-surface p-5 text-center"><p class="text-[10px] uppercase tracking-[0.14em] text-fg-faint">Points</p><p class="tnum mt-1 font-semibold text-fg">{overview.balance.points ?? "—"}</p></div>
-            <div class="bg-surface p-5 text-center"><p class="text-[10px] uppercase tracking-[0.14em] text-fg-faint">Snapshot</p><p class="mt-1 text-xs text-fg-muted">{formatDateTime(overview.balance.capturedAt)}</p></div>
-          </div>
-        </Panel>
-      {/if}
-
       <Panel title="Recent ranked wars" caption="Newest first — full details under the Ranked Wars tab" flush>
         {#if overview.recentWars.length === 0}
           <StateMessage state="empty" title="No ranked wars stored yet" hint="Wars are collected by the ranked_wars sync resource." />

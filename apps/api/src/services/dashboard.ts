@@ -292,14 +292,15 @@ export async function getDashboard(userId: string, rangeInput: DateRangeInput): 
       assetPurchases: fin.assetOutflow,
       unknownValue: fin.unknownValue,
       bankTransfers: fin.bankTransfers,
+      // Snapshot delta only — includes price moves and asset movement, so it
+      // is labeled Net Worth Change, never profit or economic gain.
       economicGain: {
-        // The defensible economic measure: official net worth snapshot change.
         value: nwPeriod.change,
         provenance: "exact",
-        // Partial coverage = the tracked window is shorter than the range.
         availability: nwPeriod.coverage === "none" ? "unavailable" : nwPeriod.coverage === "partial" ? "incomplete" : "ok",
       },
-      economicGainBaselineAt: nwPeriod.baseline?.capturedAt ?? nwPeriod.trackedFrom ?? null,
+      netWorthMeasuredFrom: nwPeriod.baseline?.capturedAt ?? nwPeriod.trackedFrom ?? null,
+      netWorthMeasuredTo: nwPeriod.current?.capturedAt ?? null,
     },
     faction: factionSummary,
     crimes:

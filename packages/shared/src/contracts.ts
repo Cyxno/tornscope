@@ -312,13 +312,14 @@ export const DashboardResponseSchema = z.object({
     /** Internal movements between owned accounts (bank invest/withdraw). */
     bankTransfers: z.number(),
     /**
-     * Economic gain/loss measured by official net worth snapshots. Partial
-     * when tracking does not cover the whole selected range — the value then
-     * reflects the tracked window only.
+     * Net worth snapshot delta over the range. This is a SNAPSHOT DELTA —
+     * it includes item/stock/property price moves, cash and asset movement —
+     * and is never labeled profit or economic gain.
      */
     economicGain: KpiValueSchema,
-    /** Net worth snapshot the gain is measured from (unix seconds, null = n/a). */
-    economicGainBaselineAt: z.number().nullable(),
+    /** Snapshot timestamps the delta is measured between (unix seconds, null = n/a). */
+    netWorthMeasuredFrom: z.number().nullable(),
+    netWorthMeasuredTo: z.number().nullable(),
   }),
   networthSeries: z.array(z.object({ t: z.number(), total: z.number() })),
   incomeByCategory: z.array(z.object({ category: MoneyCategorySchema, total: z.number() })),
@@ -858,13 +859,17 @@ export const DrugsSummaryResponseSchema = z.object({
     coveredDays: z.number().nullable(),
     coverage: z.enum(["full", "partial", "unavailable"]),
   }),
-  /** Xanax funding split: faction-sponsored uses are never personal cost. */
+  /**
+   * Xanax funding split, evidence-based: personal = matched to a personal
+   * purchase record; sponsored = linked to a faction transfer; unknown =
+   * gifts and uses that cannot be traced (never assumed personal).
+   */
   xanaxFunding: z.object({
     used: z.number(),
     personal: z.number(),
     /** Linked to a faction armory / faction transfer record. */
     factionSponsored: z.number(),
-    /** Received from untraceable sources (gifts) within the match window. */
+    /** Gifts plus uses with no traceable source. */
     unknownFunded: z.number(),
   }),
   byDrug: z.array(

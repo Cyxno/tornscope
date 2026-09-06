@@ -110,13 +110,17 @@
   /**
    * Selling items (bazaar / item market / trades / auctions) is CASH IN, not
    * profit: inventory value left the stock. Called out explicitly so the
-   * income total is never read as economic gain — the net worth change above
-   * is where the real economic effect lands.
+   * inflow total is never read as economic gain.
    */
   const SALES_CATEGORIES = new Set(["bazaar", "items", "trading", "auction"]);
   const soldInventoryIncome = $derived(
     (data?.incomeByCategory ?? []).filter((c) => SALES_CATEGORIES.has(String(c.category))).reduce((s, c) => s + c.total, 0)
   );
+
+  /** Semantic badges per category row: conversion vs true income/expense. */
+  const ASSET_CATEGORIES = new Set(["bazaar", "items", "trading", "auction", "points", "stock", "travel", "plushie", "flower", "drugs"]);
+  const isInflowConversion = (category: string): boolean => SALES_CATEGORIES.has(category) || category === "points";
+  const isOutflowConversion = (category: string): boolean => ASSET_CATEGORIES.has(category);
 </script>
 
 <div class="space-y-10">
@@ -155,13 +159,13 @@
                 {data.networthChange.value === null ? "—" : `${(data.networthChange.value ?? 0) >= 0 ? "+" : ""}${formatMoneyCompact(data.networthChange.value)}`}
               {/if}
             </span>
-            <span class="text-fg-faint">
+            <span class="text-fg-faint" title="Snapshot delta from official Torn net worth: includes item/stock/property price moves, cash and asset movement. Not a profit figure.">
               {#if data.networthCoverage === "none"}
-                networth change
-              {:else if data.networthCoverage === "partial" && data.financial.economicGainBaselineAt !== null}
-                economic gain/loss · tracked from {formatDate(data.financial.economicGainBaselineAt)} — partial coverage of the selected range
+                Net Worth Change
+              {:else if data.networthCoverage === "partial" && data.financial.netWorthMeasuredFrom !== null}
+                Net Worth Change · snapshots {formatDate(data.financial.netWorthMeasuredFrom)} → {data.financial.netWorthMeasuredTo !== null ? formatDate(data.financial.netWorthMeasuredTo) : "now"} · partial coverage of range
               {:else}
-                {period} economic gain/loss
+                Net Worth Change · snapshots {data.financial.netWorthMeasuredFrom !== null ? formatDate(data.financial.netWorthMeasuredFrom) : ""} → {data.financial.netWorthMeasuredTo !== null ? formatDate(data.financial.netWorthMeasuredTo) : "now"}
               {/if}
             </span>
           </span>
@@ -223,7 +227,7 @@
     <!-- Flow + activity -->
     <section class="grid gap-6 lg:grid-cols-6">
       <div class="lg:col-span-2">
-        <Panel title="Cash inflow" caption="Everything that entered the wallet — earnings and asset sales are different things">
+        <Panel title="Cash inflow" caption="Everything that entered the wallet — earnings and asset conversions are different things">
           {#if topIncome.length === 0}
             <StateMessage state="empty" title="No money events in this range" />
           {:else}
@@ -231,11 +235,18 @@
               {#each topIncome as row (row.category)}
                 <li>
                   <div class="flex items-baseline justify-between gap-3 text-[13px]">
-                    <span class="capitalize text-fg">{row.category}</span>
-                    <span class="tnum font-medium text-positive">+{formatMoneyCompact(row.total)}</span>
+                    <span class="text-fg">
+                      <span class="capitalize">{row.category}</span>
+                      {#if isInflowConversion(String(row.category))}
+                        <span class="ml-1.5 rounded-full border border-border bg-surface-2 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-fg-faint" title="Asset conversion: cash received for something you owned — not earnings">conversion</span>
+                      {:else}
+                        <span class="ml-1.5 rounded-full border border-positive/30 bg-positive/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-positive" title="Earned money — raises total wealth">earned</span>
+                      {/if}
+                    </span>
+                    <span class="tnum font-medium {isInflowConversion(String(row.category)) ? 'text-fg-muted' : 'text-positive'}">+{formatMoneyCompact(row.total)}</span>
                   </div>
                   <div class="mt-1.5 h-1.5 overflow-hidden rounded-full bg-surface-2">
-                    <div class="h-full rounded-full bg-positive/80" style="width: {Math.round((row.total / (topIncome[0]?.total || 1)) * 100)}%"></div>
+                    <div class="h-full rounded-full {isInflowConversion(String(row.category)) ? 'bg-fg-faint/50' : 'bg-positive/80'}" style="width: {Math.round((row.total / (topIncome[0]?.total || 1)) * 100)}%"></div>
                   </div>
                 </li>
               {/each}
@@ -243,15 +254,14 @@
             {#if soldInventoryIncome > 0}
               <p class="mt-4 border-t border-border pt-3 text-[11px] leading-relaxed text-fg-faint">
                 Includes {formatMoneyCompact(soldInventoryIncome)} from selling assets (bazaar, item market, trades) — that is
-                <span class="text-fg-muted">Asset Movement</span>, not earnings. It does not count as profit: the items left your inventory.
-                True economic gain is the Net Worth Change above.
+                <span class="text-fg-muted">Asset Movement</span>, not earnings and not profit: the items left your inventory.
               </p>
             {/if}
           {/if}
         </Panel>
       </div>
       <div class="lg:col-span-2">
-        <Panel title="Cash outflow" caption="Everything that left the wallet — true expenses and asset purchases are different things">
+        <Panel title="Cash outflow" caption="Everything that left the wallet — true expenses and asset conversions are different things">
           {#if topExpenses.length === 0}
             <StateMessage state="empty" title="No cash expenses in this range" />
           {:else}
@@ -259,11 +269,18 @@
               {#each topExpenses as row (row.category)}
                 <li>
                   <div class="flex items-baseline justify-between gap-3 text-[13px]">
-                    <span class="capitalize text-fg">{row.category}</span>
-                    <span class="tnum font-medium text-negative">-{formatMoneyCompact(row.total)}</span>
+                    <span class="text-fg">
+                      <span class="capitalize">{row.category}</span>
+                      {#if isOutflowConversion(String(row.category))}
+                        <span class="ml-1.5 rounded-full border border-border bg-surface-2 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-fg-faint" title="Asset conversion: value still owned in another form (items, points, stocks, bank) — not an economic loss">conversion</span>
+                      {:else}
+                        <span class="ml-1.5 rounded-full border border-negative/30 bg-negative/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-negative" title="True expense: value gone (fees, upkeep, rehab, losses)">true expense</span>
+                      {/if}
+                    </span>
+                    <span class="tnum font-medium {isOutflowConversion(String(row.category)) ? 'text-fg-muted' : 'text-negative'}">-{formatMoneyCompact(row.total)}</span>
                   </div>
                   <div class="mt-1.5 h-1.5 overflow-hidden rounded-full bg-surface-2">
-                    <div class="h-full rounded-full bg-negative/80" style="width: {Math.round((row.total / (topExpenses[0]?.total || 1)) * 100)}%"></div>
+                    <div class="h-full rounded-full {isOutflowConversion(String(row.category)) ? 'bg-fg-faint/50' : 'bg-negative/80'}" style="width: {Math.round((row.total / (topExpenses[0]?.total || 1)) * 100)}%"></div>
                   </div>
                 </li>
               {/each}
@@ -271,7 +288,7 @@
             {#if data.financial.assetPurchases > 0}
               <p class="mt-4 border-t border-border pt-3 text-[11px] leading-relaxed text-fg-faint">
                 {formatMoneyCompact(data.financial.assetPurchases)} of this bought assets you still own (items, points, stocks,
-                bank deposits) — <span class="text-fg-muted">Asset Movement</span>, not economic loss. True expenses:
+                bank deposits) — <span class="text-fg-muted">Asset Movement</span>. True expenses:
                 {formatMoneyCompact(data.financial.trueExpense)}.
               </p>
             {/if}
