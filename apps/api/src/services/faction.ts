@@ -65,8 +65,11 @@ async function loadFactionPayouts(userId: number | string, from: number, to: num
 async function loadWars(userId: string): Promise<Array<WarLike & { targetScore: number | null }>> {
   const db = getPrismaClient();
   const account = await db.tornAccount.findUnique({ where: { userId }, select: { factionId: true } });
+  // Tenant isolation: a profile without a faction must never see another
+  // faction's (or a global pool of) ranked wars.
+  if (account?.factionId === null || account?.factionId === undefined) return [];
   const rows = await db.rankedWar.findMany({
-    where: account?.factionId !== null && account?.factionId !== undefined ? { factionId: account.factionId } : {},
+    where: { factionId: account.factionId },
     orderBy: { startedAt: "desc" },
   });
   return rows
@@ -90,7 +93,8 @@ export async function getFactionOverview(userId: string, rangeInput: DateRangeIn
   const db = getPrismaClient();
   const range = resolveDateRange(rangeInput);
   const account = await db.tornAccount.findUnique({ where: { userId }, select: { factionId: true } });
-  const factionId = account?.factionId ?? (await db.faction.findFirst({ select: { id: true } }))?.id ?? null;
+  // Tenant isolation: no implicit fallback to some global faction.
+  const factionId = account?.factionId ?? null;
 
   const [faction, membership, wars, combatEvents, payouts, balanceRow, chainRow, chainCount, ocCount] = await Promise.all([
     factionId !== null ? db.faction.findUnique({ where: { id: factionId } }) : Promise.resolve(null),

@@ -76,7 +76,11 @@ export function newSessionToken(): string {
   return randomBytes(32).toString("base64url");
 }
 
-async function userForSession(db: ReturnType<typeof getPrismaClient>, token: string): Promise<SessionUser | null> {
+async function userForSession(
+  db: ReturnType<typeof getPrismaClient>,
+  token: string,
+  req?: FastifyRequest
+): Promise<SessionUser | null> {
   const session = await db.userSession.findUnique({
     where: { tokenHash: hashToken(token) },
     include: { user: true },
@@ -92,6 +96,9 @@ async function userForSession(db: ReturnType<typeof getPrismaClient>, token: str
     db.apiCredential.findUnique({ where: { userId: user.id }, select: { revokedAt: true } }),
   ]);
   if (flag && !credential?.revokedAt) {
+    // Remember which REAL profile owns the session so leaving demo mode can
+    // clear ITS flag (the resolved user is now the demo profile).
+    if (req) (req as unknown as { sessionProfileId?: string }).sessionProfileId = user.id;
     const demo = await db.user.findUnique({ where: { email: "demo@tornscope.local" } });
     if (demo) return demo;
   }
@@ -127,6 +134,7 @@ async function createAnonymousSession(db: ReturnType<typeof getPrismaClient>, re
   const token = newSessionToken();
   await db.userSession.create({ data: { userId: user.id, tokenHash: hashToken(token) } });
   reply.header("Set-Cookie", serializeSessionCookie(token, requestIsSecure(req), SESSION_TTL_SECONDS));
+  (req as unknown as { sessionProfileId?: string }).sessionProfileId = user.id;
   return user;
 }
 
@@ -139,7 +147,7 @@ export async function resolveSessionUser(req: FastifyRequest, reply: FastifyRepl
   const db = getPrismaClient();
   const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];
   if (token) {
-    const user = await userForSession(db, token);
+    const user = await userForSession(db, token, req);
     if (user) {
       // Touch at most once an hour to avoid a write per request.
       const now = Date.now();
@@ -200,6 +208,7 @@ export async function bindLegacyOwner(req: FastifyRequest, reply: FastifyReply, 
   }
 
   await db.appSetting.create({ data: { userId: owner.id, key: OWNER_BOUND_KEY, value: true } });
+  (req as unknown as { sessionProfileId?: string }).sessionProfileId = owner.id;
   return owner;
 }
 

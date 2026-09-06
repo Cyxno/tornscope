@@ -78,10 +78,12 @@ export function registerRoutes(app: FastifyInstance): void {
   });
 
   app.post("/api/demo-view", async (req, reply) => {
-    const user = currentUser(req);
+    // Toggle the flag on the SESSION's real profile — not on the resolved
+    // (demo) user — otherwise leaving demo mode is impossible.
+    const profileId = (req as unknown as { sessionProfileId?: string }).sessionProfileId ?? currentUser(req).id;
     const body = z.object({ enabled: z.boolean() }).safeParse(req.body);
     if (!body.success) throw errors.validation(body.error.flatten());
-    await setDemoView(user, body.data.enabled);
+    await setDemoView({ id: profileId }, body.data.enabled);
     const current = await resolveSessionUser(req, reply);
     return getMe(current);
   });
