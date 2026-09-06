@@ -1,6 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { getPrismaClient } from "@tornscope/database";
+import { env } from "./env.js";
 import { AppError } from "./errors.js";
 
 /**
@@ -48,6 +49,7 @@ function parseCookies(header: string | undefined): Record<string, string> {
 }
 
 export function requestIsSecure(req: FastifyRequest): boolean {
+  if (!env.trustProxy) return req.protocol === "https";
   const proto = (req.headers["x-forwarded-proto"] ?? req.protocol ?? "").toString().toLowerCase();
   return proto.split(",")[0]!.trim() === "https";
 }
@@ -96,8 +98,30 @@ async function userForSession(db: ReturnType<typeof getPrismaClient>, token: str
   return user;
 }
 
+/** Max NEW anonymous profiles one IP may create per hour (session abuse guard). */
+const PROFILE_CREATION_LIMIT = 20;
+const profileCreationHits = new Map<string, number[]>();
+
+export class ProfileCreationRateLimited extends Error {
+  readonly statusCode = 429;
+  constructor() {
+    super("Too many new sessions from this address — try again later.");
+  }
+}
+
 /** Create a fresh anonymous profile + session and set the cookie. */
 async function createAnonymousSession(db: ReturnType<typeof getPrismaClient>, req: FastifyRequest, reply: FastifyReply): Promise<SessionUser> {
+  // Session-abuse guard: bots hammering the API without cookies must not be
+  // able to grow the users table unbounded. Existing valid sessions are
+  // unaffected — this only gates NEW profile creation.
+  const ip = (req.headers["x-forwarded-for"]?.toString().split(",")[0]?.trim()) ?? req.ip ?? "unknown";
+  const now = Date.now();
+  const hits = (profileCreationHits.get(ip) ?? []).filter((t) => now - t < 3600_000);
+  if (hits.length >= PROFILE_CREATION_LIMIT) {
+    throw new ProfileCreationRateLimited();
+  }
+  hits.push(now);
+  profileCreationHits.set(ip, hits);
   const suffix = randomBytes(3).toString("hex");
   const user = await db.user.create({ data: { displayName: `Guest ${suffix}`, role: "user" } });
   const token = newSessionToken();
@@ -144,6 +168,9 @@ function safeEquals(a: string, b: string): boolean {
  */
 export async function bindLegacyOwner(req: FastifyRequest, reply: FastifyReply, token: string): Promise<SessionUser> {
   const db = getPrismaClient();
+  if (process.env.OWNER_BIND_ENABLED === "false" || !env.ownerBindEnabled) {
+    throw new AppError("bind_disabled", "Owner binding has been disabled on this server.", 403);
+  }
   const expected = process.env.OWNER_BIND_TOKEN ?? "";
   if (!expected) throw new AppError("bind_disabled", "Owner binding is not enabled on this server.", 403);
   if (!safeEquals(token, expected)) throw new AppError("bind_invalid_token", "Invalid binding token.", 403);
@@ -178,7 +205,7 @@ export async function bindLegacyOwner(req: FastifyRequest, reply: FastifyReply, 
 
 /** Whether the bind flow is still possible (token configured + not claimed). */
 export async function ownerBindAvailable(): Promise<boolean> {
-  if (!process.env.OWNER_BIND_TOKEN) return false;
+  if (!env.ownerBindEnabled || !process.env.OWNER_BIND_TOKEN) return false;
   const db = getPrismaClient();
   const owner = await db.user.findFirst({ where: { role: "owner", isDemo: false }, orderBy: { createdAt: "asc" }, select: { id: true } });
   if (!owner) return false;

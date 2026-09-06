@@ -1,4 +1,5 @@
 import { enqueueDueSyncs } from "./scheduler.js";
+import { maybeRunDailyMaintenance } from "./maintenance.js";
 import { runResourceSync } from "./sync/runner.js";
 import { env, logger } from "./env.js";
 import { queueRedis } from "./redis.js";
@@ -46,6 +47,7 @@ async function main(): Promise<void> {
 
   const schedulerWorker = createSchedulerWorker(env.redisUrl, async () => {
     await enqueueDueSyncs(syncQueue);
+    await maybeRunDailyMaintenance();
   });
   schedulerWorker.on("error", (err) => logger.error({ err: (err as Error).message }, "scheduler worker error"));
 

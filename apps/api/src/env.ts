@@ -17,4 +17,17 @@ export const env = {
   tornMinRequestIntervalMs: Number(process.env.TORN_API_MIN_REQUEST_INTERVAL_MS ?? 700),
   encryptionKey: process.env.API_KEY_ENCRYPTION_KEY ?? "",
   appBaseUrl: process.env.APP_BASE_URL ?? "http://localhost:5173",
+  /** Public origin users browse (used only for documentation/headers). */
+  publicBaseUrl: process.env.PUBLIC_BASE_URL ?? "",
+  /** Extra origins allowed for cookie-authenticated mutations (CSV). */
+  allowedOrigins: process.env.ALLOWED_ORIGINS ?? "",
+  /**
+   * Trust X-Forwarded-* headers when the API sits behind the reverse proxy.
+   * Set TRUST_PROXY=false only for direct unproxied exposure.
+   */
+  trustProxy: process.env.TRUST_PROXY !== "false",
+  /** Owner binding stays enabled until explicitly disabled post-migration. */
+  ownerBindEnabled: process.env.OWNER_BIND_ENABLED !== "false",
+  /** Abandoned anonymous profiles older than this are cleaned up. */
+  guestRetentionDays: Number(process.env.GUEST_PROFILE_RETENTION_DAYS ?? 60),
 } as const;

@@ -60,6 +60,12 @@ export function registerRoutes(app: FastifyInstance): void {
   // profile + session cookie on first visit) and guard mutations against
   // cross-origin calls. Ownership ALWAYS comes from this — never the body.
   app.addHook("preHandler", async (req, reply) => {
+    // Health checks (bots/monitors) never create profiles or need identity.
+    const url = (req.raw.url ?? "").split("?")[0]!;
+    if (url === "/api/health" || url === "/") {
+      (req as unknown as { currentUserValue: SessionUser | null }).currentUserValue = { id: "", displayName: "", role: "anonymous", isDemo: false, timezone: "UTC" };
+      return;
+    }
     (req as unknown as { currentUserValue: SessionUser | null }).currentUserValue = await resolveSessionUser(req, reply);
     assertSameOrigin(req);
   });

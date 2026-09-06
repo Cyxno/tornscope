@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { ApiKeyStatusResponse, KeyCapabilitiesDto, MeResponse } from "@tornscope/shared";
+  import { capabilityLevel } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
   import { formatRelative } from "$lib/reltime";
   import PageHeader from "$lib/components/PageHeader.svelte";
@@ -181,7 +182,11 @@
 
   {#if status?.capabilities}
     {@const caps = status.capabilities}
-    <Panel title="Detected access" caption="Read from your key's actual permissions — modules appear only when your key can answer them">
+    <Panel
+      title="Detected access"
+      caption={status.capabilities
+        ? `${capabilityLevel(status.capabilities)} — read from your key's actual permissions, modules appear only when your key can answer them`
+        : "Read from your key's actual permissions"}>
       <div class="grid gap-6 md:grid-cols-2">
         <div>
           <p class="text-[11px] font-semibold uppercase tracking-[0.14em] text-positive">Available</p>

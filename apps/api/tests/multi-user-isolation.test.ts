@@ -179,3 +179,12 @@ suite("profile deletion", () => {
     expect(await db.moneyEvent.count({ where: { userId: userA.id } })).toBe(survivorsBefore);
   });
 });
+
+suite("owner deletion protection", () => {
+  it("the legacy owner profile cannot be deleted through the normal flow", async () => {
+    const owner = await db.user.findFirst({ where: { role: "owner", isDemo: false } });
+    if (!owner) return; // environment without the legacy owner
+    await expect(deleteProfile(owner.id)).rejects.toThrow();
+    expect(await db.user.findUnique({ where: { id: owner.id } })).not.toBeNull();
+  });
+});

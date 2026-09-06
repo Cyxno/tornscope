@@ -19,6 +19,7 @@ export const errors = {
   notFound: (what: string) => new AppError("not_found", `${what} not found`, 404),
   validation: (details: unknown) => new AppError("validation_error", "Request validation failed", 400, details),
   cooldown: (message: string) => new AppError("cooldown", message, 429),
+  forbidden: (message: string) => new AppError("forbidden", message, 403),
   conflict: (message: string) => new AppError("conflict", message, 409),
   internal: (message: string) => new AppError("internal_error", message, 500),
 };

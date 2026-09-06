@@ -333,6 +333,12 @@ export async function deleteApiKey(userId: string): Promise<void> {
  */
 export async function deleteProfile(userId: string): Promise<void> {
   const db = getPrismaClient();
+  const target = await db.user.findUnique({ where: { id: userId }, select: { role: true } });
+  if (target?.role === "owner") {
+    // The legacy owner profile holds the original dataset — one-click
+    // deletion through the normal flow must never be possible.
+    throw errors.forbidden("The legacy owner profile cannot be deleted through this action.");
+  }
   // ApiCredential/AppSetting may lack FK cascades (global settings table) —
   // remove them explicitly before the user row.
   await db.apiCredential.deleteMany({ where: { userId } });

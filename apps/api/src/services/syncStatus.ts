@@ -205,6 +205,12 @@ function deriveResourcePhase(s: SyncStateRow, categories: CategoryStateLike[] = 
  */
 const MANUAL_COOLDOWN_MS = 60_000;
 
+/** Guests without an active credential must never enqueue Torn API work. */
+async function hasActiveCredential(db: ReturnType<typeof getPrismaClient>, userId: string): Promise<boolean> {
+  const cred = await db.apiCredential.findUnique({ where: { userId }, select: { revokedAt: true } });
+  return Boolean(cred && !cred.revokedAt);
+}
+
 export async function requestManualSync(
   userId: string,
   resource: string,
@@ -212,6 +218,10 @@ export async function requestManualSync(
 ): Promise<{ queued: boolean; retryAfterSeconds?: number }> {
   const db = getPrismaClient();
   if (!SYNC_RESOURCES.includes(resource as SyncResource)) {
+    return { queued: false, retryAfterSeconds: 0 };
+  }
+  // Abuse/cost control: no credential -> no Torn API work, ever.
+  if (!(await hasActiveCredential(db, userId))) {
     return { queued: false, retryAfterSeconds: 0 };
   }
   const state = await db.syncState.findUnique({ where: { userId_resource: { userId, resource } } });
@@ -239,6 +249,9 @@ export async function requestManualSync(
 /** Retry every failed resource in one go (still guarded by the claim lock). */
 export async function retryFailedSyncs(userId: string): Promise<{ queued: string[] }> {
   const db = getPrismaClient();
+  if (!(await hasActiveCredential(db, userId))) {
+    return { queued: [] };
+  }
   const states = await db.syncState.findMany({ where: { userId, status: "failed" } });
   const ctx = getApiContext();
   const queued: string[] = [];
@@ -263,6 +276,9 @@ const BACKFILL_COOLDOWN_MS = 5 * 60_000;
 
 export async function restartBackfill(userId: string): Promise<{ queued: number; retryAfterSeconds?: number }> {
   const db = getPrismaClient();
+  if (!(await hasActiveCredential(db, userId))) {
+    return { queued: 0, retryAfterSeconds: 0 };
+  }
   const last = await db.appSetting.findUnique({ where: { userId_key: { userId, key: BACKFILL_FLAG } } });
   const lastAt = Number(last?.value ?? 0);
   if (Number.isFinite(lastAt) && lastAt > 0 && Date.now() - lastAt < BACKFILL_COOLDOWN_MS) {

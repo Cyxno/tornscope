@@ -244,3 +244,57 @@ export function deriveKeyCapabilities(selections: KeySelections | null | undefin
     canReadFactionLogs: fromFaction('log'),
   };
 }
+
+/* -------------------------------------------------------------------------- */
+/* Capability level + module availability (user-friendly degradation)          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Friendly access level derived from ACTUAL capabilities — never a manually
+ * selected label. The highest satisfied tier wins.
+ */
+export function capabilityLevel(caps: KeyCapabilities): string {
+  if (caps.canReadFactionLogs && caps.canReadFactionArmoryNews && caps.canReadFactionBalance && caps.canReadUserLogs) {
+    return "Full available access";
+  }
+  if (caps.canReadUserLogs && caps.canReadUserMoney && caps.canReadUserAttacks) {
+    return caps.canReadFactionBasic || caps.canReadFactionMembers || caps.canReadFactionCrimes ? "Faction-enabled" : "Extended";
+  }
+  if (caps.canReadUserBasic || caps.canReadUserBars) return "Basic";
+  return "Very limited";
+}
+
+export type TornScopeModule = "today" | "drugs" | "money" | "travel" | "crimes" | "combat" | "faction" | "timeline" | "wallet";
+
+export interface ModuleAvailability {
+  module: TornScopeModule;
+  available: boolean;
+  /** Short reason shown in the UI when unavailable. */
+  reason: string | null;
+}
+
+/**
+ * Which analytics modules a key can actually power. Unavailable modules must
+ * hide or explain — never show misleading zeros.
+ */
+export function moduleAvailability(caps: KeyCapabilities): ModuleAvailability[] {
+  const no = (reason: string): { available: boolean; reason: string } => ({ available: false, reason });
+  const yes = (): { available: boolean; reason: null } => ({ available: true, reason: null });
+  return [
+    { module: "today", ...caps.canReadUserBasic ? yes() : no("Needs basic account access") },
+    {
+      module: "drugs",
+      ...(caps.canReadUserLogs ? yes() : no("Needs personal log access (Limited API access)")),
+    },
+    { module: "money", ...(caps.canReadUserLogs ? yes() : no("Needs personal log access (Limited API access)")) },
+    { module: "travel", ...(caps.canReadUserLogs ? yes() : no("Needs personal log access (Limited API access)")) },
+    { module: "crimes", ...(caps.canReadUserLogs ? yes() : no("Needs personal log access (Limited API access)")) },
+    { module: "combat", ...(caps.canReadUserAttacks ? yes() : no("Needs attacks access (Limited API access)")) },
+    {
+      module: "faction",
+      ...(caps.canReadFactionBasic ? yes() : no("Needs a key with faction access — ask your faction leader to grant it")),
+    },
+    { module: "timeline", ...(caps.canReadUserLogs ? yes() : no("Needs personal log access (Limited API access)")) },
+    { module: "wallet", ...(caps.canReadUserMoney ? yes() : no("Needs money access (Limited API access)")) },
+  ];
+}
