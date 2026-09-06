@@ -83,3 +83,20 @@ describe("aggregateMoneySemantics", () => {
     expect(agg.assetInflow).toBe(60_000_000); // conversion
   });
 });
+
+describe("bank transfers vs unclassified", () => {
+  it("neutral bank rows are reported as transfers, never as unclassified", () => {
+    const agg = aggregateMoneySemantics(
+      [
+        { id: "a", occurredAt: 1_792_000_000, category: "city_bank", direction: "neutral" as never, amount: -344_000_000 },
+        { id: "b", occurredAt: 1_792_000_000, category: "city_bank", direction: "neutral" as never, amount: 285_000_000 },
+      ],
+      0,
+      2_000_000_000
+    );
+    expect(agg.bankTransfers).toBe(629_000_000);
+    expect(agg.unknownValue).toBe(0);
+    expect(agg.cashInflow).toBe(0);
+    expect(agg.cashOutflow).toBe(0);
+  });
+});

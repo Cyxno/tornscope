@@ -228,6 +228,8 @@ export interface MoneySemanticsAggregate {
   /** Rows that could not be classified (summed magnitude). */
   unknownValue: number;
   unknownCount: number;
+  /** Internal movements between owned accounts (bank invest/withdraw etc.). */
+  bankTransfers: number;
   /** Per-category totals within each semantic class. */
   inflowByCategory: CategoryTotal[];
   outflowByCategory: CategoryTotal[];
@@ -244,11 +246,19 @@ export function aggregateMoneySemantics(events: readonly MoneyEventLike[], from:
   let assetOutflow = 0;
   let unknownValue = 0;
   let unknownCount = 0;
+  let bankTransfers = 0;
   const inflowByCat = new Map<string, number>();
   const outflowByCat = new Map<string, number>();
 
   for (const event of filterByRange(events, from, to)) {
     if (event.amount === 0) continue;
+    // Neutral rows are internal movements between owned accounts (bank
+    // invest/withdraw, faction pool) — known conversions, not "unclassified"
+    // and not wallet inflow/outflow. They are reported separately.
+    if (event.direction === "neutral") {
+      bankTransfers += Math.abs(event.amount);
+      continue;
+    }
     const kind = classifyMoneySemantics(event);
     const magnitude = Math.abs(event.amount);
     if (kind === "unknown") {
@@ -282,6 +292,7 @@ export function aggregateMoneySemantics(events: readonly MoneyEventLike[], from:
     assetOutflow,
     unknownValue,
     unknownCount,
+    bankTransfers,
     inflowByCategory: toSorted(inflowByCat),
     outflowByCategory: toSorted(outflowByCat),
     provenance: "exact",

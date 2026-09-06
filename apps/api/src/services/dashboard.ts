@@ -291,6 +291,7 @@ export async function getDashboard(userId: string, rangeInput: DateRangeInput): 
       assetSales: fin.assetInflow,
       assetPurchases: fin.assetOutflow,
       unknownValue: fin.unknownValue,
+      bankTransfers: fin.bankTransfers,
       economicGain: {
         // The defensible economic measure: official net worth snapshot change.
         value: nwPeriod.change,

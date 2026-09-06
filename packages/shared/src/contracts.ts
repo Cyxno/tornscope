@@ -309,6 +309,8 @@ export const DashboardResponseSchema = z.object({
     assetPurchases: z.number(),
     /** Unclassified cash magnitude (never silently zero). */
     unknownValue: z.number(),
+    /** Internal movements between owned accounts (bank invest/withdraw). */
+    bankTransfers: z.number(),
     /**
      * Economic gain/loss measured by official net worth snapshots. Partial
      * when tracking does not cover the whole selected range — the value then
