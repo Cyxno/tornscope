@@ -179,16 +179,20 @@ export async function bindLegacyOwner(req: FastifyRequest, reply: FastifyReply, 
   if (process.env.OWNER_BIND_ENABLED === "false" || !env.ownerBindEnabled) {
     throw new AppError("bind_disabled", "Owner binding has been disabled on this server.", 403);
   }
-  const expected = process.env.OWNER_BIND_TOKEN ?? "";
-  if (!expected) throw new AppError("bind_disabled", "Owner binding is not enabled on this server.", 403);
-  if (!safeEquals(token, expected)) throw new AppError("bind_invalid_token", "Invalid binding token.", 403);
+  const bindToken = process.env.OWNER_BIND_TOKEN ?? "";
+  const recoveryToken = process.env.OWNER_RECOVERY_TOKEN ?? "";
+  // The supplied token must match exactly ONE of the configured secrets;
+  // neither secret nor which one failed is disclosed.
+  const isBind = bindToken !== "" && safeEquals(token, bindToken);
+  const isRecovery = recoveryToken !== "" && safeEquals(token, recoveryToken);
+  if (!isBind && !isRecovery) throw new AppError("bind_invalid_token", "Invalid binding token.", 403);
 
   const owner = await db.user.findFirst({ where: { role: "owner", isDemo: false }, orderBy: { createdAt: "asc" } });
   if (!owner) throw new AppError("bind_no_owner", "No legacy owner profile exists.", 404);
 
   const already = await db.appSetting.findUnique({ where: { userId_key: { userId: owner.id, key: OWNER_BOUND_KEY } } });
   const recoveryToken = process.env.OWNER_RECOVERY_TOKEN ?? "";
-  const recoveryMode = Boolean(already) && recoveryToken !== "" && safeEquals(token, recoveryToken);
+  const recoveryMode = Boolean(already) && isRecovery;
   if (already && !recoveryMode) {
     throw new AppError("bind_already_claimed", "The legacy owner profile has already been bound to a browser.", 409);
   }
