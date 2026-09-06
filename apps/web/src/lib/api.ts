@@ -42,7 +42,11 @@ export class ApiClientError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function requestOnce<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
     response = await fetch(`/api${path}`, {
@@ -67,6 +71,24 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   return body as T;
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  // Cold-start bootstrap coalescing: the server answers parallel cookie-less
+  // requests with a retryable 425 ("bootstrap_pending") while the ONE real
+  // profile+session creation is in flight. By the retry the browser holds
+  // the session cookie the winning response set, so every request resolves
+  // to the same profile. A 425 never reached route logic, so retrying is
+  // safe for mutations too.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await requestOnce<T>(path, init);
+    } catch (err) {
+      const retryable = err instanceof ApiClientError && err.code === "bootstrap_pending" && attempt < 2;
+      if (!retryable) throw err;
+      await sleep(200 * (attempt + 1));
+    }
+  }
 }
 
 export const api = {

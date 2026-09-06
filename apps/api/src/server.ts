@@ -46,7 +46,9 @@ export async function buildServer(): Promise<FastifyInstance> {
     }
     const statusCode = (err as { statusCode?: number }).statusCode;
     if (statusCode && statusCode < 500) {
-      reply.status(statusCode).send({ error: { code: "bad_request", message: (err as Error).message } });
+      reply.status(statusCode).send({
+        error: { code: (err as { code?: string }).code ?? "bad_request", message: (err as Error).message },
+      });
       return;
     }
     req.log.error({ err }, "unhandled error");

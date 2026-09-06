@@ -111,9 +111,39 @@ const profileCreationHits = new Map<string, number[]>();
 
 export class ProfileCreationRateLimited extends Error {
   readonly statusCode = 429;
+  readonly code = "profile_rate_limited";
   constructor() {
     super("Too many new sessions from this address — try again later.");
   }
+}
+
+/**
+ * Bootstrap coalescing: a browser's very first requests leave in parallel
+ * before any session cookie exists, so every one of them looks anonymous.
+ * Only ONE anonymous-profile creation per IP may be in flight; concurrent
+ * cookie-less requests get a retryable 425 instead of silently creating
+ * duplicate guest profiles. The browser retries with the session cookie the
+ * winning response just set, so a cold page load yields exactly one session
+ * and one profile. Non-browser clients (no cookie jar) retry manually.
+ */
+export class SessionBootstrapPending extends Error {
+  readonly statusCode = 425;
+  readonly code = "bootstrap_pending";
+  constructor() {
+    super("Identity setup in progress — retry with the session cookie.");
+  }
+}
+
+const inFlightBootstrap = new Map<string, number>();
+/** Fail-open ceiling: a crashed creation must never block new sessions. */
+const BOOTSTRAP_STALE_MS = 5000;
+
+/** Test hooks: pre-age an IP's in-flight marker / reset coalescing state. */
+export function markStaleBootstrapForTests(ip: string): void {
+  inFlightBootstrap.set(ip, Date.now() - BOOTSTRAP_STALE_MS - 1);
+}
+export function clearBootstrapForTests(): void {
+  inFlightBootstrap.clear();
 }
 
 /** Create a fresh anonymous profile + session and set the cookie. */
@@ -127,15 +157,25 @@ async function createAnonymousSession(db: ReturnType<typeof getPrismaClient>, re
   if (hits.length >= PROFILE_CREATION_LIMIT) {
     throw new ProfileCreationRateLimited();
   }
-  hits.push(now);
-  profileCreationHits.set(ip, hits);
-  const suffix = randomBytes(3).toString("hex");
-  const user = await db.user.create({ data: { displayName: `Guest ${suffix}`, role: "user" } });
-  const token = newSessionToken();
-  await db.userSession.create({ data: { userId: user.id, tokenHash: hashToken(token) } });
-  reply.header("Set-Cookie", serializeSessionCookie(token, requestIsSecure(req), SESSION_TTL_SECONDS));
-  (req as unknown as { sessionProfileId?: string }).sessionProfileId = user.id;
-  return user;
+  // Coalesce parallel cold bootstraps from the same address (see above).
+  const inFlightSince = inFlightBootstrap.get(ip);
+  if (inFlightSince !== undefined && now - inFlightSince < BOOTSTRAP_STALE_MS) {
+    throw new SessionBootstrapPending();
+  }
+  inFlightBootstrap.set(ip, now);
+  try {
+    hits.push(now);
+    profileCreationHits.set(ip, hits);
+    const suffix = randomBytes(3).toString("hex");
+    const user = await db.user.create({ data: { displayName: `Guest ${suffix}`, role: "user" } });
+    const token = newSessionToken();
+    await db.userSession.create({ data: { userId: user.id, tokenHash: hashToken(token) } });
+    reply.header("Set-Cookie", serializeSessionCookie(token, requestIsSecure(req), SESSION_TTL_SECONDS));
+    (req as unknown as { sessionProfileId?: string }).sessionProfileId = user.id;
+    return user;
+  } finally {
+    inFlightBootstrap.delete(ip);
+  }
 }
 
 /**
