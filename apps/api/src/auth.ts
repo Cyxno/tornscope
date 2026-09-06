@@ -134,15 +134,36 @@ export class SessionBootstrapPending extends Error {
   }
 }
 
-const inFlightBootstrap = new Map<string, number>();
+interface BootstrapMarker {
+  startedAt: number;
+  completedAt?: number;
+}
+const inFlightBootstrap = new Map<string, BootstrapMarker>();
 /** Fail-open ceiling: a crashed creation must never block new sessions. */
 const BOOTSTRAP_STALE_MS = 5000;
+/**
+ * Post-creation grace: requests that arrive just after the winner finished
+ * still carry no cookie (they left the browser before it existed). Keeping
+ * the marker briefly directs them to retry with the fresh cookie instead of
+ * creating their own profile.
+ */
+const BOOTSTRAP_GRACE_MS = 1500;
+const bootstrapTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function bootstrapBlocked(ip: string, marker: BootstrapMarker | undefined): boolean {
+  if (!marker) return false;
+  const now = Date.now();
+  if (marker.completedAt === undefined) return now - marker.startedAt < BOOTSTRAP_STALE_MS;
+  return now - marker.completedAt < BOOTSTRAP_GRACE_MS;
+}
 
 /** Test hooks: pre-age an IP's in-flight marker / reset coalescing state. */
 export function markStaleBootstrapForTests(ip: string): void {
-  inFlightBootstrap.set(ip, Date.now() - BOOTSTRAP_STALE_MS - 1);
+  inFlightBootstrap.set(ip, { startedAt: Date.now() - BOOTSTRAP_STALE_MS - 1 });
 }
 export function clearBootstrapForTests(): void {
+  for (const t of bootstrapTimers.values()) clearTimeout(t);
+  bootstrapTimers.clear();
   inFlightBootstrap.clear();
 }
 
@@ -161,11 +182,11 @@ async function createAnonymousSession(db: ReturnType<typeof getPrismaClient>, re
     throw new ProfileCreationRateLimited();
   }
   // Coalesce parallel cold bootstraps from the same address (see above).
-  const inFlightSince = inFlightBootstrap.get(ip);
-  if (inFlightSince !== undefined && now - inFlightSince < BOOTSTRAP_STALE_MS) {
+  if (bootstrapBlocked(ip, inFlightBootstrap.get(ip))) {
     throw new SessionBootstrapPending();
   }
-  inFlightBootstrap.set(ip, now);
+  const startedAt = now;
+  inFlightBootstrap.set(ip, { startedAt });
   try {
     hits.push(now);
     profileCreationHits.set(ip, hits);
@@ -177,7 +198,17 @@ async function createAnonymousSession(db: ReturnType<typeof getPrismaClient>, re
     (req as unknown as { sessionProfileId?: string }).sessionProfileId = user.id;
     return user;
   } finally {
-    inFlightBootstrap.delete(ip);
+    // Enter the post-creation grace window, then drop the marker entirely.
+    const mine = inFlightBootstrap.get(ip);
+    if (mine && mine.startedAt === startedAt) {
+      mine.completedAt = Date.now();
+      const timer = setTimeout(() => {
+        const current = inFlightBootstrap.get(ip);
+        if (current && current.startedAt === startedAt) inFlightBootstrap.delete(ip);
+        bootstrapTimers.delete(ip);
+      }, BOOTSTRAP_GRACE_MS + 100);
+      bootstrapTimers.set(ip, timer);
+    }
   }
 }
 

@@ -22,8 +22,11 @@ const suite = dbUrl ? describe : describe.skip;
 const db = getPrismaClient();
 
 function fakeReq(cookie?: string): any {
-  return { headers: { cookie }, protocol: "http" };
+  // Unique per-call IP: sequential test browsers must not trip the per-IP
+  // bootstrap coalescing grace window (distinct browsers, one address).
+  return { headers: cookie ? { cookie } : {}, protocol: "http", ip: `test-${Date.now()}-${counter++}` };
 }
+let counter = 0;
 function fakeReply(): any {
   return { __headers: {} as Record<string, string>, header(name: string, value: string) { this.__headers[name] = value; } };
 }

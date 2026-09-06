@@ -89,9 +89,11 @@ suite("owner bind hardening", () => {
     const owner = await bindLegacyOwner(bindReq, bindReply, recoveryToken);
 
     // The old token must be dead (rotated), the new one must resolve to the owner.
-    const oldCookieGone = await resolveSessionUser({ headers: { cookie: `ts_session=${guestToken}` }, ip: "10.9.9.9" } as any, { __h: {}, header() {} } as any);
+    // (Distinct fake IPs: a 425-coalesced creation from the same address would
+    // otherwise mask the assertion with a retryable bootstrap error.)
+    const oldCookieGone = await resolveSessionUser({ headers: { cookie: `ts_session=${guestToken}` }, ip: "10.9.9.10" } as any, { __h: {}, header() {} } as any);
     const newCookie = (bindReply.__h["Set-Cookie"] as string).split(";")[0].split("=")[1];
-    const newCookieWorks = await resolveSessionUser({ headers: { cookie: `ts_session=${newCookie}` }, ip: "10.9.9.9" } as any, { __h: {}, header() {} } as any);
+    const newCookieWorks = await resolveSessionUser({ headers: { cookie: `ts_session=${newCookie}` }, ip: "10.9.9.11" } as any, { __h: {}, header() {} } as any);
 
     expect(owner.role).toBe("owner");
     expect(newCookie).not.toBe(guestToken);

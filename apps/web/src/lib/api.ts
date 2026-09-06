@@ -76,17 +76,20 @@ async function requestOnce<T>(path: string, init?: RequestInit): Promise<T> {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // Cold-start bootstrap coalescing: the server answers parallel cookie-less
   // requests with a retryable 425 ("bootstrap_pending") while the ONE real
-  // profile+session creation is in flight. By the retry the browser holds
-  // the session cookie the winning response set, so every request resolves
-  // to the same profile. A 425 never reached route logic, so retrying is
-  // safe for mutations too.
+  // profile+session creation is in flight (plus a short grace window after
+  // it). Retries carry the session cookie the winning response set, so all
+  // requests resolve to the same profile. A 425 never reached route logic,
+  // so retrying is safe for mutations too. The final retries deliberately
+  // outlive the server's grace window: a DIFFERENT browser behind the same
+  // address (no shared cookie) must be able to create its own profile there.
+  const backoffMs = [250, 600, 1200, 2000];
   for (let attempt = 0; ; attempt++) {
     try {
       return await requestOnce<T>(path, init);
     } catch (err) {
-      const retryable = err instanceof ApiClientError && err.code === "bootstrap_pending" && attempt < 2;
+      const retryable = err instanceof ApiClientError && err.code === "bootstrap_pending" && attempt < backoffMs.length;
       if (!retryable) throw err;
-      await sleep(200 * (attempt + 1));
+      await sleep(backoffMs[attempt]!);
     }
   }
 }
