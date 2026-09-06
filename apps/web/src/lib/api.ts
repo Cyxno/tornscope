@@ -34,7 +34,8 @@ export class ApiClientError extends Error {
   constructor(
     readonly code: string,
     message: string,
-    readonly status: number
+    readonly status: number,
+    readonly details: unknown = null
   ) {
     super(message);
     this.name = "ApiClientError";
@@ -55,8 +56,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const body = (await response.json().catch(() => null)) as unknown;
 
   if (!response.ok) {
-    const err = (body as { error?: { code?: string; message?: string } } | null)?.error;
-    throw new ApiClientError(err?.code ?? "unknown_error", err?.message ?? `Request failed (${response.status})`, response.status);
+    const payload = body as { error?: { code?: string; message?: string; details?: unknown } } | null;
+    const err = payload?.error;
+    throw new ApiClientError(
+      err?.code ?? "unknown_error",
+      err?.message ?? `Request failed (${response.status})`,
+      response.status,
+      err?.details ?? null
+    );
   }
 
   return body as T;
@@ -147,6 +154,12 @@ export const endpoints = {
   syncBackfill: () => api.post<{ queued: number }>("/sync/backfill"),
   setDemoView: (enabled: boolean) => api.post<MeResponse>("/demo-view", { enabled }),
   apiKeyStatus: () => api.get<ApiKeyStatusResponse>("/settings/api-key"),
-  saveApiKey: (key: string) => api.post<ApiKeyStatusResponse>("/settings/api-key", { key }),
+  saveApiKey: (key: string, confirmNewProfile?: boolean) =>
+    api.post<ApiKeyStatusResponse & { newProfileId?: string | null }>("/settings/api-key", {
+      key,
+      ...(confirmNewProfile ? { confirmNewProfile: true } : {}),
+    }),
+  bindOwner: (token: string) => api.post<MeResponse>("/session/bind-owner", { token }),
+  deleteProfile: () => api.post<{ deleted: boolean }>("/profile/delete", {}),
   deleteApiKey: () => api.del<{ deleted: boolean }>("/settings/api-key"),
 };

@@ -166,6 +166,12 @@
         {#if !error}
           <p class="mt-3 text-center text-xs text-fg-faint">Seeded example player, clearly marked — switch to your own data whenever you're ready.</p>
         {/if}
+
+        <p class="mt-6 border-t border-border pt-4 text-center text-[11px] leading-relaxed text-fg-faint">
+          No account needed: this browser gets its own anonymous TornScope profile.
+          Your API key is stored encrypted server-side; the browser keeps only a session identifier —
+          clearing this site's cookies detaches the profile.
+        </p>
       {:else if step === 2}
         <div class="flex flex-col items-center gap-4 py-6">
           <div class="h-6 w-6 animate-spin rounded-full border-2 border-border-strong border-t-accent"></div>

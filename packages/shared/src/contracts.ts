@@ -167,12 +167,33 @@ export const MoneyCategorySchema = z.enum(MONEY_CATEGORIES);
 export const MoneyDirectionSchema = z.enum(MONEY_DIRECTIONS);
 export const SyncResourceSchema = z.enum(SYNC_RESOURCES);
 
+export const KeyCapabilitiesSchema = z.object({
+  canReadUserBasic: z.boolean(),
+  canReadUserBars: z.boolean(),
+  canReadUserMoney: z.boolean(),
+  canReadUserLogs: z.boolean(),
+  canReadUserAttacks: z.boolean(),
+  canReadUserNetworth: z.boolean(),
+  canReadFactionBasic: z.boolean(),
+  canReadFactionMembers: z.boolean(),
+  canReadFactionRankedWars: z.boolean(),
+  canReadFactionCrimes: z.boolean(),
+  canReadFactionArmoryNews: z.boolean(),
+  canReadFactionBalance: z.boolean(),
+  canReadFactionLogs: z.boolean(),
+});
+export type KeyCapabilitiesDto = z.infer<typeof KeyCapabilitiesSchema>;
+
 export const MeResponseSchema = z.object({
   userId: z.string(),
   displayName: z.string(),
   /** IANA timezone used for rendering human-readable times (default UTC). */
   timezone: z.string(),
   isDemo: z.boolean(),
+  /** Detected key capabilities (null while no key is connected). */
+  capabilities: KeyCapabilitiesSchema.nullable(),
+  /** True when the legacy owner bind flow is still available. */
+  ownerBindAvailable: z.boolean(),
   torn: z
     .object({
       tornId: z.number(),
@@ -1143,6 +1164,7 @@ export const ApiKeyStatusResponseSchema = z.object({
   tornId: z.number().nullable(),
   tornName: z.string().nullable(),
   logAccessAvailable: z.boolean(),
+  capabilities: KeyCapabilitiesSchema.nullable(),
 });
 export type ApiKeyStatusResponse = z.infer<typeof ApiKeyStatusResponseSchema>;
 

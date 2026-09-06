@@ -82,6 +82,7 @@ model User {
   factionMemberships   FactionMembership[]
   factionSnapshots     FactionSnapshot[]
   factionArmoryEvents  FactionArmoryEvent[]
+  sessions             UserSession[]
   rankedWarMembers     RankedWarMember?
   rankedWarPayouts     RankedWarPayout[]
   factionChains        FactionChain[]
@@ -93,7 +94,7 @@ model User {
 model TornAccount {
   id             String    @id @default(cuid())
   userId         String    @unique
-  tornId         Int       @unique
+  tornId         Int
   name           String
   level          Int
   rank           String?
@@ -110,6 +111,7 @@ model TornAccount {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([factionId])
+  @@index([tornId])
 }
 
 /// AES-256-GCM encrypted Torn API key. Never stored or logged in plaintext.
@@ -122,7 +124,9 @@ model ApiCredential {
   keyPreview         String
   accessLevel        Int?
   accessType         String?
-  logAccessAvailable Boolean   @default(false)
+  logAccessAvailable Boolean
+  /// Detected key capabilities (selections the key can actually read).
+  capabilities       Json?
   validatedAt        DateTime?
   revokedAt          DateTime?
   createdAt          DateTime  @default(now())
@@ -134,6 +138,22 @@ model ApiCredential {
 /* -------------------------------------------------------------------------- */
 /* Synchronization                                                            */
 /* -------------------------------------------------------------------------- */
+
+/// Anonymous browser-bound session. The browser holds only an opaque token
+/// (HttpOnly cookie); the server stores its hash and the profile it resolves
+/// to. Sessions are revoked when the profile is deleted.
+model UserSession {
+  id         String    @id @default(cuid())
+  userId     String
+  tokenHash  String    @unique
+  createdAt  DateTime  @default(now())
+  lastSeenAt DateTime  @default(now())
+  revokedAt  DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
 
 /// One row per (user, resource) tracking incremental sync progress.
 model SyncState {

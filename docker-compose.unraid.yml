@@ -98,6 +98,10 @@ services:
       TORN_API_BASE_URL: ${TORN_API_BASE_URL:-https://api.torn.com/v2}
       TORN_API_MIN_REQUEST_INTERVAL_MS: ${TORN_API_MIN_REQUEST_INTERVAL_MS:-700}
       API_KEY_ENCRYPTION_KEY: ${API_KEY_ENCRYPTION_KEY:?set API_KEY_ENCRYPTION_KEY in .env}
+      # One-time token that binds the legacy owner profile to a browser.
+      OWNER_BIND_TOKEN: ${OWNER_BIND_TOKEN:-}
+      # Extra origins accepted for cookie-authenticated mutations (comma separated).
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     depends_on:
       migrate:

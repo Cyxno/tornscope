@@ -190,3 +190,57 @@ export const LOG_CATEGORY_ROUTES = {
   travel: ["travel", "abroad", "fly", "flight"],
   money: ["trade", "money", "bazaar", "bank", "casino", "stock", "salary", "points", "auction", "crime", "mug", "payout", "faction", "job"],
 } as const satisfies Record<string, readonly string[]>;
+
+/* -------------------------------------------------------------------------- */
+/* API key capability model                                                    */
+/* -------------------------------------------------------------------------- */
+
+export interface KeyCapabilities {
+  canReadUserBasic: boolean;
+  canReadUserBars: boolean;
+  canReadUserMoney: boolean;
+  canReadUserLogs: boolean;
+  canReadUserAttacks: boolean;
+  canReadUserNetworth: boolean;
+  canReadFactionBasic: boolean;
+  canReadFactionMembers: boolean;
+  canReadFactionRankedWars: boolean;
+  canReadFactionCrimes: boolean;
+  canReadFactionArmoryNews: boolean;
+  canReadFactionBalance: boolean;
+  canReadFactionLogs: boolean;
+}
+
+export interface KeySelections {
+  user?: string[] | null;
+  faction?: string[] | null;
+}
+
+/**
+ * Derive what a Torn key can actually read from /key/info. The API's
+ * selections listing is authoritative when present; otherwise the numeric
+ * access level gives a conservative fallback (public=1, minimal=2,
+ * limited=3, full=4). Never assumes more than the key grants.
+ */
+export function deriveKeyCapabilities(selections: KeySelections | null | undefined, accessLevel: number | null | undefined): KeyCapabilities {
+  const level = typeof accessLevel === 'number' ? accessLevel : 0;
+  const user: string[] | null = Array.isArray(selections?.user) ? selections.user.map(String) : null;
+  const faction: string[] | null = Array.isArray(selections?.faction) ? selections.faction.map(String) : null;
+  const fromUser = (name: string, fallbackLevel: number): boolean => (user ? user.includes(name) : level >= fallbackLevel);
+  const fromFaction = (name: string): boolean => (faction ? faction.includes(name) : false);
+  return {
+    canReadUserBasic: fromUser('profile', 1),
+    canReadUserBars: fromUser('bars', 2),
+    canReadUserMoney: fromUser('money', 3),
+    canReadUserLogs: fromUser('log', 3),
+    canReadUserAttacks: fromUser('attacks', 3),
+    canReadUserNetworth: fromUser('networth', 3),
+    canReadFactionBasic: fromFaction('basic'),
+    canReadFactionMembers: fromFaction('members'),
+    canReadFactionRankedWars: fromFaction('rankedwars'),
+    canReadFactionCrimes: fromFaction('crimes'),
+    canReadFactionArmoryNews: fromFaction('armorynews'),
+    canReadFactionBalance: fromFaction('balance'),
+    canReadFactionLogs: fromFaction('log'),
+  };
+}
