@@ -360,9 +360,14 @@ export function registerRoutes(app: FastifyInstance): void {
     if (!limit.ok) throw errors.validation({ formErrors: ["Too many attempts — try again later."], fieldErrors: {} });
     const body = z.object({ token: z.string().min(10).max(200) }).safeParse(req.body);
     if (!body.success) throw errors.validation(body.error.flatten());
-    await bindLegacyOwner(req, reply, body.data.token);
-    const user = await resolveSessionUser(req, reply);
-    return getMe(user);
+    // bindLegacyOwner rebinds the browser's existing session to the owner and
+    // sets a fresh owner cookie when the browser has none. It must be the
+    // ONLY session action here: running resolveSessionUser afterwards would
+    // create a throwaway guest session whose cookie overwrites the owner
+    // cookie just set, leaving the browser a guest despite the successful
+    // bind.
+    const owner = await bindLegacyOwner(req, reply, body.data.token);
+    return getMe(owner);
   });
 
   // Destructive: deletes THIS browser profile, its encrypted key, sync state

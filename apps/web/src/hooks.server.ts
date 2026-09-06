@@ -3,27 +3,14 @@ import type { Handle } from "@sveltejs/kit";
 /**
  * Security headers for every page and proxied API response.
  *
- * CSP notes:
- * - scripts are external bundles (adapter-node) -> script-src 'self'
- * - SvelteKit/ECharts apply inline style attributes -> style-src needs
- *   'unsafe-inline' (scripts stay locked down)
- * - connect-src 'self' covers the same-origin /api proxy
+ * The Content-Security-Policy header is intentionally NOT set here: it is
+ * configured in svelte.config.js (kit.csp) so SvelteKit can add the
+ * hash/nonce of its inline hydration bootstrap script to script-src. A
+ * static header here would stack with SvelteKit's and their intersection
+ * would block hydration again. All other hardening headers stay below.
  */
-const CSP = [
-  "default-src 'self'",
-  "script-src 'self'",
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data:",
-  "font-src 'self'",
-  "connect-src 'self'",
-  "frame-ancestors 'self'",
-  "base-uri 'self'",
-  "form-action 'self'",
-].join("; ");
-
 export const handle: Handle = async ({ event, resolve }) => {
   const response = await resolve(event);
-  response.headers.set("Content-Security-Policy", CSP);
   response.headers.set("X-Content-Type-Options", "nosniff");
   response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
   response.headers.set("Permissions-Policy", "geolocation=(), camera=(), microphone=(), payment=(), usb=()");

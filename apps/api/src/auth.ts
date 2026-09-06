@@ -251,19 +251,25 @@ export async function ownerBindAvailableFor(viewerUserId: string): Promise<boole
  * CSRF defense for cookie-authenticated mutations: browsers attach an Origin
  * header on cross-site requests, so a mismatched Origin is rejected.
  * SameSite=Lax is the first layer; this is the second.
+ *
+ * The API always sits behind the web app's same-origin proxy: the proxy keeps
+ * the browser's Origin header but rewrites Host to the internal `api:3000`.
+ * With TRUST_PROXY (default), the forwarded host is the real browser-facing
+ * host and is accepted alongside Host. A cross-SITE attacker's page still
+ * fails both — its Origin is evil.com, while x-forwarded-host is set by our
+ * proxy, never by the attacker.
  */
 export function assertSameOrigin(req: FastifyRequest): void {
   if (req.method === "GET" || req.method === "HEAD") return;
   const origin = req.headers.origin;
   if (!origin) return; // non-browser client (curl / server-to-server)
+  const allowed = new Set<string>();
   const host = req.headers.host;
-  let originHost = "";
-  try {
-    originHost = new URL(origin).host;
-  } catch {
-    originHost = "";
+  if (host) allowed.add(host);
+  if (env.trustProxy) {
+    const forwardedHost = (req.headers["x-forwarded-host"] ?? "").toString().split(",")[0]?.trim();
+    if (forwardedHost) allowed.add(forwardedHost);
   }
-  const allowed = new Set<string>([host ?? ""].filter(Boolean));
   for (const extra of (process.env.ALLOWED_ORIGINS ?? "").split(",")) {
     const trimmed = extra.trim();
     if (trimmed) {
@@ -273,6 +279,12 @@ export function assertSameOrigin(req: FastifyRequest): void {
         // ignore malformed entries
       }
     }
+  }
+  let originHost = "";
+  try {
+    originHost = new URL(origin).host;
+  } catch {
+    originHost = "";
   }
   if (!originHost || !allowed.has(originHost)) {
     throw Object.assign(new Error("Cross-origin request rejected."), { statusCode: 403 });
