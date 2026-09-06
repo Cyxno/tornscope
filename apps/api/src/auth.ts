@@ -191,7 +191,6 @@ export async function bindLegacyOwner(req: FastifyRequest, reply: FastifyReply, 
   if (!owner) throw new AppError("bind_no_owner", "No legacy owner profile exists.", 404);
 
   const already = await db.appSetting.findUnique({ where: { userId_key: { userId: owner.id, key: OWNER_BOUND_KEY } } });
-  const recoveryToken = process.env.OWNER_RECOVERY_TOKEN ?? "";
   const recoveryMode = Boolean(already) && isRecovery;
   if (already && !recoveryMode) {
     throw new AppError("bind_already_claimed", "The legacy owner profile has already been bound to a browser.", 409);
