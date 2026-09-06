@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { EconomySummaryResponse, MoneySummaryResponse, MoneyEventDto, Paginated } from "@tornscope/shared";
-  import { MONEY_CATEGORIES, formatMoneyCompact, formatMoneyFull, formatDateTime, formatKpiValue, periodLabel, formatSignedMoney } from "@tornscope/shared";
+  import { MONEY_CATEGORIES, formatMoneyCompact, formatMoneyFull, formatDateTime, formatKpiValue, periodLabel, formatSignedMoney, formatDate } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
   import { dateRange } from "$lib/state.svelte";
   import PageHeader from "$lib/components/PageHeader.svelte";
@@ -116,6 +116,20 @@
     }))
   );
 
+  /**
+   * Cash received from SELLING inventory (bazaar / item market / trades /
+   * auctions). Part of cash income by definition, but NOT economic gain:
+   * the items left the inventory. The net worth change in section C is where
+   * that value movement lands; the two are never merged into one "profit".
+   */
+  const SALES_CATEGORIES = new Set(["bazaar", "items", "trading", "auction"]);
+  const soldInventoryIncome = $derived(
+    (economy?.cashFlow.incomeByCategory ?? []).filter((c) => SALES_CATEGORIES.has(String(c.category))).reduce((s, c) => s + c.total, 0)
+  );
+  const operationalIncome = $derived(
+    (economy?.cashFlow.incomeByCategory ?? []).filter((c) => !SALES_CATEGORIES.has(String(c.category))).reduce((s, c) => s + c.total, 0)
+  );
+
   const cumulativeOption = $derived.by(() => {
     if (!summary || summary.cumulativeNetSeries.length === 0) return null;
     return {
@@ -206,6 +220,17 @@
         />
       </div>
 
+      {#if soldInventoryIncome > 0}
+        <p class="rounded-xl border border-border bg-surface px-5 py-3 text-xs leading-relaxed text-fg-muted">
+          <span class="font-medium text-fg">Cash Income split:</span>
+          {formatMoneyCompact(operationalIncome)} from wages, payouts and other earnings
+          <span class="mx-1.5 text-border-strong">·</span>
+          {formatMoneyCompact(soldInventoryIncome)} from selling items (bazaar, item market, trades, auctions).
+          <span class="text-fg-faint">Sales proceeds are cash income, not economic gain — the inventory value left your stock.
+          The {period.toLowerCase()} Networth Change in section C reflects that asset movement; this page never calls sales “profit”.</span>
+        </p>
+      {/if}
+
       <Panel title="Cash expense breakdown" caption="Where the Cash Expenses total goes — consumed inventory is NOT part of this">
         {#if economy.cashFlow.expensesByCategory.length === 0}
           <StateMessage state="empty" title="No cash expenses in this range" />
@@ -289,7 +314,7 @@
     <section class="space-y-6">
       <h2 class="text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-faint">C · Networth — Torn snapshots, including inventory appreciation</h2>
       {#if economy.networth.trackingSince !== null}
-        <p class="text-xs text-fg-faint">Tracking since {new Date(economy.networth.trackingSince * 1000).toISOString().slice(0, 10)} — networth history before that point does not exist and is never fabricated.</p>
+        <p class="text-xs text-fg-faint">Tracking since {formatDate(economy.networth.trackingSince)} — networth history before that point does not exist and is never fabricated.</p>
       {/if}
       <div class="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border shadow-panel md:grid-cols-4">
         <Stat label="Current networth" value={formatKpiValue(economy.networth.current)} provenance="exact" tone="accent" />

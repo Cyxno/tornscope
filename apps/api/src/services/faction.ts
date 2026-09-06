@@ -131,6 +131,29 @@ export async function getFactionOverview(userId: string, rangeInput: DateRangeIn
     const war = wars.find((w) => w.tornWarId === match.matchedWarId);
     return war !== undefined && war.startedAt >= range.from && war.startedAt <= range.to ? sum + payout.amount : sum;
   }, 0);
+  // Label faction income by what it actually is: OC payouts carry exact
+  // scenario metadata; everything else without war linkage stays "unmatched".
+  let ocTotal = 0;
+  let unmatchedTotal = 0;
+  for (const p of payouts) {
+    if (p.scenario) ocTotal += p.amount;
+    else unmatchedTotal += p.amount;
+  }
+  unmatchedTotal = Math.max(0, unmatchedTotal - knownPayoutTotal);
+
+  const recentWars = warRows
+    .slice()
+    .sort((a, b) => b.startedAt - a.startedAt)
+    .slice(0, 5)
+    .map((w) => ({
+      tornWarId: w.tornWarId,
+      opponentName: w.opponentName,
+      startedAt: w.startedAt,
+      endedAt: w.endedAt,
+      result: w.result,
+      ourScore: w.ourScore,
+      opponentScore: w.opponentScore,
+    }));
 
   return {
     faction: {
@@ -170,7 +193,8 @@ export async function getFactionOverview(userId: string, rangeInput: DateRangeIn
         }
       : null,
     wars: { total: warRows.length, wins, losses, ongoing },
-    payouts: { knownTotal: knownPayoutTotal, personalTotal: personalMatched },
+    recentWars,
+    payouts: { knownTotal: knownPayoutTotal, personalTotal: personalMatched, ocTotal, unmatchedTotal },
     coverage: {
       warsEarliest: wars.length > 0 ? Math.min(...wars.map((w) => w.startedAt)) : null,
       warsLatest: wars.length > 0 ? Math.max(...wars.map((w) => w.startedAt)) : null,
@@ -235,50 +259,70 @@ export async function getFactionRankedWars(userId: string, rangeInput: DateRange
   return { range: { from: range.from, to: range.to }, wars: rows };
 }
 
-/** Faction roster with war contribution aggregates over the selected range. */
+/** Faction roster with stored identity + war contribution for the owner. */
 export async function getFactionMembers(userId: string, rangeInput: DateRangeInput): Promise<FactionMembersResponse> {
   const db = getPrismaClient();
   const range = resolveDateRange(rangeInput);
   const account = await db.tornAccount.findUnique({ where: { userId }, select: { factionId: true, tornId: true } });
   const factionId = account?.factionId ?? null;
 
-  const [roster, wars, combatEvents] = await Promise.all([
-    factionId !== null ? db.factionMembership.findMany({ where: { userId, factionId, isActive: true } }) : Promise.resolve([]),
-    loadWars(userId),
-    loadWarCombatEvents(userId, range.from, range.to),
-  ]);
-
-  // member id -> aggregate war stats across wars in range.
-  const agg = new Map<number, FactionMemberRow>();
-  for (const war of wars.filter((w) => w.startedAt >= range.from && w.startedAt <= range.to)) {
-    const events = warCombatEvents(combatEvents, war);
-    // Per-member split: the events don't carry member ids (Torn attack rows
-    // name the account on one side), so member aggregation uses the roster
-    // for identity and derives faction-wide totals per member only when the
-    // account itself is the member. To keep every roster member visible with
-    // honest zeros we initialize all rows.
-    for (const m of roster) {
-      const key = m.factionId;
-      if (!agg.has(key)) {
-        agg.set(key, {
-          memberId: key,
-          name: null,
-          position: null,
-          daysInFaction: null,
-          isCurrentUser: false,
-          warAttacks: 0,
-          warWins: 0,
-          warRespect: 0,
-          warMugs: 0,
-          warHospitalizes: 0,
-        });
-      }
-    }
-    void events;
+  if (factionId === null) {
+    return { range: { from: range.from, to: range.to }, factionId: null, members: [] };
   }
 
-  const members: FactionMemberRow[] = [...agg.values()];
-  void combatEvents;
+  const [roster, wars, combatEvents, balanceSnap] = await Promise.all([
+    db.factionMembership.findMany({
+      where: { userId, factionId, isActive: true, memberId: { not: null } },
+      orderBy: [{ level: "desc" }, { memberId: "asc" }],
+    }),
+    loadWars(userId),
+    loadWarCombatEvents(userId, range.from, range.to),
+    db.factionBalanceSnapshot.findFirst({ where: { userId }, orderBy: { capturedAt: "desc" }, select: { members: true } }),
+  ]);
+
+  // Fallback name source: the latest faction-balance snapshot carries
+  // id -> username for the whole roster.
+  const balanceNames = new Map<number, string>();
+  const balanceMembers = Array.isArray(balanceSnap?.members) ? (balanceSnap!.members as Array<{ id?: number; username?: string }>) : [];
+  for (const m of balanceMembers) {
+    if (typeof m.id === "number" && typeof m.username === "string") balanceNames.set(m.id, m.username);
+  }
+
+  // War stats are only derivable for the account itself (attack rows carry no
+  // faction-member ids); everyone else keeps honest zeros.
+  const myTornId = account?.tornId ?? null;
+  const myStats = { attacks: 0, wins: 0, respect: 0, mugs: 0, hospitalizes: 0 };
+  for (const war of wars.filter((w) => w.startedAt >= range.from && w.startedAt <= range.to)) {
+    const mine = warCombatEvents(combatEvents, war).filter((e) => e.direction === "outgoing");
+    const s = deriveMemberStats(mine);
+    myStats.attacks += s.attacks;
+    myStats.wins += s.wins;
+    myStats.respect += s.respect;
+    myStats.mugs += s.mugs;
+    myStats.hospitalizes += s.hospitalizes;
+  }
+
+  const members: FactionMemberRow[] = roster.map((m) => {
+    const memberId = m.memberId!;
+    const isCurrentUser = myTornId !== null && memberId === myTornId;
+    return {
+      memberId,
+      // Stored roster name; fallback to the balance snapshot's username;
+      // only "Member <id>" when a name has NEVER been observed.
+      name: m.name ?? balanceNames.get(memberId) ?? null,
+      position: m.position,
+      level: m.level,
+      daysInFaction: m.daysInFaction,
+      status: m.lastActionStatus,
+      lastActionAt: m.lastActionAt ? Math.floor(m.lastActionAt.getTime() / 1000) : null,
+      isCurrentUser,
+      warAttacks: isCurrentUser ? myStats.attacks : 0,
+      warWins: isCurrentUser ? myStats.wins : 0,
+      warRespect: isCurrentUser ? myStats.respect : 0,
+      warMugs: isCurrentUser ? myStats.mugs : 0,
+      warHospitalizes: isCurrentUser ? myStats.hospitalizes : 0,
+    };
+  });
 
   return { range: { from: range.from, to: range.to }, factionId, members };
 }
@@ -320,62 +364,84 @@ export async function getFactionOcs(userId: string, rangeInput: DateRangeInput, 
   const range = resolveDateRange(rangeInput);
   const account = await db.tornAccount.findUnique({ where: { userId }, select: { tornId: true } });
   const resolved = myTornId ?? account?.tornId ?? null;
-  const ownerName = (await db.tornAccount.findUnique({ where: { userId }, select: { name: true } }))?.name ?? null;
-  // Known member names from the faction member table (id -> member id key).
-  const memberNames = new Map<number, string>();
-  const factionId = (await db.tornAccount.findUnique({ where: { userId }, select: { factionId: true } }))?.factionId ?? null;
-  if (factionId !== null) {
-    const memberships = await db.factionMembership.findMany({ where: { userId, factionId, isActive: true }, select: { id: true, sourceRef: true } });
-    const factionRow = await db.faction.findUnique({ where: { id: factionId }, select: { id: true } });
-    void factionRow;
-    // member ids are faction-internal ids; the roster name resolution comes
-    // from the OC payload itself when available — names for unknown members
-    // stay null and the UI shows "Unknown member".
-    void memberships;
-  }
+
+  // Everything stored: active (planning/recruiting), completed and expired.
   const ocs = await db.organizedCrime.findMany({
-    where: { userId, OR: [{ executedAt: { gte: new Date(range.from * 1000) } }, { executedAt: null }] },
-    orderBy: { executedAt: "desc" },
+    where: { userId },
+    orderBy: [{ executedAt: "desc" }, { ocId: "desc" }],
   });
 
-  const rows: FactionOcRow[] = ocs.map((oc) => {
-    const slots = (oc.slots ?? []) as Array<{ position?: string; user?: { id?: number; outcome?: string; progress?: number } | null; checkpoint_pass_rate?: number }>;
-    const myParticipation = resolved !== null && slots.some((s) => s.user?.id === resolved);
-    const rewards = (oc.rewards ?? {}) as { money?: number; respect?: number; items?: Array<{ id?: number; quantity?: number }>; payout?: { type?: string; percentage?: number; paid_by?: number; paid_at?: number } | null };
-    const participants: FactionOcParticipant[] = slots.map((slot) => {
-      const user = slot.user ?? null;
-      const userId = typeof user?.id === "number" ? user.id : null;
-      // memberName stays null: the OC payload has ids only; names come from
-      // /faction/members (current roster) — historical members without a
-      // current membership show as id-only rows, never fabricated names.
+  // Participant id -> name, from the stored roster plus the latest faction
+  // balance snapshot (id -> username). Historical members keep the stored name.
+  const memberNames = new Map<number, string>();
+  const [memberships, balanceSnap] = await Promise.all([
+    db.factionMembership.findMany({ where: { userId }, select: { memberId: true, name: true } }),
+    db.factionBalanceSnapshot.findFirst({ where: { userId }, orderBy: { capturedAt: "desc" }, select: { members: true } }),
+  ]);
+  for (const m of memberships) {
+    if (m.memberId !== null && m.name) memberNames.set(m.memberId, m.name);
+  }
+  const balanceMembers = Array.isArray(balanceSnap?.members) ? (balanceSnap!.members as Array<{ id?: number; username?: string }>) : [];
+  for (const m of balanceMembers) {
+    if (typeof m.id === "number" && typeof m.username === "string" && !memberNames.has(m.id)) memberNames.set(m.id, m.username);
+  }
+
+  const ocState = (status: string): "active" | "completed" | "expired" => {
+    if (status === "Successful" || status === "Failure") return "completed";
+    if (status === "Expired") return "expired";
+    return "active"; // Planning / Recruiting / other live states
+  };
+  const stateOrder = { active: 0, completed: 1, expired: 2 } as const;
+
+  const rows: FactionOcRow[] = ocs
+    .map((oc) => {
+      const slots = (oc.slots ?? []) as Array<{ position?: string; user?: { id?: number; outcome?: string; progress?: number } | null; checkpoint_pass_rate?: number }>;
+      const myParticipation = resolved !== null && slots.some((s) => s.user?.id === resolved);
+      const rewards = (oc.rewards ?? {}) as { money?: number; respect?: number; items?: Array<{ id?: number; quantity?: number }>; payout?: { type?: string; percentage?: number; paid_by?: number; paid_at?: number } | null };
+      const participants: FactionOcParticipant[] = slots.map((slot) => {
+        const user = slot.user ?? null;
+        const participantId = typeof user?.id === "number" ? user.id : null;
+        return {
+          memberId: participantId,
+          memberName: participantId !== null ? memberNames.get(participantId) ?? null : null,
+          position: slot.position ?? null,
+          outcome: typeof user?.outcome === "string" ? user.outcome : null,
+          progress: typeof user?.progress === "number" ? Math.round(user.progress) : null,
+          checkpointPassRate: typeof slot.checkpoint_pass_rate === "number" ? Math.round(slot.checkpoint_pass_rate) : null,
+          isOwner: participantId !== null && resolved !== null && participantId === resolved,
+        };
+      });
+      const items = Array.isArray(rewards.items) ? rewards.items.map((it) => ({ id: Number(it.id ?? 0), quantity: Number(it.quantity ?? 1) })) : null;
       return {
-        memberId: userId,
-        memberName: null,
-        position: slot.position ?? null,
-        outcome: typeof user?.outcome === "string" ? user.outcome : null,
-        progress: typeof user?.progress === "number" ? Math.round(user.progress) : null,
-        checkpointPassRate: typeof slot.checkpoint_pass_rate === "number" ? Math.round(slot.checkpoint_pass_rate) : null,
-        isOwner: userId !== null && resolved !== null && userId === resolved,
+        ocId: oc.ocId,
+        name: oc.name,
+        status: oc.status,
+        state: ocState(oc.status),
+        difficulty: oc.difficulty,
+        executedAt: oc.executedAt ? Math.floor(oc.executedAt.getTime() / 1000) : null,
+        myParticipation,
+        // True only when the payload actually carries participant ids —
+        // otherwise "Mine" is Unavailable, not silently "no".
+        participantsIdentifiable: slots.length > 0 && slots.some((s) => typeof s.user?.id === "number"),
+        rewardMoney: typeof rewards.money === "number" ? rewards.money : null,
+        rewardRespect: typeof rewards.respect === "number" ? rewards.respect : null,
+        rewardItems: items,
+        payoutPercentage: typeof rewards.payout?.percentage === "number" ? rewards.payout.percentage : null,
+        paidBy: typeof rewards.payout?.paid_by === "number" ? rewards.payout.paid_by : null,
+        // Torn reports payout timestamps in unix SECONDS (verified against
+        // the OC payload: paid_at 1788679401 == 2026-09-06).
+        paidAt: typeof rewards.payout?.paid_at === "number" ? rewards.payout.paid_at : null,
+        payoutType: typeof rewards.payout?.type === "string" ? rewards.payout.type : null,
+        participants,
       };
+    })
+    .sort((a, b) => {
+      const sa = stateOrder[a.state];
+      const sb = stateOrder[b.state];
+      if (sa !== sb) return sa - sb;
+      if (a.state === "completed") return (b.executedAt ?? 0) - (a.executedAt ?? 0);
+      return b.ocId - a.ocId;
     });
-    const items = Array.isArray(rewards.items) ? rewards.items.map((it) => ({ id: Number(it.id ?? 0), quantity: Number(it.quantity ?? 1) })) : null;
-    return {
-      ocId: oc.ocId,
-      name: oc.name,
-      status: oc.status,
-      difficulty: oc.difficulty,
-      executedAt: oc.executedAt ? Math.floor(oc.executedAt.getTime() / 1000) : null,
-      myParticipation,
-      rewardMoney: typeof rewards.money === "number" ? rewards.money : null,
-      rewardRespect: typeof rewards.respect === "number" ? rewards.respect : null,
-      rewardItems: items,
-      payoutPercentage: typeof rewards.payout?.percentage === "number" ? rewards.payout.percentage : null,
-      paidBy: typeof rewards.payout?.paid_by === "number" ? rewards.payout.paid_by : null,
-      paidAt: typeof rewards.payout?.paid_at === "number" ? Math.floor(rewards.payout.paid_at / 1000) : null,
-      payoutType: typeof rewards.payout?.type === "string" ? rewards.payout.type : null,
-      participants,
-    };
-  });
 
   return { ocs: rows, note: null };
 }
@@ -392,7 +458,7 @@ export async function getFactionLedger(userId: string, rangeInput: DateRangeInpu
     db.moneyEvent.findMany({
       where: { userId, category: "faction", occurredAt: { gte: new Date(range.from * 1000), lte: new Date(range.to * 1000) } },
       orderBy: [{ occurredAt: "desc" }, { id: "desc" }],
-      select: { occurredAt: true, amount: true, description: true, sourceRef: true },
+      select: { occurredAt: true, amount: true, description: true, sourceRef: true, metadata: true },
     }),
   ]);
 
@@ -402,11 +468,19 @@ export async function getFactionLedger(userId: string, rangeInput: DateRangeInpu
       money: bigintToNumber(s.money),
       points: s.points,
     })),
-    payouts: payouts.map((p) => ({
-      occurredAt: Math.floor(p.occurredAt.getTime() / 1000),
-      amount: bigintToNumber(p.amount) ?? 0,
-      description: p.description,
-      sourceRef: p.sourceRef,
-    })),
+    payouts: payouts.map((p) => {
+      const meta = (p.metadata ?? {}) as { data?: { scenario?: string } };
+      const scenario = meta.data?.scenario ?? null;
+      return {
+        occurredAt: Math.floor(p.occurredAt.getTime() / 1000),
+        amount: bigintToNumber(p.amount) ?? 0,
+        description: p.description,
+        sourceRef: p.sourceRef,
+        // Exact OC linkage beats guessing: scenario metadata means it is an
+        // OC payout; anything else without war linkage is unmatched income.
+        kind: scenario !== null ? ("oc" as const) : ("unmatched" as const),
+        scenario,
+      };
+    }),
   };
 }

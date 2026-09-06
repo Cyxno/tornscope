@@ -1,4 +1,4 @@
-import { formatDateTime } from "@tornscope/shared";
+import { formatDateTime, formatDate } from "@tornscope/shared";
 
 /** Relative time for sync/status readouts, e.g. "4m ago". */
 export function formatRelative(ts: number | null | undefined): string {
@@ -10,10 +10,10 @@ export function formatRelative(ts: number | null | undefined): string {
   return `${Math.floor(diff / 86_400)}d ago`;
 }
 
-/** "Friday, Sep 4" style UTC day label for the journal feed. */
+/** "Friday 4 Sep" style UTC day heading for the journal feed (day first). */
 export function formatDayHeading(ts: number): string {
   const d = new Date(ts * 1000);
-  return d.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric", timeZone: "UTC" });
+  return d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short", timeZone: "UTC" });
 }
 
 /** "22:18" UTC clock time. */
@@ -23,24 +23,45 @@ export function formatClock(ts: number): string {
   return `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
 }
 
+const p2 = (n: number) => String(n).padStart(2, "0");
+
 /**
  * Absolute datetime rendered in the user's configured IANA timezone
- * (falls back to UTC), e.g. "Sep 5, 11:42".
+ * (falls back to UTC), European order: "06-09-2026 14:35".
  */
 export function formatDateTimeInZone(ts: number | null | undefined, timeZone: string | null | undefined): string {
   if (!ts) return "—";
   const d = new Date(ts * 1000);
   try {
-    return new Intl.DateTimeFormat("en-US", {
-      month: "short",
-      day: "numeric",
+    const parts = new Intl.DateTimeFormat("en-GB", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
       hour: "2-digit",
       minute: "2-digit",
       hour12: false,
       timeZone: timeZone || "UTC",
-    }).format(d);
+    }).formatToParts(d);
+    const get = (t: string) => parts.find((x) => x.type === t)?.value ?? "";
+    return `${get("day")}-${get("month")}-${get("year")} ${get("hour")}:${get("minute")}`;
   } catch {
     return formatDateTime(ts);
+  }
+}
+
+/** Day-only variant in the configured zone, e.g. "06-09-2026". */
+export function formatDateInZone(ts: number | null | undefined, timeZone: string | null | undefined): string {
+  if (!ts) return "—";
+  const d = new Date(ts * 1000);
+  try {
+    return new Intl.DateTimeFormat("en-GB", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      timeZone: timeZone || "UTC",
+    }).format(d);
+  } catch {
+    return formatDate(ts);
   }
 }
 

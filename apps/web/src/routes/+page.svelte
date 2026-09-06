@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { DashboardResponse } from "@tornscope/shared";
-  import { formatMoneyCompact, formatKpiValue, periodLabel } from "@tornscope/shared";
+  import { formatMoneyCompact, formatKpiValue, periodLabel, formatDate } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
   import { dateRange } from "$lib/state.svelte";
   import { formatRelative } from "$lib/reltime";
@@ -105,6 +105,18 @@
   });
 
   const topIncome = $derived(data?.incomeByCategory.slice(0, 5) ?? []);
+  const topExpenses = $derived(data?.expensesByCategory.slice(0, 5) ?? []);
+
+  /**
+   * Selling items (bazaar / item market / trades / auctions) is CASH IN, not
+   * profit: inventory value left the stock. Called out explicitly so the
+   * income total is never read as economic gain — the net worth change above
+   * is where the real economic effect lands.
+   */
+  const SALES_CATEGORIES = new Set(["bazaar", "items", "trading", "auction"]);
+  const soldInventoryIncome = $derived(
+    (data?.incomeByCategory ?? []).filter((c) => SALES_CATEGORIES.has(String(c.category))).reduce((s, c) => s + c.total, 0)
+  );
 </script>
 
 <div class="space-y-10">
@@ -124,7 +136,7 @@
       <div class="px-7 pb-7 pt-8">
         <div class="flex items-center gap-3">
           <span class="text-[11px] font-semibold uppercase tracking-[0.2em] text-fg-faint">Net worth</span>
-          <span class="text-[10px] font-medium uppercase tracking-[0.12em] text-fg-faint">exact · Torn</span>
+          <span class="text-[10px] font-medium uppercase tracking-[0.12em] text-fg-faint">exact · official Torn figure</span>
         </div>
         <div class="mt-3 flex items-baseline gap-1">
           {#if nw}
@@ -151,6 +163,17 @@
             <span class="tnum font-semibold text-fg">{formatKpiValue(data.travelProfit)}</span>
             <span class="text-fg-faint">Estimated Travel Profit</span>
           </span>
+          {#if data.extendedWealth.value !== null}
+            <span class="flex items-baseline gap-1.5 text-fg-muted" title="Official Torn net worth plus wealth Torn does not count in that figure.">
+              <span class="tnum font-semibold text-fg">{formatMoneyCompact(data.extendedWealth.value)}</span>
+              <span class="text-fg-faint">
+                Extended wealth
+                {#if data.extendedWealth.factionBalance !== null}
+                  · incl. {formatMoneyCompact(data.extendedWealth.factionBalance)} withdrawable faction balance
+                {/if}
+              </span>
+            </span>
+          {/if}
           {#if data.lastSyncAt}
             <span class="text-fg-faint">last sync {formatRelative(data.lastSyncAt)}</span>
           {/if}
@@ -168,7 +191,7 @@
     <Panel
       title="Net worth over time"
       caption={data.networthTrackingSince !== null
-        ? `Real snapshots from the sync worker · Tracking since ${new Date(data.networthTrackingSince * 1000).toISOString().slice(0, 10)} — no data is invented before that point`
+        ? `Real snapshots from the sync worker · Tracking since ${formatDate(data.networthTrackingSince)} — no data is invented before that point`
         : "Hourly snapshots from the sync worker — exact Torn-provided values"}
       flush
     >
@@ -180,9 +203,9 @@
     </Panel>
 
     <!-- Flow + activity -->
-    <section class="grid gap-6 lg:grid-cols-5">
-      <div class="lg:col-span-3">
-        <Panel title="Where money came from" caption="Top income sources in range">
+    <section class="grid gap-6 lg:grid-cols-6">
+      <div class="lg:col-span-2">
+        <Panel title="Money came from" caption="Cash income in range — sales proceeds are cash, not profit">
           {#if topIncome.length === 0}
             <StateMessage state="empty" title="No money events in this range" />
           {:else}
@@ -191,10 +214,37 @@
                 <li>
                   <div class="flex items-baseline justify-between gap-3 text-[13px]">
                     <span class="capitalize text-fg">{row.category}</span>
-                    <span class="tnum font-medium text-positive">{formatMoneyCompact(row.total)}</span>
+                    <span class="tnum font-medium text-positive">+{formatMoneyCompact(row.total)}</span>
                   </div>
                   <div class="mt-1.5 h-1.5 overflow-hidden rounded-full bg-surface-2">
                     <div class="h-full rounded-full bg-positive/80" style="width: {Math.round((row.total / (topIncome[0]?.total || 1)) * 100)}%"></div>
+                  </div>
+                </li>
+              {/each}
+            </ul>
+            {#if soldInventoryIncome > 0}
+              <p class="mt-4 border-t border-border pt-3 text-[11px] leading-relaxed text-fg-faint">
+                Includes {formatMoneyCompact(soldInventoryIncome)} received from selling items (bazaar, item market, trades).
+                That is inventory turning into cash — not profit; the Networth Change above shows the real economic effect.
+              </p>
+            {/if}
+          {/if}
+        </Panel>
+      </div>
+      <div class="lg:col-span-2">
+        <Panel title="Money spent on" caption="Cash expenses in range — the other side of the ledger">
+          {#if topExpenses.length === 0}
+            <StateMessage state="empty" title="No cash expenses in this range" />
+          {:else}
+            <ul class="space-y-4">
+              {#each topExpenses as row (row.category)}
+                <li>
+                  <div class="flex items-baseline justify-between gap-3 text-[13px]">
+                    <span class="capitalize text-fg">{row.category}</span>
+                    <span class="tnum font-medium text-negative">-{formatMoneyCompact(row.total)}</span>
+                  </div>
+                  <div class="mt-1.5 h-1.5 overflow-hidden rounded-full bg-surface-2">
+                    <div class="h-full rounded-full bg-negative/80" style="width: {Math.round((row.total / (topExpenses[0]?.total || 1)) * 100)}%"></div>
                   </div>
                 </li>
               {/each}
@@ -242,7 +292,7 @@
           <Chart option={drugOption} height={260} />
         {/if}
       </Panel>
-      <Panel title="Faction" caption="Ranked war status and my payouts" flush>
+      <Panel title="Faction" caption="Ranked war status and faction income" flush>
         {#if !data.faction}
           <StateMessage state="empty" title="No faction membership" />
         {:else}
@@ -262,12 +312,12 @@
               </p>
             </div>
             <div class="bg-surface p-5 text-center">
-              <p class="text-[10px] uppercase tracking-[0.14em] text-fg-faint">My payouts</p>
+              <p class="text-[10px] uppercase tracking-[0.14em] text-fg-faint">Faction income</p>
               <p class="tnum mt-1 font-semibold text-positive">{formatMoneyCompact(data.faction.myPayouts)}</p>
             </div>
           </div>
           <p class="px-5 pt-3 text-xs text-fg-faint">
-            {period} faction payouts received. <a href="/faction" class="text-accent">Explore →</a>
+            {period} faction income excluding OC payouts — labelled breakdown in <a href="/faction" class="text-accent">Faction → Finance</a>.
           </p>
         {/if}
       </Panel>

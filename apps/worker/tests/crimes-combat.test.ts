@@ -56,16 +56,39 @@ describe("combat aggregation", () => {
     { occurredAt: T0 + 3 * HOUR, direction: "incoming" as const, opponentId: 99, opponentName: null, result: "Lost", respectDelta: null },
   ];
 
-  it("counts made/received, wins/losses, mugs and hospitalizations", () => {
+  it("counts made/received, direction-split wins/losses, mugs and hospitalizations", () => {
     const s = aggregateCombatStats(events, T0 - 1, T0 + 4 * HOUR);
     expect(s.attacksMade).toBe(2);
     expect(s.attacksReceived).toBe(2);
-    expect(s.wins).toBe(2);
-    expect(s.losses).toBe(2);
+    expect(s.outgoingWins).toBe(2);
+    expect(s.outgoingLosses).toBe(0);
+    // "Lost" on an incoming attack means the ATTACKER lost — a defensive win.
+    expect(s.incomingDefended).toBe(1);
+    expect(s.incomingLost).toBe(1);
+    expect(s.wins).toBe(3);
+    expect(s.losses).toBe(1);
     expect(s.mugsMade).toBe(1);
     expect(s.mugsReceived).toBe(1);
-    expect(s.winRate).toBe(0.5);
+    expect(s.winRate).toBeCloseTo(0.75, 5);
     expect(s.provenance).toBe("exact");
+  });
+
+  it("never labels an incoming attack loss as if I initiated and lost", () => {
+    const s = aggregateCombatStats(
+      [
+        { occurredAt: T0, direction: "incoming" as const, opponentId: 7, opponentName: "Bully", result: "Mugged", respectDelta: null },
+        { occurredAt: T0 + HOUR, direction: "incoming" as const, opponentId: 7, opponentName: "Bully", result: "Hospitalized", respectDelta: null },
+        { occurredAt: T0 + 2 * HOUR, direction: "incoming" as const, opponentId: 7, opponentName: "Bully", result: "Defended", respectDelta: null },
+        { occurredAt: T0 + 3 * HOUR, direction: "outgoing" as const, opponentId: 8, opponentName: "Target", result: "Lost", respectDelta: null },
+      ],
+      T0 - 1,
+      T0 + 4 * HOUR
+    );
+    // Incoming losses stay in the incoming bucket, never mixed into outgoing.
+    expect(s.incomingLost).toBe(2);
+    expect(s.incomingDefended).toBe(1);
+    expect(s.outgoingLosses).toBe(1);
+    expect(s.outgoingWins).toBe(0);
   });
 
   it("aggregates opponents with unknown opponents labeled, not fabricated", () => {

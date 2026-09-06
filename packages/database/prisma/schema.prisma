@@ -596,6 +596,15 @@ model FactionMembership {
   id        String    @id @default(cuid())
   userId    String
   factionId Int
+  /// The member's Torn player id (null only for rows predating the identity
+  /// migration; backfilled from sourceRef where possible).
+  memberId  Int?
+  name      String?
+  position  String?
+  level     Int?
+  daysInFaction Int?
+  lastActionAt  DateTime?
+  lastActionStatus String?
   joinedAt  DateTime?
   leftAt    DateTime?
   isActive  Boolean   @default(true)
@@ -607,6 +616,7 @@ model FactionMembership {
 
   @@unique([userId, factionId, sourceRef])
   @@index([userId, isActive])
+  @@index([userId, memberId])
 }
 
 model FactionSnapshot {

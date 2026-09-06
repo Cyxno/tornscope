@@ -23,6 +23,7 @@ import {
   upsertCatalogEntries,
   upsertFaction,
   upsertFactionMembership,
+  upsertFactionMemberRoster,
   upsertTornAccount,
   getLogCategories,
   getSyncCategoryState,
@@ -764,10 +765,22 @@ export const syncFaction: SyncHandler = async (args) => {
 
   let memberRows = 0;
   if (members) {
-    for (const m of members) {
-      await upsertFactionMembership(ctx.db, args.userId, f.id, `faction-member:${m.id}`, null, new Date());
-      memberRows += 1;
-    }
+    // Roster with real identity (Torn id, name, position, level, days in
+    // faction, last action) — names persist for members who later leave.
+    memberRows = await upsertFactionMemberRoster(
+      ctx.db,
+      args.userId,
+      f.id,
+      members.map((m) => ({
+        memberId: m.id,
+        name: m.name ?? null,
+        position: m.position ?? null,
+        level: m.level ?? null,
+        daysInFaction: m.days_in_faction ?? null,
+        lastActionAt: m.last_action?.until !== null && m.last_action?.until !== undefined ? new Date(m.last_action.until * 1000) : null,
+        lastActionStatus: m.last_action?.status ?? m.status ?? null,
+      }))
+    );
   }
 
   let balanceRows = 0;

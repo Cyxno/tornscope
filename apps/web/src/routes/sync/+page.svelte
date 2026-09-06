@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
-  import { formatDateTime, type SyncHealthResponse } from "@tornscope/shared";
+  import { formatDateTime, formatDate, type SyncHealthResponse } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
   import { formatRelative } from "$lib/reltime";
   import { me } from "$lib/state.svelte";
@@ -157,8 +157,8 @@
   /** Per-resource historical coverage rows for the table. */
   const coverageRows = $derived.by(() => {
     if (!health) return [];
-    const requestedStart = new Date(Date.now() - health.requestedHistoryDays * 86_400_000).toISOString().slice(0, 10);
-    const day = (ts: number | null | undefined): string => (ts ? new Date(ts * 1000).toISOString().slice(0, 10) : "—");
+    const requestedStart = formatDate(Math.floor((Date.now() - health.requestedHistoryDays * 86_400_000) / 1000));
+    const day = (ts: number | null | undefined): string => (ts ? formatDate(ts) : "—");
     return COVERAGE_RESOURCES.map((resource) => {
       const row = health!.resources.find((r) => r.resource === resource);
       return {

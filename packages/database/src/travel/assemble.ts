@@ -26,6 +26,15 @@ export interface AssembledTrip {
   arrivedAt: Date | null;
   returnedAt: Date | null;
   status: "completed" | "in_progress" | "incomplete";
+  /**
+   * Upper bound of the trip's real time window, used for purchase linking.
+   * completed -> returnedAt; incomplete -> the NEXT departure (the flight
+   * home was never logged but the player demonstrably left); in_progress ->
+   * null (still abroad, window ends "now").
+   * Without this, an incomplete trip from March would swallow every future
+   * purchase with a matching destination.
+   */
+  windowEndedAt: Date | null;
 }
 
 export interface TripAssemblyResult {
@@ -33,10 +42,45 @@ export interface TripAssemblyResult {
   trips: number;
   unmatchedTransitions: number;
   linkedPurchases: number;
+  /** Purchases whose stale link was cleared (no defensible trip anymore). */
+  unlinkedPurchases: number;
   /** Trip ids after assembly (upserted + linked), for callers that report. */
 }
 
 const PURCHASE_WINDOW_SLACK_SECONDS = 6 * 3600;
+
+/**
+ * Pure purchase→trip matcher. A purchase matches a trip when it falls inside
+ * the trip's window [departed - slack, windowEnd + slack] and the destinations
+ * agree (whenever both sides know them). When several trips qualify, a CORE
+ * window match (no slack) beats a slack-edge match, and the most RECENT
+ * departure wins: chain flights reuse the same destination, and incomplete
+ * (return never logged) trips must never swallow purchases that belong to
+ * later trips.
+ */
+export function findMatchingTrip(
+  trips: readonly AssembledTrip[],
+  occurredAt: Date,
+  destination: string | null,
+  nowMs: number = Date.now()
+): AssembledTrip | null {
+  const ts = occurredAt.getTime();
+  const candidates = trips
+    .map((trip) => {
+      const start = trip.departedAt.getTime() - PURCHASE_WINDOW_SLACK_SECONDS * 1000;
+      // in_progress trips are genuinely still open; every other status has
+      // a bounded window (returnedAt, or the next departure).
+      const end = (trip.windowEndedAt?.getTime() ?? nowMs) + PURCHASE_WINDOW_SLACK_SECONDS * 1000;
+      if (ts < start || ts > end) return null;
+      if (destination && trip.destination && destination !== trip.destination) return null;
+      const coreStart = trip.departedAt.getTime();
+      const coreEnd = trip.windowEndedAt?.getTime() ?? nowMs;
+      return { trip, core: ts >= coreStart && ts <= coreEnd };
+    })
+    .filter((c): c is { trip: AssembledTrip; core: boolean } => c !== null)
+    .sort((a, b) => Number(b.core) - Number(a.core) || b.trip.departedAt.getTime() - a.trip.departedAt.getTime());
+  return candidates[0]?.trip ?? null;
+}
 
 export function assembleTripsFromTransitionRows(
   transitions: Array<{ id: string; occurredAt: Date; type: string; country: string | null; countryId: number | null }>
@@ -50,6 +94,7 @@ export function assembleTripsFromTransitionRows(
   const close = (trip: AssembledTrip, returnedAt: Date, status: AssembledTrip["status"]): void => {
     trip.returnedAt = returnedAt;
     trip.status = status;
+    trip.windowEndedAt = returnedAt;
   };
 
   for (const t of ordered) {
@@ -58,9 +103,11 @@ export function assembleTripsFromTransitionRows(
       case "DEPARTED_TORN": {
         // A departure while a trip is still open means the previous trip's
         // return was never logged in the collected history: finalize it as
-        // incomplete with only real evidence attached.
+        // incomplete with only real evidence attached. Its window ends at
+        // this departure — the player demonstrably left before this flight.
         if (open) {
           open.status = "incomplete";
+          open.windowEndedAt = t.occurredAt;
           trips.push(open);
         }
         open = {
@@ -71,6 +118,7 @@ export function assembleTripsFromTransitionRows(
           arrivedAt: null,
           returnedAt: null,
           status: "in_progress",
+          windowEndedAt: null,
         };
         break;
       }
@@ -161,33 +209,35 @@ export async function assembleTripsFromTransitions(db: PrismaClientType, userId:
     where: { userId, source: "trip", ...(tripIds.length > 0 ? { id: { notIn: tripIds } } : {}) },
   });
 
-  // Link abroad purchases to their trip: same destination (when known on
-  // either side) and purchase time within [departed - slack, returned + slack].
+  // Link abroad purchases to their trip. A purchase matches a trip when it
+  // falls inside the trip's window [departed - slack, windowEnd + slack] and
+  // the destinations agree (whenever both sides know them). When several
+  // trips qualify, the most RECENT departure wins: chain flights reuse the
+  // same destination, and incomplete (return never logged) trips must never
+  // swallow purchases that belong to later trips. Strictly user-scoped:
+  // another account's purchases must never attach to this user's trips.
   const purchases = await db.travelItemEvent.findMany({
-    where: { userId, travelEventId: null },
-    select: { id: true, occurredAt: true, destination: true },
+    where: { userId },
+    select: { id: true, occurredAt: true, destination: true, travelEventId: true },
   });
   let linked = 0;
+  let unlinked = 0;
   for (const purchase of purchases) {
-    const ts = purchase.occurredAt.getTime();
-    const match = trips.find((trip) => {
-      const start = trip.departedAt.getTime() - PURCHASE_WINDOW_SLACK_SECONDS * 1000;
-      const end = (trip.returnedAt?.getTime() ?? Date.now()) + PURCHASE_WINDOW_SLACK_SECONDS * 1000;
-      if (ts < start || ts > end) return false;
-      if (purchase.destination && trip.destination && purchase.destination !== trip.destination) return false;
-      return true;
-    });
-    if (match) {
-      const row = await db.travelEvent.findUnique({
-        where: { userId_source_sourceRef: { userId, source: "trip", sourceRef: `trip:${match.departedSourceRef}` } },
-        select: { id: true },
-      });
-      if (row) {
-        await db.travelItemEvent.update({ where: { id: purchase.id }, data: { travelEventId: row.id } });
-        linked += 1;
-      }
+    const match = findMatchingTrip(trips, purchase.occurredAt, purchase.destination);
+    const matchId = match
+      ? (
+          await db.travelEvent.findUnique({
+            where: { userId_source_sourceRef: { userId, source: "trip", sourceRef: `trip:${match.departedSourceRef}` } },
+            select: { id: true },
+          })
+        )?.id ?? null
+      : null;
+    if (matchId !== purchase.travelEventId) {
+      await db.travelItemEvent.update({ where: { id: purchase.id }, data: { travelEventId: matchId } });
+      if (matchId) linked += 1;
+      else unlinked += 1;
     }
   }
 
-  return { transitions: transitions.length, trips: trips.length, unmatchedTransitions: unmatched, linkedPurchases: linked };
+  return { transitions: transitions.length, trips: trips.length, unmatchedTransitions: unmatched, linkedPurchases: linked, unlinkedPurchases: unlinked };
 }

@@ -6,7 +6,7 @@ import {
   type Paginated,
   type Provenance,
 } from "@tornscope/shared";
-import { calculateTravelProfit, calculateTripEconomics } from "@tornscope/analytics";
+import { calculateTravelProfit, calculateTripEconomics, buildDailyTravelProfit } from "@tornscope/analytics";
 import { bigintToNumber, getPrismaClient, loadMarketPrices } from "@tornscope/database";
 
 /** Travel analytics: pre-assembled trips + their linked abroad purchases. */
@@ -215,24 +215,11 @@ async function loadTrips(userId: string, from: number, to: number, marketPrices:
 }
 
 /**
- * Daily estimated trip profit series. Profit = estimated resale value from
- * the Torn item catalog market price minus actual purchase spend; when a
- * price is unknown the item contributes -spend (pessimistic, clearly derived).
+ * Daily estimated trip profit series — the shared analytics definition
+ * (identical to the dashboard's travelProfitSeries).
  */
 function buildProfitSeries(trips: LoadedTrip[], from: number, to: number): Array<{ t: number; profit: number }> {
-  const byDay = new Map<number, number>();
-  for (const trip of trips) {
-    if (trip.departedAt < from || trip.departedAt > to) continue;
-    const d = new Date(trip.departedAt * 1000);
-    const day = Math.floor(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) / 1000);
-    let profit = 0;
-    for (const item of trip.items) {
-      const unitValue = item.estimatedUnitValue ?? null;
-      profit += unitValue !== null ? unitValue * item.quantity - item.totalCost : -item.totalCost;
-    }
-    byDay.set(day, (byDay.get(day) ?? 0) + profit);
-  }
-  return [...byDay.entries()].sort((a, b) => a[0] - b[0]).map(([t, p]) => ({ t, profit: p }));
+  return buildDailyTravelProfit(trips, from, to);
 }
 
 function findTopItem(trips: LoadedTrip[], marketPrices: Map<number, bigint>): { item: string | null; profit: number | null } {

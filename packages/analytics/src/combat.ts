@@ -32,6 +32,14 @@ export interface CombatStats {
   wins: number;
   losses: number;
   winRate: number | null;
+  /** Outgoing encounters I won (Attacked / Mugged / Hospitalized / ...). */
+  outgoingWins: number;
+  /** Outgoing encounters I lost (result "Lost"). */
+  outgoingLosses: number;
+  /** Incoming attacks I successfully defended (result "Defended"). */
+  incomingDefended: number;
+  /** Incoming attacks where the attacker won (I was attacked/mugged/hospitalized). */
+  incomingLost: number;
   mugsMade: number;
   mugsReceived: number;
   hospitalizationsCaused: number;
@@ -39,12 +47,13 @@ export interface CombatStats {
   respectGained: number | null;
   respectLost: number | null;
   byOpponent: OpponentRow[];
-  dailySeries: Array<{ t: number; made: number; received: number; wins: number; losses: number }>;
+  dailySeries: Array<{ t: number; made: number; received: number; wins: number; losses: number; outgoingWins: number; outgoingLosses: number; incomingDefended: number; incomingLost: number }>;
   provenance: "exact";
 }
 
 const WIN_RESULTS = new Set(["Attacked", "Mugged", "Hospitalized", "Arrested", "Special"]);
-const LOSS_RESULTS = new Set(["Lost", "Defended"]);
+/** Results where the ATTACKER lost — only meaningful on outgoing attacks. */
+const ATTACKER_LOSS_RESULTS = new Set(["Lost"]);
 const MUG_RESULT = "Mugged";
 const HOSPITAL_RESULT = "Hospitalized";
 
@@ -53,8 +62,10 @@ export function aggregateCombatStats(events: readonly CombatEventLike[], from: n
 
   let attacksMade = 0;
   let attacksReceived = 0;
-  let wins = 0;
-  let losses = 0;
+  let outgoingWins = 0;
+  let outgoingLosses = 0;
+  let incomingDefended = 0;
+  let incomingLost = 0;
   let mugsMade = 0;
   let mugsReceived = 0;
   let hospitalizationsCaused = 0;
@@ -65,17 +76,34 @@ export function aggregateCombatStats(events: readonly CombatEventLike[], from: n
 
   interface OpponentAgg { attacks: number; wins: number; losses: number; last: number; name: string | null }
   const opponents = new Map<string, OpponentAgg>();
-  const byDay = new Map<number, { made: number; received: number; wins: number; losses: number }>();
+  const byDay = new Map<number, { made: number; received: number; wins: number; losses: number; outgoingWins: number; outgoingLosses: number; incomingDefended: number; incomingLost: number }>();
 
   for (const e of inRange) {
     const outgoing = e.direction === "outgoing";
     if (outgoing) attacksMade += 1;
     else attacksReceived += 1;
 
-    const isWin = outgoing && WIN_RESULTS.has(e.result);
-    const isLoss = (!outgoing && WIN_RESULTS.has(e.result)) || LOSS_RESULTS.has(e.result);
-    if (isWin) wins += 1;
-    if (isLoss) losses += 1;
+    // Direction-aware result semantics. Torn's result string is written from
+    // the ATTACKER's perspective:
+    //   outgoing + Attacked/Mugged/Hospitalized/Arrested/Special -> I won.
+    //   outgoing + Lost/Defended -> my attack failed (my loss).
+    //   incoming + Mugged/... -> the attacker succeeded (my loss).
+    //   incoming + Defended/Lost -> the attack on me failed (defensive win).
+    let myWin = false;
+    let myLoss = false;
+    if (outgoing) {
+      myWin = WIN_RESULTS.has(e.result);
+      myLoss = !myWin && (ATTACKER_LOSS_RESULTS.has(e.result) || e.result === "Defended");
+    } else {
+      myLoss = WIN_RESULTS.has(e.result);
+      myWin = !myLoss && (ATTACKER_LOSS_RESULTS.has(e.result) || e.result === "Defended");
+    }
+    if (myWin) outgoingWins += outgoing ? 1 : 0;
+    if (myWin && !outgoing) incomingDefended += 1;
+    if (myLoss && outgoing) outgoingLosses += 1;
+    if (myLoss && !outgoing) incomingLost += 1;
+    const wins = myWin ? 1 : 0;
+    const losses = myLoss ? 1 : 0;
     if (e.result === MUG_RESULT) {
       if (outgoing) mugsMade += 1;
       else mugsReceived += 1;
@@ -94,19 +122,29 @@ export function aggregateCombatStats(events: readonly CombatEventLike[], from: n
     const opponentName = e.opponentName ?? "Unknown opponent";
     const row = opponents.get(opponentKey) ?? opponents.set(opponentKey, { attacks: 0, wins: 0, losses: 0, last: e.occurredAt, name: null }).get(opponentKey)!;
     row.attacks += 1;
-    if (isWin) row.wins += 1;
-    if (isLoss) row.losses += 1;
+    if (myWin) row.wins += 1;
+    if (myLoss) row.losses += 1;
     row.last = Math.max(row.last, e.occurredAt);
     if (e.opponentName !== null) row.name = e.opponentName;
 
     const day = Math.floor(e.occurredAt / 86_400) * 86_400;
-    const d = byDay.get(day) ?? byDay.set(day, { made: 0, received: 0, wins: 0, losses: 0 }).get(day)!;
+    const d = byDay.get(day) ?? byDay.set(day, { made: 0, received: 0, wins: 0, losses: 0, outgoingWins: 0, outgoingLosses: 0, incomingDefended: 0, incomingLost: 0 }).get(day)!;
     if (outgoing) d.made += 1;
     else d.received += 1;
-    if (isWin) d.wins += 1;
-    if (isLoss) d.losses += 1;
+    if (myWin) {
+      d.wins += 1;
+      if (outgoing) d.outgoingWins += 1;
+      else d.incomingDefended += 1;
+    }
+    if (myLoss) {
+      d.losses += 1;
+      if (outgoing) d.outgoingLosses += 1;
+      else d.incomingLost += 1;
+    }
   }
 
+  const wins = outgoingWins + incomingDefended;
+  const losses = outgoingLosses + incomingLost;
   const decided = wins + losses;
   const byOpponent: OpponentRow[] = [...opponents.entries()]
     .map(([key, r]) => {
@@ -131,6 +169,10 @@ export function aggregateCombatStats(events: readonly CombatEventLike[], from: n
     wins,
     losses,
     winRate: decided > 0 ? wins / decided : null,
+    outgoingWins,
+    outgoingLosses,
+    incomingDefended,
+    incomingLost,
     mugsMade,
     mugsReceived,
     hospitalizationsCaused,

@@ -234,6 +234,18 @@ export const DashboardResponseSchema = z.object({
   range: z.object({ from: z.number(), to: z.number(), interval: z.string() }),
   netWorth: KpiValueSchema,
   cash: KpiValueSchema,
+  /**
+   * Wealth Torn does NOT count in its official net worth figure. Currently
+   * one component: the withdrawable faction member balance. Always rendered
+   * separately — never silently merged into netWorth.
+   */
+  extendedWealth: z.object({
+    /** official net worth + all extended components (null without netWorth). */
+    value: z.number().nullable(),
+    /** Withdrawable faction member balance (the owner's own row). */
+    factionBalance: z.number().nullable(),
+    factionBalanceCapturedAt: z.number().nullable(),
+  }),
   /** Cash flow over the SELECTED range — labels are built from the range. */
   income: KpiValueSchema,
   expenses: KpiValueSchema,
@@ -455,6 +467,14 @@ export const CombatSummaryResponseSchema = z.object({
   wins: z.number(),
   losses: z.number(),
   winRate: z.number().nullable(),
+  /** Outgoing attacks I won (attacker results: Attacked/Mugged/Hospitalized/...). */
+  outgoingWins: z.number(),
+  /** Outgoing attacks I lost (result "Lost"). */
+  outgoingLosses: z.number(),
+  /** Incoming attacks I successfully defended (result "Defended"). */
+  incomingDefended: z.number(),
+  /** Incoming attacks where the attacker won (I lost the encounter). */
+  incomingLost: z.number(),
   mugsMade: z.number(),
   mugsReceived: z.number(),
   moneyMugged: KpiValueSchema,
@@ -464,7 +484,19 @@ export const CombatSummaryResponseSchema = z.object({
   respectGained: z.number().nullable(),
   respectLost: z.number().nullable(),
   byOpponent: z.array(OpponentRowSchema),
-  dailySeries: z.array(z.object({ t: z.number(), made: z.number(), received: z.number(), wins: z.number(), losses: z.number() })),
+  dailySeries: z.array(
+    z.object({
+      t: z.number(),
+      made: z.number(),
+      received: z.number(),
+      wins: z.number(),
+      losses: z.number(),
+      outgoingWins: z.number(),
+      outgoingLosses: z.number(),
+      incomingDefended: z.number(),
+      incomingLost: z.number(),
+    })
+  ),
   coverage: z.object({
     trackingSince: z.number().nullable(),
     earliestStored: z.number().nullable(),
@@ -565,7 +597,27 @@ export const FactionOverviewResponseSchema = z.object({
     })
     .nullable(),
   wars: z.object({ total: z.number(), wins: z.number(), losses: z.number(), ongoing: z.number() }),
-  payouts: z.object({ knownTotal: z.number(), personalTotal: z.number() }),
+  /** Newest first — lets Overview show real war history without the wars tab. */
+  recentWars: z.array(
+    z.object({
+      tornWarId: z.number(),
+      opponentName: z.string().nullable(),
+      startedAt: z.number(),
+      endedAt: z.number().nullable(),
+      result: z.enum(["win", "loss", "ongoing", "draw"]),
+      ourScore: z.number().nullable(),
+      opponentScore: z.number().nullable(),
+    })
+  ),
+  payouts: z.object({
+    /** Faction income rows actually matched to a ranked war (conservative). */
+    knownTotal: z.number(),
+    personalTotal: z.number(),
+    /** Faction income rows carrying OC scenario metadata (exact OC payouts). */
+    ocTotal: z.number(),
+    /** Faction income rows with no war or OC linkage. */
+    unmatchedTotal: z.number(),
+  }),
   coverage: z.object({
     warsEarliest: z.number().nullable(),
     warsLatest: z.number().nullable(),
@@ -585,7 +637,11 @@ export const FactionMemberRowSchema = z.object({
   memberId: z.number(),
   name: z.string().nullable(),
   position: z.string().nullable(),
+  level: z.number().nullable(),
   daysInFaction: z.number().nullable(),
+  /** Live-ish status from the roster (e.g. "Okay" / "Hospital") when known. */
+  status: z.string().nullable(),
+  lastActionAt: z.number().nullable(),
   isCurrentUser: z.boolean(),
   warAttacks: z.number(),
   warWins: z.number(),
@@ -635,9 +691,13 @@ export const FactionOcRowSchema = z.object({
   ocId: z.number(),
   name: z.string(),
   status: z.string(),
+  /** Grouped lifecycle state derived from the Torn status string. */
+  state: z.enum(["active", "completed", "expired"]),
   difficulty: z.number().nullable(),
   executedAt: z.number().nullable(),
   myParticipation: z.boolean(),
+  /** False when the stored payload carries no participant ids ("Mine" = Unavailable). */
+  participantsIdentifiable: z.boolean(),
   rewardMoney: z.number().nullable(),
   rewardRespect: z.number().nullable(),
   rewardItems: z.array(z.object({ id: z.number(), quantity: z.number() })).nullable(),
@@ -664,14 +724,17 @@ export const FactionLedgerResponseSchema = z.object({
       points: z.number().nullable(),
     })
   ),
-  payouts: z.array(
-    z.object({
-      occurredAt: z.number(),
-      amount: z.number(),
-      description: z.string().nullable(),
-      sourceRef: z.string(),
-    })
-  ),
+    payouts: z.array(
+      z.object({
+        occurredAt: z.number(),
+        amount: z.number(),
+        description: z.string().nullable(),
+        sourceRef: z.string(),
+        /** "oc" = exact OC scenario linkage; "unmatched" = unknown origin. */
+        kind: z.enum(["oc", "unmatched"]),
+        scenario: z.string().nullable(),
+      })
+    ),
 });
 export type FactionLedgerResponse = z.infer<typeof FactionLedgerResponseSchema>;
 

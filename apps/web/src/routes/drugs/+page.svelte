@@ -166,7 +166,7 @@
           </div>
           <div>
             <p class="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint">Total spend</p>
-            <p class="tnum mt-1 text-xl font-semibold text-negative">{formatMoneyCompact(data.rehab.totalSpend.value)}</p>
+            <p class="tnum mt-1 text-xl font-semibold text-negative">{data.rehab.totalSpend.value !== null ? `-${formatMoneyCompact(data.rehab.totalSpend.value).replace("-", "")}` : "—"}</p>
           </div>
           <div>
             <p class="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint">Latest</p>
@@ -178,12 +178,16 @@
             <StateMessage state="empty" title="No rehab visits in this range" />
           </div>
         {:else}
+          {@const anyPercent = data.rehab.recent.some((v) => v.rehabPercent !== null)}
           <ul class="mt-5 divide-y divide-border">
             {#each data.rehab.recent.slice(0, 6) as visit (visit.occurredAt)}
               <li class="flex items-baseline justify-between gap-3 py-2.5">
                 <span class="tnum text-[13px] text-fg-muted">{formatDateTime(visit.occurredAt)}</span>
-                <span class="text-[13px] text-fg">{visit.rehabPercent !== null ? `${visit.rehabPercent}%` : "—"}</span>
-                <span class="tnum text-[13px] font-medium text-fg">{visit.cost !== null ? formatMoneyCompact(visit.cost) : "—"}</span>
+                {#if anyPercent}
+                  <span class="text-[13px] text-fg">{visit.rehabPercent !== null ? `${visit.rehabPercent}%` : "—"}</span>
+                {/if}
+                <!-- Rehab is an expense: always rendered negative/red like the money ledger -->
+                <span class="tnum text-[13px] font-medium text-negative">{visit.cost !== null ? `-${formatMoneyCompact(visit.cost).replace("-", "")}` : "—"}</span>
               </li>
             {/each}
           </ul>

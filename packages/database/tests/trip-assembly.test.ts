@@ -42,7 +42,19 @@ describe("trip assembly from transitions", () => {
     ]);
     expect(trips).toHaveLength(2);
     expect(trips[0]).toMatchObject({ status: "incomplete", returnedAt: null });
+    // The incomplete trip's purchase window ends at the NEXT departure —
+    // otherwise an old open trip would swallow every future purchase.
+    expect(trips[0]!.windowEndedAt!.getTime()).toBe(trips[1]!.departedAt.getTime());
     expect(trips[1]).toMatchObject({ status: "in_progress" });
+    expect(trips[1]!.windowEndedAt).toBeNull(); // genuinely still abroad
+  });
+
+  it("bounds a completed trip's window at its return", () => {
+    const { trips } = assembleTripsFromTransitionRows([
+      transition("t1", "DEPARTED_TORN", "UAE", 11, 0),
+      transition("t2", "ARRIVED_TORN", "Torn", 1, 1_000),
+    ]);
+    expect(trips[0]!.windowEndedAt!.getTime()).toBe(trips[0]!.returnedAt!.getTime());
   });
 
   it("counts arrivals without departure evidence as unmatched (never fabricates a departure)", () => {

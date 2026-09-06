@@ -238,6 +238,34 @@ export interface TripEconomics {
   provenance: Provenance;
 }
 
+/**
+ * The ONE canonical daily travel-profit series. Profit per day = estimated
+ * resale value (Torn market price; realized when known) minus actual purchase
+ * spend, bucketed by the trip's DEPARTURE day. Items without any price basis
+ * contribute -spend (pessimistic, never a fabricated gain). Both the Overview
+ * dashboard and the Travel page render this exact function so their numbers
+ * can never diverge.
+ */
+export function buildDailyTravelProfit(
+  trips: readonly TravelTripLike[],
+  from: number,
+  to: number
+): Array<{ t: number; profit: number }> {
+  const byDay = new Map<number, number>();
+  for (const trip of trips) {
+    if (trip.departedAt < from || trip.departedAt > to) continue;
+    const d = new Date(trip.departedAt * 1000);
+    const day = Math.floor(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) / 1000);
+    let profit = 0;
+    for (const item of trip.items) {
+      const value = itemEstimatedValue(item);
+      profit += value !== null ? value - item.totalCost : -item.totalCost;
+    }
+    byDay.set(day, (byDay.get(day) ?? 0) + profit);
+  }
+  return [...byDay.entries()].sort((a, b) => a[0] - b[0]).map(([t, p]) => ({ t, profit: p }));
+}
+
 export function calculateTripEconomics(trip: TravelTripLike): TripEconomics {
   const spend = trip.items.reduce((sum, item) => sum + item.totalCost, 0);
   let revenue = 0;

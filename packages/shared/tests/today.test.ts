@@ -9,6 +9,7 @@ import {
   formatCountdownCompact,
   accessLevelName,
   remainingSeconds,
+  TORN_URLS,
   type UpcomingEvent,
 } from "../src/index.js";
 
@@ -78,6 +79,15 @@ describe("buildCooldown", () => {
     expect(cd.endsAt).toBeNull();
     expect(cd.remainingSeconds).toBeNull();
   });
+
+  it("keeps active and ready cooldowns distinct (no regen logic reuse)", () => {
+    const active = buildCooldown(now, "drug", 600);
+    const ready = buildCooldown(now, "booster", 0);
+    expect(active.state).toBe("active");
+    expect(active.remainingSeconds! > 0).toBe(true);
+    expect(ready.state).toBe("ready");
+    expect(ready.remainingSeconds).toBeNull();
+  });
 });
 
 /* -------------------------------------------------------------------------- */
@@ -93,8 +103,9 @@ describe("remainingSeconds", () => {
     expect(remainingSeconds(nowMs, endsAt)).toBe(5400);
   });
 
-  it("never returns negative values", () => {
+  it("reaching zero clamps to 0 — the UI must show Full/Ready, never '0s left'", () => {
     expect(remainingSeconds(10_000, 5)).toBe(0);
+    expect(remainingSeconds(5_000_000, 5_000)).toBe(0); // same instant
   });
 
   it("returns null for missing timestamps", () => {
@@ -261,5 +272,20 @@ describe("accessLevelName", () => {
     expect(accessLevelName(3)).toBe("Limited");
     expect(accessLevelName(4)).toBe("Full");
     expect(accessLevelName(null)).toBe("unknown");
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* External Torn links                                                        */
+/* -------------------------------------------------------------------------- */
+
+describe("TORN_URLS", () => {
+  it("uses the live travel hub (travel.php was removed by Torn and 404s)", () => {
+    expect(TORN_URLS.travel).toBe("https://www.torn.com/page.php?sid=travel");
+    expect(TORN_URLS.travel).not.toContain("travel.php");
+  });
+
+  it("points cooldown cards at the inventory page where items are used", () => {
+    expect(TORN_URLS.items).toBe("https://www.torn.com/item.php");
   });
 });

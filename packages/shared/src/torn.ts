@@ -48,6 +48,20 @@ export const TORN_DRUG_NAMES = [
 
 export type TornDrugName = (typeof TORN_DRUG_NAMES)[number];
 
+/**
+ * External Torn links used across the UI — audited 2026-09.
+ * travel.php was removed by Torn (404 "Page Not Found"); the travel hub now
+ * lives at page.php?sid=travel. Drugs/medical/boosters are all used from the
+ * inventory page (item.php); Torn exposes no stable per-category anchor, so
+ * no fake deep links are invented here.
+ */
+export const TORN_URLS = {
+  travel: "https://www.torn.com/page.php?sid=travel",
+  items: "https://www.torn.com/item.php",
+  bank: "https://www.torn.com/bank.php",
+  education: "https://www.torn.com/education.php",
+} as const;
+
 /** Central money ledger categories. */
 export const MONEY_CATEGORIES = [
   "crime",

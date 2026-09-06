@@ -23,12 +23,26 @@ export function formatSignedMoney(value: number | null | undefined): string {
   return `${prefix}${formatMoneyFull(value)}`;
 }
 
-/** Format unix seconds as a short UTC datetime, e.g. 2026-09-04 22:18. */
+/**
+ * European/Dutch date formatting for ALL user-facing dates. Internal
+ * timestamps stay unix seconds / ISO; only rendering is formatted here so
+ * every page shows the same style.
+ */
+
+/** DD-MM-YYYY (UTC — internal data semantics are UTC), e.g. 06-09-2026. */
+export function formatDate(ts: number | null | undefined): string {
+  if (!ts) return "—";
+  const d = new Date(ts * 1000);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(d.getUTCDate())}-${p(d.getUTCMonth() + 1)}-${d.getUTCFullYear()}`;
+}
+
+/** DD-MM-YYYY HH:mm (UTC), e.g. 06-09-2026 14:35. */
 export function formatDateTime(ts: number | null | undefined): string {
   if (!ts) return "—";
   const d = new Date(ts * 1000);
   const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
+  return `${formatDate(ts)} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
 }
 
 export function formatDuration(seconds: number | null | undefined): string {

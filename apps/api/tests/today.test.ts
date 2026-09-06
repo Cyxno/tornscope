@@ -177,6 +177,16 @@ describe("today service: bank", () => {
     expect(bank.profit).toBe(36112500); // exact value provided by Torn
   });
 
+  it("derives principal and return from exact amounts (never Torn's opaque interest_rate)", () => {
+    // amount = principal + profit (verified against the money ledger), so the
+    // defensible return is profit/principal — NOT the raw interest_rate field,
+    // which does not reconcile with the actual money movement.
+    const bank = assembleBank(now, fixtures.money as never);
+    expect(bank.principal).toBe(450000000 - 36112500);
+    expect(bank.returnPct).toBeCloseTo((36112500 / (450000000 - 36112500)) * 100, 1);
+    expect(bank.annualizedPct).toBeCloseTo(((36112500 / (450000000 - 36112500)) * 100 * 365) / 30, 0);
+  });
+
   it("flips to mature once the end time passes", () => {
     const bank = assembleBank(now + 120_000, fixtures.money as never);
     expect(bank.state).toBe("active");
@@ -187,6 +197,8 @@ describe("today service: bank", () => {
   it("reports none when nothing is invested", () => {
     const bank = assembleBank(now, fixtures.money_no_investment as never);
     expect(bank.state).toBe("none");
+    expect(bank.principal).toBeNull();
+    expect(bank.returnPct).toBeNull();
   });
 });
 
@@ -276,7 +288,7 @@ describe("today service: upcoming", () => {
       cooldowns: null,
       travel: assembleTravel(now, profileFixture, fixtures.travel_home as never, null, null),
       education: { state: "none", courseId: null, courseName: null, categoryName: null, completesAt: null, remainingSeconds: null, provenance: "exact", unavailableReason: null, requiredAccess: null },
-      bank: { state: "none", amount: null, profit: null, interestRate: null, durationDays: null, investedAt: null, maturesAt: null, remainingSeconds: null, provenance: "exact", unavailableReason: null, requiredAccess: null },
+      bank: { state: "none", amount: null, principal: null, profit: null, returnPct: null, annualizedPct: null, durationDays: null, investedAt: null, maturesAt: null, remainingSeconds: null, provenance: "exact", unavailableReason: null, requiredAccess: null },
       hospital: null,
       jail: null,
     });

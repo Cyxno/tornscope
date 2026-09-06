@@ -13,6 +13,7 @@ import {
   calculateNetworthPeriodChange,
   calculateRehabStats,
   calculateTravelProfit,
+  buildDailyTravelProfit,
 } from "@tornscope/analytics";
 import { bigintToNumber, getPrismaClient, loadMarketPrices } from "@tornscope/database";
 import { getLatestNetworth } from "./networth.js";
@@ -190,17 +191,36 @@ export async function getDashboard(userId: string, rangeInput: DateRangeInput): 
     consumptionRows.length > 0 ? (consumedUnknown > 0 ? "incomplete" : "ok") : drugsAvailability === "ok" ? "ok" : drugsAvailability;
 
   // Faction summary: latest completed/ongoing ranked war + personal payouts.
-  const accountRow = await db.tornAccount.findUnique({ where: { userId }, select: { factionId: true } });
+  const accountRow = await db.tornAccount.findUnique({ where: { userId }, select: { factionId: true, tornId: true } });
+  // Extended wealth: withdrawable faction member balance (the owner's own row
+  // of the latest faction-balance snapshot). Torn's official net worth does
+  // NOT include it — it is reported separately, never merged into netWorth.
+  let factionBalance: { money: number | null; capturedAt: number | null } | null = null;
+  if (accountRow) {
+    const snap = await db.factionBalanceSnapshot.findFirst({ where: { userId }, orderBy: { capturedAt: "desc" }, select: { members: true, capturedAt: true } });
+    const members = Array.isArray(snap?.members) ? (snap!.members as Array<{ id?: number; money?: number | null }>) : [];
+    const mine = accountRow.tornId !== null ? members.find((m) => m.id === accountRow.tornId) : undefined;
+    if (snap && mine && typeof mine.money === "number") {
+      factionBalance = { money: mine.money, capturedAt: Math.floor(snap.capturedAt.getTime() / 1000) };
+    }
+  }
   let factionSummary: DashboardResponse["faction"] = null;
   if (accountRow?.factionId) {
     const [lastWar, factionNameRow, myPayoutRows] = await Promise.all([
       db.rankedWar.findFirst({ where: { factionId: accountRow.factionId }, orderBy: { startedAt: "desc" }, select: { opponentName: true, endedAt: true, winnerFactionId: true, factionId: true } }),
       db.faction.findUnique({ where: { id: accountRow.factionId }, select: { name: true } }),
-      db.moneyEvent.aggregate({
+      db.moneyEvent.findMany({
         where: { userId, category: "faction", direction: "income", occurredAt: { gte: from, lte: to } },
-        _sum: { amount: true },
+        select: { amount: true, metadata: true },
       }),
     ]);
+    // "My payouts" here = faction income NOT carrying OC scenario metadata
+    // (those are exact OC payouts, never ranked-war payouts) — see Faction
+    // → Finance for the labeled breakdown.
+    const myPayouts = myPayoutRows.reduce((sum, r) => {
+      const meta = (r.metadata ?? {}) as { data?: { scenario?: string } };
+      return meta.data?.scenario ? sum : sum + (bigintToNumber(r.amount) ?? 0);
+    }, 0);
     factionSummary = {
       name: factionNameRow?.name ?? null,
       lastWar: lastWar
@@ -217,7 +237,7 @@ export async function getDashboard(userId: string, rangeInput: DateRangeInput): 
             endedAt: lastWar.endedAt ? Math.floor(lastWar.endedAt.getTime() / 1000) : null,
           }
         : null,
-      myPayouts: bigintToNumber(myPayoutRows._sum.amount ?? 0n) ?? 0,
+      myPayouts,
     };
   }
 
@@ -225,6 +245,11 @@ export async function getDashboard(userId: string, rangeInput: DateRangeInput): 
     range: { from: range.from, to: range.to, interval: autoInterval(range) },
     netWorth: { value: latestNw?.total ?? null, provenance: "exact", availability: latestNw ? "ok" : "unavailable" },
     cash: { value: latestNw?.cash ?? null, provenance: "exact", availability: latestNw ? "ok" : "unavailable" },
+    extendedWealth: {
+      value: latestNw?.total != null && factionBalance?.money != null ? latestNw.total + factionBalance.money : null,
+      factionBalance: factionBalance?.money ?? null,
+      factionBalanceCapturedAt: factionBalance?.capturedAt ?? null,
+    },
     income: {
       value: moneyAvailability === "unavailable" ? null : agg.totalIncome,
       provenance: "derived",
@@ -301,8 +326,7 @@ export async function getDashboard(userId: string, rangeInput: DateRangeInput): 
     networthSeries: nwSeriesRows.map((r) => ({ t: Math.floor(r.capturedAt.getTime() / 1000), total: bigintToNumber(r.total) ?? 0 })),
     incomeByCategory: agg.incomeByCategory.map((c) => ({ category: c.category as DashboardResponse["incomeByCategory"][number]["category"], total: c.total })),
     expensesByCategory: agg.expensesByCategory.map((c) => ({ category: c.category as DashboardResponse["expensesByCategory"][number]["category"], total: c.total })),
-    travelProfitSeries: buildDailyTravelProfit(trips, range.from, range.to),
-    drugUseSeries: drugs.dailySeries,
+    travelProfitSeries: buildDailyTravelProfit(trips, range.from, range.to),    drugUseSeries: drugs.dailySeries,
     recentTimeline: timelineRows.map((r) => ({
       id: r.id,
       occurredAt: Math.floor(r.occurredAt.getTime() / 1000),
@@ -360,20 +384,4 @@ function buildTripsForDashboard(
     durationSeconds: e.durationSeconds,
     items: itemsByTrip.get(e.id) ?? [],
   }));
-}
-
-function buildDailyTravelProfit(trips: TripForDashboard[], from: number, to: number): Array<{ t: number; profit: number }> {
-  const byDay = new Map<number, number>();
-  for (const trip of trips) {
-    if (trip.departedAt < from || trip.departedAt > to) continue;
-    const d = new Date(trip.departedAt * 1000);
-    const day = Math.floor(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) / 1000);
-    let profit = 0;
-    for (const item of trip.items) {
-      const unitValue = item.estimatedUnitValue ?? null;
-      profit += unitValue !== null ? unitValue * item.quantity - item.totalCost : -item.totalCost;
-    }
-    byDay.set(day, (byDay.get(day) ?? 0) + profit);
-  }
-  return [...byDay.entries()].sort((a, b) => a[0] - b[0]).map(([t, p]) => ({ t, profit: p }));
 }

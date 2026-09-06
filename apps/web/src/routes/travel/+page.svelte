@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { TravelSummaryResponse, TravelTripDto, Paginated } from "@tornscope/shared";
-  import { formatMoneyCompact, formatDateTime, formatDuration, formatKpiValue } from "@tornscope/shared";
+  import { formatMoneyCompact, formatDateTime, formatDuration, formatKpiValue, formatDate } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
   import { dateRange } from "$lib/state.svelte";
   import PageHeader from "$lib/components/PageHeader.svelte";
@@ -9,7 +9,7 @@
   import Chart from "$lib/components/Chart.svelte";
   import SegmentedDateRange from "$lib/components/SegmentedDateRange.svelte";
   import StateMessage from "$lib/components/StateMessage.svelte";
-  import { C, TOOLTIP, GRID, timeAxis, valueAxis, dayLabel } from "$lib/charts";
+  import { C, TOOLTIP, LEGEND, GRID, timeAxis, valueAxis, dayLabel } from "$lib/charts";
 
   let summary = $state<TravelSummaryResponse | null>(null);
   let history = $state<Paginated<TravelTripDto> | null>(null);
@@ -76,19 +76,26 @@
     };
   });
 
-  const catOption = $derived.by(() => {
+  /** Friendly haul categories; the pie splits by PURCHASED QUANTITY. */
+  const CATEGORY_LABELS: Record<string, string> = { flower: "Flowers", plushie: "Plushies", other: "Other" };
+  const CATEGORY_COLOR: Record<string, string> = { plushie: C.warning, flower: C.pink, other: C.accent };
+  const haulOption = $derived.by(() => {
     if (!summary || summary.itemsByCategory.length === 0) return null;
-    const color = (cat: string) => (cat === "plushie" ? C.warning : cat === "flower" ? C.pink : C.accent);
     return {
-      tooltip: { ...TOOLTIP, trigger: "item", formatter: "{b}: {c} ({d}%)" },
+      tooltip: { ...TOOLTIP, trigger: "item", formatter: (p: { name: string; value: number; percent: number }) => `${p.name}: ${p.value.toLocaleString("en-US")} items (${p.percent}%)` },
+      legend: { ...LEGEND, bottom: 0 },
       series: [
         {
           type: "pie",
-          radius: ["56%", "80%"],
-          center: ["50%", "50%"],
+          radius: ["52%", "76%"],
+          center: ["50%", "46%"],
           label: { show: false },
           itemStyle: { borderRadius: 4, borderColor: "#151518", borderWidth: 2 },
-          data: summary.itemsByCategory.map((r) => ({ name: r.category, value: r.spend, itemStyle: { color: color(r.category) } })),
+          data: summary.itemsByCategory.map((r) => ({
+            name: CATEGORY_LABELS[r.category] ?? r.category,
+            value: r.quantity,
+            itemStyle: { color: CATEGORY_COLOR[r.category] ?? C.accent },
+          })),
         },
       ],
     };
@@ -114,10 +121,10 @@
     {#if summary.coverage.trackingSince !== null}
       <p class="rounded-xl border border-border bg-surface px-5 py-3 text-xs leading-relaxed text-fg-muted">
         <span class="font-medium text-fg">Full trip data available from Torn:{' '}</span>
-        {summary.coverage.completeTripsFrom !== null ? new Date(summary.coverage.completeTripsFrom * 1000).toISOString().slice(0, 10) : "—"}
+        {summary.coverage.completeTripsFrom !== null ? formatDate(summary.coverage.completeTripsFrom) : "—"}
         <span class="mx-2 text-border-strong">·</span>
         <span class="font-medium text-fg">TornScope tracking since:{' '}</span>
-        {new Date(summary.coverage.trackingSince * 1000).toISOString().slice(0, 10)}
+        {formatDate(summary.coverage.trackingSince)}
         — trips are stored permanently from that point and do not disappear when Torn prunes its logs.
         {#if dateRange.from !== undefined && dateRange.from < summary.coverage.trackingSince}
           <span class="font-medium text-warning"> The selected range predates complete trip coverage, so it shows partial history — no zeros are invented.</span>
@@ -139,11 +146,12 @@
 
     {#if summary.unattachedPurchases.count > 0}
       <p class="rounded-xl border border-border bg-surface px-5 py-3 text-xs text-fg-muted">
-        <span class="font-medium text-fg">Historical unattached purchases:</span>
+        <span class="font-medium text-fg">Unmatched purchases:</span>
         {summary.unattachedPurchases.count} abroad purchase{summary.unattachedPurchases.count === 1 ? "" : "s"}
         ({formatMoneyCompact(summary.unattachedPurchases.spend)} across {summary.unattachedPurchases.itemsBought} items) whose
-        departure/arrival logs Torn no longer exposes. The purchases and their destinations are kept permanently; they are shown
-        separately and never mixed into Tracked trip profit or profit/hour, since their trip duration is unknown.
+        trip cannot be attached confidently — the departure/arrival logs Torn exposes no longer cover them. The purchases and
+        their destinations are kept permanently; they are shown separately and never mixed into Tracked trip profit or
+        profit/hour, since their trip duration is unknown.
       </p>
     {/if}
 
@@ -158,11 +166,11 @@
         </Panel>
       </div>
       <div class="lg:col-span-2">
-        <Panel title="What you haul" caption="Spend split: plushies, flowers, other" flush>
-          {#if !catOption}
+        <Panel title="What you haul" caption="Items bought abroad by quantity — flowers, plushies, other" flush>
+          {#if !haulOption}
             <StateMessage state="empty" title="No purchases in this range" />
           {:else}
-            <Chart option={catOption} height={300} />
+            <Chart option={haulOption} height={300} />
           {/if}
         </Panel>
       </div>

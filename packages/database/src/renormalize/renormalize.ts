@@ -171,7 +171,7 @@ async function main(): Promise<void> {
 
   const assembly = await assembleTripsFromTransitions(db, user.id);
   console.log(
-    `trip assembly: transitions=${assembly.transitions} trips=${assembly.trips} unmatchedTransitions=${assembly.unmatchedTransitions} linkedPurchases=${assembly.linkedPurchases}`
+    `trip assembly: transitions=${assembly.transitions} trips=${assembly.trips} unmatchedTransitions=${assembly.unmatchedTransitions} linkedPurchases=${assembly.linkedPurchases} unlinkedPurchases=${assembly.unlinkedPurchases}`
   );
 
   const after = await countAll(db, user.id);

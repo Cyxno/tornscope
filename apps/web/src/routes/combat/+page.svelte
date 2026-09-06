@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { CombatSummaryResponse, CombatTimelineResponse } from "@tornscope/shared";
-  import { formatMoneyCompact, formatDateTime, formatKpiValue, periodLabel } from "@tornscope/shared";
+  import { formatMoneyCompact, formatDateTime, formatKpiValue, periodLabel, formatDate } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
   import { dateRange } from "$lib/state.svelte";
   import PageHeader from "$lib/components/PageHeader.svelte";
@@ -44,28 +44,31 @@
     if (!summary || summary.dailySeries.length === 0) return null;
     return {
       tooltip: { ...TOOLTIP, trigger: "axis" },
-      legend: { ...LEGEND, data: ["Attacks made", "Attacks received"], top: 0, right: 0 },
+      legend: { ...LEGEND, data: ["Outgoing (I attacked)", "Incoming (attacked me)"], top: 0, right: 0 },
       grid: GRID,
       xAxis: timeAxis(summary.dailySeries.map((p) => dayLabel(p.t))),
       yAxis: { type: "value", minInterval: 1, axisLabel: { color: C.label, fontSize: 10.5 }, splitLine: { lineStyle: { color: C.splitLine } }, axisLine: { show: false } },
       series: [
-        { name: "Attacks made", type: "bar", stack: "attacks", data: summary.dailySeries.map((p) => p.made), barMaxWidth: 12, itemStyle: { color: C.accent, borderRadius: [3, 3, 0, 0] } },
-        { name: "Attacks received", type: "bar", stack: "attacks", data: summary.dailySeries.map((p) => p.received), barMaxWidth: 12, itemStyle: { color: C.negative, borderRadius: [3, 3, 0, 0] } },
+        { name: "Outgoing (I attacked)", type: "bar", stack: "attacks", data: summary.dailySeries.map((p) => p.made), barMaxWidth: 12, itemStyle: { color: C.accent, borderRadius: [3, 3, 0, 0] } },
+        { name: "Incoming (attacked me)", type: "bar", stack: "attacks", data: summary.dailySeries.map((p) => p.received), barMaxWidth: 12, itemStyle: { color: C.violet ?? "#a78bfa", borderRadius: [3, 3, 0, 0] } },
       ],
     };
   });
 
+  /** Direction-labelled result series — wins/losses never mix directions. */
   const winLossOption = $derived.by(() => {
     if (!summary || summary.dailySeries.length === 0) return null;
     return {
       tooltip: { ...TOOLTIP, trigger: "axis" },
-      legend: { ...LEGEND, data: ["Wins", "Losses"], top: 0, right: 0 },
+      legend: { ...LEGEND, data: ["Outgoing win", "Outgoing loss", "Defended incoming", "Lost incoming"], top: 0, right: 0 },
       grid: GRID,
       xAxis: timeAxis(summary.dailySeries.map((p) => dayLabel(p.t))),
       yAxis: { type: "value", minInterval: 1, axisLabel: { color: C.label, fontSize: 10.5 }, splitLine: { lineStyle: { color: C.splitLine } }, axisLine: { show: false } },
       series: [
-        { name: "Wins", type: "bar", data: summary.dailySeries.map((p) => p.wins), barMaxWidth: 12, itemStyle: { color: C.positive, borderRadius: [3, 3, 0, 0] } },
-        { name: "Losses", type: "bar", data: summary.dailySeries.map((p) => p.losses), barMaxWidth: 12, itemStyle: { color: C.negative, borderRadius: [3, 3, 0, 0] } },
+        { name: "Outgoing win", type: "bar", stack: "outgoing", data: summary.dailySeries.map((p) => p.outgoingWins), barMaxWidth: 12, itemStyle: { color: C.positive, borderRadius: [3, 3, 0, 0] } },
+        { name: "Outgoing loss", type: "bar", stack: "outgoing", data: summary.dailySeries.map((p) => p.outgoingLosses), barMaxWidth: 12, itemStyle: { color: C.negative, borderRadius: [3, 3, 0, 0] } },
+        { name: "Defended incoming", type: "bar", stack: "incoming", data: summary.dailySeries.map((p) => p.incomingDefended), barMaxWidth: 12, itemStyle: { color: C.accentStrong, borderRadius: [3, 3, 0, 0] } },
+        { name: "Lost incoming", type: "bar", stack: "incoming", data: summary.dailySeries.map((p) => p.incomingLost), barMaxWidth: 12, itemStyle: { color: C.warning, borderRadius: [3, 3, 0, 0] } },
       ],
     };
   });
@@ -89,17 +92,66 @@
   {:else if summary}
     {#if summary.coverage.trackingSince !== null}
       <p class="rounded-xl border border-border bg-surface px-5 py-3 text-xs text-fg-muted">
-        <span class="font-medium text-fg">Tracking since {new Date(summary.coverage.trackingSince * 1000).toISOString().slice(0, 10)}</span>
+        <span class="font-medium text-fg">Tracking since {formatDate(summary.coverage.trackingSince)}</span>
         — combat events come from your Torn attacks record (kept permanently once stored). Mug cash is tracked in the Economy ledger
         under the mugging category, never duplicated here.
       </p>
     {/if}
 
+    <!-- Outgoing vs incoming: the two sides are never merged -->
+    <section class="grid gap-6 lg:grid-cols-2">
+      <Panel title="Outgoing — attacks I initiated" caption="My results as the attacker" flush>
+        <div class="grid grid-cols-4 gap-px bg-border">
+          <div class="bg-surface p-5 text-center">
+            <p class="tnum text-2xl font-semibold text-fg">{summary.attacksMade}</p>
+            <p class="mt-1 text-[10px] uppercase tracking-[0.14em] text-fg-faint">attacks</p>
+          </div>
+          <div class="bg-surface p-5 text-center">
+            <p class="tnum text-2xl font-semibold text-positive">{summary.outgoingWins}</p>
+            <p class="mt-1 text-[10px] uppercase tracking-[0.14em] text-fg-faint">wins</p>
+          </div>
+          <div class="bg-surface p-5 text-center">
+            <p class="tnum text-2xl font-semibold text-negative">{summary.outgoingLosses}</p>
+            <p class="mt-1 text-[10px] uppercase tracking-[0.14em] text-fg-faint">losses</p>
+          </div>
+          <div class="bg-surface p-5 text-center">
+            <p class="tnum text-2xl font-semibold text-fg">{summary.mugsMade}</p>
+            <p class="mt-1 text-[10px] uppercase tracking-[0.14em] text-fg-faint">mugs</p>
+          </div>
+        </div>
+      </Panel>
+      <Panel title="Incoming — attacks against me" caption="My results as the defender" flush>
+        <div class="grid grid-cols-4 gap-px bg-border">
+          <div class="bg-surface p-5 text-center">
+            <p class="tnum text-2xl font-semibold text-fg">{summary.attacksReceived}</p>
+            <p class="mt-1 text-[10px] uppercase tracking-[0.14em] text-fg-faint">attacks</p>
+          </div>
+          <div class="bg-surface p-5 text-center">
+            <p class="tnum text-2xl font-semibold text-positive">{summary.incomingDefended}</p>
+            <p class="mt-1 text-[10px] uppercase tracking-[0.14em] text-fg-faint">defended</p>
+          </div>
+          <div class="bg-surface p-5 text-center">
+            <p class="tnum text-2xl font-semibold text-negative">{summary.incomingLost}</p>
+            <p class="mt-1 text-[10px] uppercase tracking-[0.14em] text-fg-faint">lost</p>
+          </div>
+          <div class="bg-surface p-5 text-center">
+            <p class="tnum text-2xl font-semibold text-fg">{summary.mugsReceived}</p>
+            <p class="mt-1 text-[10px] uppercase tracking-[0.14em] text-fg-faint">mugged</p>
+          </div>
+        </div>
+      </Panel>
+    </section>
+
     <div class="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border shadow-panel md:grid-cols-4">
       <Stat label="{period} attacks made" value={String(summary.attacksMade)} provenance="exact" tone="accent" sub={`${summary.attacksReceived} received`} />
-      <Stat label="{period} wins" value={String(summary.wins)} provenance="exact" tone="positive" sub={summary.winRate !== null ? `${Math.round(summary.winRate * 100)}% win rate · ${summary.losses} losses` : null} />
-      <Stat label="{period} mugs made" value={String(summary.mugsMade)} provenance="exact" sub={`${summary.mugsReceived} mugged`} />
+      <Stat label="{period} wins (both directions)" value={String(summary.wins)} provenance="exact" tone="positive" sub={summary.winRate !== null ? `${Math.round(summary.winRate * 100)}% of decided` : null} />
       <Stat label="{period} hospitalizations" value={String(summary.hospitalizationsCaused)} provenance="exact" sub={`${summary.hospitalizationsReceived} received`} />
+      <Stat
+        label="Money mugged"
+        value={formatKpiValue(summary.moneyMugged)}
+        provenance="exact"
+        sub={summary.moneyLostToMugs.value !== null ? `${formatMoneyCompact(summary.moneyLostToMugs.value)} lost to mugs` : null}
+      />
     </div>
 
     <section class="grid gap-6 lg:grid-cols-2">
@@ -110,7 +162,7 @@
           <Chart option={activityOption} height={280} />
         {/if}
       </Panel>
-      <Panel title="Wins vs losses" caption="Per day over the selected range" flush>
+      <Panel title="Results by day" caption="Outgoing wins/losses vs defended/lost incoming — grouped, never mixed" flush>
         {#if !winLossOption}
           <StateMessage state="empty" title="No decided attacks in this range" />
         {:else}

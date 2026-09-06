@@ -4,6 +4,7 @@
     remainingSeconds,
     formatCountdownCompact,
     formatMoneyFull,
+    TORN_URLS,
     type LiveBar,
     type TodayResponse,
   } from "@tornscope/shared";
@@ -100,9 +101,27 @@
     if (!bar) return { text: "Unavailable", tone: "muted" };
     if (bar.regenState === "full") return { text: "Full", tone: "positive" };
     if (bar.regenState === "regenerating" && bar.fullAt !== null) {
-      return { text: `Full in ${formatCountdownCompact(remainingSeconds(serverNowMs, bar.fullAt))}`, tone: "accent" };
+      const left = remainingSeconds(serverNowMs, bar.fullAt);
+      // The countdown elapsed while the payload is still cached: Torn's own
+      // full_time is authoritative, so the bar IS full now — never "0s".
+      if (left !== null && left <= 0) return { text: "Full", tone: "positive" };
+      return { text: `Full in ${formatCountdownCompact(left)}`, tone: "accent" };
     }
-    return { text: "Regen paused", tone: "warning" };
+    // Regen state genuinely unknown (Torn gave no full time): no invented timer.
+    if (bar.regenState === "paused") return { text: "Regen paused", tone: "warning" };
+    return { text: "Full time unavailable", tone: "muted" };
+  }
+
+  function cooldownState(cd: (typeof cooldowns)[number]): { label: string; active: boolean } | null {
+    if (!cd) return null;
+    // A cached "active" cooldown whose clock ran out is Ready NOW — never 00:00:00.
+    if (cd.state === "active") {
+      const left = remainingSeconds(serverNowMs, cd.endsAt);
+      if (left !== null && left <= 0) {
+        return { label: "Ready", active: false };
+      }
+    }
+    return { label: cd.state === "ready" ? "Ready" : "active", active: cd.state === "active" };
   }
 
   function fmtFullAt(bar: LiveBar | null): string {
@@ -159,6 +178,18 @@
     if (diff < 60) return `${diff}s ago`;
     return `${Math.floor(diff / 60)}m ago`;
   });
+
+  /**
+   * Torn links come from the shared, audited TORN_URLS registry (travel.php
+   * is dead — the hub is page.php?sid=travel). Cooldown rows open the
+   * inventory page where drugs / medical items / boosters are used.
+   */
+  const TORN_TRAVEL_LINK = TORN_URLS.travel;
+  const TORN_ITEM_LINKS: Record<string, string> = {
+    drug: TORN_URLS.items,
+    medical: TORN_URLS.items,
+    booster: TORN_URLS.items,
+  };
 </script>
 
 <div class="space-y-10">
@@ -266,7 +297,7 @@
       <div class="lg:col-span-3">
         <Panel title="Travel" caption="Where you are, and what is in the air">
           {#snippet actions()}
-            <a class="text-xs text-fg-faint transition-colors hover:text-accent" href="https://www.torn.com/travel.php" target="_blank" rel="noopener noreferrer">Torn ↗</a>
+            <a class="text-xs text-fg-faint transition-colors hover:text-accent" href={TORN_TRAVEL_LINK} target="_blank" rel="noopener noreferrer">Torn ↗</a>
           {/snippet}
           <div class="space-y-3">
             <p class="font-display text-3xl font-medium text-fg">{travelHeadline}</p>
@@ -302,13 +333,22 @@
       </div>
 
       <div class="lg:col-span-2">
-        <Panel title="Cooldowns" caption="Ready when the clock hits zero" flush>
+        <Panel title="Cooldowns" caption="Ready when the clock hits zero — tap a row to open Torn" flush>
           <div class="px-6 pb-6 pt-3">
             {#each cooldowns as cd, i (i)}
-              <div class="flex items-center justify-between gap-3 border-b border-border/60 py-3.5 last:border-0">
-                <span class="text-[13px] font-medium text-fg">{cd?.label ?? "—"}</span>
-                {#if cd}
-                  {#if cd.state === "ready"}
+              {@const state = cooldownState(cd)}
+              <a
+                class="flex items-center justify-between gap-3 border-b border-border/60 py-3.5 last:border-0 {cd ? 'cursor-pointer hover:opacity-80' : ''}"
+                href={cd ? TORN_ITEM_LINKS[cd.kind] : undefined}
+                target="_blank"
+                rel="noopener noreferrer"
+                tabindex={cd ? 0 : -1}
+              >
+                <span class="text-[13px] font-medium text-fg">{cd?.label ?? "—"}
+                  {#if cd}<span class="ml-1 text-[10px] uppercase tracking-wide text-fg-faint">items ↗</span>{/if}
+                </span>
+                {#if cd && state}
+                  {#if !state.active}
                     <span class="inline-flex items-center gap-1.5 rounded-full border border-positive/30 bg-positive/10 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-positive">
                       Ready
                     </span>
@@ -320,7 +360,7 @@
                 {:else}
                   <span class="text-[13px] text-fg-faint">Unavailable</span>
                 {/if}
-              </div>
+              </a>
             {/each}
           </div>
         </Panel>
@@ -331,11 +371,14 @@
     <section class="grid gap-6 lg:grid-cols-2">
       <Panel title="Bank investment" caption="City bank position">
         {#snippet actions()}
-          <a class="text-xs text-fg-faint transition-colors hover:text-accent" href="https://www.torn.com/bank.php" target="_blank" rel="noopener noreferrer">Torn ↗</a>
+          <a class="text-xs text-fg-faint transition-colors hover:text-accent" href={TORN_URLS.bank} target="_blank" rel="noopener noreferrer">Torn ↗</a>
         {/snippet}
         {#if bank?.state === "active" || bank?.state === "mature"}
           <div class="space-y-2">
-            <p class="tnum font-display text-3xl font-medium text-fg">{formatMoneyFull(bank.amount)}</p>
+            <div>
+              <p class="text-[10px] uppercase tracking-[0.14em] text-fg-faint">Expected payout</p>
+              <p class="tnum font-display text-3xl font-medium text-fg">{formatMoneyFull(bank.amount)}</p>
+            </div>
             {#if bank.state === "mature"}
               <p class="text-sm font-semibold text-positive">Ready to collect</p>
             {:else if bank.maturesAt !== null}
@@ -345,13 +388,28 @@
                 <span class="tnum text-xs text-fg-faint">· {formatDateTimeInZone(bank.maturesAt, timeZone)}</span>
               </p>
             {/if}
-            {#if bank.interestRate !== null || bank.durationDays !== null}
-              <p class="tnum text-xs text-fg-faint">
-                {#if bank.interestRate !== null}{bank.interestRate}% interest{/if}
-                {#if bank.durationDays !== null}{bank.interestRate !== null ? " · " : ""}{bank.durationDays} days{/if}
-                {#if bank.profit !== null} · expected profit {formatMoneyFull(bank.profit)}{/if}
-              </p>
-            {/if}
+            <div class="grid grid-cols-2 gap-x-4 gap-y-1.5 pt-1 text-[13px]">
+              {#if bank.principal !== null}
+                <span class="text-fg-faint">Principal</span>
+                <span class="tnum text-right text-fg">{formatMoneyFull(bank.principal)}</span>
+              {/if}
+              {#if bank.profit !== null}
+                <span class="text-fg-faint">Expected profit</span>
+                <span class="tnum text-right font-medium text-positive">+{formatMoneyFull(bank.profit)}</span>
+              {/if}
+              {#if bank.returnPct !== null}
+                <span class="text-fg-faint">Return ({bank.durationDays ?? "?"} days)</span>
+                <span class="tnum text-right text-fg">{bank.returnPct}%</span>
+              {/if}
+              {#if bank.annualizedPct !== null}
+                <span class="text-fg-faint" title="Derived: term return scaled to 365 days — an estimate, not a Torn-reported rate.">Annualised (derived)</span>
+                <span class="tnum text-right text-fg-muted">≈{bank.annualizedPct}% p.a.</span>
+              {/if}
+              {#if bank.investedAt !== null}
+                <span class="text-fg-faint">Invested</span>
+                <span class="tnum text-right text-fg-muted">{formatDateTimeInZone(bank.investedAt, timeZone)}</span>
+              {/if}
+            </div>
           </div>
         {:else if bank?.state === "none"}
           <p class="text-sm text-fg-muted">No active investment.</p>
@@ -364,7 +422,7 @@
 
       <Panel title="Education" caption="Current course">
         {#snippet actions()}
-          <a class="text-xs text-fg-faint transition-colors hover:text-accent" href="https://www.torn.com/education.php" target="_blank" rel="noopener noreferrer">Torn ↗</a>
+          <a class="text-xs text-fg-faint transition-colors hover:text-accent" href={TORN_URLS.education} target="_blank" rel="noopener noreferrer">Torn ↗</a>
         {/snippet}
         {#if education?.state === "active" || education?.state === "complete"}
           <div class="space-y-2">

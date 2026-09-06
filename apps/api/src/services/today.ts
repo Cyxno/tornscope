@@ -170,12 +170,16 @@ export function buildDemoToday(nowMs: number = Date.now()): TodayResponse {
   };
 
   const amount = 450_000_000;
+  const principal = 400_000_000;
+  const profit = amount - principal;
   const maturesAt = nowSec + 10 * 86_400 + (86_400 - cycle(86_400));
   const bank: BankStatus = {
     state: "active",
     amount,
-    profit: Math.round(amount * 0.0803),
-    interestRate: 8.03,
+    principal,
+    profit,
+    returnPct: Math.round((profit / principal) * 100 * 100) / 100,
+    annualizedPct: Math.round(((profit / principal) * 100 * 365) / 30 * 10) / 10,
     durationDays: 30,
     investedAt: nowSec - 20 * 86_400,
     maturesAt,
@@ -563,8 +567,10 @@ export function assembleBank(nowSec: number, money: TornUserMoney): BankStatus {
     return {
       state: "none",
       amount: null,
+      principal: null,
       profit: null,
-      interestRate: null,
+      returnPct: null,
+      annualizedPct: null,
       durationDays: null,
       investedAt: null,
       maturesAt: null,
@@ -576,11 +582,18 @@ export function assembleBank(nowSec: number, money: TornUserMoney): BankStatus {
   }
 
   const maturesAt = normalizeTornTimestamp(city.until, nowSec);
+  // Principal = payout value minus exact projected profit. Verified against
+  // the money ledger: "Bank invest" transfers match amount - profit exactly.
+  const principal = city.profit !== null && city.profit < city.amount ? city.amount - city.profit : null;
+  const returnPct = principal !== null && principal > 0 && city.profit !== null ? (city.profit / principal) * 100 : null;
+  const annualizedPct = returnPct !== null && city.duration > 0 ? (returnPct * 365) / city.duration : null;
   return {
     state: maturesAt <= nowSec ? "mature" : "active",
     amount: city.amount,
+    principal,
     profit: city.profit,
-    interestRate: city.interest_rate,
+    returnPct: returnPct !== null ? Math.round(returnPct * 100) / 100 : null,
+    annualizedPct: annualizedPct !== null ? Math.round(annualizedPct * 10) / 10 : null,
     durationDays: city.duration,
     investedAt: city.invested_at >= 1e9 ? city.invested_at : null,
     maturesAt,
@@ -740,8 +753,10 @@ function bankUnavailable(failure: SectionFailure): BankStatus {
   return {
     state: "unavailable",
     amount: null,
+    principal: null,
     profit: null,
-    interestRate: null,
+    returnPct: null,
+    annualizedPct: null,
     durationDays: null,
     investedAt: null,
     maturesAt: null,

@@ -323,6 +323,8 @@ export const FactionMemberSchema = loose({
   days_in_faction: z.number().optional(),
   position: z.string().nullable().optional(),
   is_in_oc: z.boolean().nullable().optional(),
+  status: z.string().nullable().optional(),
+  last_action: loose({ status: z.string().nullable().optional(), until: z.number().nullable().optional() }).nullable().optional(),
 });
 export type TornFactionMember = z.infer<typeof FactionMemberSchema>;
 

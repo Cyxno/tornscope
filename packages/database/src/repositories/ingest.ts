@@ -374,6 +374,62 @@ export async function upsertFactionMembership(
   });
 }
 
+export interface FactionRosterMemberInput {
+  memberId: number;
+  name?: string | null;
+  position?: string | null;
+  level?: number | null;
+  daysInFaction?: number | null;
+  lastActionAt?: Date | null;
+  lastActionStatus?: string | null;
+}
+
+/**
+ * Store the faction ROSTER (one row per member with identity fields), keyed
+ * by (userId, factionId, sourceRef="member:<tornId>"). Rows no longer on the
+ * roster are marked inactive so historical members keep their stored display
+ * name — the only name source for members who later leave.
+ */
+export async function upsertFactionMemberRoster(
+  db: PrismaClientType,
+  userId: string,
+  factionId: number,
+  members: readonly FactionRosterMemberInput[],
+  now = new Date()
+): Promise<number> {
+  for (const m of members) {
+    const sourceRef = `member:${m.memberId}`;
+    const data = {
+      memberId: m.memberId,
+      name: m.name ?? null,
+      position: m.position ?? null,
+      level: m.level ?? null,
+      daysInFaction: m.daysInFaction ?? null,
+      lastActionAt: m.lastActionAt ?? null,
+      lastActionStatus: m.lastActionStatus ?? null,
+      isActive: true,
+      leftAt: null,
+    };
+    await db.factionMembership.upsert({
+      where: { userId_factionId_sourceRef: { userId, factionId, sourceRef } },
+      create: { userId, factionId, sourceRef, ...data },
+      update: data,
+    });
+  }
+  // Retire roster rows whose member is gone (keeps their name for history).
+  const keep = new Set(members.map((m) => `member:${m.memberId}`));
+  const tracked = await db.factionMembership.findMany({
+    where: { userId, factionId, isActive: true, sourceRef: { startsWith: "member:" } },
+    select: { id: true, sourceRef: true },
+  });
+  for (const row of tracked) {
+    if (!keep.has(row.sourceRef)) {
+      await db.factionMembership.update({ where: { id: row.id }, data: { isActive: false, leftAt: now } });
+    }
+  }
+  return members.length;
+}
+
 export async function insertFactionSnapshot(
   db: PrismaClientType,
   userId: string,

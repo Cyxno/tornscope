@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { CrimesSummaryResponse, CrimesTimelineResponse } from "@tornscope/shared";
-  import { formatMoneyCompact, formatDateTime, formatKpiValue, formatSignedMoney, periodLabel } from "@tornscope/shared";
+  import { formatMoneyCompact, formatDateTime, formatSignedMoney, periodLabel, formatDate } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
   import { dateRange } from "$lib/state.svelte";
   import PageHeader from "$lib/components/PageHeader.svelte";
@@ -94,17 +94,39 @@
   {:else if summary}
     {#if summary.coverage.trackingSince !== null}
       <p class="rounded-xl border border-border bg-surface px-5 py-3 text-xs text-fg-muted">
-        <span class="font-medium text-fg">Tracking since {new Date(summary.coverage.trackingSince * 1000).toISOString().slice(0, 10)}</span>
+        <span class="font-medium text-fg">Tracking since {formatDate(summary.coverage.trackingSince)}</span>
         — crime attempts are normalized from your permanently stored raw logs; older history Torn no longer returns is never invented.
       </p>
     {/if}
 
-    <div class="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border shadow-panel md:grid-cols-4">
-      <Stat label="{period} attempts" value={String(summary.attempts)} provenance="exact" tone="accent" sub={summary.crimesPerDay ? `${summary.crimesPerDay.toFixed(1)}/day` : null} />
-      <Stat label="{period} success rate" value={summary.successRate !== null ? `${Math.round(summary.successRate * 100)}%` : "—"} provenance="exact" tone="positive" sub={`${summary.successful} succeeded · ${summary.failed} failed`} />
-      <Stat label="{period} net crime cash" value={formatSignedMoney(summary.netCrimeCash)} provenance="exact" tone={summary.netCrimeCash >= 0 ? "positive" : "negative"} sub={`+${formatMoneyCompact(summary.moneyGained)} / -${formatMoneyCompact(summary.moneyLost)}`} />
-      <Stat label="Total estimated value" value={formatKpiValue({ value: summary.totalEstimatedValue, availability: summary.totalEstimatedValue === null ? "unavailable" : "ok" })} provenance="estimated" sub={summary.nerveUsed !== null ? `${summary.nerveUsed} nerve used` : "nerve unavailable"} />
+    <!-- Hero: the three numbers that matter most -->
+    <div class="grid grid-cols-1 gap-px overflow-hidden rounded-2xl border border-border bg-border shadow-panel md:grid-cols-3">
+      <div class="bg-surface p-7 text-center">
+        <p class="tnum text-4xl font-semibold text-fg">{summary.attempts}</p>
+        <p class="mt-1 text-[11px] uppercase tracking-[0.14em] text-fg-faint">attempts {summary.crimesPerDay ? `· ${summary.crimesPerDay.toFixed(1)}/day` : ""}</p>
+      </div>
+      <div class="bg-surface p-7 text-center">
+        <p class="tnum text-4xl font-semibold text-positive">{summary.successRate !== null ? `${Math.round(summary.successRate * 100)}%` : "—"}</p>
+        <p class="mt-1 text-[11px] uppercase tracking-[0.14em] text-fg-faint">success rate · {summary.successful}W / {summary.failed}F</p>
+      </div>
+      <div class="bg-surface p-7 text-center">
+        <p class="tnum text-4xl font-semibold {summary.netCrimeCash >= 0 ? "text-positive" : "text-negative"}">{formatSignedMoney(summary.netCrimeCash)}</p>
+        <p class="mt-1 text-[11px] uppercase tracking-[0.14em] text-fg-faint">net crime cash · exact</p>
+      </div>
     </div>
+
+    <!-- Secondary strip: clearly-estimated + context values -->
+    <div class="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border md:grid-cols-4">
+      <Stat label="Item rewards (est.)" value={summary.estimatedItemsValue !== null ? formatMoneyCompact(summary.estimatedItemsValue) : "—"} provenance="estimated" sub="Torn catalog prices" />
+      <Stat label="Nerve used" value={summary.nerveUsed !== null ? String(summary.nerveUsed) : "—"} provenance="exact" />
+      <Stat label="Value per nerve (est.)" value={summary.valuePerNerve !== null ? formatMoneyCompact(summary.valuePerNerve) : "—"} provenance="estimated" />
+      <Stat label="Jail time" value={summary.jailedCount > 0 ? `${summary.jailedCount}× · ${Math.round(summary.totalJailSeconds / 3600)}h` : "0×"} provenance="exact" tone={summary.jailedCount > 0 ? "negative" : "neutral"} />
+    </div>
+
+    <p class="text-xs text-fg-faint">
+      Cash figures are <span class="font-medium text-fg">exact</span> from your Torn logs; item reward values are
+      <span class="font-medium text-warning">estimates</span> from the Torn item catalog and are never mixed into the exact cash total.
+    </p>
 
     <section class="grid gap-6 lg:grid-cols-2">
       <Panel title="Attempts & successes" caption="Per day over the selected range" flush>
@@ -131,7 +153,7 @@
       </p>
     {/if}
 
-    <Panel title="By crime" caption="Ranked by attempts — item values estimated from the Torn catalog" flush>
+    <Panel title="By crime" caption="Ranked by attempts — cash exact, items (est.) from catalog prices" flush>
       {#if summary.byCrime.length === 0}
         <StateMessage state="empty" title="No crime attempts in this range" />
       {:else}
@@ -140,26 +162,26 @@
             <thead>
               <tr class="border-b border-border text-[11px] uppercase tracking-[0.12em] text-fg-faint">
                 <th class="py-2.5 pl-6 pr-4 font-medium">Crime</th>
-                <th class="py-2.5 pr-4 text-right font-medium">Attempts</th>
+                <th class="py-2.5 pr-4 text-right font-medium">Att.</th>
                 <th class="py-2.5 pr-4 text-right font-medium">Rate</th>
-                <th class="py-2.5 pr-4 text-right font-medium">Cash gained</th>
-                <th class="py-2.5 pr-4 text-right font-medium">Cash lost</th>
-                <th class="py-2.5 pr-4 text-right font-medium">Est. items</th>
+                <th class="py-2.5 pr-4 text-right font-medium">Cash in</th>
+                <th class="py-2.5 pr-4 text-right font-medium">Cash out</th>
+                <th class="py-2.5 pr-4 text-right font-medium">Items (est.)</th>
                 <th class="py-2.5 pr-4 text-right font-medium">Nerve</th>
-                <th class="py-2.5 pr-6 text-right font-medium">Net value</th>
+                <th class="py-2.5 pr-6 text-right font-medium">Per nerve</th>
               </tr>
             </thead>
             <tbody>
-              {#each summary.byCrime.slice(0, 12) as row (row.crime)}
-                <tr class="border-b border-border/50 last:border-0 hover:bg-surface-2/50">
-                  <td class="max-w-[240px] truncate py-2.5 pl-6 pr-4 text-fg" title={row.crime}>{row.crime}</td>
-                  <td class="tnum py-2.5 pr-4 text-right text-fg-muted">{row.attempts}</td>
-                  <td class="tnum py-2.5 pr-4 text-right text-fg-muted">{row.successRate !== null ? `${Math.round(row.successRate * 100)}%` : "—"}</td>
+              {#each summary.byCrime.slice(0, 12) as row, i (row.crime)}
+                <tr class="border-b border-border/50 last:border-0 transition-colors hover:bg-surface-2/50 {i % 2 === 1 ? 'bg-surface-2/30' : ''}">
+                  <td class="max-w-[240px] truncate py-2.5 pl-6 pr-4 font-medium text-fg" title={row.crime}>{row.crime}</td>
+                  <td class="tnum py-2.5 pr-4 text-right font-semibold text-fg">{row.attempts}</td>
+                  <td class="tnum py-2.5 pr-4 text-right {row.successRate !== null && row.successRate >= 0.5 ? 'text-positive' : 'text-fg-muted'}">{row.successRate !== null ? `${Math.round(row.successRate * 100)}%` : "—"}</td>
                   <td class="tnum py-2.5 pr-4 text-right text-positive">{row.cashGained > 0 ? formatMoneyCompact(row.cashGained) : "—"}</td>
                   <td class="tnum py-2.5 pr-4 text-right text-negative">{row.cashLost > 0 ? formatMoneyCompact(row.cashLost) : "—"}</td>
-                  <td class="tnum py-2.5 pr-4 text-right text-fg-muted">{row.estimatedItemsValue !== null ? formatMoneyCompact(row.estimatedItemsValue) : "—"}</td>
+                  <td class="tnum py-2.5 pr-4 text-right text-warning">{row.estimatedItemsValue !== null ? formatMoneyCompact(row.estimatedItemsValue) : "—"}</td>
                   <td class="tnum py-2.5 pr-4 text-right text-fg-muted">{row.nerveUsed ?? "—"}</td>
-                  <td class="tnum py-2.5 pr-6 text-right font-medium {(row.netValue ?? 0) >= 0 ? "text-positive" : "text-negative"}">{formatSignedMoney(row.netValue)}</td>
+                  <td class="tnum py-2.5 pr-6 text-right text-warning">{row.valuePerNerve !== null ? formatMoneyCompact(row.valuePerNerve) : "—"}</td>
                 </tr>
               {/each}
             </tbody>

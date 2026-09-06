@@ -161,10 +161,25 @@ export type TravelStatus = z.infer<typeof TravelStatusSchema>;
 
 export const BankStatusSchema = z.object({
   state: z.enum(["active", "mature", "none", "unavailable"]),
+  /**
+   * Current city-bank investment value incl. accrued profit — equals the
+   * city-bank component of Torn's net worth. This is the EXPECTED PAYOUT.
+   */
   amount: z.number().nullable(),
+  /** Invested principal = amount - profit (both exact Torn values). */
+  principal: z.number().nullable(),
   /** Exact profit Torn projects for the investment (null when not exposed). */
   profit: z.number().nullable(),
-  interestRate: z.number().nullable(),
+  /**
+   * Total-period return: profit / principal * 100 — derived from exact Torn
+   * amounts. Torn's raw `interest_rate` field is deliberately NOT shown: its
+   * value does not reconcile with the actual principal/profit movement
+   * (e.g. rate 41.24 alongside profit/principal = 2.37%), so the meaning is
+   * unverifiable and displaying it misleads.
+   */
+  returnPct: z.number().nullable(),
+  /** Simple annualized rate: returnPct * 365 / durationDays (derived). */
+  annualizedPct: z.number().nullable(),
   durationDays: z.number().nullable(),
   investedAt: z.number().nullable(),
   maturesAt: z.number().nullable(),
