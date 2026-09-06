@@ -69,12 +69,18 @@ function clamp(value: number, min: number, max: number): number {
  * Build a LiveBar from Torn primitives. Never invents a full time:
  * when Torn reports full_time = 0 while the bar is not full, regen is
  * paused/capped and remainingSeconds stays null ("full time unavailable").
+ *
+ * Torn v2 /user/bars `full_time` is SECONDS REMAINING until the bar is full
+ * (verified live 2026-09: energy 25/150 -> full_time 14540). Some older
+ * payloads exposed an absolute unix timestamp, so values that already look
+ * like epoch seconds (>= 1e9) pass through untouched — both shapes land on
+ * an absolute fullAt and "full in 0s" becomes impossible.
  */
 export function buildLiveBar(nowSec: number, key: TodayBarKey, torn: TornBarPrimitives): LiveBar {
   const max = torn.maximum > 0 ? torn.maximum : 0;
   const current = clamp(torn.current, 0, max || torn.current);
   const percent = max > 0 ? clamp((current / max) * 100, 0, 100) : 0;
-  const fullAt = torn.full_time > 0 ? torn.full_time : null;
+  const fullAt = torn.full_time > 0 ? (torn.full_time >= 1e9 ? torn.full_time : nowSec + torn.full_time) : null;
   const full = max > 0 && current >= max;
   const regenPerHour =
     torn.increment > 0 && torn.interval > 0 ? (torn.increment / torn.interval) * 3600 : null;

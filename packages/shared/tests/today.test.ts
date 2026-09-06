@@ -57,6 +57,14 @@ describe("buildLiveBar", () => {
     const bar = buildLiveBar(dstSwitchUtc - 3600, "happy", { current: 0, maximum: 5000, increment: 60, interval: 1800, full_time: dstSwitchUtc + 3600 });
     expect(bar.remainingSeconds).toBe(7200); // independent of any timezone rules
   });
+
+  it("treats Torn v2 full_time as seconds remaining (regenerating bars never show 0s)", () => {
+    // Live-verified payload shape: energy 25/150 -> full_time 14540 (seconds).
+    const bar = buildLiveBar(now, "energy", { current: 25, maximum: 150, increment: 5, interval: 600, tick_time: 140, full_time: 14540 } as never);
+    expect(bar.regenState).toBe("regenerating");
+    expect(bar.fullAt).toBe(now + 14540);
+    expect(bar.remainingSeconds).toBe(14540);
+  });
 });
 
 /* -------------------------------------------------------------------------- */
