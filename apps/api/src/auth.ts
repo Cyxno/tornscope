@@ -1,6 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { getPrismaClient } from "@tornscope/database";
+import { AppError } from "./errors.js";
 
 /**
  * Browser-bound anonymous identity.
@@ -144,14 +145,14 @@ function safeEquals(a: string, b: string): boolean {
 export async function bindLegacyOwner(req: FastifyRequest, reply: FastifyReply, token: string): Promise<SessionUser> {
   const db = getPrismaClient();
   const expected = process.env.OWNER_BIND_TOKEN ?? "";
-  if (!expected) throw Object.assign(new Error("Owner binding is not enabled on this server."), { statusCode: 403 });
-  if (!safeEquals(token, expected)) throw Object.assign(new Error("Invalid binding token."), { statusCode: 403 });
+  if (!expected) throw new AppError("bind_disabled", "Owner binding is not enabled on this server.", 403);
+  if (!safeEquals(token, expected)) throw new AppError("bind_invalid_token", "Invalid binding token.", 403);
 
   const owner = await db.user.findFirst({ where: { role: "owner", isDemo: false }, orderBy: { createdAt: "asc" } });
-  if (!owner) throw Object.assign(new Error("No legacy owner profile exists."), { statusCode: 404 });
+  if (!owner) throw new AppError("bind_no_owner", "No legacy owner profile exists.", 404);
 
   const already = await db.appSetting.findUnique({ where: { userId_key: { userId: owner.id, key: OWNER_BOUND_KEY } } });
-  if (already) throw Object.assign(new Error("The legacy owner profile has already been bound to a browser."), { statusCode: 409 });
+  if (already) throw new AppError("bind_already_claimed", "The legacy owner profile has already been bound to a browser.", 409);
 
   // Bind: point the current browser's session at the owner profile.
   const cookies = parseCookies(req.headers.cookie);
