@@ -495,6 +495,23 @@ export const FactionInfoSchema = z.object({
   rankWins: z.number().nullable(),
 });
 
+export type WarStatProvenance = "exact_from_war_api" | "derived_from_attacks" | "unavailable";
+
+export const FactionWarMemberRowSchema = z.object({
+  tornId: z.number().nullable(),
+  name: z.string().nullable(),
+  warId: z.number(),
+  attacks: z.number(),
+  wins: z.number(),
+  losses: z.number(),
+  respect: z.number(),
+  mugs: z.number(),
+  hospitalizes: z.number(),
+  payout: z.number().nullable(),
+  provenance: z.enum(["exact_from_war_api", "derived_from_attacks", "unavailable"]),
+});
+export type FactionWarMemberRow = z.infer<typeof FactionWarMemberRowSchema>;
+
 export const RankedWarRowSchema = z.object({
   tornWarId: z.number(),
   opponentName: z.string().nullable(),
@@ -603,6 +620,17 @@ export const FactionChainsResponseSchema = z.object({
 });
 export type FactionChainsResponse = z.infer<typeof FactionChainsResponseSchema>;
 
+export const FactionOcParticipantSchema = z.object({
+  memberId: z.number().nullable(),
+  memberName: z.string().nullable(),
+  position: z.string().nullable(),
+  outcome: z.string().nullable(),
+  progress: z.number().nullable(),
+  checkpointPassRate: z.number().nullable(),
+  isOwner: z.boolean(),
+});
+export type FactionOcParticipant = z.infer<typeof FactionOcParticipantSchema>;
+
 export const FactionOcRowSchema = z.object({
   ocId: z.number(),
   name: z.string(),
@@ -612,7 +640,12 @@ export const FactionOcRowSchema = z.object({
   myParticipation: z.boolean(),
   rewardMoney: z.number().nullable(),
   rewardRespect: z.number().nullable(),
+  rewardItems: z.array(z.object({ id: z.number(), quantity: z.number() })).nullable(),
   payoutPercentage: z.number().nullable(),
+  paidBy: z.number().nullable(),
+  paidAt: z.number().nullable(),
+  payoutType: z.string().nullable(),
+  participants: z.array(FactionOcParticipantSchema),
 });
 
 export type FactionOcRow = z.infer<typeof FactionOcRowSchema>;

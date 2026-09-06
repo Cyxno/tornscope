@@ -11,9 +11,11 @@ import {
   type FactionMemberRow,
   type FactionChainRow,
   type FactionOcRow,
+  type FactionOcParticipant,
+  type FactionWarMemberRow,
   KpiValue,
 } from "@tornscope/shared";
-import { deriveMemberStats, matchPayoutsToWars, warCombatEvents, warResult, summarizeWars, type WarLike, type PayoutLike, type WarCombatEventLike } from "@tornscope/analytics";
+import { deriveMemberStats, matchPayout, matchOcPayout, warCombatEvents, summarizeWars, warResult, type WarLike, type PayoutCandidateInput, type WarCombatEventLike, type PayoutMatch } from "@tornscope/analytics";
 import { bigintToNumber, getPrismaClient } from "@tornscope/database";
 
 /** Load the user's combat events for war derivation (metadata holds the flags). */
@@ -40,18 +42,24 @@ async function loadWarCombatEvents(userId: string, from: number, to: number): Pr
 }
 
 /** Personal faction payout rows (canonical ledger; exact). */
-async function loadFactionPayouts(userId: string, from: number, to: number): Promise<PayoutLike[]> {
+/** Load ALL faction income payouts with their raw metadata (scenario etc.). */
+async function loadFactionPayouts(userId: number | string, from: number, to: number): Promise<Array<PayoutCandidateInput & { scenario: string | null; description: string | null }>> {
   const db = getPrismaClient();
   const rows = await db.moneyEvent.findMany({
-    where: { userId, category: "faction", direction: "income", occurredAt: { gte: new Date(from * 1000), lte: new Date(to * 1000) } },
-    select: { occurredAt: true, amount: true, sourceRef: true },
+    where: { userId: String(userId), category: "faction", direction: "income", occurredAt: { gte: new Date(from * 1000), lte: new Date(to * 1000) } },
+    select: { occurredAt: true, amount: true, sourceRef: true, metadata: true, description: true },
     orderBy: { occurredAt: "asc" },
   });
-  return rows.map((r) => ({
-    occurredAt: Math.floor(r.occurredAt.getTime() / 1000),
-    amount: bigintToNumber(r.amount) ?? 0,
-    sourceRef: r.sourceRef,
-  }));
+  return rows.map((r) => {
+    const meta = (r.metadata ?? {}) as { data?: { scenario?: string } };
+    return {
+      occurredAt: Math.floor(r.occurredAt.getTime() / 1000),
+      amount: bigintToNumber(r.amount) ?? 0,
+      sourceRef: r.sourceRef,
+      scenario: meta.data?.scenario ?? null,
+      description: r.description,
+    };
+  });
 }
 
 async function loadWars(userId: string): Promise<Array<WarLike & { targetScore: number | null }>> {
@@ -101,20 +109,28 @@ export async function getFactionOverview(userId: string, rangeInput: DateRangeIn
   const currentWarEvents = currentWar ? warCombatEvents(combatEvents, currentWar) : [];
   const currentWarStats = deriveMemberStats(currentWarEvents);
 
-  // Payouts matched to wars (time-window linkage) over the full war history,
-  // then summarized for the selected range.
-  const payoutByWar = matchPayoutsToWars(payouts, wars);
-  const inRangeWars = wars.filter((w) => w.startedAt >= range.from && w.startedAt <= range.to);
-  const warRows = summarizeWars(wars, payoutByWar, new Map(), range.from, range.to);
+  // Payouts matched conservatively per payout (settlement window from env).
+  const settlementDays = Number(process.env.RANKED_WAR_PAYOUT_SETTLEMENT_DAYS ?? 7);
+  const completedWars = wars.filter((w) => w.endedAt !== null);
+  const matches = payouts.map((p) => ({ payout: p, match: matchPayout(p, completedWars, { settlementDays }) }));
+  const warPayoutTotals = new Map<number, number>();
+  for (const { match, payout } of matches) {
+    if (match.matchedWarId !== null && ["exact", "strong", "time_window"].includes(match.matchType)) {
+      warPayoutTotals.set(match.matchedWarId, (warPayoutTotals.get(match.matchedWarId) ?? 0) + payout.amount);
+    }
+  }
+  const warRows = summarizeWars(wars, warPayoutTotals, new Map(), range.from, range.to);
 
   const wins = warRows.filter((w) => w.result === "win").length;
   const losses = warRows.filter((w) => w.result === "loss").length;
   const ongoing = warRows.filter((w) => w.result === "ongoing").length;
 
   const knownPayoutTotal = warRows.reduce((s, w) => s + w.knownPayoutTotal, 0);
-  // Personal payouts matched to wars in range; unmatched payouts stay excluded
-  // from per-war metrics but count in the personal total.
-  const personalMatched = inRangeWars.reduce((sum, w) => sum + (payoutByWar.get(w.tornWarId)?.personalPayoutTotal ?? 0), 0);
+  const personalMatched = matches.reduce((sum, { match, payout }) => {
+    if (!["exact", "strong", "time_window"].includes(match.matchType) || match.matchedWarId === null) return sum;
+    const war = wars.find((w) => w.tornWarId === match.matchedWarId);
+    return war !== undefined && war.startedAt >= range.from && war.startedAt <= range.to ? sum + payout.amount : sum;
+  }, 0);
 
   return {
     faction: {
@@ -173,16 +189,27 @@ export async function getFactionRankedWars(userId: string, rangeInput: DateRange
     loadWarCombatEvents(userId, range.from, range.to),
     loadFactionPayouts(userId, Math.min(range.from, range.from), range.to),
   ]);
-  const payoutByWar = matchPayoutsToWars(payouts, wars);
-
+  const settlementDays = Number(process.env.RANKED_WAR_PAYOUT_SETTLEMENT_DAYS ?? 7);
+  const completedWars = wars.filter((w) => w.endedAt !== null);
   const rows: RankedWarRow[] = wars
     .filter((w) => w.startedAt >= range.from && w.startedAt <= range.to)
     .sort((a, b) => b.startedAt - a.startedAt)
     .map((w) => {
       const myEvents = warCombatEvents(combatEvents, w);
       const stats = deriveMemberStats(myEvents);
-      const payout = payoutByWar.get(w.tornWarId);
-      const personal = payout?.matched.reduce((s, p) => s + p.amount, 0) ?? null;
+      // Match payouts for THIS war: candidate = faction income (no OC scenario)
+      // within this war's settlement window. Known payout total = sum matched.
+      let knownPayoutTotal = 0;
+      let personal = 0;
+      let linkage: RankedWarRow["linkage"] = "unmatched";
+      for (const p of payouts) {
+        if (p.scenario) continue;
+        const m = matchPayout(p, completedWars, { settlementDays });
+        if (m.matchedWarId !== w.tornWarId || !["exact", "strong", "time_window"].includes(m.matchType)) continue;
+        knownPayoutTotal += p.amount;
+        if (personal === 0) personal = p.amount;
+        if (m.matchType !== "unmatched") linkage = m.matchType as RankedWarRow["linkage"];
+      }
       return {
         tornWarId: w.tornWarId,
         opponentName: w.opponentName,
@@ -192,12 +219,16 @@ export async function getFactionRankedWars(userId: string, rangeInput: DateRange
         ourScore: w.ourScore,
         opponentScore: w.opponentScore,
         durationSeconds: w.endedAt !== null ? w.endedAt - w.startedAt : null,
-        knownPayoutTotal: payout?.knownPayoutTotal ?? 0,
+        knownPayoutTotal,
         personalPayout: personal,
         myAttacks: stats.attacks,
         myWins: stats.wins,
         myRespect: stats.respect,
-        linkage: (payout && payout.matched.length > 0 ? "time_window_match" : "unmatched") as RankedWarRow["linkage"],
+        linkage,
+        matchConfidence: null,
+        matchReason: null,
+        reconciliationStatus: knownPayoutTotal > 0 ? "partial" : "unavailable",
+        statProvenance: myEvents.length > 0 ? "derived_from_attacks" : "unavailable",
       };
     });
 
@@ -287,16 +318,47 @@ export async function getFactionChains(userId: string, rangeInput: DateRangeInpu
 export async function getFactionOcs(userId: string, rangeInput: DateRangeInput, myTornId: number | null): Promise<FactionOcsResponse> {
   const db = getPrismaClient();
   const range = resolveDateRange(rangeInput);
-  const resolved = myTornId ?? (await db.tornAccount.findUnique({ where: { userId }, select: { tornId: true } }))?.tornId ?? null;
+  const account = await db.tornAccount.findUnique({ where: { userId }, select: { tornId: true } });
+  const resolved = myTornId ?? account?.tornId ?? null;
+  const ownerName = (await db.tornAccount.findUnique({ where: { userId }, select: { name: true } }))?.name ?? null;
+  // Known member names from the faction member table (id -> member id key).
+  const memberNames = new Map<number, string>();
+  const factionId = (await db.tornAccount.findUnique({ where: { userId }, select: { factionId: true } }))?.factionId ?? null;
+  if (factionId !== null) {
+    const memberships = await db.factionMembership.findMany({ where: { userId, factionId, isActive: true }, select: { id: true, sourceRef: true } });
+    const factionRow = await db.faction.findUnique({ where: { id: factionId }, select: { id: true } });
+    void factionRow;
+    // member ids are faction-internal ids; the roster name resolution comes
+    // from the OC payload itself when available — names for unknown members
+    // stay null and the UI shows "Unknown member".
+    void memberships;
+  }
   const ocs = await db.organizedCrime.findMany({
     where: { userId, OR: [{ executedAt: { gte: new Date(range.from * 1000) } }, { executedAt: null }] },
     orderBy: { executedAt: "desc" },
   });
 
   const rows: FactionOcRow[] = ocs.map((oc) => {
-    const slots = (oc.slots ?? []) as Array<{ user?: { id?: number; outcome?: string } | null }>;
+    const slots = (oc.slots ?? []) as Array<{ position?: string; user?: { id?: number; outcome?: string; progress?: number } | null; checkpoint_pass_rate?: number }>;
     const myParticipation = resolved !== null && slots.some((s) => s.user?.id === resolved);
-    const rewards = (oc.rewards ?? {}) as { money?: number; respect?: number; payout?: { percentage?: number } | null };
+    const rewards = (oc.rewards ?? {}) as { money?: number; respect?: number; items?: Array<{ id?: number; quantity?: number }>; payout?: { type?: string; percentage?: number; paid_by?: number; paid_at?: number } | null };
+    const participants: FactionOcParticipant[] = slots.map((slot) => {
+      const user = slot.user ?? null;
+      const userId = typeof user?.id === "number" ? user.id : null;
+      // memberName stays null: the OC payload has ids only; names come from
+      // /faction/members (current roster) — historical members without a
+      // current membership show as id-only rows, never fabricated names.
+      return {
+        memberId: userId,
+        memberName: null,
+        position: slot.position ?? null,
+        outcome: typeof user?.outcome === "string" ? user.outcome : null,
+        progress: typeof user?.progress === "number" ? Math.round(user.progress) : null,
+        checkpointPassRate: typeof slot.checkpoint_pass_rate === "number" ? Math.round(slot.checkpoint_pass_rate) : null,
+        isOwner: userId !== null && resolved !== null && userId === resolved,
+      };
+    });
+    const items = Array.isArray(rewards.items) ? rewards.items.map((it) => ({ id: Number(it.id ?? 0), quantity: Number(it.quantity ?? 1) })) : null;
     return {
       ocId: oc.ocId,
       name: oc.name,
@@ -306,7 +368,12 @@ export async function getFactionOcs(userId: string, rangeInput: DateRangeInput, 
       myParticipation,
       rewardMoney: typeof rewards.money === "number" ? rewards.money : null,
       rewardRespect: typeof rewards.respect === "number" ? rewards.respect : null,
+      rewardItems: items,
       payoutPercentage: typeof rewards.payout?.percentage === "number" ? rewards.payout.percentage : null,
+      paidBy: typeof rewards.payout?.paid_by === "number" ? rewards.payout.paid_by : null,
+      paidAt: typeof rewards.payout?.paid_at === "number" ? Math.floor(rewards.payout.paid_at / 1000) : null,
+      payoutType: typeof rewards.payout?.type === "string" ? rewards.payout.type : null,
+      participants,
     };
   });
 

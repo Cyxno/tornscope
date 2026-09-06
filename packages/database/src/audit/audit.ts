@@ -261,6 +261,30 @@ async function main(): Promise<void> {
       console.log(`    ${resource} schedule: ${tierText} | due now=${dueNow} | est. API calls/hour=${callsPerHour.toFixed(0)}`);
     }
 
+    // Faction data audit.
+    const factionIdRow = await db.faction.findFirst({ select: { id: true, name: true } });
+    const factionIdForUser = (await db.tornAccount.findUnique({ where: { userId: user.id }, select: { factionId: true } }))?.factionId ?? null;
+    const warWhere = factionIdForUser !== null ? { factionId: factionIdForUser } : {};
+    const [warsStored, chainCountDb, ocCountDb, balanceSnapDb] = await Promise.all([
+      db.rankedWar.count({ where: warWhere }),
+      db.factionChain.count({ where: { userId: user.id } }),
+      db.organizedCrime.count({ where: { userId: user.id } }),
+      db.factionBalanceSnapshot.count({ where: { userId: user.id } }),
+    ]);
+    const warAgg = await db.rankedWar.aggregate({ where: warWhere, _min: { startedAt: true }, _max: { startedAt: true } });
+    const rw = await db.rankedWar.findFirst({ where: warWhere, orderBy: { startedAt: "desc" }, select: { opponentName: true, endedAt: true, winnerFactionId: true, factionId: true } });
+    const factionPayouts = await db.moneyEvent.aggregate({
+      where: { userId: user.id, category: "faction", direction: "income" },
+      _count: { _all: true },
+      _sum: { amount: true },
+    });
+    console.log(`    faction: id=${factionIdRow?.id ?? "—"} name=${factionIdRow?.name ?? "—"} | wars=${warsStored} chains=${chainCountDb} ocs=${ocCountDb} balanceSnaps=${balanceSnapDb}`);
+    const warMin = warAgg._min.startedAt as Date | null;
+    const warMax = warAgg._max.startedAt as Date | null;
+    console.log(`      wars range: ${warMin ? fmt(warMin) : "—"} -> ${warMax ? fmt(warMax) : "—"}`);
+    if (rw) console.log(`      latest war: ${rw.opponentName ?? "?"} | ${rw.winnerFactionId === rw.factionId ? "WIN" : rw.winnerFactionId !== null ? "LOSS" : "DRAW"} | ended ${rw.endedAt ? fmt(rw.endedAt) : "ongoing"}`);
+    console.log(`      personal faction payouts: n=${factionPayouts._count._all} total=${bigintToNumber(factionPayouts._sum.amount ?? 0n)}`);
+
     interface TitleStat {
       category: string;
       title: string;
