@@ -430,6 +430,52 @@ export async function upsertFactionMemberRoster(
   return members.length;
 }
 
+export interface FactionArmoryEventInput {
+  factionId: number;
+  memberId: number | null;
+  memberName: string | null;
+  itemId: number | null;
+  itemName: string | null;
+  action: string;
+  quantity: number;
+  value: bigint | null;
+  sourceRef: string;
+  occurredAt: Date;
+  raw: unknown;
+}
+
+/**
+ * Store faction armory news events (idempotent by sourceRef = news id).
+ * Provenance source for faction-sponsored consumption — never a DrugUse
+ * duplicate.
+ */
+export async function upsertFactionArmoryEvents(db: PrismaClientType, userId: string, events: readonly FactionArmoryEventInput[]): Promise<number> {
+  let stored = 0;
+  for (const e of events) {
+    const existing = await db.factionArmoryEvent.findUnique({ where: { userId_source_sourceRef: { userId, source: "torn_faction_news", sourceRef: e.sourceRef } }, select: { id: true } });
+    if (existing) continue;
+    await db.factionArmoryEvent.create({
+      data: {
+        userId,
+        factionId: e.factionId,
+        memberId: e.memberId,
+        memberName: e.memberName,
+        itemId: e.itemId,
+        itemName: e.itemName,
+        action: e.action,
+        quantity: e.quantity,
+        value: e.value,
+        source: "torn_faction_news",
+        sourceRef: e.sourceRef,
+        occurredAt: e.occurredAt,
+        raw: e.raw === undefined ? Prisma.JsonNull : (e.raw as Prisma.InputJsonValue),
+      },
+    });
+    stored += 1;
+  }
+  return stored;
+}
+
 export async function insertFactionSnapshot(
   db: PrismaClientType,
   userId: string,

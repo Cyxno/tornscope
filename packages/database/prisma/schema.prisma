@@ -81,6 +81,7 @@ model User {
   timelineEvents       TimelineEvent[]
   factionMemberships   FactionMembership[]
   factionSnapshots     FactionSnapshot[]
+  factionArmoryEvents  FactionArmoryEvent[]
   rankedWarMembers     RankedWarMember?
   rankedWarPayouts     RankedWarPayout[]
   factionChains        FactionChain[]
@@ -628,11 +629,41 @@ model FactionSnapshot {
   respect    Int?
   raw        Json?
 
-  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user    User @relation(fields: [userId], references: [id], onDelete: Cascade)
   faction Faction @relation(fields: [factionId], references: [id])
 
   @@unique([userId, capturedAt])
   @@index([factionId, capturedAt])
+}
+
+/// Faction armory usage parsed from the faction armory news feed
+/// (/v2/faction/news?cat=armoryAction & armoryDeposit). First-class provenance
+/// source: determines whether consumed items (e.g. Xanax) were
+/// faction-sponsored. Never a DrugUse duplicate.
+model FactionArmoryEvent {
+  id         String   @id @default(cuid())
+  userId     String
+  factionId  Int
+  /// Torn player id of the acting member (parsed from the news payload).
+  memberId   Int?
+  memberName String?
+  itemId     Int?
+  itemName   String?
+  /// used | deposited | lent | returned | ... (as reported by the news verb).
+  action     String   @default("used")
+  quantity   Int      @default(1)
+  /// Estimated catalog value of the items at parse time (quantity × price).
+  value      BigInt?
+  source     String   @default("torn_faction_news")
+  sourceRef  String
+  occurredAt DateTime
+  raw        Json?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, source, sourceRef])
+  @@index([userId, memberId, occurredAt])
+  @@index([userId, itemId])
 }
 
 /* -------------------------------------------------------------------------- */

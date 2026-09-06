@@ -85,8 +85,9 @@ describe("splitXanaxFunding", () => {
     expect(r).toEqual({ personal: 0, factionSponsored: 0, unknownFunded: 2 });
   });
 
-  it("matches sponsored supply FIFO within the window", () => {
-    const r = splitXanaxFunding([{ occurredAt: DAY + 3600 }, { occurredAt: DAY + 7200 }], [DAY], [], []);
+  it("matches sponsored armory events by near-simultaneous timestamp", () => {
+    // Armory news and the personal use log share the exact second (verified live).
+    const r = splitXanaxFunding([{ occurredAt: DAY + 3600 }, { occurredAt: DAY + 7200 }], [DAY + 3600], [], []);
     expect(r.factionSponsored).toBe(1);
     expect(r.unknownFunded).toBe(1);
     expect(r.personal).toBe(0);
@@ -117,7 +118,7 @@ describe("splitXanaxFunding", () => {
 
   it("sponsored wins over gift and gift wins over purchase when all exist", () => {
     const uses = [{ occurredAt: DAY + 600 }, { occurredAt: DAY + 1200 }, { occurredAt: DAY + 1800 }];
-    const r = splitXanaxFunding(uses, [DAY], [DAY], [DAY]);
+    const r = splitXanaxFunding(uses, [DAY + 600], [DAY + 1200], [DAY + 1800]);
     expect(r.factionSponsored).toBe(1);
     expect(r.unknownFunded).toBe(1);
     expect(r.personal).toBe(1);

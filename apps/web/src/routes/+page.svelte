@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { DashboardResponse } from "@tornscope/shared";
-  import { formatMoneyCompact, formatKpiValue, periodLabel, formatDate } from "@tornscope/shared";
+  import { formatMoneyCompact, formatKpiValue, periodLabel, formatDate, formatSignedMoney } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
   import { dateRange } from "$lib/state.svelte";
   import { formatRelative } from "$lib/reltime";
@@ -223,6 +223,52 @@
         <Chart option={networthOption} height={380} />
       {/if}
     </Panel>
+
+    <!-- Wallet: actual cash movement through the wallet (distinct from wealth) -->
+    <section aria-label="Wallet movement" class="space-y-3">
+      <div class="flex items-center justify-between">
+        <h2 class="text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-faint">Wallet — actual cash on hand and its movement</h2>
+        {#if data.wallet.coverage === "partial"}
+          <span class="text-[11px] text-warning">partial snapshot coverage</span>
+        {/if}
+      </div>
+      <div class="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border shadow-panel md:grid-cols-4">
+        <Stat label="Cash on hand" value={formatKpiValue(data.cash)} provenance="exact" tone="accent" />
+        <Stat label="{period} Wallet inflows" value={formatMoneyCompact(data.wallet.walletInflow)} provenance="exact" tone="positive" sub={`bank withdrawals ${formatMoneyCompact(data.wallet.bankWithdrawals)}`} />
+        <Stat label="{period} Wallet outflows" value={formatMoneyCompact(data.wallet.walletOutflow)} provenance="exact" tone="negative" sub={`bank investments ${formatMoneyCompact(data.wallet.bankDeposits)}`} />
+        <Stat
+          label="{period} Net wallet movement"
+          value={formatSignedMoney(data.wallet.walletInflow - data.wallet.walletOutflow)}
+          provenance="exact"
+          tone={data.wallet.walletInflow - data.wallet.walletOutflow >= 0 ? "positive" : "negative"}
+        />
+      </div>
+      {#if data.wallet.coverage !== "unavailable" && data.wallet.startingCash !== null}
+        <p class="rounded-xl border border-border bg-surface px-5 py-3 text-xs leading-relaxed text-fg-muted">
+          <span class="font-medium text-fg">Cash bridge:</span>
+          starting {formatMoneyCompact(data.wallet.startingCash)}
+          + received {formatMoneyCompact(data.wallet.walletInflow)}
+          − spending &amp; bank deposits {formatMoneyCompact(data.wallet.walletOutflow)}
+          = expected {formatMoneyCompact(data.wallet.expectedEndingCash ?? 0)}
+          <span class="mx-1.5 text-border-strong">·</span>
+          actual wallet now {formatMoneyCompact(data.wallet.actualEndingCash ?? 0)}
+          {#if data.wallet.unreconciled !== null}
+            <span class="mx-1.5 text-border-strong">·</span>
+            <span class={Math.abs(data.wallet.unreconciled) < 1000 ? "text-fg-faint" : "text-warning"}>
+              reconciliation difference {formatSignedMoney(data.wallet.unreconciled)}{Math.abs(data.wallet.unreconciled) < 1000 ? "" : " — source coverage is incomplete for part of the range"}
+            </span>
+          {/if}
+        </p>
+        <p class="text-xs text-fg-faint">
+          Wallet movement is cash arithmetic, not profit: most outgoing cash in Torn is immediately re-invested
+          (bank terms, points, items), so wallet inflows − outflows rarely equal “money left over”.
+        </p>
+      {:else}
+        <p class="rounded-xl border border-border bg-surface px-5 py-3 text-xs text-fg-faint">
+          Wallet reconciliation needs net worth snapshots at both ends of the range — the tracked history does not cover this range yet.
+        </p>
+      {/if}
+    </section>
 
     <!-- Flow + activity -->
     <section class="grid gap-6 lg:grid-cols-6">

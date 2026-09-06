@@ -321,6 +321,27 @@ export const DashboardResponseSchema = z.object({
     netWorthMeasuredFrom: z.number().nullable(),
     netWorthMeasuredTo: z.number().nullable(),
   }),
+  /**
+   * Wallet cash reconciliation: where actual wallet cash came from and went
+   * during the range. Wallet semantics (cash movement) are distinct from
+   * economic semantics (value change): a bank investment empties the wallet
+   * without being an expense.
+   */
+  wallet: z.object({
+    startingCash: z.number().nullable(),
+    actualEndingCash: z.number().nullable(),
+    expectedEndingCash: z.number().nullable(),
+    /** All cash that entered the wallet (income rows + withdrawals). */
+    walletInflow: z.number(),
+    /** All cash that left the wallet (spending + bank investments). */
+    walletOutflow: z.number(),
+    bankDeposits: z.number(),
+    bankWithdrawals: z.number(),
+    unreconciled: z.number().nullable(),
+    coverage: z.enum(["full", "partial", "unavailable"]),
+    startingSnapshotAt: z.number().nullable(),
+    endingSnapshotAt: z.number().nullable(),
+  }),
   networthSeries: z.array(z.object({ t: z.number(), total: z.number() })),
   incomeByCategory: z.array(z.object({ category: MoneyCategorySchema, total: z.number() })),
   expensesByCategory: z.array(z.object({ category: MoneyCategorySchema, total: z.number() })),
@@ -860,9 +881,10 @@ export const DrugsSummaryResponseSchema = z.object({
     coverage: z.enum(["full", "partial", "unavailable"]),
   }),
   /**
-   * Xanax funding split, evidence-based: personal = matched to a personal
-   * purchase record; sponsored = linked to a faction transfer; unknown =
-   * gifts and uses that cannot be traced (never assumed personal).
+   * Xanax funding split, evidence-based: sponsored = faction armory news
+   * event at the same timestamp as the use; personal = matched to a personal
+   * purchase record; unknown = gifts and untraceable uses (never assumed
+   * personal). armoryHistory exposes what the API source can actually cover.
    */
   xanaxFunding: z.object({
     used: z.number(),
@@ -871,6 +893,12 @@ export const DrugsSummaryResponseSchema = z.object({
     factionSponsored: z.number(),
     /** Gifts plus uses with no traceable source. */
     unknownFunded: z.number(),
+    armoryHistory: z.object({
+      /** True when at least one armory news event is stored. */
+      available: z.boolean(),
+      events: z.number(),
+      earliestAt: z.number().nullable(),
+    }),
   }),
   byDrug: z.array(
     z.object({

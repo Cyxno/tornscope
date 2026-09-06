@@ -1,4 +1,4 @@
-import { TornApiError, normalizeDonatorStatus, type TornEndpoints, type BackwardStopReason, type TornUserAttack } from "@tornscope/torn-api";
+import { TornApiError, normalizeDonatorStatus, type TornEndpoints, type TornRequestParams, type BackwardStopReason, type TornUserAttack } from "@tornscope/torn-api";
 import type { SyncResource } from "@tornscope/shared";
 import {
   encryptionFromEnv,
@@ -24,6 +24,8 @@ import {
   upsertFaction,
   upsertFactionMembership,
   upsertFactionMemberRoster,
+  upsertFactionArmoryEvents,
+  type FactionArmoryEventInput,
   upsertTornAccount,
   getLogCategories,
   getSyncCategoryState,
@@ -36,6 +38,7 @@ import {
   upsertOrganizedCrime,
   upsertRankedWar,
 } from "@tornscope/database";
+import { parseArmoryNews } from "@tornscope/database";
 import { isCategoryDue, nextCategorySchedule, SCHEDULE_THRESHOLDS } from "./schedule.js";
 import { getWorkerContext } from "../context.js";
 import { logger } from "../env.js";
@@ -797,7 +800,73 @@ export const syncFaction: SyncHandler = async (args) => {
     balanceRows = 1;
   }
 
-  return { records: 1 + memberRows + balanceRows, stopReason: "history_boundary_reached" };
+  // Armory news walk (cat=armoryAction): first-class provenance for
+  // faction-sponsored consumption (e.g. armory Xanax). Incremental: walks
+  // backward until a page whose entries are all already stored.
+  let armoryEvents = 0;
+  try {
+    armoryEvents = await walkFactionArmoryNews(args, ctx.db, f.id);
+  } catch (err) {
+    logger.warn({ err: (err as Error).message, userId: args.userId }, "faction armory news walk failed; continuing");
+  }
+
+  return { records: 1 + memberRows + balanceRows + armoryEvents, stopReason: "history_boundary_reached" };
+}
+
+/**
+ * Walk /faction/news?cat=armoryAction backward (from/to windows), parse each
+ * entry and store FactionArmoryEvent rows. Idempotent by news id; stops when
+ * a page adds nothing new (already stored), when the feed ends, or after
+ * `maxPages`. Rate limiting is handled by the API client.
+ */
+export async function walkFactionArmoryNews(
+  args: { userId: string; torn: TornEndpoints },
+  db: ReturnType<typeof getWorkerContext>["db"],
+  factionId: number,
+  opts: { maxPages?: number } = {}
+): Promise<number> {
+  const maxPages = opts.maxPages ?? 60;
+  const [itemIdByName, marketPrices] = await Promise.all([loadItemIdByName(db), loadMarketPrices(db)]);
+  let to: number | null = Math.floor(Date.now() / 1000);
+  let stored = 0;
+  let oldest: number | null = null;
+  for (let page = 0; page < maxPages; page += 1) {
+    const params: TornRequestParams = {};
+    if (to !== null) params.to = to;
+    const { news } = await args.torn.factionArmoryNewsPage(params);
+    if (news.length === 0) break;
+    let newOnPage = 0;
+    let pageOldest = Infinity;
+    const inputs: FactionArmoryEventInput[] = [];
+    for (const n of news) {
+      pageOldest = Math.min(pageOldest, n.timestamp);
+      const parsed = parseArmoryNews(n.text);
+      if (!parsed) continue;
+      const itemId = itemIdByName.get(parsed.itemName) ?? itemIdByName.get(parsed.itemName.toLowerCase()) ?? null;
+      const unitPrice = itemId !== null ? marketPrices.get(itemId) : undefined;
+      inputs.push({
+        factionId,
+        memberId: parsed.memberId,
+        memberName: parsed.memberName,
+        itemId,
+        itemName: parsed.itemName,
+        action: parsed.action,
+        quantity: parsed.quantity,
+        value: unitPrice !== undefined ? BigInt(Math.round(Number(unitPrice)) * parsed.quantity) : null,
+        sourceRef: n.id,
+        occurredAt: new Date(n.timestamp * 1000),
+        raw: { text: n.text },
+      });
+    }
+    stored += await upsertFactionArmoryEvents(db, args.userId, inputs);
+    newOnPage = inputs.length;
+    oldest = pageOldest === Infinity ? oldest : pageOldest;
+    // Older-than-everything page: every parsed entry was already stored.
+    if (newOnPage === 0) break;
+    if (pageOldest === Infinity) break;
+    to = pageOldest - 1;
+  }
+  return stored;
 };
 
 /**

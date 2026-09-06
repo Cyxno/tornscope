@@ -615,6 +615,19 @@ export class TornEndpoints {
     return this.client.get("/faction/members", {}, z.object({ members: z.array(FactionMemberSchema) }).transform((r) => r.members));
   }
 
+  /**
+   * Faction armory news page (cat=armoryAction): "member used N of the
+   * faction's X items" entries — the only API source for armory drug usage
+   * history. Torn paginates this feed by from/to timestamp windows.
+   */
+  factionArmoryNewsPage(params: TornRequestParams = { limit: 100, cat: "armoryAction" }): Promise<{ news: Array<{ id: string; text: string; timestamp: number }>; metadata: TornMetadata | undefined }> {
+    return this.client.getRaw("/faction/news", { limit: 100, cat: "armoryAction", ...params }).then((page) => {
+      const data = page.data as { news?: unknown };
+      const NewsItem = loose({ id: z.string(), text: z.string(), timestamp: z.number() });
+      return { news: z.array(NewsItem).parse(Array.isArray(data.news) ? data.news : []), metadata: page.metadata };
+    });
+  }
+
   factionRankedWars(): Promise<TornFactionRankedWar[]> {
     return this.client.get("/faction/rankedwars", {}, z.object({ rankedwars: z.array(FactionRankedWarSchema) }).transform((r) => r.rankedwars));
   }

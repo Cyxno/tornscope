@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { DrugsSummaryResponse } from "@tornscope/shared";
-  import { TORN_DRUG_NAMES, formatMoneyCompact, formatDateTime } from "@tornscope/shared";
+  import { TORN_DRUG_NAMES, formatMoneyCompact, formatDateTime, formatDate } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
   import { dateRange } from "$lib/state.svelte";
   import PageHeader from "$lib/components/PageHeader.svelte";
@@ -149,9 +149,19 @@
         <span class="font-medium text-fg">Xanax funding:</span>
         {data.xanaxFunding.used} used —
         <span class="text-fg">{data.xanaxFunding.personal} personal detected</span> (matched to a personal purchase record)
-        · <span class="text-positive">{data.xanaxFunding.factionSponsored} sponsored detected</span> (faction armory/transfer records)
+        · <span class="text-positive">{data.xanaxFunding.factionSponsored} sponsored detected</span> (faction armory use at the same logged moment)
         · <span class="text-warning">{data.xanaxFunding.unknownFunded} unknown funding</span> (gifts + uses without a traceable source).
-        <span class="text-fg-faint">A use is only called sponsored or personal when a record names the item — war timing alone is never sponsorship, and untraceable uses stay Unknown rather than assumed personal.</span>
+        {#if data.xanaxFunding.armoryHistory.available}
+          <span class="text-fg-faint">
+            Faction armory history covers events since {formatDate(data.xanaxFunding.armoryHistory.earliestAt)} ({data.xanaxFunding.armoryHistory.events} armory events stored);
+            uses before that date cannot be classified and stay Unknown rather than assumed personal.
+          </span>
+        {:else}
+          <span class="text-warning">
+            Faction armory history is not available through the connected API source, so some Xanax funding cannot be determined —
+            unclassified uses are shown as Unknown, never as personal.
+          </span>
+        {/if}
       </p>
     {/if}
 

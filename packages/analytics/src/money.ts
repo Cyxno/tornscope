@@ -134,6 +134,93 @@ export function totalsByBucket(events: readonly MoneyEventLike[], interval: Inte
 }
 
 /* -------------------------------------------------------------------------- */
+/* Wallet cash bridge                                                          */
+/* -------------------------------------------------------------------------- */
+
+export interface WalletFlowRow {
+  amount: number; // signed
+  direction: MoneyDirection;
+  category: string;
+}
+
+export interface WalletBridge {
+  /** Wallet cash at the first snapshot at/before the range start. */
+  startingCash: number | null;
+  /** Wallet cash from the latest snapshot (actual, Torn-provided). */
+  actualEndingCash: number | null;
+  /** starting + all signed wallet movements. */
+  expectedEndingCash: number | null;
+  /** All money that entered the wallet (income rows + neutral positives). */
+  walletInflow: number;
+  /** All money that left the wallet (expense rows + neutral negatives). */
+  walletOutflow: number;
+  /** Wallet → bank movements (city/cayman invest/deposit, neutral). */
+  bankDeposits: number;
+  /** Bank → wallet movements (withdrawals/maturities, neutral). */
+  bankWithdrawals: number;
+  /** actual − expected; null when coverage is incomplete. */
+  unreconciled: number | null;
+  coverage: "full" | "partial" | "unavailable";
+  provenance: Provenance;
+}
+
+const BANK_TRANSFER_CATEGORIES = new Set(["city_bank", "cayman_bank", "piggy_bank"]);
+
+/**
+ * Reconcile wallet cash for a range. Wallet semantics differ from economic
+ * semantics: a bank investment IS a wallet outflow (cash left the wallet)
+ * even though it is only an asset conversion economically. Coverage is
+ * "full" only when both endpoint snapshots exist — the bridge never forces
+ * equality when source coverage is incomplete.
+ */
+export function buildWalletBridge(flows: readonly WalletFlowRow[], startingCash: number | null, actualEndingCash: number | null): WalletBridge {
+  let walletInflow = 0;
+  let walletOutflow = 0;
+  let bankDeposits = 0;
+  let bankWithdrawals = 0;
+  let net = 0;
+  for (const row of flows) {
+    if (row.amount === 0) continue;
+    if (row.direction === "unknown") continue;
+    if (row.direction === "neutral") {
+      if (row.amount > 0) {
+        walletInflow += row.amount;
+        net += row.amount;
+        if (BANK_TRANSFER_CATEGORIES.has(row.category)) bankWithdrawals += row.amount;
+      } else {
+        walletOutflow += -row.amount;
+        net += row.amount;
+        if (BANK_TRANSFER_CATEGORIES.has(row.category)) bankDeposits += -row.amount;
+      }
+      continue;
+    }
+    if (row.amount > 0) {
+      walletInflow += row.amount;
+      net += row.amount;
+    } else {
+      walletOutflow += -row.amount;
+      net += row.amount;
+    }
+  }
+  const coverage: WalletBridge["coverage"] =
+    startingCash !== null && actualEndingCash !== null ? "full" : startingCash === null && actualEndingCash === null ? "unavailable" : "partial";
+  const expectedEndingCash = startingCash !== null ? startingCash + net : null;
+  const unreconciled = expectedEndingCash !== null && actualEndingCash !== null ? actualEndingCash - expectedEndingCash : null;
+  return {
+    startingCash,
+    actualEndingCash,
+    expectedEndingCash,
+    walletInflow,
+    walletOutflow,
+    bankDeposits,
+    bankWithdrawals,
+    unreconciled,
+    coverage,
+    provenance: "exact",
+  };
+}
+
+/* -------------------------------------------------------------------------- */
 /* Economic semantics                                                          */
 /* -------------------------------------------------------------------------- */
 

@@ -10,6 +10,7 @@ import {
   aggregateCrimeStats,
   aggregateMoneyEvents,
   aggregateMoneySemantics,
+  buildWalletBridge,
   calculateDrugStats,
   calculateNetworthPeriodChange,
   calculateRehabStats,
@@ -161,6 +162,25 @@ export async function getDashboard(userId: string, rangeInput: DateRangeInput): 
       select: { capturedAt: true, total: true },
     }),
   ]);
+  // Wallet bridge endpoints: first snapshot at/before the range start and the
+  // latest snapshot at/before the range end.
+  const [walletStart, walletEnd] = await Promise.all([
+    db.networthSnapshot.findFirst({
+      where: { userId, capturedAt: { lte: from } },
+      orderBy: { capturedAt: "desc" },
+      select: { capturedAt: true, wallet: true },
+    }),
+    db.networthSnapshot.findFirst({
+      where: { userId, capturedAt: { lte: to } },
+      orderBy: { capturedAt: "desc" },
+      select: { capturedAt: true, wallet: true },
+    }),
+  ]);
+  const wallet = buildWalletBridge(
+    moneyRows.map((r) => ({ amount: bigintToNumber(r.amount) ?? 0, direction: r.direction as "income" | "expense" | "neutral" | "unknown", category: r.category })),
+    walletStart ? bigintToNumber(walletStart.wallet) : null,
+    walletEnd ? bigintToNumber(walletEnd.wallet) : null
+  );
   const nwPeriod = calculateNetworthPeriodChange(
     nwPeriodRows.map((r) => ({
       capturedAt: Math.floor(r.capturedAt.getTime() / 1000),
@@ -301,6 +321,19 @@ export async function getDashboard(userId: string, rangeInput: DateRangeInput): 
       },
       netWorthMeasuredFrom: nwPeriod.baseline?.capturedAt ?? nwPeriod.trackedFrom ?? null,
       netWorthMeasuredTo: nwPeriod.current?.capturedAt ?? null,
+    },
+    wallet: {
+      startingCash: wallet.startingCash,
+      actualEndingCash: wallet.actualEndingCash,
+      expectedEndingCash: wallet.expectedEndingCash,
+      walletInflow: wallet.walletInflow,
+      walletOutflow: wallet.walletOutflow,
+      bankDeposits: wallet.bankDeposits,
+      bankWithdrawals: wallet.bankWithdrawals,
+      unreconciled: wallet.unreconciled,
+      coverage: wallet.coverage,
+      startingSnapshotAt: walletStart ? Math.floor(walletStart.capturedAt.getTime() / 1000) : null,
+      endingSnapshotAt: walletEnd ? Math.floor(walletEnd.capturedAt.getTime() / 1000) : null,
     },
     faction: factionSummary,
     crimes:
