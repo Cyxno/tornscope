@@ -198,51 +198,134 @@ export const LOG_CATEGORY_ROUTES = {
 export interface KeyCapabilities {
   canReadUserBasic: boolean;
   canReadUserBars: boolean;
+  canReadUserCooldowns: boolean;
+  canReadUserEducation: boolean;
+  canReadUserTravel: boolean;
   canReadUserMoney: boolean;
   canReadUserLogs: boolean;
   canReadUserAttacks: boolean;
   canReadUserNetworth: boolean;
+  canReadUserEvents: boolean;
+  canReadUserPersonalStats: boolean;
   canReadFactionBasic: boolean;
   canReadFactionMembers: boolean;
   canReadFactionRankedWars: boolean;
+  canReadFactionChains: boolean;
   canReadFactionCrimes: boolean;
   canReadFactionArmoryNews: boolean;
   canReadFactionBalance: boolean;
   canReadFactionLogs: boolean;
 }
 
+/** All capability keys, in a stable order for iteration/UI. */
+export const CAPABILITY_KEYS = [
+  "canReadUserBasic",
+  "canReadUserBars",
+  "canReadUserCooldowns",
+  "canReadUserEducation",
+  "canReadUserTravel",
+  "canReadUserMoney",
+  "canReadUserLogs",
+  "canReadUserAttacks",
+  "canReadUserNetworth",
+  "canReadUserEvents",
+  "canReadUserPersonalStats",
+  "canReadFactionBasic",
+  "canReadFactionMembers",
+  "canReadFactionRankedWars",
+  "canReadFactionChains",
+  "canReadFactionCrimes",
+  "canReadFactionArmoryNews",
+  "canReadFactionBalance",
+  "canReadFactionLogs",
+] as const;
+
+export type CapabilityKey = (typeof CAPABILITY_KEYS)[number];
+
+/** Normalize a credentials blob of unknown age/shape into a full capability set. */
+export function normalizeCapabilities(raw: unknown): KeyCapabilities | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const source = raw as Record<string, unknown>;
+  const out = {} as KeyCapabilities;
+  let any = false;
+  for (const key of CAPABILITY_KEYS) {
+    const value = source[key];
+    out[key] = typeof value === "boolean" ? value : false;
+    if (typeof value === "boolean") any = true;
+  }
+  return any ? out : null;
+}
+
 export interface KeySelections {
   user?: string[] | null;
   faction?: string[] | null;
+  /** Torn reports `access.faction = true` when the key carries faction access. */
+  factionAccess?: boolean | null;
 }
 
 /**
  * Derive what a Torn key can actually read from /key/info. The API's
  * selections listing is authoritative when present; otherwise the numeric
  * access level gives a conservative fallback (public=1, minimal=2,
- * limited=3, full=4). Never assumes more than the key grants.
+ * limited=3, full=4). Faction capabilities fall back to "all granted" only
+ * when Torn itself reports faction access on a Full key and no explicit
+ * faction list is published. Never assumes more than the key grants.
  */
 export function deriveKeyCapabilities(selections: KeySelections | null | undefined, accessLevel: number | null | undefined): KeyCapabilities {
   const level = typeof accessLevel === 'number' ? accessLevel : 0;
   const user: string[] | null = Array.isArray(selections?.user) ? selections.user.map(String) : null;
   const faction: string[] | null = Array.isArray(selections?.faction) ? selections.faction.map(String) : null;
-  const fromUser = (name: string, fallbackLevel: number): boolean => (user ? user.includes(name) : level >= fallbackLevel);
-  const fromFaction = (name: string): boolean => (faction ? faction.includes(name) : false);
+  const fromUser = (names: string[], fallbackLevel: number): boolean =>
+    user ? names.some((n) => user.includes(n)) : level >= fallbackLevel;
+  // Full keys list their faction selections explicitly (verified live); when a
+  // key publishes no faction list, only trust Torn's own access.faction flag
+  // on a level-4 key — anything else stays conservatively false.
+  const factionAll = faction === null && level >= 4 && selections?.factionAccess === true;
+  const fromFaction = (name: string): boolean => (faction ? faction.includes(name) : factionAll);
   return {
-    canReadUserBasic: fromUser('profile', 1),
-    canReadUserBars: fromUser('bars', 2),
-    canReadUserMoney: fromUser('money', 3),
-    canReadUserLogs: fromUser('log', 3),
-    canReadUserAttacks: fromUser('attacks', 3),
-    canReadUserNetworth: fromUser('networth', 3),
+    canReadUserBasic: fromUser(['profile', 'basic'], 1),
+    canReadUserBars: fromUser(['bars'], 2),
+    canReadUserCooldowns: fromUser(['cooldowns'], 2),
+    canReadUserEducation: fromUser(['education'], 2),
+    canReadUserTravel: fromUser(['travel'], 2),
+    canReadUserMoney: fromUser(['money'], 3),
+    canReadUserLogs: fromUser(['log'], 3),
+    canReadUserAttacks: fromUser(['attacks'], 3),
+    canReadUserNetworth: fromUser(['networth'], 3),
+    canReadUserEvents: fromUser(['events'], 2),
+    canReadUserPersonalStats: fromUser(['personalstats'], 3),
     canReadFactionBasic: fromFaction('basic'),
     canReadFactionMembers: fromFaction('members'),
     canReadFactionRankedWars: fromFaction('rankedwars'),
+    canReadFactionChains: fromFaction('chains'),
     canReadFactionCrimes: fromFaction('crimes'),
     canReadFactionArmoryNews: fromFaction('armorynews'),
     canReadFactionBalance: fromFaction('balance'),
     canReadFactionLogs: fromFaction('log'),
   };
+}
+
+/**
+ * Capability change summary (Phase: capability change detection). Computed on
+ * every key replacement: what the profile gains / loses with the new key.
+ * Previously collected history is never part of this — downgrades never
+ * delete data.
+ */
+export interface CapabilityChange {
+  newlyAvailable: CapabilityKey[];
+  newlyUnavailable: CapabilityKey[];
+}
+
+export function compareCapabilities(oldCaps: KeyCapabilities | null | undefined, newCaps: KeyCapabilities): CapabilityChange {
+  const newlyAvailable: CapabilityKey[] = [];
+  const newlyUnavailable: CapabilityKey[] = [];
+  for (const key of CAPABILITY_KEYS) {
+    const was = oldCaps ? oldCaps[key] : null;
+    if (was === null || was === undefined) continue; // unknown before → no claim
+    if (!was && newCaps[key]) newlyAvailable.push(key);
+    if (was && !newCaps[key]) newlyUnavailable.push(key);
+  }
+  return { newlyAvailable, newlyUnavailable };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -284,17 +367,17 @@ export function moduleAvailability(caps: KeyCapabilities): ModuleAvailability[] 
     { module: "today", ...caps.canReadUserBasic ? yes() : no("Needs basic account access") },
     {
       module: "drugs",
-      ...(caps.canReadUserLogs ? yes() : no("Needs personal log access (Limited API access)")),
+      ...(caps.canReadUserLogs ? yes() : no("Needs the User Logs permission")),
     },
-    { module: "money", ...(caps.canReadUserLogs ? yes() : no("Needs personal log access (Limited API access)")) },
-    { module: "travel", ...(caps.canReadUserLogs ? yes() : no("Needs personal log access (Limited API access)")) },
-    { module: "crimes", ...(caps.canReadUserLogs ? yes() : no("Needs personal log access (Limited API access)")) },
-    { module: "combat", ...(caps.canReadUserAttacks ? yes() : no("Needs attacks access (Limited API access)")) },
+    { module: "money", ...(caps.canReadUserLogs ? yes() : no("Needs the User Logs permission")) },
+    { module: "travel", ...(caps.canReadUserLogs ? yes() : no("Needs the User Logs permission")) },
+    { module: "crimes", ...(caps.canReadUserLogs ? yes() : no("Needs the User Logs permission")) },
+    { module: "combat", ...(caps.canReadUserAttacks ? yes() : no("Needs the User Attacks permission")) },
     {
       module: "faction",
       ...(caps.canReadFactionBasic ? yes() : no("Needs a key with faction access — ask your faction leader to grant it")),
     },
-    { module: "timeline", ...(caps.canReadUserLogs ? yes() : no("Needs personal log access (Limited API access)")) },
-    { module: "wallet", ...(caps.canReadUserMoney ? yes() : no("Needs money access (Limited API access)")) },
+    { module: "timeline", ...(caps.canReadUserLogs || caps.canReadUserEvents ? yes() : no("Needs the User Logs or User Events permission")) },
+    { module: "wallet", ...(caps.canReadUserLogs ? yes() : no("Needs the User Logs permission")) },
   ];
 }

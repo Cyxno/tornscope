@@ -2,6 +2,7 @@ import { autoInterval, resolveDateRange, type DateRangeInput, type EconomySummar
 import { aggregateMoneyEvents, aggregateMoneySemantics, aggregateConsumption, calculateTravelProfit, type ConsumptionEventLike } from "@tornscope/analytics";
 import { bigintToNumber, getPrismaClient, loadMarketPrices } from "@tornscope/database";
 import { getNetworthPeriodForRange } from "./networth.js";
+import { loadAvailabilityContext, sectionAvailability } from "./availability.js";
 
 /** Sale categories whose proceeds are asset conversions, not earnings. */
 const SALE_CATEGORIES = new Set(["bazaar", "items", "trading", "auction"]);
@@ -97,6 +98,7 @@ async function nonCashWealthGains(
 export async function getEconomySummary(userId: string, rangeInput: DateRangeInput): Promise<EconomySummaryResponse> {
   const db = getPrismaClient();
   const range = resolveDateRange(rangeInput);
+  const availCtx = await loadAvailabilityContext(userId);
   const from = new Date(range.from * 1000);
   const to = new Date(range.to * 1000);
 
@@ -168,6 +170,11 @@ export async function getEconomySummary(userId: string, rangeInput: DateRangeInp
 
   return {
     range: { from: range.from, to: range.to, interval: autoInterval(range) },
+    availability: {
+      cashFlow: sectionAvailability(availCtx, "money_cash_flow", "money_logs"),
+      walletBridge: sectionAvailability(availCtx, "wallet_bridge", "money_logs"),
+      networth: sectionAvailability(availCtx, "networth_history", "networth"),
+    },
     cashFlow: {
       income: { value: cashAvailability === "unavailable" ? null : flow.totalIncome, provenance: "exact", availability: cashAvailability },
       expenses: { value: cashAvailability === "unavailable" ? null : flow.totalExpenses, provenance: "exact", availability: cashAvailability },

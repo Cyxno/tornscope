@@ -2,6 +2,7 @@ import { resolveDateRange, type CrimesSummaryResponse, type CrimesTimelineRespon
 import { aggregateCrimeStats, aggregateCombatStats } from "@tornscope/analytics";
 import { bigintToNumber, getPrismaClient } from "@tornscope/database";
 import { cursorWhere, encodeCursor } from "../cursor.js";
+import { loadAvailabilityContext, sectionAvailability } from "./availability.js";
 
 /** Crimes analytics over normalized CrimeEvents (rebuilt from raw logs). */
 export async function getCrimesSummary(userId: string, rangeInput: DateRangeInput): Promise<CrimesSummaryResponse> {
@@ -30,9 +31,11 @@ export async function getCrimesSummary(userId: string, rangeInput: DateRangeInpu
     db.crimeEvent.findFirst({ where: { userId }, orderBy: { occurredAt: "asc" }, select: { occurredAt: true } }),
     db.crimeEvent.findFirst({ where: { userId }, orderBy: { occurredAt: "desc" }, select: { occurredAt: true } }),
   ]);
+  const availCtx = await loadAvailabilityContext(userId);
 
   return {
     range: { from: range.from, to: range.to },
+    availability: { history: sectionAvailability(availCtx, "crimes_history", "money_logs") },
     attempts: stats.attempts,
     successful: stats.successful,
     failed: stats.failed,
@@ -120,9 +123,11 @@ export async function getCombatSummary(userId: string, rangeInput: DateRangeInpu
   const muggedGain = Number(mugRows.find((r) => r.direction === "income")?._sum.amount ?? 0n);
   const muggedLoss = -Number(mugRows.find((r) => r.direction === "expense")?._sum.amount ?? 0n);
   const mug: (v: number) => KpiValue = (v) => ({ value: v, provenance: "exact", availability: mugRows.length > 0 ? "ok" : "unavailable" });
+  const availCtx = await loadAvailabilityContext(userId);
 
   return {
     range: { from: range.from, to: range.to },
+    availability: { history: sectionAvailability(availCtx, "combat_history", "attacks") },
     attacksMade: stats.attacksMade,
     attacksReceived: stats.attacksReceived,
     wins: stats.wins,

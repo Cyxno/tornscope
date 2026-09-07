@@ -63,7 +63,7 @@ describe("moduleAvailability (limited-key degradation)", () => {
     expect(by.money).toBe(false);
     expect(by.faction).toBe(false);
     const drugs = modules.find((m) => m.module === "drugs")!;
-    expect(drugs.reason).toMatch(/log access/i);
+    expect(drugs.reason).toMatch(/user logs permission/i);
   });
 
   it("logs without faction: analytics on, faction off with an explanatory reason", () => {

@@ -117,6 +117,7 @@ async function main(): Promise<void> {
     data: {
       userId: user.id,
       tornId: DEMO_TORN_ID,
+      isDemo: true,
       name: "DEMO_Player",
       level: 42,
       rank: "Bravo",

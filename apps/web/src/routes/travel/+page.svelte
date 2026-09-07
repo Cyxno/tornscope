@@ -9,6 +9,7 @@
   import Chart from "$lib/components/Chart.svelte";
   import SegmentedDateRange from "$lib/components/SegmentedDateRange.svelte";
   import StateMessage from "$lib/components/StateMessage.svelte";
+  import { availabilityMessage, availabilityHasData } from "$lib/capabilities";
   import { C, TOOLTIP, LEGEND, GRID, timeAxis, valueAxis, dayLabel } from "$lib/charts";
 
   let summary = $state<TravelSummaryResponse | null>(null);
@@ -118,6 +119,24 @@
   {:else if error}
     <StateMessage state="error" title="Could not load travel analytics" hint={error} action={{ label: "Retry", run: () => (reloadToken += 1) }} />
   {:else if summary}
+    {@const histAv = summary.availability?.history}
+    {@const histBlocked = histAv !== undefined && !availabilityHasData(histAv)}
+    {@const staleMsg = histAv && histAv.state === "stale_permission" ? availabilityMessage(histAv) : null}
+    {#if histBlocked && histAv}
+      <!-- Permission-unavailable: never render as zeros or "No trips" -->
+      <StateMessage
+        state={availabilityMessage(histAv).state}
+        title={availabilityMessage(histAv).title}
+        hint={availabilityMessage(histAv).hint}
+        action={{ label: "Review API access in Settings", run: () => (window.location.href = "/settings") }}
+      />
+    {:else}
+      {#if staleMsg}
+        <p class="rounded-xl border border-warning/30 bg-warning/5 px-5 py-3 text-xs leading-relaxed text-warning">
+          <span class="font-medium">{staleMsg.title}.</span>
+          {staleMsg.hint}
+        </p>
+      {/if}
     {#if summary.coverage.trackingSince !== null}
       <p class="rounded-xl border border-border bg-surface px-5 py-3 text-xs leading-relaxed text-fg-muted">
         <span class="font-medium text-fg">Full trip data available from Torn:{' '}</span>
@@ -188,7 +207,7 @@
     <Panel title="Trip log" caption="Select a row to unfold the haul" flush>
       {#if !history || history.items.length === 0}
         <div class="px-6 pb-6 pt-2">
-          <StateMessage state="empty" title="No trips recorded in this range yet" hint="Trips assemble automatically from travel logs and item purchases." />
+          <StateMessage state={histBlocked && histAv ? availabilityMessage(histAv).state : "empty"} title={histBlocked && histAv ? availabilityMessage(histAv).title : "No trips recorded in this range yet"} hint={histBlocked && histAv ? availabilityMessage(histAv).hint : "Trips assemble automatically from travel logs and item purchases."} />
         </div>
       {:else}
         <div class="overflow-x-auto">
@@ -263,5 +282,6 @@
         </div>
       {/if}
     </Panel>
+    {/if}
   {/if}
 </div>

@@ -76,6 +76,12 @@ export function newSessionToken(): string {
   return randomBytes(32).toString("base64url");
 }
 
+/** Hash of the browser's current session token (null without a valid cookie). */
+export function currentSessionTokenHash(req: FastifyRequest): string | null {
+  const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];
+  return token ? hashToken(token) : null;
+}
+
 async function userForSession(
   db: ReturnType<typeof getPrismaClient>,
   token: string,

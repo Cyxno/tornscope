@@ -9,6 +9,7 @@
   import Chart from "$lib/components/Chart.svelte";
   import SegmentedDateRange from "$lib/components/SegmentedDateRange.svelte";
   import StateMessage from "$lib/components/StateMessage.svelte";
+  import { availabilityMessage, availabilityHasData } from "$lib/capabilities";
   import { C, TOOLTIP, LEGEND, GRID, timeAxis, valueAxis, dayLabel } from "$lib/charts";
 
   let summary = $state<CombatSummaryResponse | null>(null);
@@ -16,6 +17,11 @@
   let loading = $state(true);
   let error = $state<string | null>(null);
   let reloadToken = $state(0);
+
+  // Permission gate: combat comes from the attacks endpoint.
+  const histAv = $derived(summary?.availability?.history);
+  const histBlocked = $derived(histAv !== undefined && !availabilityHasData(histAv));
+  const histMsg = $derived(histAv ? availabilityMessage(histAv) : null);
 
   async function load() {
     loading = true;
@@ -90,6 +96,15 @@
   {:else if error}
     <StateMessage state="error" title="Could not load combat analytics" hint={error} action={{ label: "Retry", run: () => (reloadToken += 1) }} />
   {:else if summary}
+    {#if histBlocked && histAv}
+      <!-- Combat needs User Attacks: a permission state, never zeros -->
+      <StateMessage
+        state={histMsg!.state}
+        title={histMsg!.title}
+        hint={histMsg!.hint}
+        action={{ label: "Review API access in Settings", run: () => (window.location.href = "/settings") }}
+      />
+    {:else}
     {#if summary.coverage.trackingSince !== null}
       <p class="rounded-xl border border-border bg-surface px-5 py-3 text-xs text-fg-muted">
         <span class="font-medium text-fg">Tracking since {formatDate(summary.coverage.trackingSince)}</span>
@@ -249,5 +264,6 @@
         </div>
       {/if}
     </Panel>
+    {/if}
   {/if}
 </div>

@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
-import { DateRangeSchema, PaginationQuerySchema, TORN_DRUG_NAMES, resolveDateRange, type DateRangePreset } from "@tornscope/shared";import { resolveSessionUser, assertSameOrigin, bindLegacyOwner, rebindCurrentSession, clearSessionCookie, requestIsSecure, type SessionUser } from "./auth.js";
+import { DateRangeSchema, PaginationQuerySchema, TORN_DRUG_NAMES, resolveDateRange, type DateRangePreset } from "@tornscope/shared";import { resolveSessionUser, assertSameOrigin, bindLegacyOwner, rebindCurrentSession, clearSessionCookie, currentSessionTokenHash, requestIsSecure, type SessionUser } from "./auth.js";
 import { checkRateLimit, clientIp } from "./ratelimit.js";
 import { errors, mapTornError, AppError } from "./errors.js";
 import { getMoneyEvents, getMoneySummary } from "./services/money.js";
@@ -26,7 +26,8 @@ import { getFactionOverview, getFactionRankedWars, getFactionMembers, getFaction
 import { getTimeline } from "./services/timeline.js";
 import { getDashboard } from "./services/dashboard.js";
 import { getToday } from "./services/today.js";
-import { getMe, getApiKeyStatus, saveApiKey, deleteApiKey, setDemoView, deleteProfile } from "./services/me.js";
+import { getMe, getApiKeyStatus, saveApiKey, validateApiKey, linkProfile, deleteApiKey, setDemoView, deleteProfile, signOutOtherSessions } from "./services/me.js";
+import { deleteEmptyProfile } from "@tornscope/database";
 import { getSyncStatus, getSyncHealth, requestManualSync, retryFailedSyncs, restartBackfill } from "./services/syncStatus.js";
 import { getPrismaClient } from "@tornscope/database";
 
@@ -330,6 +331,29 @@ export function registerRoutes(app: FastifyInstance): void {
     return getApiKeyStatus(user.id);
   });
 
+  const API_KEY_SCHEMA = z
+    .object({
+      key: z.string().regex(/^[A-Za-z0-9]{10,80}$/, "API key must be alphanumeric"),
+      /** Set only after the user explicitly chose "start a new profile". */
+      confirmNewProfile: z.boolean().optional(),
+    })
+    .strict();
+
+  app.post("/api/settings/api-key/validate", async (req) => {
+    const user = currentUser(req);
+    const limit = checkRateLimit("key-save", clientIp(req), 10, 10 * 60_000);
+    if (!limit.ok) {
+      throw errors.validation({ formErrors: ["Too many key attempts — try again later."], fieldErrors: {} });
+    }
+    const body = API_KEY_SCHEMA.safeParse(req.body);
+    if (!body.success) throw errors.validation(body.error.flatten());
+    try {
+      return await validateApiKey(user, body.data.key);
+    } catch (err) {
+      handleRouteError(err);
+    }
+  });
+
   app.post("/api/settings/api-key", async (req, reply) => {
     const user = currentUser(req);
     // Rate limit: key validation hits the Torn API — never let it be spammed.
@@ -338,13 +362,7 @@ export function registerRoutes(app: FastifyInstance): void {
       reply.header("Retry-After", limit.retryAfterSeconds);
       throw errors.validation({ formErrors: ["Too many key attempts — try again later."], fieldErrors: {} });
     }
-    const body = z
-      .object({
-        key: z.string().regex(/^[A-Za-z0-9]{10,80}$/, "API key must be alphanumeric"),
-        /** Set only after the user explicitly chose "start a new profile". */
-        confirmNewProfile: z.boolean().optional(),
-      })
-      .safeParse(req.body);
+    const body = API_KEY_SCHEMA.safeParse(req.body);
     if (!body.success) throw errors.validation(body.error.flatten());
     try {
       const result = await saveApiKey(user, body.data.key, { confirmNewProfile: body.data.confirmNewProfile === true });
@@ -354,6 +372,47 @@ export function registerRoutes(app: FastifyInstance): void {
     } catch (err) {
       handleRouteError(err);
     }
+  });
+
+  /**
+   * Link this browser to the EXISTING profile of the Torn identity a valid
+   * key resolves to (multi-device / profile-reuse flow). A Limited key is a
+   * sufficient identity proof; the stored credential is never touched and no
+   * historical import is (re)started. The session token rotates on success.
+   */
+  app.post("/api/profile/link", async (req, reply) => {
+    const user = currentUser(req);
+    const limit = checkRateLimit("profile-link", clientIp(req), 10, 10 * 60_000);
+    if (!limit.ok) {
+      reply.header("Retry-After", limit.retryAfterSeconds);
+      throw errors.validation({ formErrors: ["Too many attempts — try again later."], fieldErrors: {} });
+    }
+    const body = z.object({ key: z.string().regex(/^[A-Za-z0-9]{10,80}$/, "API key must be alphanumeric") }).strict().safeParse(req.body);
+    if (!body.success) throw errors.validation(body.error.flatten());
+    try {
+      const handoff = await linkProfile(user, body.data.key);
+      if (handoff.linkToUserId) {
+        // Rotate the session token and move this browser to the target
+        // profile; every other session of that profile stays valid.
+        await rebindCurrentSession(req, reply, getPrismaClient(), handoff.linkToUserId);
+        // The throwaway guest (never connected, never synced) is removed so
+        // abandoned link attempts do not accumulate empty profiles.
+        await deleteEmptyProfile(getPrismaClient(), handoff.cleanupGuestUserId!);
+      }
+      return handoff.result;
+    } catch (err) {
+      handleRouteError(err);
+    }
+  });
+
+  /** Sign out every OTHER active browser session of this profile. */
+  app.post("/api/session/sign-out-others", async (req) => {
+    const user = currentUser(req);
+    const limit = checkRateLimit("sign-out-others", clientIp(req), 10, 10 * 60_000);
+    if (!limit.ok) throw errors.validation({ formErrors: ["Too many attempts — try again later."], fieldErrors: {} });
+    const tokenHash = currentSessionTokenHash(req);
+    if (!tokenHash) throw errors.conflict("No active session found for this browser.");
+    return signOutOtherSessions(user.id, tokenHash);
   });
 
   app.delete("/api/settings/api-key", async (req) => {

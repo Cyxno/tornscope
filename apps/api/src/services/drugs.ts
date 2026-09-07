@@ -5,6 +5,7 @@ import {
 } from "@tornscope/shared";
 import { calculateDrugStats, calculateRehabStats } from "@tornscope/analytics";
 import { bigintToNumber, getPrismaClient, loadMarketPrices } from "@tornscope/database";
+import { liveAvailability, loadAvailabilityContext, sectionAvailability } from "./availability.js";
 
 /** Xanax item id in the Torn catalog (authoritative name match at runtime). */
 async function resolveXanaxItemId(db: ReturnType<typeof getPrismaClient>): Promise<number | null> {
@@ -63,6 +64,7 @@ export function splitXanaxFunding(
 export async function getDrugsSummary(userId: string, rangeInput: DateRangeInput, drugFilter: string[] | null): Promise<DrugsSummaryResponse> {
   const db = getPrismaClient();
   const range = resolveDateRange(rangeInput);
+  const availCtx = await loadAvailabilityContext(userId);
 
   const [drugRows, rehabRows, marketPrices, xanaxItemId, earliestDrug] = await Promise.all([
     db.drugEvent.findMany({
@@ -177,6 +179,11 @@ export async function getDrugsSummary(userId: string, rangeInput: DateRangeInput
 
   return {
     range: { from: range.from, to: range.to },
+    availability: {
+      cooldown: liveAvailability(availCtx, "drugs_cooldown"),
+      history: sectionAvailability(availCtx, "drugs_history", "drugs"),
+      xanaxProvenance: sectionAvailability(availCtx, "drugs_xanax_provenance", "drugs"),
+    },
     overall: {
       totalUses: stats.totalUses,
       overdoses: stats.overdoses,

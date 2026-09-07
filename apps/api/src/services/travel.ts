@@ -8,11 +8,13 @@ import {
 } from "@tornscope/shared";
 import { calculateTravelProfit, calculateTripEconomics, buildDailyTravelProfit } from "@tornscope/analytics";
 import { bigintToNumber, getPrismaClient, loadMarketPrices } from "@tornscope/database";
+import { liveAvailability, loadAvailabilityContext, sectionAvailability } from "./availability.js";
 
 /** Travel analytics: pre-assembled trips + their linked abroad purchases. */
 export async function getTravelSummary(userId: string, rangeInput: DateRangeInput): Promise<TravelSummaryResponse> {
   const db = getPrismaClient();
   const range = resolveDateRange(rangeInput);
+  const availCtx = await loadAvailabilityContext(userId);
 
   const [marketPrices, earliestTransition, earliestCompleteTrip, travelSyncState] = await Promise.all([
     loadMarketPrices(db),
@@ -30,6 +32,13 @@ export async function getTravelSummary(userId: string, rangeInput: DateRangeInpu
   const profitAvailable = summary.trips > 0;
   return {
     range: { from: range.from, to: range.to },
+    availability: {
+      // Live travel state comes from /user/travel, not the log walk.
+      current: liveAvailability(availCtx, "travel_current"),
+      history: sectionAvailability(availCtx, "travel_history", "travel"),
+      purchases: sectionAvailability(availCtx, "travel_purchases", "travel"),
+      profit: sectionAvailability(availCtx, "travel_profit", "travel"),
+    },
     trips: summary.trips,
     coverage: {
       // Permanently stored evidence: trips never disappear when Torn prunes.

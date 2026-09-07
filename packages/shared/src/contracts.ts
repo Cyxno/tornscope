@@ -170,19 +170,92 @@ export const SyncResourceSchema = z.enum(SYNC_RESOURCES);
 export const KeyCapabilitiesSchema = z.object({
   canReadUserBasic: z.boolean(),
   canReadUserBars: z.boolean(),
+  canReadUserCooldowns: z.boolean(),
+  canReadUserEducation: z.boolean(),
+  canReadUserTravel: z.boolean(),
   canReadUserMoney: z.boolean(),
   canReadUserLogs: z.boolean(),
   canReadUserAttacks: z.boolean(),
   canReadUserNetworth: z.boolean(),
+  canReadUserEvents: z.boolean(),
+  canReadUserPersonalStats: z.boolean(),
   canReadFactionBasic: z.boolean(),
   canReadFactionMembers: z.boolean(),
   canReadFactionRankedWars: z.boolean(),
+  canReadFactionChains: z.boolean(),
   canReadFactionCrimes: z.boolean(),
   canReadFactionArmoryNews: z.boolean(),
   canReadFactionBalance: z.boolean(),
   canReadFactionLogs: z.boolean(),
 });
 export type KeyCapabilitiesDto = z.infer<typeof KeyCapabilitiesSchema>;
+
+/** Honest per-feature data state (permission vs source; live vs stale). */
+export const FeatureAvailabilitySchema = z.object({
+  state: z.enum(["available_live", "available_historical", "partial", "stale_permission", "unavailable_permission", "unavailable_source"]),
+  /** Friendly name of the missing permission (null when not permission-caused). */
+  requiresLabel: z.string().nullable(),
+  /** Technical Torn selections to grant (details view). */
+  requiresSelections: z.array(z.string()),
+  /** Previously collected history still exists for this feature. */
+  hasHistoricalData: z.boolean(),
+  lastRefreshedAt: z.number().nullable(),
+});
+export type FeatureAvailabilityDto = z.infer<typeof FeatureAvailabilitySchema>;
+
+/** Result of validating a key WITHOUT storing it (replace-key preview flow). */
+export const ApiKeyValidationResponseSchema = z.object({
+  valid: z.boolean(),
+  tornId: z.number().nullable(),
+  tornName: z.string().nullable(),
+  accessLevel: z.number().nullable(),
+  accessType: z.string().nullable(),
+  capabilities: KeyCapabilitiesSchema.nullable(),
+  /** Old -> new comparison against the currently stored key (null without one). */
+  capabilityChange: z
+    .object({ newlyAvailable: z.array(z.string()), newlyUnavailable: z.array(z.string()) })
+    .nullable(),
+  /** True when the new key grants strictly fewer detected capabilities. */
+  downgrade: z.boolean(),
+  /** True when the new key grants capabilities the stored one lacks. */
+  upgrade: z.boolean(),
+});
+export type ApiKeyValidationResponse = z.infer<typeof ApiKeyValidationResponseSchema>;
+
+/**
+ * An existing TornScope profile for the same Torn identity (profile-reuse
+ * flow). Returned when a NEW browser validates a key whose Torn ID already
+ * has a non-demo profile — the browser then chooses to link or replace.
+ */
+export const ExistingProfileInfoSchema = z.object({
+  tornId: z.number(),
+  name: z.string().nullable(),
+  level: z.number().nullable(),
+  factionName: z.string().nullable(),
+  /** The access level stored on that profile (Full/Limited/...). */
+  storedAccess: z.object({ level: z.number().nullable(), type: z.string().nullable() }).nullable(),
+  history: z.object({
+    earliestAt: z.number().nullable(),
+    timelineEvents: z.number(),
+    moneyEvents: z.number(),
+    drugEvents: z.number(),
+    crimeEvents: z.number(),
+    combatEvents: z.number(),
+    travelTrips: z.number(),
+  }),
+});
+export type ExistingProfileInfo = z.infer<typeof ExistingProfileInfoSchema>;
+
+/** Result of linking the current browser session to an existing profile. */
+export const ProfileLinkResultSchema = z.object({
+  linked: z.boolean(),
+  /** True when the session was already bound to this profile (idempotent). */
+  alreadyLinked: z.boolean(),
+  profile: ExistingProfileInfoSchema.nullable(),
+  /** Explicit note: linking never changes the stored API key. */
+  storedKeyUntouched: z.boolean(),
+});
+export type ProfileLinkResult = z.infer<typeof ProfileLinkResultSchema>;
 
 export const MeResponseSchema = z.object({
   userId: z.string(),
@@ -192,6 +265,10 @@ export const MeResponseSchema = z.object({
   isDemo: z.boolean(),
   /** Detected key capabilities (null while no key is connected). */
   capabilities: KeyCapabilitiesSchema.nullable(),
+  /** Torn's own access description for the stored key (e.g. "Full Access"). */
+  accessType: z.string().nullable(),
+  /** Numeric Torn access level (1=Public … 4=Full) when known. */
+  accessLevel: z.number().nullable(),
   /** True when the legacy owner bind flow is still available. */
   ownerBindAvailable: z.boolean(),
   torn: z
@@ -208,6 +285,8 @@ export const MeResponseSchema = z.object({
   needsOnboarding: z.boolean(),
   /** A demo dataset exists and can be explored (no API key required). */
   demoAvailable: z.boolean(),
+  /** Number of active (non-revoked) browser sessions on THIS profile. */
+  activeSessions: z.number(),
   syncHealth: z.object({
     lastSuccessAt: z.number().nullable(),
     running: z.boolean(),
@@ -390,6 +469,7 @@ export type DashboardResponse = z.infer<typeof DashboardResponseSchema>;
 
 export const MoneySummaryResponseSchema = z.object({
   range: z.object({ from: z.number(), to: z.number(), interval: z.string() }),
+  availability: z.object({ cashFlow: FeatureAvailabilitySchema }).optional(),
   totalIncome: KpiValueSchema,
   totalExpenses: KpiValueSchema,
   netProfit: KpiValueSchema,
@@ -412,6 +492,13 @@ export type MoneySummaryResponse = z.infer<typeof MoneySummaryResponseSchema>;
  */
 export const EconomySummaryResponseSchema = z.object({
   range: z.object({ from: z.number(), to: z.number(), interval: z.string() }),
+  availability: z
+    .object({
+      cashFlow: FeatureAvailabilitySchema,
+      walletBridge: FeatureAvailabilitySchema,
+      networth: FeatureAvailabilitySchema,
+    })
+    .optional(),
   cashFlow: z.object({
     income: KpiValueSchema,
     expenses: KpiValueSchema,
@@ -496,6 +583,7 @@ export type CrimeEventDto = z.infer<typeof CrimeEventDtoSchema>;
 
 export const CrimesSummaryResponseSchema = z.object({
   range: z.object({ from: z.number(), to: z.number() }),
+  availability: z.object({ history: FeatureAvailabilitySchema }).optional(),
   attempts: z.number(),
   successful: z.number(),
   failed: z.number(),
@@ -562,6 +650,7 @@ export const OpponentRowSchema = z.object({
 
 export const CombatSummaryResponseSchema = z.object({
   range: z.object({ from: z.number(), to: z.number() }),
+  availability: z.object({ history: FeatureAvailabilitySchema }).optional(),
   attacksMade: z.number(),
   attacksReceived: z.number(),
   wins: z.number(),
@@ -663,6 +752,16 @@ export const RankedWarRowSchema = z.object({
 export type RankedWarRow = z.infer<typeof RankedWarRowSchema>;
 
 export const FactionOverviewResponseSchema = z.object({
+  availability: z
+    .object({
+      basic: FeatureAvailabilitySchema,
+      members: FeatureAvailabilitySchema,
+      rankedWars: FeatureAvailabilitySchema,
+      organizedCrimes: FeatureAvailabilitySchema,
+      armoryHistory: FeatureAvailabilitySchema,
+      balance: FeatureAvailabilitySchema,
+    })
+    .optional(),
   faction: FactionInfoSchema,
   membership: z.object({
     isMember: z.boolean(),
@@ -895,6 +994,13 @@ export type MoneyEventDto = z.infer<typeof MoneyEventDtoSchema>;
 
 export const DrugsSummaryResponseSchema = z.object({
   range: z.object({ from: z.number(), to: z.number() }),
+  availability: z
+    .object({
+      cooldown: FeatureAvailabilitySchema,
+      history: FeatureAvailabilitySchema,
+      xanaxProvenance: FeatureAvailabilitySchema,
+    })
+    .optional(),
   overall: z.object({
     totalUses: z.number(),
     overdoses: z.number(),
@@ -977,6 +1083,18 @@ export type DrugHistoryPoint = z.infer<typeof DrugHistoryPointSchema>;
 
 export const TravelSummaryResponseSchema = z.object({
   range: z.object({ from: z.number(), to: z.number() }),
+  /**
+   * Permission-aware availability per section (Phase: partial modules).
+   * Absent on older clients; populated from the central feature matrix.
+   */
+  availability: z
+    .object({
+      current: FeatureAvailabilitySchema,
+      history: FeatureAvailabilitySchema,
+      purchases: FeatureAvailabilitySchema,
+      profit: FeatureAvailabilitySchema,
+    })
+    .optional(),
   trips: z.number(),
   /**
    * Historical source coverage vs TornScope tracked history:
@@ -1116,7 +1234,7 @@ export const SyncHealthResponseSchema = z.object({
     z.object({
       resource: SyncResourceSchema,
       status: z.string(),
-      phase: z.enum(["queued", "running", "backfilling", "caught_up", "partial", "failed"]),
+      phase: z.enum(["queued", "running", "backfilling", "caught_up", "partial", "failed", "permission_required"]),
       lastAttemptAt: z.number().nullable(),
       lastSuccessAt: z.number().nullable(),
       nextRunAt: z.number().nullable(),

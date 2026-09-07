@@ -8,6 +8,7 @@
   import Stat from "$lib/components/Stat.svelte";
   import SegmentedDateRange from "$lib/components/SegmentedDateRange.svelte";
   import StateMessage from "$lib/components/StateMessage.svelte";
+  import { availabilityMessage, availabilityHasData } from "$lib/capabilities";
 
   type Tab = "overview" | "wars" | "members" | "oc" | "ledger";
 
@@ -72,6 +73,24 @@
   function payoutKindLabel(kind: string, scenario: string | null): string {
     return kind === "oc" ? `OC payout${scenario ? ` · ${scenario}` : ""}` : "Unmatched faction income";
   }
+
+  // Faction permissions are independent of user permissions: each tab checks
+  // its own capability instead of assuming Full access covers everything.
+  const av = $derived(overview?.availability);
+  const basicBlocked = $derived(av?.basic !== undefined && !availabilityHasData(av.basic));
+  const basicMsg = $derived(av?.basic ? availabilityMessage(av.basic) : null);
+  const blockedForTab = $derived.by((): ReturnType<typeof availabilityMessage> | null => {
+    if (!av) return null;
+    const entry: Record<Tab, typeof av.basic | undefined> = {
+      overview: av.basic,
+      wars: av.rankedWars,
+      members: av.members,
+      oc: av.organizedCrimes,
+      ledger: av.balance,
+    };
+    const current = entry[tab];
+    return current && !availabilityHasData(current) ? availabilityMessage(current) : null;
+  });
 </script>
 
 <div class="space-y-10">
@@ -89,7 +108,23 @@
     <StateMessage state="loading" />
   {:else if error}
     <StateMessage state="error" title="Could not load faction analytics" hint={error} action={{ label: "Retry", run: () => (reloadToken += 1) }} />
+  {:else if overview && basicBlocked && basicMsg}
+    <!-- Faction access is a separate key grant; explain instead of showing empty factions -->
+    <StateMessage
+      state={basicMsg.state}
+      title={basicMsg.title}
+      hint={`${basicMsg.hint} Faction permissions differ from personal ones — your key needs the Faction selections (ask your faction leader to enable API access).`}
+      action={{ label: "Review API access in Settings", run: () => (window.location.href = "/settings") }}
+    />
   {:else if overview}
+    {#if blockedForTab}
+      <StateMessage
+        state={blockedForTab.state}
+        title={blockedForTab.title}
+        hint={blockedForTab.hint}
+        action={{ label: "Review API access in Settings", run: () => (window.location.href = "/settings") }}
+      />
+    {/if}
     <div class="flex flex-wrap gap-1 rounded-full border border-border bg-surface p-1">
       {#each tabs as t (t.id)}
         <button

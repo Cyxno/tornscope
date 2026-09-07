@@ -114,6 +114,9 @@ export interface CompletionUpdate {
   /** Torn API pages fetched during this sync. */
   lastWalkPages?: number | null;
   nextRunAt?: Date | null;
+  /** Override the terminal status (defaults: success ? "idle" : "failed").
+   * "capability_denied" marks resources the key cannot access at all. */
+  status?: string;
   now?: Date;
 }
 
@@ -136,7 +139,7 @@ export async function completeResource(db: PrismaClientType, userId: string, res
   await db.syncState.update({
     where: { userId_resource: { userId, resource } },
     data: {
-      status: update.success ? "idle" : "failed",
+      status: update.status ?? (update.success ? "idle" : "failed"),
       lastCompletedAt: now,
       lastSuccessAt: update.success ? now : undefined,
       recordsCollected: update.recordsCollected ? { increment: update.recordsCollected } : undefined,

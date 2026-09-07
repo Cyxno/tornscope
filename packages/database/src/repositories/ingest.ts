@@ -507,6 +507,11 @@ export interface TornAccountUpsert {
   factionId: number | null;
   status: unknown;
   seenAt: Date;
+  /**
+   * Marks the synthetic demo identity (excluded from the tornId uniqueness
+   * invariant). Never set for real players; updates preserve the stored flag.
+   */
+  isDemo?: boolean;
 }
 
 export async function upsertTornAccount(db: PrismaClientType, userId: string, account: TornAccountUpsert): Promise<void> {
@@ -516,6 +521,7 @@ export async function upsertTornAccount(db: PrismaClientType, userId: string, ac
       data: {
         userId,
         tornId: account.tornId,
+        isDemo: account.isDemo ?? false,
         name: account.name,
         level: account.level,
         rank: account.rank,

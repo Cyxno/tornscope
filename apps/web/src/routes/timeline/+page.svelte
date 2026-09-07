@@ -2,7 +2,8 @@
   import type { TimelineEventDto, Paginated } from "@tornscope/shared";
   import { formatMoneyCompact } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
-  import { dateRange } from "$lib/state.svelte";
+  import { dateRange, me } from "$lib/state.svelte";
+  import { clientPermissionMessage } from "$lib/capabilities";
   import { formatDayHeading, formatClock } from "$lib/reltime";
   import PageHeader from "$lib/components/PageHeader.svelte";
   import StateMessage from "$lib/components/StateMessage.svelte";
@@ -44,6 +45,11 @@
   });
 
   /* Group descending items into UTC day buckets */
+  const timelineBlocked = $derived.by(() => {
+    const caps = me.data?.capabilities ?? null;
+    // The timeline is fed by logs OR events — blocked only when both are missing.
+    return caps !== null && !caps.canReadUserLogs && !caps.canReadUserEvents;
+  });
   const dayGroups = $derived.by(() => {
     if (!events) return [];
     const map = new Map<number, TimelineEventDto[]>();
@@ -88,6 +94,13 @@
     <StateMessage state="loading" />
   {:else if error && !events}
     <StateMessage state="error" title="Could not load your timeline" hint={error} action={{ label: "Retry", run: () => (reloadToken += 1) }} />
+  {:else if events && timelineBlocked}
+    <StateMessage
+      state="permission"
+      title="Timeline unavailable with current API permissions"
+      hint="Your current API key provides neither User Logs nor User Events — grant either in Torn to build your timeline."
+      action={{ label: "Review API access in Settings", run: () => (window.location.href = "/settings") }}
+    />
   {:else if events && events.items.length === 0}
     <StateMessage state="empty" title="Quiet in this range" hint="No timeline entries match. Widen the date range or wait for the next sync." />
   {:else if events}

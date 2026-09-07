@@ -9,6 +9,7 @@
   import Chart from "$lib/components/Chart.svelte";
   import SegmentedDateRange from "$lib/components/SegmentedDateRange.svelte";
   import StateMessage from "$lib/components/StateMessage.svelte";
+  import { availabilityMessage, availabilityHasData } from "$lib/capabilities";
   import { C, TOOLTIP, LEGEND, GRID, timeAxis, dayLabel } from "$lib/charts";
 
   let data = $state<DrugsSummaryResponse | null>(null);
@@ -130,20 +131,40 @@
   {:else if error}
     <StateMessage state="error" title="Could not load drug analytics" hint={error} action={{ label: "Retry", run: () => (reloadToken += 1) }} />
   {:else if data}
+    {@const histAv = data.availability?.history}
+    {@const histBlocked = histAv !== undefined && !availabilityHasData(histAv)}
+    {@const staleMsg = histAv && histAv.state === "stale_permission" ? availabilityMessage(histAv) : null}
+    {#if staleMsg}
+      <p class="rounded-xl border border-warning/30 bg-warning/5 px-5 py-3 text-xs leading-relaxed text-warning">
+        <span class="font-medium">{staleMsg.title}.</span>
+        {staleMsg.hint}
+      </p>
+    {/if}
     <!-- Quiet stat strip -->
     <div class="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border shadow-panel md:grid-cols-5">
-      <Stat label="Total uses" value={String(data.overall.totalUses)} provenance="exact" tone="accent" />
+      <Stat label="Total uses" value={histBlocked ? "—" : String(data.overall.totalUses)} provenance="exact" tone="accent" />
       <Stat
         label="Xanax / day"
-        value={data.overall.xanaxPerDay !== null ? String(data.overall.xanaxPerDay) : "—"}
+        value={histBlocked ? "—" : data.overall.xanaxPerDay !== null ? String(data.overall.xanaxPerDay) : "—"}
         provenance="derived"
         sub={data.overall.coveredDays !== null ? `${data.xanaxFunding.used} used · ${data.overall.coveredDays} covered days${data.overall.coverage === "partial" ? " · partial" : ""}` : null}
       />
-      <Stat label="Overdoses" value={String(data.overall.overdoses)} provenance="exact" tone={data.overall.overdoses > 0 ? "negative" : "neutral"} />
-      <Stat label="Estimated spend" value={formatMoneyCompact(data.overall.estimatedSpend.value)} provenance="estimated" />
-      <Stat label="Avg cost / use" value={formatMoneyCompact(data.overall.averageCostPerUse.value)} provenance="estimated" />
+      <Stat label="Overdoses" value={histBlocked ? "—" : String(data.overall.overdoses)} provenance="exact" tone={data.overall.overdoses > 0 ? "negative" : "neutral"} />
+      <Stat label="Estimated spend" value={histBlocked ? "—" : formatMoneyCompact(data.overall.estimatedSpend.value)} provenance="estimated" />
+      <Stat label="Avg cost / use" value={histBlocked ? "—" : formatMoneyCompact(data.overall.averageCostPerUse.value)} provenance="estimated" />
     </div>
 
+    {#if histBlocked && histAv}
+      <!-- Drug history needs User Logs: a permission state, never zeros -->
+      <StateMessage
+        state={availabilityMessage(histAv).state}
+        title={availabilityMessage(histAv).title}
+        hint={availabilityMessage(histAv).hint}
+        action={{ label: "Review API access in Settings", run: () => (window.location.href = "/settings") }}
+      />
+    {/if}
+
+    {#if !histBlocked}
     {#if data.xanaxFunding.used > 0}
       <p class="rounded-xl border border-border bg-surface px-5 py-3 text-xs leading-relaxed text-fg-muted">
         <span class="font-medium text-fg">Xanax funding:</span>
@@ -272,5 +293,6 @@
         </div>
       {/if}
     </Panel>
+    {/if}
   {/if}
 </div>

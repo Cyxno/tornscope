@@ -1,6 +1,7 @@
 export * from "./branding.js";
 export * from "./provenance.js";
 export * from "./torn.js";
+export * from "./capabilities.js";
 export * from "./contracts.js";
 export * from "./format.js";
 export * from "./today.js";

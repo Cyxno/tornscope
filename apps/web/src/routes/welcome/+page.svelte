@@ -2,8 +2,8 @@
   import { goto } from "$app/navigation";
   import { onMount } from "svelte";
   import { endpoints, ApiClientError } from "$lib/api";
-  import type { ApiKeyStatusResponse } from "@tornscope/shared";
-  import { branding } from "@tornscope/shared";
+  import type { ApiKeyStatusResponse, ExistingProfileInfo, KeyCapabilitiesDto } from "@tornscope/shared";
+  import { branding, moduleAvailability } from "@tornscope/shared";
   import { refreshMe, me } from "$lib/state.svelte";
 
   let apiKey = $state("");
@@ -12,6 +12,17 @@
   let error = $state<string | null>(null);
   let status = $state<ApiKeyStatusResponse | null>(null);
   let step = $state(1);
+
+  // Existing-profile reuse (Phase: profile reuse / multi-device linking).
+  // Set when the backend answers a key save with `profile_exists`.
+  let existing = $state<{
+    profile: ExistingProfileInfo;
+    incoming: { accessLevel: number | null; accessType: string | null; capabilities: KeyCapabilitiesDto | null };
+    downgrade: boolean;
+  } | null>(null);
+  let storedKey = $state(""); // kept in memory only until used or cleared
+  let linking = $state(false);
+  let replacing = $state(false);
 
   // Step 3 progress (resource-level — never an invented overall percentage).
   type ResourceRow = { resource: string; status: string; lastSuccessAt: number | null; recordsCollected: number; errorMessage: string | null };
@@ -39,19 +50,88 @@
     }
     validating = true;
     error = null;
+    storedKey = apiKey.trim();
     try {
       // The backend validates, stores the encrypted credential, detects the
       // player and queues the initial backfill itself.
-      status = await endpoints.saveApiKey(apiKey.trim());
+      status = await endpoints.saveApiKey(storedKey);
       apiKey = "";
+      storedKey = "";
       await refreshMe(); // drop stale "not configured" state immediately
+      step = 3;
+      void pollSync();
+    } catch (err) {
+      if (err instanceof ApiClientError && err.code === "profile_exists") {
+        const details = (err.details ?? {}) as {
+          existing?: ExistingProfileInfo;
+          incoming?: { accessLevel: number | null; accessType: string | null; capabilities: KeyCapabilitiesDto | null };
+          downgrade?: boolean;
+        };
+        if (details.existing) {
+          existing = {
+            profile: details.existing,
+            incoming: details.incoming ?? { accessLevel: null, accessType: null, capabilities: null },
+            downgrade: details.downgrade === true,
+          };
+          step = 2;
+        } else {
+          error = err.message;
+        }
+      } else {
+        error = err instanceof ApiClientError ? err.message : (err as Error).message;
+      }
+    } finally {
+      validating = false;
+    }
+  }
+
+  /** Primary action: bind this browser to the existing profile. The stored
+   * API key of that profile is NOT touched and nothing re-imports. */
+  async function useExistingProfile() {
+    if (!existing) return;
+    linking = true;
+    error = null;
+    try {
+      await endpoints.linkProfile(storedKey);
+      storedKey = "";
+      existing = null;
+      await refreshMe();
+      status = await endpoints.apiKeyStatus();
       step = 3;
       void pollSync();
     } catch (err) {
       error = err instanceof ApiClientError ? err.message : (err as Error).message;
     } finally {
-      validating = false;
+      linking = false;
     }
+  }
+
+  /** Optional separate action: link AND replace the stored key with this one.
+   * Explicit — linking alone never does this. */
+  async function replaceStoredKey() {
+    if (!existing) return;
+    replacing = true;
+    error = null;
+    try {
+      await endpoints.linkProfile(storedKey);
+      await endpoints.saveApiKey(storedKey);
+      storedKey = "";
+      existing = null;
+      await refreshMe();
+      status = await endpoints.apiKeyStatus();
+      step = 3;
+      void pollSync();
+    } catch (err) {
+      error = err instanceof ApiClientError ? err.message : (err as Error).message;
+    } finally {
+      replacing = false;
+    }
+  }
+
+  function cancelLink() {
+    existing = null;
+    storedKey = "";
+    step = 1;
   }
 
   async function pollSync() {
@@ -102,6 +182,18 @@
     void goto("/today");
   }
 
+  const caps = $derived(me.data?.capabilities ?? null);
+  const modules = $derived(moduleAvailability(caps ?? {
+    canReadUserBasic: false, canReadUserBars: false, canReadUserCooldowns: false, canReadUserEducation: false,
+    canReadUserTravel: false, canReadUserMoney: false, canReadUserLogs: false, canReadUserAttacks: false,
+    canReadUserNetworth: false, canReadUserEvents: false, canReadUserPersonalStats: false,
+    canReadFactionBasic: false, canReadFactionMembers: false, canReadFactionRankedWars: false,
+    canReadFactionChains: false, canReadFactionCrimes: false, canReadFactionArmoryNews: false,
+    canReadFactionBalance: false, canReadFactionLogs: false,
+  }));
+  const availableModules = $derived(modules.filter((m) => m.available));
+  const unavailableModules = $derived(modules.filter((m) => !m.available));
+
   onMount(() => {
     const poll = setInterval(() => {
       if (step === 3) void pollSync();
@@ -127,12 +219,12 @@
 
     <div class="rounded-2xl border border-border bg-surface p-7 shadow-panel">
       {#if step === 1}
-        <label class="mb-2.5 block text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-faint" for="api-key">Torn API key</label>
+        <label class="mb-2.5 block text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-faint" for="api-key">Connect Torn API key</label>
         <input
           id="api-key"
           type="password"
           bind:value={apiKey}
-          placeholder="Paste your Full Access API key"
+          placeholder="Paste your Torn API key"
           class="w-full rounded-xl border border-border bg-bg-raise px-4 py-3 font-mono text-sm text-fg placeholder:font-sans placeholder:text-fg-faint focus:border-accent"
           autocomplete="off"
         />
@@ -147,6 +239,7 @@
           {validating ? "Validating with Torn…" : "Validate & start tracking"}
         </button>
         <p class="mt-3 text-center text-xs text-fg-faint">
+          TornScope also works with limited permissions. More access unlocks additional analytics.
           Get your key at <span class="font-mono text-fg-muted">torn.com/preferences.php#tab=api</span>
         </p>
 
@@ -167,11 +260,90 @@
           <p class="mt-3 text-center text-xs text-fg-faint">Seeded example player, clearly marked — switch to your own data whenever you're ready.</p>
         {/if}
 
-        <p class="mt-6 border-t border-border pt-4 text-center text-[11px] leading-relaxed text-fg-faint">
-          No account needed: this browser gets its own anonymous TornScope profile.
-          Your API key is stored encrypted server-side; the browser keeps only a session identifier —
-          clearing this site's cookies detaches the profile.
-        </p>
+        <div class="mt-6 space-y-2 border-t border-border pt-4 text-center text-[11px] leading-relaxed text-fg-faint">
+          <p>
+            No account needed: this browser gets its own anonymous TornScope profile.
+            Your API key is stored encrypted server-side; the browser keeps only a session identifier —
+            clearing this site's cookies detaches the profile.
+          </p>
+          <p>
+            Torn API keys are read-only and cannot perform in-game actions. Broader permissions expose more of your
+            private Torn data — including detailed activity and log history — so a limited key is a valid privacy choice.
+          </p>
+        </div>
+      {:else if step === 2 && existing}
+        <!-- Existing TornScope profile found: link, don't duplicate -->
+        <div class="space-y-5">
+          <div class="space-y-1 text-center">
+            <p class="text-sm font-semibold text-warning">Existing TornScope profile found</p>
+            <p class="text-[13px] text-fg-muted">
+              {existing.profile.name ?? "Player"} [{existing.profile.tornId}] already has a TornScope profile with collected history.
+            </p>
+          </div>
+
+          <dl class="grid grid-cols-2 gap-x-6 gap-y-3 rounded-xl border border-border bg-bg-raise px-4 py-4 text-[13px]">
+            <div>
+              <dt class="text-[11px] uppercase tracking-[0.14em] text-fg-faint">Player</dt>
+              <dd class="mt-0.5 text-fg">{existing.profile.name ?? "Player"} [{existing.profile.tornId}]</dd>
+            </div>
+            <div>
+              <dt class="text-[11px] uppercase tracking-[0.14em] text-fg-faint">History</dt>
+              <dd class="mt-0.5 text-fg">Existing history available</dd>
+            </div>
+            <div>
+              <dt class="text-[11px] uppercase tracking-[0.14em] text-fg-faint">Current stored access</dt>
+              <dd class="mt-0.5 text-fg">{existing.profile.storedAccess?.type ?? "Not connected"}{existing.profile.storedAccess?.level ? ` (lvl ${existing.profile.storedAccess.level})` : ""}</dd>
+            </div>
+            <div>
+              <dt class="text-[11px] uppercase tracking-[0.14em] text-fg-faint">Verification key</dt>
+              <dd class="mt-0.5 text-fg">{existing.incoming.accessType ?? "Unknown"}{existing.incoming.accessLevel ? ` (lvl ${existing.incoming.accessLevel})` : ""}</dd>
+            </div>
+            <div class="col-span-2">
+              <dt class="text-[11px] uppercase tracking-[0.14em] text-fg-faint">Stored data</dt>
+              <dd class="mt-0.5 text-fg-muted">
+                {existing.profile.history.timelineEvents.toLocaleString("en-US")} timeline events ·
+                {existing.profile.history.moneyEvents.toLocaleString("en-US")} money entries ·
+                {existing.profile.history.travelTrips.toLocaleString("en-US")} trips
+              </dd>
+            </div>
+          </dl>
+
+          <p class="text-center text-xs leading-relaxed text-fg-muted">
+            Using the existing profile does <span class="font-semibold text-fg">not</span> replace the stored API key.
+            Your other signed-in browsers stay signed in, and no historical data is imported again.
+          </p>
+
+          <button
+            class="w-full rounded-xl bg-accent-strong py-3 text-sm font-semibold text-bg transition-colors hover:bg-accent disabled:opacity-40"
+            disabled={linking || replacing}
+            onclick={() => void useExistingProfile()}
+          >
+            {linking ? "Linking…" : "Use existing profile"}
+          </button>
+
+          <div class="space-y-2">
+            <button
+              class="w-full rounded-xl border border-warning/40 py-2.5 text-xs font-medium text-warning transition-colors hover:bg-warning/10 disabled:opacity-40"
+              disabled={linking || replacing}
+              onclick={() => void replaceStoredKey()}
+            >
+              {replacing ? "Replacing…" : `Replace stored key with this ${existing.incoming.accessType ?? ""} key`}
+            </button>
+            {#if existing.downgrade}
+              <p class="text-center text-[11px] leading-relaxed text-warning">
+                Replacing this key reduces available permissions. Some TornScope analytics may stop refreshing.
+                Collected history is never deleted.
+              </p>
+            {/if}
+            <button class="w-full text-center text-xs text-fg-faint transition-colors hover:text-fg" onclick={cancelLink}>
+              Cancel
+            </button>
+          </div>
+
+          {#if error}
+            <p class="text-sm text-negative">{error}</p>
+          {/if}
+        </div>
       {:else if step === 2}
         <div class="flex flex-col items-center gap-4 py-6">
           <div class="h-6 w-6 animate-spin rounded-full border-2 border-border-strong border-t-accent"></div>
@@ -188,6 +360,36 @@
               TornScope imports up to 180 days of available Torn history. Retention varies by Torn log type.
             </p>
           </div>
+
+          {#if me.data?.capabilities}
+            <div class="rounded-xl border border-border bg-bg-raise px-4 py-3">
+              <div class="flex items-center justify-between">
+                <span class="text-[11px] font-semibold uppercase tracking-[0.14em] text-fg-faint">API Access</span>
+                <span class="text-sm font-semibold text-fg">{me.data.accessType ?? "Detected"}{me.data.accessLevel ? ` · level ${me.data.accessLevel}` : ""}</span>
+              </div>
+              <div class="mt-2 grid gap-1.5 text-[12px] sm:grid-cols-2">
+                <div>
+                  <p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-positive">Available</p>
+                  <ul class="mt-0.5 space-y-0.5 text-fg-muted">
+                    {#each availableModules as m (m.module)}
+                      <li>· {m.module[0]!.toUpperCase() + m.module.slice(1)}</li>
+                    {/each}
+                  </ul>
+                </div>
+                <div>
+                  <p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-fg-faint">Needs more access</p>
+                  <ul class="mt-0.5 space-y-0.5 text-fg-faint">
+                    {#each unavailableModules as m (m.module)}
+                      <li>· {m.module[0]!.toUpperCase() + m.module.slice(1)}</li>
+                    {/each}
+                    {#if unavailableModules.length === 0}
+                      <li>· Everything, with this key</li>
+                    {/if}
+                  </ul>
+                </div>
+              </div>
+            </div>
+          {/if}
 
           <!-- Resource-level progress (no invented overall percentage) -->
           <div class="rounded-xl border border-border bg-bg-raise px-4 py-2">

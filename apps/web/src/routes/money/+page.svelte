@@ -9,6 +9,7 @@
   import Chart from "$lib/components/Chart.svelte";
   import SegmentedDateRange from "$lib/components/SegmentedDateRange.svelte";
   import StateMessage from "$lib/components/StateMessage.svelte";
+  import { availabilityMessage, availabilityHasData } from "$lib/capabilities";
   import { C, TOOLTIP, LEGEND, GRID, timeAxis, valueAxis, dayLabel, tealArea } from "$lib/charts";
 
   let economy = $state<EconomySummaryResponse | null>(null);
@@ -70,6 +71,13 @@
   });
 
   const period = $derived(periodLabel(dateRange.preset));
+
+  // Permission-aware sections: unavailable data must never render as zeros.
+  const cashAv = $derived(economy?.availability?.cashFlow);
+  const cashBlocked = $derived(cashAv !== undefined && !availabilityHasData(cashAv));
+  const cashStale = $derived(cashAv && cashAv.state === "stale_permission" ? availabilityMessage(cashAv) : null);
+  const nwAv = $derived(economy?.availability?.networth);
+  const nwBlocked = $derived(nwAv !== undefined && !availabilityHasData(nwAv));
 
   const CONSUMPTION_LABELS: Record<string, string> = {
     drug: "Drugs consumed",
@@ -219,6 +227,21 @@
     <!-- ═══ A. Cash flow ═══ -->
     <section class="space-y-6">
       <h2 class="text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-faint">A · Cash Flow — money that moved through your wallet</h2>
+      {#if cashBlocked && cashAv}
+        <!-- Cash flow needs User Logs: a permission state, never $0 -->
+        <StateMessage
+          state={availabilityMessage(cashAv).state}
+          title={availabilityMessage(cashAv).title}
+          hint={availabilityMessage(cashAv).hint}
+          action={{ label: "Review API access in Settings", run: () => (window.location.href = "/settings") }}
+        />
+      {:else}
+      {#if cashStale}
+        <p class="rounded-xl border border-warning/30 bg-warning/5 px-5 py-3 text-xs leading-relaxed text-warning">
+          <span class="font-medium">{cashStale.title}.</span>
+          {cashStale.hint}
+        </p>
+      {/if}
       <div class="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border shadow-panel md:grid-cols-4">
         <Stat label="{period} Cash Inflow" value={formatKpiValue(economy.cashFlow.income)} provenance="exact" tone="positive" sub={`earned ${formatMoneyCompact(economy.cashFlow.trueIncome)} · asset sales ${formatMoneyCompact(economy.cashFlow.assetInflow)}`} />
         <Stat label="{period} Cash Outflow" value={formatKpiValue(economy.cashFlow.expenses)} provenance="exact" tone="negative" sub={`true expenses ${formatMoneyCompact(economy.cashFlow.trueExpense)} · asset purchases ${formatMoneyCompact(economy.cashFlow.assetOutflow)}`} />
@@ -305,6 +328,7 @@
           </div>
         {/if}
       </Panel>
+      {/if}
     </section>
 
     <!-- ═══ B. Asset movement & consumption ═══ -->
@@ -362,6 +386,14 @@
     <!-- ═══ C. Wealth effects ═══ -->
     <section class="space-y-6">
       <h2 class="text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-faint">C · Wealth Effects — what actually happened to your total wealth</h2>
+      {#if nwBlocked && nwAv}
+        <StateMessage
+          state={availabilityMessage(nwAv).state}
+          title={availabilityMessage(nwAv).title}
+          hint={nwAv.state === "unavailable_permission" ? "Your current API key does not include User Networth — grant it in Torn to track wealth history." : availabilityMessage(nwAv).hint}
+          action={{ label: "Review API access in Settings", run: () => (window.location.href = "/settings") }}
+        />
+      {:else}
       {#if economy.networth.trackingSince !== null}
         <p class="text-xs text-fg-faint">Tracking since {formatDate(economy.networth.trackingSince)} — net worth history before that point does not exist and is never fabricated.</p>
       {/if}
@@ -419,6 +451,7 @@
             <p class="mt-4 text-[11px] text-fg-faint">Tracked period: TornScope started snapshotting after this period began, so the change covers the tracked span only.</p>
           {/if}
         </Panel>
+      {/if}
       {/if}
     </section>
 

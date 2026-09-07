@@ -95,6 +95,9 @@ model TornAccount {
   id             String    @id @default(cuid())
   userId         String    @unique
   tornId         Int
+  /// True only for the synthetic demo identity, which sits outside the
+  /// one-real-tornId-per-profile invariant (partial unique index).
+  isDemo         Boolean   @default(false)
   name           String
   level          Int
   rank           String?

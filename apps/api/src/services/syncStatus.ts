@@ -1,5 +1,6 @@
 import { getSyncStates, getSyncCategoryStates, getPrismaClient, type SyncStateRow } from "@tornscope/database";
-import { deriveSetupPhase, SYNC_JOB_NAME, SCHEDULER_QUEUE, buildSyncJobId, SYNC_RESOURCES, type SyncResource } from "@tornscope/shared";
+import { deriveSetupPhase, normalizeCapabilities, resourceAllowed, resourceRequirementLabel, SYNC_JOB_NAME, SCHEDULER_QUEUE, buildSyncJobId, SYNC_RESOURCES, type SyncResource } from "@tornscope/shared";
+import { AppError } from "../errors.js";
 import { getApiContext } from "../context.js";
 import { queueRedis } from "../redis.js";
 
@@ -191,7 +192,12 @@ function summarizeSchedule(categories: ScheduleStateLike[], nowSec: number) {
   return { total: categories.length, due, hot, warm, cold, veryCold, retry, accessDenied };
 }
 
-function deriveResourcePhase(s: SyncStateRow, categories: CategoryStateLike[] = []): "queued" | "running" | "backfilling" | "caught_up" | "partial" | "failed" {
+export function deriveResourcePhase(s: SyncStateRow, categories: CategoryStateLike[] = []): "queued" | "running" | "backfilling" | "caught_up" | "partial" | "failed" | "permission_required" {
+  if (s.status === "capability_denied") {
+    // The connected key cannot access this resource at all — a permission
+    // state, never a generic sync failure.
+    return "permission_required";
+  }
   if (s.status === "running") {
     // A resource that never succeeded yet is part of the initial backfill.
     return s.lastSuccessAt === null ? "backfilling" : "running";
@@ -233,8 +239,18 @@ export async function requestManualSync(
     return { queued: false, retryAfterSeconds: 0 };
   }
   // Abuse/cost control: no credential -> no Torn API work, ever.
-  if (!(await hasActiveCredential(db, userId))) {
+  const credential = await db.apiCredential.findUnique({ where: { userId } });
+  if (!credential || credential.revokedAt) {
     return { queued: false, retryAfterSeconds: 0 };
+  }
+  // Capability gate: "Sync now" must respect what the key can access.
+  if (!resourceAllowed(normalizeCapabilities(credential.capabilities), resource as SyncResource)) {
+    throw new AppError(
+      "permission_required",
+      `Your API key does not include ${resourceRequirementLabel(resource as SyncResource)} — this resource cannot be synced with the current key.`,
+      409,
+      { resource, requirement: resourceRequirementLabel(resource as SyncResource) }
+    );
   }
   const state = await db.syncState.findUnique({ where: { userId_resource: { userId, resource } } });
   if (state) {
@@ -261,14 +277,19 @@ export async function requestManualSync(
 /** Retry every failed resource in one go (still guarded by the claim lock). */
 export async function retryFailedSyncs(userId: string): Promise<{ queued: string[] }> {
   const db = getPrismaClient();
-  if (!(await hasActiveCredential(db, userId))) {
+  const credential = await db.apiCredential.findUnique({ where: { userId } });
+  if (!credential || credential.revokedAt) {
     return { queued: [] };
   }
+  const caps = normalizeCapabilities(credential.capabilities);
   const states = await db.syncState.findMany({ where: { userId, status: "failed" } });
   const ctx = getApiContext();
   const queued: string[] = [];
   for (const state of states) {
     if (!SYNC_RESOURCES.includes(state.resource as SyncResource)) continue;
+    // Capability-blocked resources are not "failed" — retrying them without
+    // the permission would only hammer denied endpoints.
+    if (!resourceAllowed(caps, state.resource as SyncResource)) continue;
     await ctx.syncQueue.add(
       SYNC_JOB_NAME,
       { userId, resource: state.resource, manual: true },

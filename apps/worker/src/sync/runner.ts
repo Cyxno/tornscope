@@ -1,6 +1,6 @@
 import { TornApiError } from "@tornscope/torn-api";
 import { claimResource, completeResource, progressResource, recordSyncRun, ensureSyncStates } from "@tornscope/database";
-import type { SyncResource } from "@tornscope/shared";
+import { deriveKeyCapabilities, normalizeCapabilities, resourceAllowed, resourceRequirementLabel, type KeyCapabilities, type SyncResource } from "@tornscope/shared";
 import { SYNC_HANDLERS } from "./handlers.js";
 import { getWorkerContext } from "../context.js";
 import { logger } from "../env.js";
@@ -10,6 +10,47 @@ export interface SyncOutcome {
   skipped?: boolean;
   records?: number;
   error?: string;
+}
+
+/**
+ * How often a capability-blocked resource re-checks whether the key's
+ * permissions changed (replaces hammering endpoints known to be denied).
+ */
+const CAPABILITY_RECHECK_SECONDS = 6 * 3600;
+
+/**
+ * Resolve the credential's capabilities. Credentials stored before capability
+ * persistence carried no detection — backfill it once from /key/info so
+ * gating works for every existing profile without a manual re-save.
+ */
+async function resolveCapabilities(
+  ctx: ReturnType<typeof getWorkerContext>,
+  userId: string,
+  credential: { id: string; accessLevel: number | null; accessType: string | null; capabilities: unknown },
+  apiKey: string
+): Promise<KeyCapabilities | null> {
+  const stored = normalizeCapabilities(credential.capabilities);
+  if (stored) return stored;
+  try {
+    const info = await ctx.torn(apiKey).keyInfo();
+    const raw = (info.info.selections ?? {}) as { user?: unknown; faction?: unknown };
+    const asStrings = (v: unknown): string[] | null =>
+      Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : null;
+    const caps = deriveKeyCapabilities(
+      {
+        user: asStrings(raw.user),
+        faction: asStrings(raw.faction),
+        factionAccess: typeof info.info.access.faction === "boolean" ? info.info.access.faction : null,
+      },
+      typeof info.info.access.level === "number" ? info.info.access.level : null
+    );
+    await ctx.db.apiCredential.update({ where: { id: credential.id }, data: { capabilities: caps as never } });
+    logger.info({ userId }, "capabilities backfilled from /key/info");
+    return caps;
+  } catch (err) {
+    logger.warn({ userId, err: (err as Error).message }, "capability detection failed; resource gating unavailable this run");
+    return null;
+  }
 }
 
 /**
@@ -63,6 +104,34 @@ export async function runResourceSync(
     return { ok: false, error: message };
   }
 
+  // Capability gate: a key that lacks the required Torn selection must never
+  // hammer an endpoint known to be unavailable. The resource is marked
+  // capability_denied (NOT failed) and re-checked only infrequently — manual
+  // syncs surface a "permission required" state instead of a sync error, and
+  // replacing the key re-enables the resource immediately.
+  const caps = await resolveCapabilities(ctx, userId, credential, apiKey);
+  if (!resourceAllowed(caps, resource)) {
+    const requirement = resourceRequirementLabel(resource);
+    const message = `Permission required: this key does not include ${requirement}. Grant it in Torn to sync this resource.`;
+    await completeResource(ctx.db, userId, resource, {
+      success: false,
+      status: "capability_denied",
+      errorMessage: message,
+      lastTimestamp: claim.state.lastTimestamp,
+      nextRunAt: new Date(Date.now() + CAPABILITY_RECHECK_SECONDS * 1000),
+      now: new Date(),
+    });
+    await recordSyncRun(ctx.db, userId, resource, {
+      startedAt,
+      finishedAt: new Date(),
+      status: "skipped",
+      recordsCollected: 0,
+      errorMessage: message,
+    });
+    logger.info({ userId, resource, requirement }, "sync skipped: capability denied by key");
+    return { ok: false, skipped: true, error: message };
+  }
+
   // Progress bookkeeping: handlers report cumulative counts per page; we
   // commit the delta to sync_state so a crash mid-backfill leaves accurate
   // numbers and the cursor never advances past unstored data (the timestamp
@@ -87,6 +156,7 @@ export async function runResourceSync(
       torn,
       lastTimestamp: claim.state.lastTimestamp,
       force: opts.force === true,
+      capabilities: caps,
       onProgress,
     });
     logger.info({ userId, resource, stage: "records_written", records: result.records }, "torn responses normalized and written");

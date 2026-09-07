@@ -2,6 +2,7 @@ import { autoInterval, resolveDateRange, type DateRangeInput, type MoneyEventDto
 import { aggregateMoneyEvents } from "@tornscope/analytics";
 import { Prisma, bigintToNumber, getPrismaClient } from "@tornscope/database";
 import { cursorWhere, nextPageCursor } from "../cursor.js";
+import { loadAvailabilityContext, sectionAvailability } from "./availability.js";
 
 /** Map a MoneyEvent row to the analytics DTO + analytics input shape. */
 function toDto(row: { id: string; occurredAt: Date; category: string; subcategory: string | null; direction: string; amount: bigint; description: string | null; source: string }): MoneyEventDto {
@@ -45,8 +46,10 @@ export async function getMoneySummary(userId: string, rangeInput: DateRangeInput
   const unknownInRange = rows.filter((r) => r.direction === "unknown").length;
   const flowAvailability = unknownInRange > 0 ? ("incomplete" as const) : rows.length === 0 ? ("unavailable" as const) : ("ok" as const);
 
+  const availCtx = await loadAvailabilityContext(userId);
   return {
     range: { from: range.from, to: range.to, interval: autoInterval(range) },
+    availability: { cashFlow: sectionAvailability(availCtx, "money_cash_flow", "money_logs") },
     totalIncome: { value: flowAvailability === "unavailable" ? null : agg.totalIncome, provenance: agg.provenance, availability: flowAvailability },
     totalExpenses: { value: flowAvailability === "unavailable" ? null : agg.totalExpenses, provenance: agg.provenance, availability: flowAvailability },
     netProfit: { value: flowAvailability === "unavailable" ? null : agg.netProfit, provenance: agg.provenance, availability: flowAvailability },

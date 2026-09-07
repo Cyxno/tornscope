@@ -92,7 +92,7 @@ node -e "console.log('API_KEY_ENCRYPTION_KEY=' + require('crypto').randomBytes(3
 docker compose up -d --build
 ```
 
-Open **http://localhost:5173**, follow the welcome flow (paste a Torn **Full Access** API key) and the worker starts collecting history immediately.
+Open **http://localhost:5173**, follow the welcome flow (paste any Torn API key — limited permissions work too, more access unlocks additional analytics) and the worker starts collecting history immediately.
 
 ## Environment variables
 
@@ -198,7 +198,7 @@ Keep off-site copies. Test restores.
 | --- | --- |
 | API refuses to start | `API_KEY_ENCRYPTION_KEY` missing or not 64 hex chars |
 | "No sync configuration yet" | No API key saved yet — finish the welcome flow / Settings |
-| Sync shows `access_denied` on log resources | Your key lacks Full Access / custom log permissions — replace it in Settings |
+| Sync shows `access_denied` / `capability_denied` on log resources | Your key does not include the User Logs selection — grant it in Torn or replace the key in Settings |
 | Data stops updating | Check Sync Status errors + `docker compose logs worker` |
 | Torn errors `code 5` / `code 8` | Rate limited / IP block — increase `TORN_API_MIN_REQUEST_INTERVAL_MS` |
 | Charts empty right after onboarding | First sync (up to 180 days of available Torn history) takes a few minutes; retention varies by Torn log type — watch Sync Status |

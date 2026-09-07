@@ -1,5 +1,6 @@
 import type {
   ApiKeyStatusResponse,
+  ApiKeyValidationResponse,
   DashboardResponse,
   DrugsSummaryResponse,
   CombatSummaryResponse,
@@ -18,6 +19,7 @@ import type {
   MoneySummaryResponse,
   NetworthResponse,
   Paginated,
+  ProfileLinkResult,
   SyncHealthResponse,
   TimelineEventDto,
   TodayResponse,
@@ -180,10 +182,15 @@ export const endpoints = {
   setDemoView: (enabled: boolean) => api.post<MeResponse>("/demo-view", { enabled }),
   apiKeyStatus: () => api.get<ApiKeyStatusResponse>("/settings/api-key"),
   saveApiKey: (key: string, confirmNewProfile?: boolean) =>
-    api.post<ApiKeyStatusResponse & { newProfileId?: string | null }>("/settings/api-key", {
+    api.post<ApiKeyStatusResponse>("/settings/api-key", {
       key,
       ...(confirmNewProfile ? { confirmNewProfile: true } : {}),
     }),
+  /** Validate a key WITHOUT storing it (replace-preview / access summary). */
+  validateApiKey: (key: string) => api.post<ApiKeyValidationResponse>("/settings/api-key/validate", { key }),
+  /** Link this browser to the existing profile of the key's Torn identity. */
+  linkProfile: (key: string) => api.post<ProfileLinkResult>("/profile/link", { key }),
+  signOutOtherSessions: () => api.post<{ revoked: number }>("/session/sign-out-others", {}),
   bindOwner: (token: string) => api.post<MeResponse>("/session/bind-owner", { token }),
   deleteProfile: () => api.post<{ deleted: boolean }>("/profile/delete", {}),
   deleteApiKey: () => api.del<{ deleted: boolean }>("/settings/api-key"),

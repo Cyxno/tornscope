@@ -25,6 +25,7 @@ import type {
   TornUserTravel,
 } from "@tornscope/torn-api";
 import { TornApiError } from "@tornscope/torn-api";
+import { normalizeCapabilities, type KeyCapabilities } from "@tornscope/shared";
 import { getApiContext } from "../context.js";
 import { errors } from "../errors.js";
 
@@ -279,16 +280,26 @@ async function fetchToday(userId: string): Promise<TodayResponse> {
     throw mapProfileError(err);
   }
 
-  // Skip requests the key cannot answer anyway (saves rate budget).
-  const canMinimal = accessLevel === null || accessLevel >= TORN_ACCESS_LEVELS.minimal;
-  const canLimited = accessLevel === null || accessLevel >= TORN_ACCESS_LEVELS.limited;
+  // Skip requests the key cannot answer anyway (saves rate budget). The
+  // detected per-selection capabilities decide; legacy credentials without
+  // stored capabilities fall back to the conservative access-level check.
+  const caps = normalizeCapabilities(credential.capabilities);
+  const capAllowed = (capability: keyof KeyCapabilities | null, fallbackLevel: number): boolean => {
+    if (caps) return capability === null ? true : caps[capability];
+    return accessLevel === null || accessLevel >= fallbackLevel;
+  };
+  const canBars = capAllowed("canReadUserBars", TORN_ACCESS_LEVELS.minimal);
+  const canCooldowns = capAllowed("canReadUserCooldowns", TORN_ACCESS_LEVELS.minimal);
+  const canEducation = capAllowed("canReadUserEducation", TORN_ACCESS_LEVELS.minimal);
+  const canTravel = capAllowed("canReadUserTravel", TORN_ACCESS_LEVELS.minimal);
+  const canMoney = capAllowed("canReadUserMoney", TORN_ACCESS_LEVELS.limited);
 
   const [bars, cooldowns, education, travel, money] = await Promise.all([
-    canMinimal ? torn.userBars().catch(sectionFailure) : Promise.resolve(skippedFailure("Minimal")),
-    canMinimal ? torn.userCooldowns().catch(sectionFailure) : Promise.resolve(skippedFailure("Minimal")),
-    canMinimal ? torn.userEducation().catch(sectionFailure) : Promise.resolve(skippedFailure("Minimal")),
-    canMinimal ? torn.userTravel().catch(sectionFailure) : Promise.resolve(skippedFailure("Minimal")),
-    canLimited ? torn.userMoney().catch(sectionFailure) : Promise.resolve(skippedFailure("Limited")),
+    canBars ? torn.userBars().catch(sectionFailure) : Promise.resolve(skippedFailure("User Bars")),
+    canCooldowns ? torn.userCooldowns().catch(sectionFailure) : Promise.resolve(skippedFailure("User Cooldowns")),
+    canEducation ? torn.userEducation().catch(sectionFailure) : Promise.resolve(skippedFailure("User Education")),
+    canTravel ? torn.userTravel().catch(sectionFailure) : Promise.resolve(skippedFailure("User Travel")),
+    canMoney ? torn.userMoney().catch(sectionFailure) : Promise.resolve(skippedFailure("User Money")),
   ]);
 
   const notes: string[] = [];
@@ -297,17 +308,17 @@ async function fetchToday(userId: string): Promise<TodayResponse> {
   };
 
   const barSet: Record<TodayBarKey, LiveBar> | null = isSectionFailure(bars) ? null : assembleBars(nowSec, bars);
-  if (isSectionFailure(bars)) note(bars, "bars", "Minimal");
+  if (isSectionFailure(bars)) note(bars, "bars", "User Bars");
 
   const cooldownMap: Record<CooldownKind, CooldownState> | null = isSectionFailure(cooldowns)
     ? null
     : assembleCooldowns(nowSec, cooldowns);
-  if (isSectionFailure(cooldowns)) note(cooldowns, "cooldowns", "Minimal");
+  if (isSectionFailure(cooldowns)) note(cooldowns, "cooldowns", "User Cooldowns");
 
   const educationStatus: EducationStatus = isSectionFailure(education)
     ? educationUnavailable(education)
     : await assembleEducation(nowSec, education, torn);
-  if (isSectionFailure(education)) note(education, "education", "Minimal");
+  if (isSectionFailure(education)) note(education, "education", "User Education");
 
   const travelValue = isSectionFailure(travel) ? null : travel;
   const travelFailure = isSectionFailure(travel) ? travel : null;
@@ -322,10 +333,10 @@ async function fetchToday(userId: string): Promise<TodayResponse> {
     // History is optional context; live state still works without it.
   }
   const travelStatus = assembleTravel(nowSec, profile, travelValue, travelFailure, openTrip);
-  if (travelFailure) note(travelFailure, "travel", "Minimal");
+  if (travelFailure) note(travelFailure, "travel", "User Travel");
 
   const bankStatus: BankStatus = isSectionFailure(money) ? bankUnavailable(money) : assembleBank(nowSec, money);
-  if (isSectionFailure(money)) note(money, "bank", "Limited");
+  if (isSectionFailure(money)) note(money, "bank", "User Money");
 
   const status = toPlayerStatus(profile);
   const hospital = extractNotice(nowSec, status, "hospital");

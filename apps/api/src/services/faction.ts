@@ -17,6 +17,7 @@ import {
 } from "@tornscope/shared";
 import { deriveMemberStats, matchPayout, matchOcPayout, warCombatEvents, summarizeWars, warResult, type WarLike, type PayoutCandidateInput, type WarCombatEventLike, type PayoutMatch } from "@tornscope/analytics";
 import { bigintToNumber, getPrismaClient } from "@tornscope/database";
+import { loadAvailabilityContext, sectionAvailability } from "./availability.js";
 
 /** Load the user's combat events for war derivation (metadata holds the flags). */
 async function loadWarCombatEvents(userId: string, from: number, to: number): Promise<WarCombatEventLike[]> {
@@ -92,6 +93,7 @@ async function loadWars(userId: string): Promise<Array<WarLike & { targetScore: 
 export async function getFactionOverview(userId: string, rangeInput: DateRangeInput): Promise<FactionOverviewResponse> {
   const db = getPrismaClient();
   const range = resolveDateRange(rangeInput);
+  const availCtx = await loadAvailabilityContext(userId);
   const account = await db.tornAccount.findUnique({ where: { userId }, select: { factionId: true } });
   // Tenant isolation: no implicit fallback to some global faction.
   const factionId = account?.factionId ?? null;
@@ -160,6 +162,14 @@ export async function getFactionOverview(userId: string, rangeInput: DateRangeIn
     }));
 
   return {
+    availability: {
+      basic: sectionAvailability(availCtx, "faction_basic", "faction_basic"),
+      members: sectionAvailability(availCtx, "faction_members", "faction"),
+      rankedWars: sectionAvailability(availCtx, "faction_ranked_wars", "ranked_wars"),
+      organizedCrimes: sectionAvailability(availCtx, "faction_organized_crimes", "organized_crimes"),
+      armoryHistory: sectionAvailability(availCtx, "faction_armory_history", "faction"),
+      balance: sectionAvailability(availCtx, "faction_balance", "faction"),
+    },
     faction: {
       factionId: faction?.id ?? factionId,
       name: faction?.name ?? null,

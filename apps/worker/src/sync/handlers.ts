@@ -1,5 +1,5 @@
 import { TornApiError, normalizeDonatorStatus, type TornEndpoints, type TornRequestParams, type BackwardStopReason, type TornUserAttack } from "@tornscope/torn-api";
-import type { SyncResource } from "@tornscope/shared";
+import type { KeyCapabilities, SyncResource } from "@tornscope/shared";
 import {
   encryptionFromEnv,
   insertConsumptionEvents,
@@ -63,6 +63,12 @@ export interface SyncHandlerArgs {
   /** Report cumulative records successfully written so far. */
   /** Manual "Sync Now": walk every category, ignoring adaptive nextRunAt. */
   force?: boolean;
+  /**
+   * Detected key capabilities (null when detection failed). Composite
+   * handlers use this to skip sub-fetches the key cannot answer instead of
+   * burning Torn quota on guaranteed access-denied responses.
+   */
+  capabilities?: KeyCapabilities | null;
   onProgress?: (recordsSoFar: number) => void;
 }
 
@@ -751,10 +757,12 @@ export const syncFactionBasic: SyncHandler = async ({ userId, torn }) => {
  */
 export const syncFaction: SyncHandler = async (args) => {
   const ctx = getWorkerContext();
+  const caps = args.capabilities ?? null;
   const [basicFull, members, balance] = await Promise.all([
     args.torn.factionBasicFull(),
-    args.torn.factionMembers().catch(() => null),
-    args.torn.factionBalance().catch(() => null),
+    // Skip sub-fetches the key cannot answer — never hammer denied endpoints.
+    caps && !caps.canReadFactionMembers ? Promise.resolve(null) : args.torn.factionMembers().catch(() => null),
+    caps && !caps.canReadFactionBalance ? Promise.resolve(null) : args.torn.factionBalance().catch(() => null),
   ]);
   const f = basicFull.basic;
   if (typeof f.id !== "number") return { records: 0 };
@@ -809,12 +817,17 @@ export const syncFaction: SyncHandler = async (args) => {
 
   // Armory news walk (cat=armoryAction): first-class provenance for
   // faction-sponsored consumption (e.g. armory Xanax). Incremental: walks
-  // backward until a page whose entries are all already stored.
+  // backward until a page whose entries are all already stored. Skipped
+  // entirely (not "failed") when the key lacks armorynews access.
   let armoryEvents = 0;
-  try {
-    armoryEvents = await walkFactionArmoryNews(args, ctx.db, f.id);
-  } catch (err) {
-    logger.warn({ err: (err as Error).message, userId: args.userId }, "faction armory news walk failed; continuing");
+  if (caps && !caps.canReadFactionArmoryNews) {
+    logger.debug({ userId: args.userId }, "faction armory news skipped: key lacks armorynews access");
+  } else {
+    try {
+      armoryEvents = await walkFactionArmoryNews(args, ctx.db, f.id);
+    } catch (err) {
+      logger.warn({ err: (err as Error).message, userId: args.userId }, "faction armory news walk failed; continuing");
+    }
   }
 
   return { records: 1 + memberRows + balanceRows + armoryEvents, stopReason: "history_boundary_reached" };

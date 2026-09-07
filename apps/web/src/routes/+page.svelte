@@ -2,7 +2,8 @@
   import type { DashboardResponse } from "@tornscope/shared";
   import { formatMoneyCompact, formatKpiValue, periodLabel, formatDate, formatSignedMoney } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
-  import { dateRange } from "$lib/state.svelte";
+  import { dateRange, me } from "$lib/state.svelte";
+  import { clientPermissionMessage } from "$lib/capabilities";
   import { formatRelative } from "$lib/reltime";
   import PageHeader from "$lib/components/PageHeader.svelte";
   import Panel from "$lib/components/Panel.svelte";
@@ -121,6 +122,13 @@
   const ASSET_CATEGORIES = new Set(["bazaar", "items", "trading", "auction", "points", "stock", "travel", "plushie", "flower", "drugs"]);
   const isInflowConversion = (category: string): boolean => SALES_CATEGORIES.has(category) || category === "points";
   const isOutflowConversion = (category: string): boolean => ASSET_CATEGORIES.has(category);
+
+  // Permission states for the tiles: never a fake zero when the key cannot
+  // see the underlying data at all.
+  const caps = $derived(me.data?.capabilities ?? null);
+  const logsBlocked = $derived(clientPermissionMessage(caps, "money_cash_flow"));
+  const attacksBlocked = $derived(clientPermissionMessage(caps, "combat_history"));
+  const networthBlocked = $derived(clientPermissionMessage(caps, "networth_history"));
 </script>
 
 <div class="space-y-10">
@@ -218,7 +226,7 @@
       flush
     >
       {#if !networthOption}
-        <StateMessage state="empty" title="No networth history in this range" hint="Snapshots appear as the worker runs. Try a wider range or check Sync Status." />
+        <StateMessage state={networthBlocked ? "permission" : "empty"} title={networthBlocked ? networthBlocked.title : "No networth history in this range"} hint={networthBlocked ? networthBlocked.hint : "Snapshots appear as the worker runs. Try a wider range or check Sync Status."} />
       {:else}
         <Chart option={networthOption} height={380} />
       {/if}
@@ -280,7 +288,9 @@
     <section class="grid gap-6 lg:grid-cols-6">
       <div class="lg:col-span-2">
         <Panel title="Cash inflow" caption="Everything that entered the wallet — earnings and asset conversions are different things">
-          {#if topIncome.length === 0}
+          {#if logsBlocked}
+            <StateMessage state="permission" title={logsBlocked.title} hint={logsBlocked.hint} />
+          {:else if topIncome.length === 0}
             <StateMessage state="empty" title="No money events in this range" />
           {:else}
             <ul class="space-y-4">
@@ -314,7 +324,9 @@
       </div>
       <div class="lg:col-span-2">
         <Panel title="Cash outflow" caption="Everything that left the wallet — true expenses and asset conversions are different things">
-          {#if topExpenses.length === 0}
+          {#if logsBlocked}
+            <StateMessage state="permission" title={logsBlocked.title} hint={logsBlocked.hint} />
+          {:else if topExpenses.length === 0}
             <StateMessage state="empty" title="No cash expenses in this range" />
           {:else}
             <ul class="space-y-4">
@@ -352,7 +364,9 @@
           {#snippet actions()}
             <a href="/timeline" class="text-xs font-medium text-accent transition-opacity hover:opacity-80">All →</a>
           {/snippet}
-          {#if data.recentTimeline.length === 0}
+          {#if logsBlocked}
+            <StateMessage state="permission" title={logsBlocked.title} hint={logsBlocked.hint} />
+          {:else if data.recentTimeline.length === 0}
             <StateMessage state="empty" title="No activity in this range" />
           {:else}
             <ul class="divide-y divide-border">
@@ -381,7 +395,9 @@
         {#snippet actions()}
           <a href="/drugs" class="pr-4 text-xs font-medium text-accent transition-opacity hover:opacity-80">Explore →</a>
         {/snippet}
-        {#if !drugOption}
+        {#if logsBlocked}
+          <StateMessage state="permission" title={logsBlocked.title} hint={logsBlocked.hint} />
+        {:else if !drugOption}
           <StateMessage state="empty" title="No drug events in this range" />
         {:else}
           <Chart option={drugOption} height={260} />
@@ -417,7 +433,9 @@
         {/if}
       </Panel>
       <Panel title="Crimes" caption="Attempts, success rate and value in range" flush>
-        {#if !data.crimes}
+        {#if logsBlocked}
+          <StateMessage state="permission" title={logsBlocked.title} hint={logsBlocked.hint} />
+        {:else if !data.crimes}
           <StateMessage state="empty" title="No crime attempts in this range" />
         {:else}
           <div class="grid grid-cols-3 gap-px bg-border">
@@ -440,7 +458,9 @@
         {/if}
       </Panel>
       <Panel title="Combat" caption="Attacks made and wins in range" flush>
-        {#if !data.combat}
+        {#if attacksBlocked}
+          <StateMessage state="permission" title={attacksBlocked.title} hint={attacksBlocked.hint} />
+        {:else if !data.combat}
           <StateMessage state="empty" title="No combat activity in this range" />
         {:else}
           <div class="grid grid-cols-2 gap-px bg-border">
@@ -462,7 +482,9 @@
         {#snippet actions()}
           <a href="/travel" class="pr-4 text-xs font-medium text-accent transition-opacity hover:opacity-80">Explore →</a>
         {/snippet}
-        {#if !travelOption}
+        {#if logsBlocked}
+          <StateMessage state="permission" title={logsBlocked.title} hint={logsBlocked.hint} />
+        {:else if !travelOption}
           <StateMessage state="empty" title="No trips in this range" />
         {:else}
           <Chart option={travelOption} height={260} />

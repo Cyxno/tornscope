@@ -83,6 +83,9 @@
     caught_up: { label: "Caught up", dot: "bg-positive", text: "text-fg-muted" },
     partial: { label: "Partial — category failed", dot: "bg-warning", text: "text-warning" },
     failed: { label: "Failed", dot: "bg-negative", text: "text-negative" },
+    // Permission-blocked: the key cannot access this source at all — a
+    // permission state, never a generic sync failure.
+    permission_required: { label: "Permission required", dot: "bg-warning", text: "text-warning" },
   };
 
   async function load() {

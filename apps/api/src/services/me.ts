@@ -1,7 +1,29 @@
-import type { ApiKeyStatusResponse, MeResponse } from "@tornscope/shared";
-import { deriveSetupPhase, SYNC_RESOURCES, buildSyncJobId, SYNC_JOB_NAME, DEMO_USER_EMAIL, deriveKeyCapabilities, type KeyCapabilities } from "@tornscope/shared";
-import { normalizeDonatorStatus } from "@tornscope/torn-api";
-import { ensureSyncStates, getPrismaClient, upsertTornAccount } from "@tornscope/database";
+import type {
+  ApiKeyStatusResponse,
+  ApiKeyValidationResponse,
+  ExistingProfileInfo,
+  MeResponse,
+  ProfileLinkResult,
+} from "@tornscope/shared";
+import {
+  compareCapabilities,
+  deriveKeyCapabilities,
+  deriveSetupPhase,
+  SYNC_RESOURCES,
+  buildSyncJobId,
+  SYNC_JOB_NAME,
+  DEMO_USER_EMAIL,
+  type CapabilityChange,
+  type KeyCapabilities,
+} from "@tornscope/shared";
+import { normalizeDonatorStatus, type TornEndpoints } from "@tornscope/torn-api";
+import {
+  deleteEmptyProfile,
+  ensureSyncStates,
+  findNonDemoProfileByTornId,
+  getPrismaClient,
+  upsertTornAccount,
+} from "@tornscope/database";
 import { ownerBindAvailableFor } from "../auth.js";
 import { getApiContext } from "../context.js";
 import { errors, AppError } from "../errors.js";
@@ -47,11 +69,12 @@ async function clearDemoViewFlag(db: ReturnType<typeof getPrismaClient>, userId:
 /** GET /api/me */
 export async function getMe(user: { id: string; displayName: string; timezone: string; isDemo: boolean }): Promise<MeResponse> {
   const db = getPrismaClient();
-  const [account, credential, syncStates, demoUser] = await Promise.all([
+  const [account, credential, syncStates, demoUser, activeSessions] = await Promise.all([
     db.tornAccount.findUnique({ where: { userId: user.id } }),
     db.apiCredential.findUnique({ where: { userId: user.id } }),
     db.syncState.findMany({ where: { userId: user.id } }),
     db.user.findUnique({ where: { email: DEMO_USER_EMAIL }, select: { id: true } }),
+    db.userSession.count({ where: { userId: user.id, revokedAt: null } }),
   ]);
 
   const factionId = account?.factionId ?? null;
@@ -73,7 +96,10 @@ export async function getMe(user: { id: string; displayName: string; timezone: s
     timezone: user.timezone,
     isDemo: user.isDemo,
     capabilities: capabilitiesRaw,
+    accessType: credential && !credential.revokedAt ? credential.accessType : null,
+    accessLevel: credential && !credential.revokedAt ? credential.accessLevel : null,
     ownerBindAvailable: await ownerBindAvailableFor(user.id),
+    activeSessions,
     torn: account
       ? {
           tornId: account.tornId,
@@ -125,79 +151,160 @@ export async function getApiKeyStatus(userId: string): Promise<ApiKeyStatusRespo
   };
 }
 
-/**
- * POST /api/settings/api-key: validate against Torn, then store encrypted.
- * The key is decrypted only for the validation request and never persisted
- * in plaintext or logged.
- *
- * After storing, the player identity is fetched immediately (public access)
- * so the app is enterable right away, and the initial sync jobs are enqueued
- * server-side — the old frontend-driven fan-out hid enqueue failures behind
- * Promise.allSettled while BullMQ was rejecting every job id.
- */
-export async function saveApiKey(
-  user: { id: string; isDemo: boolean },
-  apiKey: string,
-  opts: { confirmNewProfile?: boolean } = {}
-): Promise<{ status: ApiKeyStatusResponse; newProfileId: string | null }> {
-  return saveApiKeyInner(user, apiKey, opts);
-}
-
 /** Detect key capabilities from /key/info — never trusts a UI-declared level. */
 function capabilitiesFromInfo(info: {
-  info: { selections?: unknown; access: { level?: number | null } };
+  info: { selections?: unknown; access: { level?: number | null; type?: string | null; faction?: boolean | null } };
 }): KeyCapabilities {
   const raw = (info.info.selections ?? {}) as { user?: unknown; faction?: unknown };
   const asStrings = (v: unknown): string[] | null =>
     Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : null;
   return deriveKeyCapabilities(
-    { user: asStrings(raw.user), faction: asStrings(raw.faction) },
+    {
+      user: asStrings(raw.user),
+      faction: asStrings(raw.faction),
+      factionAccess: typeof info.info.access.faction === "boolean" ? info.info.access.faction : null,
+    },
     typeof info.info.access.level === "number" ? info.info.access.level : null
   );
 }
 
-async function saveApiKeyInner(
-  user: { id: string; isDemo: boolean },
-  apiKey: string,
-  opts: { confirmNewProfile?: boolean }
-): Promise<{ status: ApiKeyStatusResponse; newProfileId: string | null }> {
-  // The demo profile is a shared synthetic dataset: a real key must never be
-  // attached to it (it would overwrite the demo identity, start Torn syncing
-  // for the demo user and put the key on a profile no session can revoke).
-  if (user.isDemo) {
-    throw errors.forbidden("Leave demo view before connecting a real API key.");
-  }
-  let createdNewProfile = false;
-  const ctx = getApiContext();
-  const db = ctx.db;
-
-  // Validate the key by fetching key info (public access required).
-  const torn = ctx.torn(apiKey);
-  let info;
+/** Best-effort player name for messages; never blocks a flow on failure. */
+async function resolvePlayerName(torn: TornEndpoints): Promise<string | null> {
   try {
-    info = await torn.keyInfo();
+    const basic = await torn.userBasic();
+    return basic.profile.name ?? null;
+  } catch {
+    return null;
+  }
+}
+
+interface ValidatedKey {
+  info: Awaited<ReturnType<TornEndpoints["keyInfo"]>>;
+  capabilities: KeyCapabilities;
+  incomingId: number | null;
+}
+
+/** Validate a key live against Torn (/key/info) — the only identity source. */
+async function validateKeyLive(ctx: ReturnType<typeof getApiContext>, apiKey: string): Promise<ValidatedKey> {
+  const torn = ctx.torn(apiKey);
+  try {
+    const info = await torn.keyInfo();
+    return { info, capabilities: capabilitiesFromInfo(info), incomingId: info.info.user?.id ?? null };
   } catch (err) {
     const kind = (err as { kind?: string }).kind;
     if (kind === "key_invalid") throw errors.invalidApiKey("Torn rejected this API key. Check that it is correct and not paused.");
     if (kind === "access_denied") throw errors.accessDenied("This key does not grant basic access.");
     throw errors.tornUnavailable((err as Error).message);
   }
-  const capabilities = capabilitiesFromInfo(info);
+}
+
+/**
+ * POST /api/settings/api-key/validate — validate a key WITHOUT storing it.
+ * Returns the Torn-detected access level/type and per-selection capabilities
+ * plus the capability change against the currently stored key, so the UI can
+ * warn about a downgrade BEFORE the user commits to replacing a stored key.
+ */
+export async function validateApiKey(user: { id: string; isDemo: boolean }, apiKey: string): Promise<ApiKeyValidationResponse> {
+  if (user.isDemo) throw errors.forbidden("Leave demo view before validating a key.");
+  const ctx = getApiContext();
+  const db = ctx.db;
+  const { info, capabilities, incomingId } = await validateKeyLive(ctx, apiKey);
+
+  const credential = await db.apiCredential.findUnique({ where: { userId: user.id } });
+  const hasActiveCredential = Boolean(credential && !credential.revokedAt);
+  const previousCaps = (hasActiveCredential ? (credential!.capabilities ?? null) : null) as KeyCapabilities | null;
+  const change = hasActiveCredential ? compareCapabilities(previousCaps, capabilities) : null;
+  const downgrade = change !== null && change.newlyUnavailable.length > 0 && change.newlyAvailable.length === 0;
+  const upgrade = change !== null && change.newlyAvailable.length > 0;
+
+  return {
+    valid: true,
+    tornId: incomingId,
+    tornName: await resolvePlayerName(ctx.torn(apiKey)),
+    accessLevel: info.info.access.level ?? null,
+    accessType: info.info.access.type ?? null,
+    capabilities,
+    capabilityChange: change ? { newlyAvailable: change.newlyAvailable, newlyUnavailable: change.newlyUnavailable } : null,
+    downgrade,
+    upgrade,
+  };
+}
+
+/** Details for the "existing TornScope profile found" flow. */
+function existingProfileInfoFromMatch(match: NonNullable<Awaited<ReturnType<typeof findNonDemoProfileByTornId>>>): ExistingProfileInfo {
+  return {
+    tornId: match.tornId,
+    name: match.tornName,
+    level: match.level,
+    factionName: match.factionName,
+    storedAccess: match.storedAccess ? { level: match.storedAccess.level, type: match.storedAccess.type } : null,
+    history: {
+      earliestAt: match.history.earliestAt ? Math.floor(match.history.earliestAt.getTime() / 1000) : null,
+      timelineEvents: match.history.timelineEvents,
+      moneyEvents: match.history.moneyEvents,
+      drugEvents: match.history.drugEvents,
+      crimeEvents: match.history.crimeEvents,
+      combatEvents: match.history.combatEvents,
+      travelTrips: match.history.travelTrips,
+    },
+  };
+}
+
+export type SaveApiKeyOptions = {
+  /** Explicit user choice to start a NEW profile for a different identity. */
+  confirmNewProfile?: boolean;
+};
+
+export interface SaveApiKeyResult {
+  status: ApiKeyStatusResponse;
+  /** Set when an identity conflict was confirmed: the route rebinds this
+   * browser session to the brand-new profile. */
+  newProfileId: string | null;
+}
+
+/**
+ * POST /api/settings/api-key: validate against Torn, then store encrypted.
+ * The key is decrypted only for the validation request and never persisted
+ * in plaintext or logged.
+ *
+ * Identity resolution (server-side; a Torn ID from the browser is never
+ * trusted):
+ * - the key is validated live via /key/info, which yields the real Torn
+ *   player id, access level/type and per-selection capabilities;
+ * - a key for a DIFFERENT Torn identity than the profile's never merges —
+ *   the client must explicitly confirm a brand-new profile;
+ * - a key whose identity already owns a non-demo profile raises
+ *   `profile_exists`: the browser is offered a link to the EXISTING profile
+ *   (no duplicate import, no duplicate credential);
+ * - a fresh identity attaches to the current (guest) profile and starts the
+ *   initial backfill exactly once. Replacing the stored key on an
+ *   already-connected profile NEVER restarts the import.
+ */
+export async function saveApiKey(
+  user: { id: string; isDemo: boolean },
+  apiKey: string,
+  opts: SaveApiKeyOptions = {}
+): Promise<SaveApiKeyResult> {
+  // The demo profile is a shared synthetic dataset: a real key must never be
+  // attached to it (it would overwrite the demo identity, start Torn syncing
+  // for the demo user and put the key on a profile no session can revoke).
+  if (user.isDemo) {
+    throw errors.forbidden("Leave demo view before connecting a real API key.");
+  }
+  const ctx = getApiContext();
+  const db = ctx.db;
+  let createdNewProfile = false;
+
+  const { info, capabilities, incomingId } = await validateKeyLive(ctx, apiKey);
+  const access = info.info.access;
 
   // Identity guard: a key for a DIFFERENT Torn account must never silently
   // merge into this profile's history. The client must explicitly choose to
   // start a new profile/data context.
   const existingAccount = await db.tornAccount.findUnique({ where: { userId: user.id }, select: { tornId: true, name: true } });
-  const incomingId = info.info.user?.id ?? null;
   if (existingAccount && incomingId !== null && incomingId !== existingAccount.tornId) {
     if (!opts.confirmNewProfile) {
-      let incomingName = "unknown player";
-      try {
-        const basic = await torn.userBasic();
-        incomingName = basic.profile.name ?? incomingName;
-      } catch {
-        // name is cosmetic; the id comparison already decided the conflict
-      }
+      const incomingName = await resolvePlayerName(ctx.torn(apiKey));
       throw new AppError(
         "identity_conflict",
         "This key belongs to a different Torn player than the one linked to this profile. Start a new profile to keep both histories separate.",
@@ -217,11 +324,44 @@ async function saveApiKeyInner(
     user = { id: fresh.id, isDemo: false };
     // The route rebinds the current browser session to `fresh.id` (the cookie
     // keeps working; the old profile stays orphaned but intact).
+  } else if (!existingAccount && incomingId !== null) {
+    // Profile reuse: a NEW browser presenting a valid key for an identity
+    // that already has a non-demo TornScope profile must NOT duplicate it
+    // (no second profile, no second import). Offer the link flow instead.
+    const match = await findNonDemoProfileByTornId(db, incomingId);
+    if (match && match.userId !== user.id) {
+      const incomingName = await resolvePlayerName(ctx.torn(apiKey));
+      throw new AppError(
+        "profile_exists",
+        "An existing TornScope profile already holds this Torn identity and its collected history. You can link this browser to it — linking does not change the stored API key.",
+        409,
+        {
+          profileExists: true,
+          existing: existingProfileInfoFromMatch(match),
+          incoming: {
+            tornId: incomingId,
+            name: incomingName,
+            accessLevel: access.level ?? null,
+            accessType: access.type ?? null,
+            capabilities,
+          },
+          /** True when the verification key is weaker than the stored one. */
+          downgrade:
+            match.storedAccess?.level !== null &&
+            match.storedAccess?.level !== undefined &&
+            access.level !== null &&
+            access.level !== undefined &&
+            access.level < match.storedAccess.level,
+        }
+      );
+    }
   }
 
+  // The initial backfill belongs to a profile receiving its FIRST identity —
+  // replacing a stored key (same Torn ID) never re-imports history.
+  const hadIdentityBefore = existingAccount !== null;
+
   const enc = ctx.encryptApiKey(apiKey);
-  const access = info.info.access;
-  const logAccess = access.log?.available !== undefined && access.log.available.length > 0;
 
   await db.apiCredential.upsert({
     where: { userId: user.id },
@@ -231,9 +371,10 @@ async function saveApiKeyInner(
       iv: enc.iv,
       authTag: enc.authTag,
       keyPreview: `••••${apiKey.slice(-4)}`,
-      accessLevel: access.level,
-      accessType: access.type,
-      logAccessAvailable: logAccess,
+      accessLevel: access.level ?? null,
+      accessType: access.type ?? null,
+      logAccessAvailable: capabilities.canReadUserLogs,
+      capabilities: capabilities as never,
       validatedAt: new Date(),
       revokedAt: null,
     },
@@ -242,9 +383,10 @@ async function saveApiKeyInner(
       iv: enc.iv,
       authTag: enc.authTag,
       keyPreview: `••••${apiKey.slice(-4)}`,
-      accessLevel: access.level,
-      accessType: access.type,
-      logAccessAvailable: logAccess,
+      accessLevel: access.level ?? null,
+      accessType: access.type ?? null,
+      logAccessAvailable: capabilities.canReadUserLogs,
+      capabilities: capabilities as never,
       validatedAt: new Date(),
       revokedAt: null,
     },
@@ -260,7 +402,7 @@ async function saveApiKeyInner(
   // Detect the player NOW (basic is public) so needsOnboarding flips and the
   // user can enter the app while the historical backfill runs in background.
   try {
-    const basic = await torn.userBasic();
+    const basic = await ctx.torn(apiKey).userBasic();
     await upsertTornAccount(db, user.id, {
       tornId: basic.profile.id,
       name: basic.profile.name,
@@ -279,16 +421,22 @@ async function saveApiKeyInner(
     // itself must not fail because of this.
   }
 
-  // Enqueue the initial backfill for every resource, server-side, with real
-  // error surfacing (was: 10 silent frontend POSTs that all failed inside
-  // BullMQ's job-id validation).
+  if (!hadIdentityBefore) {
+    await enqueueInitialBackfill(ctx, user.id);
+  }
+
+  return { status: await getApiKeyStatus(user.id), newProfileId: createdNewProfile ? user.id : null };
+}
+
+/** Enqueue the initial backfill for every resource, server-side. */
+async function enqueueInitialBackfill(ctx: ReturnType<typeof getApiContext>, userId: string): Promise<void> {
   const enqueueErrors: string[] = [];
   for (const resource of SYNC_RESOURCES) {
     try {
       await ctx.syncQueue.add(
         SYNC_JOB_NAME,
-        { userId: user.id, resource, manual: true },
-        { jobId: buildSyncJobId(user.id, resource, `init${Date.now()}`) }
+        { userId, resource, manual: true },
+        { jobId: buildSyncJobId(userId, resource, `init${Date.now()}`) }
       );
     } catch (err) {
       enqueueErrors.push(`${resource}: ${(err as Error).message}`);
@@ -297,12 +445,76 @@ async function saveApiKeyInner(
   if (enqueueErrors.length === SYNC_RESOURCES.length) {
     throw errors.internal(`Could not queue the initial sync: ${enqueueErrors[0] ?? "unknown queue error"}`);
   }
+}
+
+/** What the route must do after a successful linkProfile call. */
+export interface ProfileLinkHandoff {
+  result: ProfileLinkResult;
+  /** Move the current browser session to this profile (rotate the token). */
+  linkToUserId: string | null;
+  /** Delete this (provably empty) guest profile after the rebind. */
+  cleanupGuestUserId: string | null;
+}
+
+/**
+ * POST /api/profile/link — bind this browser to the EXISTING profile of the
+ * Torn identity a freshly validated key resolves to.
+ *
+ * Identity proof (V1): possession of a valid Torn API key that resolves to
+ * the Torn ID server-side. A Limited key is sufficient — the stored (possibly
+ * stronger) key is never required for linking and NEVER replaced by it. The
+ * key is re-validated live here so no client can link with unproven identity.
+ */
+export async function linkProfile(current: { id: string; isDemo: boolean }, apiKey: string): Promise<ProfileLinkHandoff> {
+  if (current.isDemo) {
+    throw errors.forbidden("Leave demo view before linking a profile.");
+  }
+  const ctx = getApiContext();
+  const db = ctx.db;
+
+  const { incomingId } = await validateKeyLive(ctx, apiKey);
+  if (incomingId === null) throw errors.invalidApiKey("Torn did not report the key's owner.");
+
+  const currentAccount = await db.tornAccount.findUnique({ where: { userId: current.id }, select: { tornId: true } });
+  if (currentAccount && currentAccount.tornId !== incomingId) {
+    // Cross-identity linking is never allowed: use the explicit new-profile
+    // flow (identity conflict) to keep both histories separate.
+    throw new AppError(
+      "identity_conflict",
+      "This browser is already linked to a different Torn player than this key belongs to.",
+      409,
+      {
+        identityConflict: true,
+        existing: { tornId: currentAccount.tornId, name: null },
+        incoming: { tornId: incomingId, name: null },
+      }
+    );
+  }
+
+  const match = await findNonDemoProfileByTornId(db, incomingId);
+  if (!match) {
+    throw new AppError(
+      "profile_not_found",
+      "No existing TornScope profile holds this Torn identity. Connect the key normally instead.",
+      404,
+      { profileNotFound: true }
+    );
+  }
+  if (currentAccount?.tornId === incomingId || match.userId === current.id) {
+    // Already the same identity on this profile — linking is a no-op.
+    return { result: { linked: false, alreadyLinked: true, profile: existingProfileInfoFromMatch(match), storedKeyUntouched: true }, linkToUserId: null, cleanupGuestUserId: null };
+  }
 
   return {
-    // Set when an identity conflict was confirmed: the route rebinds the
-    // current browser session to this brand-new profile.
-    status: await getApiKeyStatus(user.id),
-    newProfileId: createdNewProfile ? user.id : null,
+    result: {
+      linked: true,
+      alreadyLinked: false,
+      profile: existingProfileInfoFromMatch(match),
+      // Explicit guarantee: linking never replaces the stored credential.
+      storedKeyUntouched: true,
+    },
+    linkToUserId: match.userId,
+    cleanupGuestUserId: current.id,
   };
 }
 
@@ -344,4 +556,14 @@ export async function deleteProfile(userId: string): Promise<void> {
   await db.appSetting.deleteMany({ where: { userId } });
   await db.userSession.deleteMany({ where: { userId } });
   await db.user.delete({ where: { id: userId } });
+}
+
+/** Sign out every OTHER active browser session of this profile (Phase 31). */
+export async function signOutOtherSessions(userId: string, currentTokenHash: string): Promise<{ revoked: number }> {
+  const db = getPrismaClient();
+  const result = await db.userSession.updateMany({
+    where: { userId, revokedAt: null, tokenHash: { not: currentTokenHash } },
+    data: { revokedAt: new Date() },
+  });
+  return { revoked: result.count };
 }
