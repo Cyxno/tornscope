@@ -197,7 +197,7 @@
           provenance="derived"
           tone="positive"
           title="Cash that entered the wallet (technical label: cash inflow). Earnings and asset sales are broken out below — cash received is not profit."
-          sub={`earned ${formatMoneyCompact(data.financial.trueIncome)} · asset sales ${formatMoneyCompact(data.financial.assetSales)}`}
+          sub={`earned ${formatMoneyCompact(data.financial.cashReceived?.earned.total ?? data.financial.trueIncome)} · asset sales ${formatMoneyCompact(data.financial.cashReceived?.assetSales.total ?? data.financial.assetSales)}`}
         />
         <Stat
           label="{period} Cash spent"
