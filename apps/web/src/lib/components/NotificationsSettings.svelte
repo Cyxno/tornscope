@@ -13,7 +13,13 @@
    */
 
   let status = $state<NotificationsStatusResponse | null>(null);
-  let support = $state({ supported: false, permission: "default" as NotificationPermission | "unsupported" });
+  type PushEnv =
+    | { kind: "unsupported" }
+    | { kind: "insecure" }
+    | { kind: "sw-failed"; reason: string }
+    | { kind: "ok"; permission: NotificationPermission };
+  let support = $state<PushEnv>({ kind: "unsupported" });
+  let permission = $state<NotificationPermission | "default">("default");
   let swRegistration = $state<ServiceWorkerRegistration | null>(null);
   let busy = $state(false);
   let testing = $state(false);
@@ -25,11 +31,21 @@
 
   function detectSupport(): void {
     if (typeof window === "undefined") return;
-    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
-      support = { supported: false, permission: "unsupported" };
+    // Web Push (service workers) requires a SECURE CONTEXT: HTTPS, or
+    // localhost as a development exception. A LAN IP over plain HTTP is NOT
+    // secure — Firefox/Chrome will not expose PushManager there. Collapsing
+    // that into "unsupported" used to mislead Firefox users.
+    if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
+      support = { kind: "unsupported" };
       return;
     }
-    support = { supported: true, permission: Notification.permission };
+    if (!window.isSecureContext) {
+      support = { kind: "insecure" };
+      permission = Notification.permission;
+      return;
+    }
+    support = { kind: "ok", permission: Notification.permission };
+    permission = Notification.permission;
   }
 
   function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
@@ -72,9 +88,10 @@
         return;
       }
       if (Notification.permission !== "granted") {
-        const permission = await Notification.requestPermission();
-        support = { ...support, permission };
-        if (permission !== "granted") {
+        const requested = await Notification.requestPermission();
+        permission = requested;
+        support = { kind: "ok", permission: requested };
+        if (requested !== "granted") {
           notice = { tone: "err", text: "Browser permission was not granted." };
           return;
         }
@@ -173,7 +190,7 @@
 
   onMount(async () => {
     detectSupport();
-    if (!support.supported) return;
+    if (support.kind === "unsupported" || support.kind === "insecure") return;
     try {
       const reg = await ensureServiceWorker();
       const sub = await reg.pushManager.getSubscription();
@@ -190,13 +207,19 @@
     <img src="/icons/tornscope-notifications-192.png" alt="" aria-hidden="true" class="h-16 w-16 shrink-0 rounded-xl" />
     <div class="min-w-0 text-[13px] leading-relaxed text-fg-muted">
       <p>
-        {#if !support.supported}
+        {#if support.kind === "unsupported"}
           Push notifications are not supported in this browser.
+        {:else if support.kind === "insecure"}
+          <span class="font-medium text-warning">Push notifications require HTTPS.</span>
+          Open TornScope through its secure public address (https://torn.familievalk.com) to enable notifications.
+        {:else if support.kind === "sw-failed"}
+          <span class="font-medium text-warning">The notification service worker could not be registered.</span>
+          {support.reason}
         {:else if status && !status.pushConfigured}
           Push is not configured on this server yet.
         {:else if status && status.devices.some((d) => d.current)}
           Push notifications: <span class="font-medium text-positive">enabled on this device</span>.
-        {:else if support.permission === "denied"}
+        {:else if permission === "denied"}
           Notifications are blocked in this browser. Enable them in your browser/site settings to use TornScope alerts.
         {:else}
           Push notifications: <span class="font-medium text-fg">not enabled on this device</span>.
@@ -215,7 +238,7 @@
   {/if}
 
   <div class="flex flex-wrap items-center gap-3">
-    {#if support.supported && status?.pushConfigured}
+    {#if support.kind === "ok" && status?.pushConfigured}
       {#if status.devices.some((d) => d.current)}
         <button
           class="rounded-full border border-negative/30 px-4 py-1.5 text-xs font-medium text-negative transition-colors hover:bg-negative/10 disabled:opacity-40"

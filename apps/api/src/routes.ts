@@ -476,6 +476,8 @@ export function registerRoutes(app: FastifyInstance): void {
 
   app.post("/api/notifications/test", async (req) => {
     const user = currentUser(req);
+    const limit = checkRateLimit("notif-test", user.id, 5, 60_000);
+    if (!limit.ok) throw errors.validation({ formErrors: ["Too many test notifications — wait a minute."], fieldErrors: {} });
     const body = z.object({ endpoint: z.string().url().max(1000) }).safeParse(req.body);
     if (!body.success) throw errors.validation(body.error.flatten());
     return sendTestNotification(user, body.data.endpoint);

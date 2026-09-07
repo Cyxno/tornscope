@@ -17,6 +17,7 @@ import LiveNow from "$lib/components/LiveNow.svelte";
 
   let data = $state<DashboardResponse | null>(null);
   let today = $state<TodayResponse | null>(null);
+  let myOcs = $state<Array<{ name: string; tier: number | null; status: string; readyAt: number | null; myParticipation: boolean }> | null>(null);
   let loading = $state(true);
   let error = $state<string | null>(null);
   let reloadToken = $state(0);
@@ -25,12 +26,15 @@ import LiveNow from "$lib/components/LiveNow.svelte";
     loading = true;
     error = null;
     try {
-      const [dash, todayRes] = await Promise.all([
+      const [dash, todayRes, ocsRes] = await Promise.all([
         endpoints.dashboard({ preset: dateRange.preset, from: dateRange.from, to: dateRange.to }),
         endpoints.today().catch(() => null),
+        // Compact OC chip: only participates-in data, moderate query.
+        endpoints.factionOcs({ preset: '30d' }).catch(() => null),
       ]);
       data = dash;
       today = todayRes;
+      myOcs = ocsRes?.ocs.filter((o) => o.myParticipation && o.state === "active") ?? null;
     } catch (err) {
       error = err instanceof ApiClientError ? err.message : (err as Error).message;
     } finally {
@@ -228,7 +232,7 @@ import LiveNow from "$lib/components/LiveNow.svelte";
     </section>
 
     <!-- Right now: live state chips (same Today source — one calculation) -->
-    <LiveNow today={today} onOpenToday={() => (window.location.href = "/today")} />
+    <LiveNow today={today} ocs={myOcs} onOpenToday={() => (window.location.href = "/today")} />
 
     <!-- Net worth over time -->
     <Panel

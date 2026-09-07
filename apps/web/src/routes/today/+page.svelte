@@ -11,6 +11,7 @@
   import { endpoints, ApiClientError } from "$lib/api";
   import { me } from "$lib/state.svelte";
   import { formatDateTimeInZone, greetingForHour } from "$lib/reltime";
+  import { cooldownDisplay } from "$lib/live";
   import PageHeader from "$lib/components/PageHeader.svelte";
   import Panel from "$lib/components/Panel.svelte";
   import StateMessage from "$lib/components/StateMessage.svelte";
@@ -113,15 +114,11 @@
   }
 
   function cooldownState(cd: (typeof cooldowns)[number]): { label: string; active: boolean } | null {
-    if (!cd) return null;
-    // A cached "active" cooldown whose clock ran out is Ready NOW — never 00:00:00.
-    if (cd.state === "active") {
-      const left = remainingSeconds(serverNowMs, cd.endsAt);
-      if (left !== null && left <= 0) {
-        return { label: "Ready", active: false };
-      }
-    }
-    return { label: cd.state === "ready" ? "Ready" : "active", active: cd.state === "active" };
+    // Shared semantics (/live): cached "active" whose clock ran out is
+    // Ready NOW — never 00:00:00, never "Ready just now".
+    const display = cooldownDisplay(cd, serverNowMs);
+    if (display === null) return null;
+    return { label: display.active ? formatCountdownCompact(display.remainingSeconds) : "Ready", active: display.active };
   }
 
   function fmtFullAt(bar: LiveBar | null): string {

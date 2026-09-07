@@ -39,8 +39,12 @@ const handler: RequestHandler = async ({ request, params, url, getClientAddress 
   // client address so per-IP rate limits key on actual visitors, not on the
   // web container's IP (all visitors would otherwise share one bucket).
   headers["x-forwarded-for"] = getClientAddress();
-  // Let the API see how the browser reached us (https or not).
-  headers["x-forwarded-proto"] = url.protocol.replace(":", "");
+  // Let the API see how the browser reached us (https or not). Prefer the
+  // proto from the trusted reverse proxy (NPM sends X-Forwarded-Proto:
+  // https) over the SvelteKit-resolved URL — the session cookie's Secure
+  // flag depends on this distinction.
+  const forwardedProto = request.headers.get("x-forwarded-proto");
+  headers["x-forwarded-proto"] = forwardedProto ?? url.protocol.replace(":", "");
   if (url.host) headers["x-forwarded-host"] = url.host;
   const origin = request.headers.get("origin");
   if (origin) headers.origin = origin;

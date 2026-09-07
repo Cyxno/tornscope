@@ -133,10 +133,34 @@ export async function maybeRunDailyMaintenance(): Promise<MaintenanceResult | nu
       guestRetentionDays: Number(process.env.GUEST_PROFILE_RETENTION_DAYS ?? 60),
       revokedSessionRetentionDays: 7,
     });
+    // Push notification retention: delivery ledger + dead subscriptions 30d.
+    const notifCutoff = new Date(now - 30 * 86_400_000);
+    await db.notificationDelivery.deleteMany({ where: { sentAt: { lt: notifCutoff } } }).catch(() => undefined);
+    await db.pushSubscription.deleteMany({ where: { revokedAt: { lt: notifCutoff } } }).catch(() => undefined);
     logger.info({ guestsDeleted: result.guestsDeleted, sessionsDeleted: result.sessionsDeleted }, "maintenance cleanup ran");
     return result;
   } catch (err) {
     logger.error({ err: (err as Error).message }, "maintenance cleanup failed");
     return null;
   }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Push notification retention                                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Delivery ledger retention: keep 30 days for debugging; older rows are
+ * safe to delete (dedup only needs recent history — the activation-boundary
+ * cursor prevents re-sends of old events, not the ledger).
+ */
+export async function cleanupNotificationDeliveries(retentionDays = 30): Promise<number> {
+  const db = getPrismaClient();
+  const cutoff = new Date(Date.now() - retentionDays * 86_400_000);
+  const result = await db.notificationDelivery.deleteMany({ where: { sentAt: { lt: cutoff } } });
+  // Dead subscriptions: revoked > 30 days ago can never come back.
+  const dead = await db.pushSubscription.deleteMany({
+    where: { revokedAt: { lt: cutoff } },
+  });
+  return result.count + dead.count;
 }
