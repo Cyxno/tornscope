@@ -22,7 +22,7 @@ Complete every item before exposing TornScope on a public hostname
 - [ ] `PUBLIC_BASE_URL=https://<public-hostname>`
 - [ ] `ALLOWED_ORIGINS=https://<public-hostname>` (no wildcards)
 - [ ] `TRUST_PROXY=true` (behind proxy) — `false` only for direct exposure
-- [ ] `OWNER_BIND_ENABLED=false` after the owner profile is bound
+- [ ] No OWNER_BIND_* / OWNER_RECOVERY_TOKEN variables in the environment (legacy owner bind was removed; same-Torn-ID profile linking is the multi-device mechanism)
 - [ ] `GUEST_PROFILE_RETENTION_DAYS=60` (or preferred retention)
 - [ ] `API_KEY_ENCRYPTION_KEY` is unique per installation and backed up
 
@@ -41,14 +41,8 @@ Complete every item before exposing TornScope on a public hostname
 - [ ] Security headers present: CSP, nosniff, Referrer-Policy, Permissions-Policy.
 
 ## Backups
-- [ ] `pg_dump` verified restorable. The command lives in Settings → "Server administration · Backups", which is visible ONLY to the server owner (server-derived role, never a client flag); ordinary users see user-focused copy instead of infrastructure details.
+- [ ] `pg_dump` verified restorable. Operational backups are admin work done OUTSIDE the product UI (server shell / Unraid / Docker), never rendered in Settings:
+      ```bash
+      docker compose -f docker-compose.unraid.yml exec postgres pg_dump -U tornscope tornscope | gzip > tornscope-backup.sql.gz
+      ```
 
-## Owner binding / recovery
-- The owner is identified EXCLUSIVELY server-side: `User.role == "owner" && !isDemo` on the session's resolved profile. Never from Torn ID, key level, cookies, or client state.
-- The bind/recovery token itself NEVER reaches the browser — the API exposes only an `ownerBindAvailable` boolean.
-- First bind: set `OWNER_BIND_TOKEN`, bind once from the owner browser; the profile is then permanently claimed.
-- Recovery AFTER binding is opt-in and must stay disabled in normal production:
-  1. `OWNER_BIND_ENABLED=true` in `.env`, restart the api/worker (`docker compose -f docker-compose.unraid.yml up -d`)
-  2. bind from the trusted browser with `OWNER_RECOVERY_TOKEN`
-  3. remove `OWNER_BIND_ENABLED` again and restart.
-  With the flag unset, the Settings recovery section is hidden for everyone and the bind endpoint refuses re-binding even if a recovery token is present in the environment.

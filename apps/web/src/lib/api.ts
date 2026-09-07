@@ -200,7 +200,6 @@ export const endpoints = {
   /** Link this browser to the existing profile of the key's Torn identity. */
   linkProfile: (key: string) => api.post<ProfileLinkResult>("/profile/link", { key }),
   signOutOtherSessions: () => api.post<{ revoked: number }>("/session/sign-out-others", {}),
-  bindOwner: (token: string) => api.post<MeResponse>("/session/bind-owner", { token }),
   deleteProfile: () => api.post<{ deleted: boolean }>("/profile/delete", {}),
   deleteApiKey: () => api.del<{ deleted: boolean }>("/settings/api-key"),
 };

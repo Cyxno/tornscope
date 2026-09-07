@@ -18,7 +18,6 @@
   let identityConflict = $state<{ existing: { name: string | null; tornId: number }; incoming: { name: string | null; tornId: number } } | null>(null);
   // Two-step replace: preview the new key's access before storing anything.
   let replacePreview = $state<ApiKeyValidationResponse | null>(null);
-  let bindToken = $state("");
   let deletingProfile = $state(false);
   let signingOutOthers = $state(false);
   let matrixOpen = $state(false);
@@ -125,17 +124,6 @@
       window.location.href = "/";
     } catch (err) {
       deletingProfile = false;
-      onApiKeyError(err);
-    }
-  }
-
-  async function bindOwner() {
-    try {
-      me = await endpoints.bindOwner(bindToken.trim());
-      bindToken = "";
-      await load();
-      message = { tone: "ok", text: "Legacy owner profile bound to this browser." };
-    } catch (err) {
       onApiKeyError(err);
     }
   }
@@ -435,24 +423,6 @@
     </ul>
   </Panel>
 
-  {#if me?.ownerBindAvailable}
-    <Panel title="Legacy owner binding" caption="One-time recovery: attach the existing owner dataset to this browser (works even after the first bind)">
-      <div class="flex max-w-xl gap-2.5">
-        <input
-          type="password"
-          bind:value={bindToken}
-          placeholder="Paste the owner binding token (OWNER_BIND_TOKEN)"
-          autocomplete="off"
-          class="flex-1 rounded-xl border border-border bg-bg-raise px-4 py-2.5 font-mono text-sm text-fg placeholder:font-sans placeholder:text-fg-faint focus:border-accent"
-        />
-        <button class="rounded-xl bg-accent-strong px-5 text-sm font-semibold text-bg transition-colors hover:bg-accent" onclick={() => void bindOwner()}>
-          Bind owner
-        </button>
-      </div>
-      <p class="mt-2.5 text-xs text-fg-faint">One-time binding: after it succeeds, the token stops working for everyone.</p>
-    </Panel>
-  {/if}
-
   <Panel title="Display defaults" caption="Per-user preferences arrive with multi-user support">
     <dl class="grid grid-cols-1 gap-x-8 gap-y-5 md:grid-cols-3">
       <div>
@@ -488,23 +458,10 @@
     </div>
   </Panel>
 
-  {#if me?.isServerOwner}
-    <Panel title="Server administration · Backups" caption="Owner only — your history may be unrecoverable from Torn later">
-      <p class="max-w-2xl text-[13px] leading-relaxed text-fg-muted">
-        All historical data lives in the PostgreSQL volume on your Unraid server. Schedule regular dumps so the history
-        you build survives disk trouble:
-      </p>
-      <pre class="mt-3 overflow-x-auto rounded-xl border border-border bg-bg-raise px-4 py-3 font-mono text-xs text-fg-muted">docker compose -f docker-compose.unraid.yml exec postgres pg_dump -U tornscope tornscope | gzip &gt; tornscope-backup.sql.gz</pre>
-      {#if me?.build?.commit}
-        <p class="mt-3 text-xs text-fg-faint">Deployed build: <span class="font-mono">{me.build.commit}</span></p>
-      {/if}
-    </Panel>
-  {:else}
-    <Panel title="Your data" caption="What happens when you disconnect">
-      <p class="max-w-2xl text-[13px] leading-relaxed text-fg-muted">
-        Your historical TornScope data remains stored on this server when you disconnect your API key.
-        Syncing simply pauses; reconnecting the same Torn identity continues building on the history you already have.
-      </p>
-    </Panel>
-  {/if}
+  <Panel title="Your data" caption="What happens when you disconnect">
+    <p class="max-w-2xl text-[13px] leading-relaxed text-fg-muted">
+      Your historical TornScope data remains stored on this server when you disconnect your API key.
+      Syncing simply pauses; reconnecting the same Torn identity continues building on the history you already have.
+    </p>
+  </Panel>
 </div>

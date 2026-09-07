@@ -1,12 +1,12 @@
-import { describe, expect, it, beforeAll, afterAll } from "vitest";
-import { randomBytes } from "node:crypto";
+import { describe, expect, it, afterAll } from "vitest";
 import { getPrismaClient } from "@tornscope/database";
-import { assertSameOrigin, bindLegacyOwner, resolveSessionUser } from "../src/auth.js";
+import { assertSameOrigin } from "../src/auth.js";
+import { buildServer } from "../src/server.js";
 import { saveApiKey, deleteProfile } from "../src/services/me.js";
 
 /**
- * Security regression tests: origin checks behind the web proxy, session
- * rotation on owner bind, and the demo-profile mutation guards.
+ * Security regression tests: origin checks behind the web proxy, legacy
+ * owner-bind removal, and the demo-profile mutation guards.
  * Runs against a real PostgreSQL when TEST_DATABASE_URL is set.
  */
 const dbUrl = process.env.TEST_DATABASE_URL ?? "";
@@ -14,7 +14,7 @@ const suite = dbUrl ? describe : describe.skip;
 
 const db = getPrismaClient();
 const cleanupUserIds: string[] = [];
-let recoveryToken = "";
+
 
 function originReq(opts: { origin?: string; host?: string; forwardedHost?: string; method?: string; cookie?: string } = {}): any {
   const headers: Record<string, string> = {};
@@ -25,19 +25,7 @@ function originReq(opts: { origin?: string; host?: string; forwardedHost?: strin
   return { method: opts.method ?? "POST", headers, ip: "10.1.1.1" };
 }
 
-beforeAll(async () => {
-  recoveryToken = `tok_${randomBytes(12).toString("hex")}`;
-  process.env.OWNER_RECOVERY_TOKEN = recoveryToken;
-  process.env.OWNER_BIND_TOKEN = "";
-  // The bind exercise below IS the emergency-recovery scenario, which is
-  // opt-in in production: re-binding a bound owner requires the explicit
-  // flag (a leaked recovery token alone must stay dead on a live server).
-  process.env.OWNER_BIND_ENABLED = "true";
-});
-
 afterAll(async () => {
-  delete process.env.OWNER_BIND_ENABLED;
-  delete process.env.OWNER_RECOVERY_TOKEN;
   for (const id of cleanupUserIds) {
     await db.userSession.deleteMany({ where: { userId: id } }).catch(() => undefined);
     await db.appSetting.deleteMany({ where: { userId: id } }).catch(() => undefined);
@@ -76,36 +64,12 @@ suite("assertSameOrigin (CSRF defense behind the web proxy)", () => {
   });
 });
 
-suite("owner bind hardening", () => {
-  it("bind rotates the session token: the old guest cookie stops working, the new one is the owner", async () => {
-    // Fresh guest profile + session.
-    const reply: any = { __h: {} as Record<string, string>, header(n: string, v: string) { this.__h[n] = v; } };
-    const guest = await resolveSessionUser({ headers: {}, ip: "10.9.9.9" } as any, reply);
-    cleanupUserIds.push(guest.id);
-    const setCookie = reply.__h["Set-Cookie"] as string;
-    const guestToken = decodeURIComponent(setCookie.split(";")[0].split("=")[1]);
-
-    const bindReply: any = { __h: {} as Record<string, string>, header(n: string, v: string) { this.__h[n] = v; } };
-    const bindReq = {
-      method: "POST",
-      headers: { origin: "http://192.168.1.2:5173", host: "api:3000", "x-forwarded-host": "192.168.1.2:5173", cookie: `ts_session=${guestToken}` },
-      ip: "10.9.9.9",
-      protocol: "http",
-    } as any;
-    const owner = await bindLegacyOwner(bindReq, bindReply, recoveryToken);
-
-    // The old token must be dead (rotated), the new one must resolve to the owner.
-    // (Distinct fake IPs: a 425-coalesced creation from the same address would
-    // otherwise mask the assertion with a retryable bootstrap error.)
-    const oldCookieGone = await resolveSessionUser({ headers: { cookie: `ts_session=${guestToken}` }, ip: "10.9.9.10" } as any, { __h: {}, header() {} } as any);
-    const newCookie = (bindReply.__h["Set-Cookie"] as string).split(";")[0].split("=")[1];
-    const newCookieWorks = await resolveSessionUser({ headers: { cookie: `ts_session=${newCookie}` }, ip: "10.9.9.11" } as any, { __h: {}, header() {} } as any);
-
-    expect(owner.role).toBe("owner");
-    expect(newCookie).not.toBe(guestToken);
-    expect(newCookieWorks.id).toBe(owner.id);
-    // Old token no longer maps to the owner (revoked session row).
-    expect(oldCookieGone.id).not.toBe(owner.id);
+suite('legacy owner bind removal', () => {
+  it('the bind-owner endpoint no longer exists (404) — profile linking is the only multi-device mechanism', async () => {
+    const app = await buildServer();
+    const response = await app.inject({ method: 'POST', url: '/api/session/bind-owner', payload: { token: 'tok_anytoken' } });
+    expect(response.statusCode).toBe(404);
+    await app.close();
   });
 });
 

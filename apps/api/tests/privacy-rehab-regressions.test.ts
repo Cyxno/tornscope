@@ -3,7 +3,6 @@ import { randomBytes } from "node:crypto";
 import { getPrismaClient } from "@tornscope/database";
 import { getMe, saveApiKey, validateApiKey } from "../src/services/me.js";
 import { getSyncHealth } from "../src/services/syncStatus.js";
-import { bindLegacyOwner, ownerBindAvailableFor } from "../src/auth.js";
 import { getDrugsSummary } from "../src/services/drugs.js";
 import type { SessionUser } from "../src/auth.js";
 
@@ -73,7 +72,7 @@ afterAll(async () => {
 });
 
 suite("infrastructure privacy in API payloads", () => {
-  it("guest / normal-user / demo payloads carry no infra strings and no build SHA", async () => {
+  it("no payload for any profile contains infra strings, a build SHA, or owner flags", async () => {
     const ownerUser = await db.user.create({ data: { displayName: "Privacy-Owner", role: "owner" } });
     cleanupIds.push(ownerUser.id);
 
@@ -81,75 +80,40 @@ suite("infrastructure privacy in API payloads", () => {
     const demoViewer = await getMe({ id: ownerUser.id, displayName: "x", timezone: "UTC", isDemo: true, role: "owner" });
     const owner = await getMe({ id: ownerUser.id, displayName: "x", timezone: "UTC", isDemo: false, role: "owner" });
 
-    for (const [label, payload] of [["guest", guest], ["demo", demoViewer]] as const) {
+    for (const [label, payload] of [["guest", guest], ["demo", demoViewer], ["owner", owner]] as const) {
       const text = JSON.stringify(payload);
       expect(label + ":unraid", text).not.toContain("Unraid");
       expect(text.toLowerCase()).not.toContain("postgres");
       expect(text.toLowerCase()).not.toContain("docker");
-      expect(payload.build.commit).toBeNull();
-      expect(payload.isServerOwner).toBe(false);
+      // Removed product surface: absent for EVERYONE, owner-role included.
+      expect("build" in payload).toBe(false);
+      expect("isServerOwner" in payload).toBe(false);
+      expect("ownerBindAvailable" in payload).toBe(false);
     }
-    expect(owner.isServerOwner).toBe(true);
-    expect(owner.build.commit).not.toBeNull();
+  });
 
-    // Sync health: system/queues topology is null for non-owners.
-    const guestHealth = await getSyncHealth(user.id, { isOwner: false });
-    const healthText = JSON.stringify(guestHealth);
-    expect(healthText.toLowerCase()).not.toContain("postgres");
-    expect(healthText.toLowerCase()).not.toContain("redis down");
-    expect(guestHealth.system).toBeNull();
-    expect(guestHealth.queues).toBeNull();
-    expect(guestHealth.build.commit).toBeNull();
+  it("sync health carries no infrastructure topology or build identity for anyone", async () => {
+    const ownerUser = await db.user.create({ data: { displayName: "Privacy-Owner2", role: "owner" } });
+    cleanupIds.push(ownerUser.id);
+    for (const id of [user.id, ownerUser.id]) {
+      const health = await getSyncHealth(id);
+      const healthText = JSON.stringify(health);
+      expect(healthText.toLowerCase()).not.toContain("postgres");
+      expect(healthText.toLowerCase()).not.toContain("redis down");
+      expect("system" in health).toBe(false);
+      expect("queues" in health).toBe(false);
+      expect("build" in health).toBe(false);
+    }
   });
 });
 
-suite("owner-bind token security", () => {
-  it("the recovery UI hides once the owner is bound (no explicit opt-in), and recovery re-binding refuses without the flag", async () => {
-    // The bind logic targets THE OLDEST owner row — use it, whatever created it.
-    let owner = await db.user.findFirst({ where: { role: "owner", isDemo: false }, orderBy: { createdAt: "asc" } });
-    if (!owner) {
-      owner = await db.user.create({ data: { id: "test-privacy-owner", displayName: "PrivacyBindOwner", role: "owner" } });
-      cleanupIds.push(owner.id);
-    }
-    const hadBound = await db.appSetting.findUnique({ where: { userId_key: { userId: owner.id, key: "owner_bound" } } });
-    if (!hadBound) {
-      await db.appSetting.create({ data: { userId: owner.id, key: "owner_bound", value: true } });
-    }
-
-    const previousEnabled = process.env.OWNER_BIND_ENABLED;
-    process.env.OWNER_BIND_TOKEN = "bind-secret-test";
-    process.env.OWNER_RECOVERY_TOKEN = "recovery-secret-test";
-    delete process.env.OWNER_BIND_ENABLED; // production default: recovery OFF
-
-    try {
-      // Hidden for ordinary users while disabled (and for the owner always).
-      expect(await ownerBindAvailableFor(user.id)).toBe(false);
-      expect(await ownerBindAvailableFor(owner.id)).toBe(false);
-
-      // And the endpoint refuses re-binding even with the CORRECT token.
-      const req = { headers: { cookie: "" } };
-      const reply = { header() {}, headers: {} as Record<string, string> };
-      let threw: unknown = null;
-      try {
-        await bindLegacyOwner(req as never, reply as never, "recovery-secret-test");
-      } catch (err) {
-        threw = err;
-      }
-      expect((threw as { code?: string })?.code).toBe("bind_disabled");
-
-      // With the explicit opt-in, recovery becomes available again.
-      process.env.OWNER_BIND_ENABLED = "true";
-      expect(await ownerBindAvailableFor(user.id)).toBe(true);
-    } finally {
-      if (previousEnabled === undefined) delete process.env.OWNER_BIND_ENABLED;
-      else process.env.OWNER_BIND_ENABLED = previousEnabled;
-      delete process.env.OWNER_BIND_TOKEN;
-      delete process.env.OWNER_RECOVERY_TOKEN;
-      // Restore the owner row's prior state.
-      if (!hadBound) {
-        await db.appSetting.deleteMany({ where: { userId: owner.id, key: "owner_bound" } }).catch(() => undefined);
-      }
-    }
+suite('legacy owner bind removal', () => {
+  it('no owner-bind UI flag exists in user payloads and the endpoint is gone', async () => {
+    const me = await getMe({ id: user.id, displayName: user.displayName, timezone: 'UTC', isDemo: false, role: 'user' });
+    // The removed fields must be entirely absent — not merely false/null.
+    expect('ownerBindAvailable' in me).toBe(false);
+    expect('isServerOwner' in me).toBe(false);
+    expect('build' in me).toBe(false);
   });
 });
 

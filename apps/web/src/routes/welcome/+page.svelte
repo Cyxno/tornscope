@@ -340,9 +340,10 @@
               Who can see my data? · the honest trust model
             </summary>
             <ul class="mt-2 space-y-1.5">
-              <li>• TornScope runs on <span class="text-fg">this server</span> — not on Torn's and not on a neutral cloud.</li>
+              <li>• TornScope runs on a server that is <span class="text-fg">independent from Torn</span>. It is not hosted or operated by Torn itself.</li>
               <li>• Your API key is stored encrypted (AES-256-GCM) and is never sent back to your browser. Torn keys are read-only: they cannot perform in-game actions.</li>
-              <li>• However, the server must decrypt the key whenever it contacts Torn for you. That means <span class="text-fg">the person who controls this TornScope server technically has access to the data the key permits</span>. Self-hosting it yourself is the strongest form of control.</li>
+              <li>• The server must decrypt your API key whenever TornScope contacts Torn on your behalf. This means <span class="text-fg">the person operating this TornScope server can technically access the data your key permits</span>.</li>
+              <li>• This server is operated by <a href="https://www.torn.com/profiles.php?XID=1816206" target="_blank" rel="noopener noreferrer" class="text-accent underline decoration-border underline-offset-2 transition-colors hover:decoration-accent">Cyxno</a>. Torn does not endorse, host or operate TornScope.</li>
               <li>• If you prefer to share less, choose a Limited key — it genuinely limits what any TornScope server can collect about you.</li>
             </ul>
           </details>
@@ -358,6 +359,10 @@
               <li>• Disconnecting the key stops all future sync; <span class="text-fg">already-collected history is kept</span> unless you explicitly delete the profile.</li>
             </ul>
           </details>
+
+          <p class="border-t border-border pt-3 text-[11px] text-fg-faint">
+            Self-hosting TornScope yourself gives you the strongest control over your data.
+          </p>
         </div>
 
         <div class="mt-6 space-y-2 border-t border-border pt-4 text-center text-[11px] leading-relaxed text-fg-faint">

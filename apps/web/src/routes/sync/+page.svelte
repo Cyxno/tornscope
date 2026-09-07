@@ -9,8 +9,8 @@
   import StateMessage from "$lib/components/StateMessage.svelte";
 
   /**
-   * Sync & system health: PostgreSQL / Redis / worker / Torn, BullMQ queue
-   * depths, per-resource progress and safe recovery actions.
+   * Sync health: per-resource progress, cursors, coverage and safe recovery
+   * actions. Infrastructure monitoring lives in server logs / Docker.
    */
 
   type Health = SyncHealthResponse;
@@ -150,11 +150,6 @@
     }
   }
 
-  function systemDot(state: string | boolean): string {
-    const up = state === "up" || state === true;
-    return up ? "bg-positive" : "bg-negative";
-  }
-
   function phaseOf(row: Health["resources"][number]) {
     return phaseCopy[row.phase] ?? phaseCopy.queued!;
   }
@@ -210,16 +205,7 @@
     eyebrow="System"
     title="Sync status"
     description="What the worker has collected, when it will collect again, and what went wrong — if anything."
-  >
-    {#snippet actions()}
-      {#if health?.build.commit ?? me.data?.build.commit}
-        <!-- Deployment identity is owner-only: hidden entirely for others -->
-        <span class="hidden rounded-full border border-border bg-surface px-3 py-1.5 text-xs text-fg-faint sm:inline" title="Deployed build">
-          build {health?.build.commit ?? me.data?.build.commit}
-        </span>
-      {/if}
-    {/snippet}
-  </PageHeader>
+  />
 
   {#if notice}
     <div class="rounded-xl border border-accent/25 bg-accent/5 px-4 py-2.5 text-[13px] text-accent">{notice}</div>
@@ -230,72 +216,6 @@
   {:else if error}
     <StateMessage state="error" title="Could not load sync status" hint={error} action={{ label: "Retry", run: () => void load() }} />
   {:else if health}
-    <!-- System health: infrastructure topology is owner-only; other viewers
-         get a permission state instead of fake status dots. -->
-    {#if health.system}
-    <div class="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border shadow-panel md:grid-cols-4">
-      <div class="bg-surface p-5">
-        <div class="flex items-center justify-between"><span class="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint">PostgreSQL</span><span class="h-2 w-2 rounded-full {systemDot(health.system.postgres)}"></span></div>
-        <p class="mt-2.5 text-sm font-medium text-fg capitalize">{health.system.postgres}</p>
-      </div>
-      <div class="bg-surface p-5">
-        <div class="flex items-center justify-between"><span class="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint">Redis</span><span class="h-2 w-2 rounded-full {systemDot(health.system.redis)}"></span></div>
-        <p class="mt-2.5 text-sm font-medium text-fg capitalize">{health.system.redis}</p>
-      </div>
-      <div class="bg-surface p-5">
-        <div class="flex items-center justify-between"><span class="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint">Worker</span><span class="h-2 w-2 rounded-full {systemDot(health.system.worker.online)}"></span></div>
-        <p class="mt-2.5 text-sm font-medium text-fg">{health.system.worker.online ? "Online" : "Offline"}</p>
-        <p class="mt-0.5 text-xs text-fg-faint">{health.system.worker.lastHeartbeatAt ? `beat ${formatRelative(health.system.worker.lastHeartbeatAt)}` : "no heartbeat"}</p>
-      </div>
-      <div class="bg-surface p-5">
-        <div class="flex items-center justify-between"><span class="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint">Torn API</span><span class="h-2 w-2 rounded-full {health.system.tornApi.lastError ? 'bg-warning' : 'bg-positive'}"></span></div>
-        <p class="mt-2.5 text-sm font-medium text-fg">{health.system.tornApi.lastError ? "Last error" : "No errors"}</p>
-        {#if health.system.tornApi.lastError}
-          <p class="mt-0.5 truncate text-xs text-fg-faint" title={health.system.tornApi.lastError.message ?? ""}>{health.system.tornApi.lastError.resource}: {health.system.tornApi.lastError.message?.slice(0, 60)}</p>
-        {/if}
-      </div>
-    </div>
-    {:else}
-    <div class="rounded-xl border border-border bg-surface px-5 py-4 text-[13px] text-fg-muted">
-      Server infrastructure status is visible to the server owner only — your own sync progress is shown below.
-    </div>
-    {/if}
-
-    {#if health.queues}
-    <!-- Queue health -->
-    <section class="grid gap-6 lg:grid-cols-2">
-      <Panel title="Sync queue" caption="BullMQ · tornscope-sync">
-        {#if health.queues.sync}
-          <div class="grid grid-cols-5 gap-2 text-center">
-            {#each Object.entries(health.queues.sync) as [k, v] (k)}
-              <div class="rounded-xl border border-border bg-bg-raise px-2 py-3">
-                <p class="tnum text-xl font-semibold text-fg">{v ?? 0}</p>
-                <p class="mt-1 text-[10px] uppercase tracking-[0.12em] text-fg-faint">{k}</p>
-              </div>
-            {/each}
-          </div>
-        {:else}
-          <p class="text-sm text-fg-muted">Queue counts unavailable (Redis down?).</p>
-        {/if}
-      </Panel>
-      <Panel title="Scheduler" caption="Repeating tick · tornscope-scheduler">
-        {#if health.queues.scheduler}
-          <div class="grid grid-cols-5 gap-2 text-center">
-            {#each Object.entries(health.queues.scheduler) as [k, v] (k)}
-              <div class="rounded-xl border border-border bg-bg-raise px-2 py-3">
-                <p class="tnum text-xl font-semibold text-fg">{v ?? 0}</p>
-                <p class="mt-1 text-[10px] uppercase tracking-[0.12em] text-fg-faint">{k}</p>
-              </div>
-            {/each}
-          </div>
-          <p class="mt-3 text-xs text-fg-faint">{health.queues.note}</p>
-        {:else}
-          <p class="text-sm text-fg-muted">Queue counts unavailable (Redis down?).</p>
-        {/if}
-      </Panel>
-    </section>
-    {/if}
-
     <!-- Resources -->
     <Panel title="Resources" caption="Manual syncs are queued and rate-limited to protect your Torn API budget">
       {#snippet actions()}

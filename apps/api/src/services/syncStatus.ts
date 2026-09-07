@@ -1,10 +1,8 @@
 import { getSyncStates, getSyncCategoryStates, getPrismaClient, type SyncStateRow } from "@tornscope/database";
-import { deriveSetupPhase, normalizeCapabilitiesWithFallback, resourceAllowed, resourceRequirementLabel, SYNC_JOB_NAME, SCHEDULER_QUEUE, buildSyncJobId, SYNC_RESOURCES, type SyncResource } from "@tornscope/shared";
+import { deriveSetupPhase, normalizeCapabilitiesWithFallback, resourceAllowed, resourceRequirementLabel, SYNC_JOB_NAME, buildSyncJobId, SYNC_RESOURCES, type SyncResource } from "@tornscope/shared";
 import { AppError } from "../errors.js";
 import { getApiContext } from "../context.js";
-import { queueRedis } from "../redis.js";
 
-const WORKER_HEARTBEAT_KEY = "tornscope:worker:heartbeat";
 const BACKFILL_FLAG = "backfill_restart_at";
 
 /** Basic per-resource sync status (used by the welcome progress view). */
@@ -26,38 +24,21 @@ export async function getSyncStatus(userId: string) {
 }
 
 /**
- * Full sync + system health for the Sync Status page:
- * - per-resource rows with phase, cursor state and last safe error
- * - PostgreSQL / Redis reachability + worker heartbeat + queue depths and the
- *   build commit ONLY for the server owner — anonymous guests get the
- *   personal sync rows without infrastructure topology.
+ * Full sync health for the Sync Status page: the caller's OWN per-resource
+ * rows with phase, cursor state and last safe error. Infrastructure topology
+ * (PostgreSQL/Redis/worker/queues) and the deployed build identity are NOT
+ * part of any user-facing payload — infrastructure is monitored through
+ * server logs, Docker and Unraid, not through the product.
  */
-export async function getSyncHealth(userId: string, opts: { isOwner?: boolean } = {}): Promise<Awaited<ReturnType<typeof buildSyncHealth>>> {
-  return buildSyncHealth(userId, Boolean(opts.isOwner));
+export async function getSyncHealth(userId: string): Promise<Awaited<ReturnType<typeof buildSyncHealth>>> {
+  return buildSyncHealth(userId);
 }
 
-async function buildSyncHealth(userId: string, isOwner: boolean) {
+async function buildSyncHealth(userId: string) {
   const db = getPrismaClient();
-  const ctx = getApiContext();
   const states: SyncStateRow[] = await getSyncStates(db, userId);
 
-  const countTypes = ["waiting", "active", "completed", "failed", "delayed"] as const;
-  const redis = await queueRedis(ctx.syncQueue);
-  const [syncCounts, schedulerCounts, postgresOk, redisOk, heartbeat, credential] = await Promise.all([
-    isOwner ? ctx.syncQueue.getJobCounts(...countTypes).catch(() => null) : Promise.resolve(null),
-    isOwner ? ctx.schedulerQueue.getJobCounts(...countTypes).catch(() => null) : Promise.resolve(null),
-    isOwner ? db.$queryRaw`SELECT 1`.then(() => true).catch(() => false) : Promise.resolve(false),
-    isOwner ? redis.ping().then(() => true).catch(() => false) : Promise.resolve(false),
-    isOwner
-      ? redis
-          .get(WORKER_HEARTBEAT_KEY)
-          .then((v: string | null) => (v ? Number(v) : null))
-          .catch(() => null)
-      : Promise.resolve(null),
-    db.apiCredential.findUnique({ where: { userId }, select: { revokedAt: true } }),
-  ]);
-
-  const lastErrorState = states.find((s) => s.errorMessage !== null);
+  const credential = await db.apiCredential.findUnique({ where: { userId }, select: { revokedAt: true } });
 
   // Earliest/latest STRUCTURED row per resource — the real stored coverage,
   // shown next to what Torn still exposes (sourceEarliestAt) so it is obvious
@@ -90,32 +71,6 @@ async function buildSyncHealth(userId: string, isOwner: boolean) {
 
   return {
     running: states.some((s) => s.status === "running"),
-    // Deployment identity is owner-only information; guests get null.
-    build: { commit: isOwner ? (process.env.GIT_SHA ?? "dev") : null },
-    // Infrastructure topology is owner-only; guests get null and the UI shows
-    // a permission state instead of fake status dots.
-    system: isOwner
-      ? {
-          postgres: postgresOk ? "up" : "down",
-          redis: redisOk ? "up" : "down",
-          worker: {
-            online: heartbeat !== null && Date.now() - heartbeat < 180_000,
-            lastHeartbeatAt: heartbeat !== null ? Math.floor(heartbeat / 1000) : null,
-          },
-          tornApi: {
-            // No active probe (request budget); the last recorded sync error is
-            // the reliable signal for Torn-side problems.
-            lastError: lastErrorState ? { resource: lastErrorState.resource, message: lastErrorState.errorMessage } : null,
-          },
-        }
-      : null,
-    queues: isOwner
-      ? {
-          sync: syncCounts,
-          scheduler: schedulerCounts,
-          note: "BullMQ re-queues stalled jobs automatically; they reappear under active/waiting.",
-        }
-      : null,
     setupPhase: deriveSetupPhase({
       hasApiKey: Boolean(credential && !credential.revokedAt),
       resources: states.map((s) => ({

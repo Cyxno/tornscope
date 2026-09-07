@@ -29,7 +29,6 @@ import {
   getPrismaClient,
   upsertTornAccount,
 } from "@tornscope/database";
-import { ownerBindAvailableFor } from "../auth.js";
 import { getApiContext } from "../context.js";
 import { errors, AppError } from "../errors.js";
 
@@ -55,11 +54,6 @@ export async function setDemoView(user: { id: string }, enabled: boolean): Promi
     // profile's demo toggle is none of this request's business.
     await db.appSetting.deleteMany({ where: { userId: user.id, key: DEMO_VIEW_KEY } });
   }
-}
-
-/** Deployed build commit — injected at Docker build time (never hand-edited). */
-function buildCommit(): string {
-  return process.env.GIT_SHA ?? "dev";
 }
 
 /**
@@ -97,11 +91,6 @@ export async function getMe(user: { id: string; displayName: string; timezone: s
     ? normalizeCapabilitiesWithFallback(credential.capabilities, credential.accessLevel)
     : null;
 
-  // Server-derived role: infrastructure/administration visibility is granted
-  // to the deployment's owner ONLY (the non-demo "owner" role). A client
-  // boolean is never trusted, and the role never leaves the server.
-  const isServerOwner = user.role === "owner" && !user.isDemo;
-
   return {
     userId: user.id,
     displayName: user.displayName,
@@ -110,8 +99,6 @@ export async function getMe(user: { id: string; displayName: string; timezone: s
     capabilities: capabilitiesRaw,
     accessType: credential && !credential.revokedAt ? credential.accessType : null,
     accessLevel: credential && !credential.revokedAt ? credential.accessLevel : null,
-    ownerBindAvailable: await ownerBindAvailableFor(user.id),
-    isServerOwner,
     activeSessions,
     torn: account
       ? {
@@ -139,7 +126,6 @@ export async function getMe(user: { id: string; displayName: string; timezone: s
         lastAttemptAt: s.lastAttemptAt ? Math.floor(s.lastAttemptAt.getTime() / 1000) : null,
       })),
     }),
-    build: { commit: isServerOwner ? buildCommit() : null },
   };
 }
 

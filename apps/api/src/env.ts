@@ -27,7 +27,6 @@ export const env = {
    */
   trustProxy: process.env.TRUST_PROXY !== "false",
   /** Owner binding stays enabled until explicitly disabled post-migration. */
-  ownerBindEnabled: process.env.OWNER_BIND_ENABLED !== "false",
   /** Abandoned anonymous profiles older than this are cleaned up. */
   guestRetentionDays: Number(process.env.GUEST_PROFILE_RETENTION_DAYS ?? 60),
 } as const;

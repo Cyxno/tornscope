@@ -269,20 +269,6 @@ export const MeResponseSchema = z.object({
   accessType: z.string().nullable(),
   /** Numeric Torn access level (1=Public … 4=Full) when known. */
   accessLevel: z.number().nullable(),
-  /** True when the legacy owner bind flow is still available. */
-  ownerBindAvailable: z.boolean(),
-  /**
-   * True when THIS session's server-derived role is the deployment's server
-   * owner (role "owner", non-demo). Server-derived only — never a client
-   * boolean. Gates infrastructure/administration information in the UI.
-   */
-  isServerOwner: z.boolean(),
-  /**
-   * Deployed build identifier (git sha injected at Docker build time).
-   * Server-owner visibility only: deployment details are not shown to
-   * ordinary users. Null for non-owners.
-   */
-  build: z.object({ commit: z.string().nullable() }),
   torn: z
     .object({
       tornId: z.number(),
@@ -1304,33 +1290,6 @@ export type SyncStatusResponse = z.infer<typeof SyncStatusResponseSchema>;
 /** Full sync + system health for the Sync Status page. */
 export const SyncHealthResponseSchema = z.object({
   running: z.boolean(),
-  /** Deployment identity — server-owner only; null for ordinary users. */
-  build: z.object({ commit: z.string().nullable() }),
-  /**
-   * Infrastructure topology (postgres/redis/worker/queues) is disclosed ONLY
-   * to the server owner; other viewers get null and the UI shows a
-   * permission state instead of fake status.
-   */
-  system: z
-    .object({
-      postgres: z.string(),
-      redis: z.string(),
-      worker: z.object({
-        online: z.boolean(),
-        lastHeartbeatAt: z.number().nullable(),
-      }),
-      tornApi: z.object({
-        lastError: z.object({ resource: z.string(), message: z.string().nullable() }).nullable(),
-      }),
-    })
-    .nullable(),
-  queues: z
-    .object({
-      sync: z.record(z.string(), z.number()).nullable(),
-      scheduler: z.record(z.string(), z.number()).nullable(),
-      note: z.string(),
-    })
-    .nullable(),
   setupPhase: z.enum(["no_key", "queued", "syncing", "partial", "caught_up", "failed"]),
   /** Requested history window (worker config) coverage is judged against. */
   requestedHistoryDays: z.number(),

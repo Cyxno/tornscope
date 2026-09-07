@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
-import { DateRangeSchema, PaginationQuerySchema, TORN_DRUG_NAMES, resolveDateRange, type DateRangePreset } from "@tornscope/shared";import { resolveSessionUser, assertSameOrigin, bindLegacyOwner, rebindCurrentSession, clearSessionCookie, currentSessionTokenHash, requestIsSecure, type SessionUser } from "./auth.js";
+import { DateRangeSchema, PaginationQuerySchema, TORN_DRUG_NAMES, resolveDateRange, type DateRangePreset } from "@tornscope/shared";import { resolveSessionUser, assertSameOrigin, rebindCurrentSession, clearSessionCookie, currentSessionTokenHash, requestIsSecure, type SessionUser } from "./auth.js";
 import { checkRateLimit, clientIp } from "./ratelimit.js";
 import { errors, mapTornError, AppError } from "./errors.js";
 import { getMoneyEvents, getMoneySummary } from "./services/money.js";
@@ -63,11 +63,7 @@ export function registerRoutes(app: FastifyInstance): void {
   app.addHook("preHandler", async (req, reply) => {
     // Health checks (bots/monitors) never create profiles or need identity.
     const url = (req.raw.url ?? "").split("?")[0]!;
-    if (url === "/api/health" || url === "/" || url === "/api/session/bind-owner") {
-      // bind-owner deliberately works WITHOUT a session: a browser whose
-      // cookie is stale and which is rate-limited must still be able to
-      // present the recovery token (creation limiter must not block it).
-      // Origin protection still applies.
+    if (url === "/api/health" || url === "/") {
       assertSameOrigin(req);
       return;
     }
@@ -294,11 +290,12 @@ export function registerRoutes(app: FastifyInstance): void {
     return getSyncStatus(user.id);
   });
 
-  // Full sync + system health for the Sync Status page. Infrastructure
-  // topology (system/queues) is included only for the server owner.
+  // Full sync health for the Sync Status page: the caller's own resource
+  // rows only — infrastructure topology lives in server logs/Docker, never
+  // in user-facing API payloads.
   app.get("/api/sync/health", async (req) => {
     const user = currentUser(req);
-    return getSyncHealth(user.id, { isOwner: user.role === "owner" && !user.isDemo });
+    return getSyncHealth(user.id);
   });
 
   app.post("/api/sync/run", async (req) => {
@@ -421,22 +418,6 @@ export function registerRoutes(app: FastifyInstance): void {
     if (!limit.ok) throw errors.validation({ formErrors: ["Too many attempts — try again later."], fieldErrors: {} });
     await deleteApiKey(user.id);
     return { deleted: true };
-  });
-
-  // One-time legacy owner binding (token lives in server env only).
-  app.post("/api/session/bind-owner", async (req, reply) => {
-    const limit = checkRateLimit("bind-owner", clientIp(req), 10, 60 * 60_000);
-    if (!limit.ok) throw errors.validation({ formErrors: ["Too many attempts — try again later."], fieldErrors: {} });
-    const body = z.object({ token: z.string().min(10).max(200) }).safeParse(req.body);
-    if (!body.success) throw errors.validation(body.error.flatten());
-    // bindLegacyOwner rebinds the browser's existing session to the owner and
-    // sets a fresh owner cookie when the browser has none. It must be the
-    // ONLY session action here: running resolveSessionUser afterwards would
-    // create a throwaway guest session whose cookie overwrites the owner
-    // cookie just set, leaving the browser a guest despite the successful
-    // bind.
-    const owner = await bindLegacyOwner(req, reply, body.data.token);
-    return getMe(owner);
   });
 
   // Destructive: deletes THIS browser profile, its encrypted key, sync state

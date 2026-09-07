@@ -2,6 +2,7 @@ import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import { randomBytes } from "node:crypto";
 import { getPrismaClient, ensureSyncStates } from "@tornscope/database";
 import { deleteApiKey, getMe, saveApiKey, type SaveApiKeyResult } from "../src/services/me.js";
+import { getSyncHealth } from "../src/services/syncStatus.js";
 import { buildServer } from "../src/server.js";
 import { enqueueDueSyncs } from "../../worker/src/scheduler.js";
 import { runResourceSync } from "../../worker/src/sync/runner.js";
@@ -215,23 +216,25 @@ suite("Limited-key initialization is capability-aware", () => {
   });
 });
 
-suite("owner-only infrastructure visibility", () => {
-  it("isServerOwner is derived from the server-side role; build commit is owner-only", async () => {
-    const ownerUser = await db.user.create({ data: { displayName: "PerfTest-Owner", role: "owner" } });
+suite('no owner privilege differences in user-facing payloads', () => {
+  it('MeResponse and sync health carry no owner flag, no build identity, no infra topology', async () => {
+    const ownerUser = await db.user.create({ data: { displayName: 'PerfTest-Owner', role: 'owner' } });
     cleanupIds.push(ownerUser.id);
 
-    const owner = await getMe({ id: ownerUser.id, displayName: ownerUser.displayName, timezone: "UTC", isDemo: false, role: "owner" });
-    expect(owner.isServerOwner).toBe(true);
-    expect(owner.build.commit).not.toBeNull();
+    // Profiles are functionally equal: an owner-role profile and a normal
+    // user get the SAME payload shape, with no role-derived extras.
+    const owner = await getMe({ id: ownerUser.id, displayName: ownerUser.displayName, timezone: 'UTC', isDemo: false, role: 'owner' });
+    const guest = await getMe({ id: user.id, displayName: user.displayName, timezone: 'UTC', isDemo: false, role: 'user' });
+    expect('isServerOwner' in owner).toBe(false);
+    expect('isServerOwner' in guest).toBe(false);
+    expect('build' in owner).toBe(false);
+    expect('build' in guest).toBe(false);
+    expect(JSON.stringify(owner).toLowerCase()).not.toContain('postgres');
+    expect(JSON.stringify(guest).toLowerCase()).not.toContain('postgres');
 
-    // The demo owner is NOT the server owner (demo isolation).
-    const demoOwner = await getMe({ id: ownerUser.id, displayName: ownerUser.displayName, timezone: "UTC", isDemo: true, role: "owner" });
-    expect(demoOwner.isServerOwner).toBe(false);
-    expect(demoOwner.build.commit).toBeNull();
-
-    // Ordinary users see neither the flag nor the deployment identity.
-    const guest = await getMe({ id: user.id, displayName: user.displayName, timezone: "UTC", isDemo: false, role: "user" });
-    expect(guest.isServerOwner).toBe(false);
-    expect(guest.build.commit).toBeNull();
+    const health = await getSyncHealth(user.id);
+    expect('system' in health).toBe(false);
+    expect('queues' in health).toBe(false);
+    expect('build' in health).toBe(false);
   });
 });
