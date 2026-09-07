@@ -941,6 +941,8 @@ export const FactionOcRowSchema = z.object({
   slotsFilled: z.number(),
   slotsTotal: z.number(),
   myParticipation: z.boolean(),
+  /** The user's slot position in this OC, when positively participating. */
+  myPosition: z.string().nullable(),
   /** False when the stored payload carries no participant ids ("Mine" = Unavailable). */
   participantsIdentifiable: z.boolean(),
   rewardMoney: z.number().nullable(),
@@ -1119,21 +1121,33 @@ export const DrugsSummaryResponseSchema = z.object({
   dailySeries: z.array(z.object({ t: z.number(), good: z.number(), bad: z.number() })),
   rehab: z.object({
     totalSpend: KpiValueSchema,
-    /** Clustered hospital trips (sessions grouped within 12h of each other). */
-    trips: z.number(),
-    /** Individual rehab actions (Torn log level). */
-    sessions: z.number(),
-    averageSessionsPerTrip: z.number().nullable(),
+    /**
+     * Rehab VISITS — one Torn "Rehab" log row is one visit (Torn pre-groups
+     * them); never the session count and never a time-cluster heuristic.
+     */
+    visits: z.number(),
+    /**
+     * Rehab SESSIONS actually purchased (sum of Torn's explicit
+     * `rehab_times`). Null when no visit carried a session count —
+     * rendered "Sessions unavailable", never inferred from row counts
+     * or money.
+     */
+    sessions: z.number().nullable(),
+    /** Visits whose session count the source payload did not carry. */
+    sessionsUnavailable: z.number(),
+    /** Mean sessions per visit, over visits with a known count. */
+    averageSessionsPerVisit: z.number().nullable(),
     averageCostPerSession: KpiValueSchema,
-    averageCostPerTrip: KpiValueSchema,
+    averageCostPerVisit: KpiValueSchema,
     latestAt: z.number().nullable(),
     averageSpend: KpiValueSchema,
-    /** Per-trip cost trend, oldest first (cost rises as addiction deepens). */
-    tripTrend: z.array(
+    /** Per-visit trend, oldest first (sessions/cost are per visit). */
+    visitTrend: z.array(
       z.object({
         startedAt: z.number(),
-        sessions: z.number(),
+        sessions: z.number().nullable(),
         cost: z.number().nullable(),
+        costPerSession: z.number().nullable(),
       })
     ),
     recent: z.array(

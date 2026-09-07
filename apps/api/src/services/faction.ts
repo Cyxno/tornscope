@@ -448,9 +448,13 @@ export async function getFactionOcs(userId: string, rangeInput: DateRangeInput):
         slotsFilled,
         slotsTotal,
         myParticipation,
-        // True only when the payload actually carries participant ids —
-        // otherwise "Mine" is Unavailable, not silently "no".
-        participantsIdentifiable: slots.length > 0 && slots.some((s) => typeof s.user?.id === "number"),
+        myPosition:
+          resolved !== null ? slots.find((s) => s.user?.id === resolved)?.position ?? null : null,
+        // True when the payload carries enough slot structure to ANSWER the
+        // membership question. An OC whose slots are all empty STILL answers
+        // it — an empty roster positively proves the user is not in it — so
+        // "unavailable" is reserved for OCs with no slot payload at all.
+        participantsIdentifiable: slots.length > 0,
         rewardMoney: typeof rewards.money === "number" ? rewards.money : null,
         rewardRespect: typeof rewards.respect === "number" ? rewards.respect : null,
         rewardItems: items,

@@ -275,6 +275,16 @@ export async function bindLegacyOwner(req: FastifyRequest, reply: FastifyReply, 
   if (already && !recoveryMode) {
     throw new AppError("bind_already_claimed", "The legacy owner profile has already been bound to a browser.", 409);
   }
+  // RECOVERY IS OPT-IN: once the owner profile is bound, re-binding demands
+  // the explicit OWNER_BIND_ENABLED=true flag — the mere presence of a
+  // recovery token in the environment must NOT keep a live re-bind path
+  // open on a production server (anyone who learns that token could
+  // otherwise take over the owner profile at any time). Recovery procedure:
+  // set OWNER_BIND_ENABLED=true, restart, bind with the recovery token,
+  // then unset the flag again.
+  if (already && process.env.OWNER_BIND_ENABLED !== "true") {
+    throw new AppError("bind_disabled", "Owner recovery is disabled. Set OWNER_BIND_ENABLED=true on the server to enable it.", 403);
+  }
 
   // Bind: point the current browser's session at the owner profile. In
   // recovery mode, prior active owner sessions are revoked first so a stale
@@ -317,8 +327,15 @@ export async function bindLegacyOwner(req: FastifyRequest, reply: FastifyReply, 
 /** Whether the bind flow is still possible (token configured + not claimed). */
 /**
  * Whether the LEGACY OWNER RECOVERY/BINDING section is meaningful for the
- * given viewer: it is hidden from the owner themselves (nothing to restore)
- * and shown to everyone else only while a token is configured server-side.
+ * given viewer:
+ * - hidden from the owner themselves (nothing to restore);
+ * - before the FIRST bind, shown to everyone else while a bind token is
+ *   configured server-side (one-time migration path);
+ * - AFTER the owner is bound, the section is hidden for everyone unless
+ *   recovery is explicitly opted into with OWNER_BIND_ENABLED=true — the
+ *   mere presence of a recovery token must not keep a live takeover path
+ *   advertised in normal production.
+ * Only this boolean ever reaches the browser; the token itself never does.
  */
 export async function ownerBindAvailableFor(viewerUserId: string): Promise<boolean> {
   if (!env.ownerBindEnabled) return false;
@@ -330,7 +347,9 @@ export async function ownerBindAvailableFor(viewerUserId: string): Promise<boole
   if (!owner) return false;
   if (viewerUserId === owner.id) return false; // the owner needs no recovery
   const bound = await db.appSetting.findUnique({ where: { userId_key: { userId: owner.id, key: OWNER_BOUND_KEY } } });
-  return !bound || recoveryConfigured;
+  if (!bound) return bindOpen; // first bind still possible while a token exists
+  // Bound: recovery UI only under the explicit opt-in flag.
+  return process.env.OWNER_BIND_ENABLED === "true" && recoveryConfigured;
 }
 
 /**

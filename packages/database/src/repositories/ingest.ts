@@ -51,7 +51,14 @@ export async function insertConsumptionEvents(db: PrismaClientType, userId: stri
       provenance: e.provenance,
       source: e.source,
       sourceRef: e.sourceRef,
-      metadata: e.raw === undefined ? Prisma.JsonNull : (e.raw as Prisma.InputJsonValue),
+      // metadata carries the raw Torn log for reference; structured notes
+      // (e.g. container/yield provenance) merge alongside it under `rawLog`.
+      metadata:
+        e.metadata !== undefined && e.metadata !== null && typeof e.metadata === "object"
+          ? { ...(e.metadata as Record<string, unknown>), rawLog: (e.raw === undefined ? Prisma.JsonNull : e.raw) as Prisma.InputJsonValue }
+          : e.raw === undefined
+            ? Prisma.JsonNull
+            : (e.raw as Prisma.InputJsonValue),
     })),
     skipDuplicates: true,
   });
@@ -123,6 +130,7 @@ export async function insertRehabEvents(db: PrismaClientType, userId: string, ev
       occurredAt: e.occurredAt,
       rehabPercent: e.rehabPercent,
       cost: e.cost,
+      sessions: e.sessions,
       addictionPointsRemoved: e.addictionPointsRemoved,
       source: "torn_log",
       sourceRef: e.sourceRef,

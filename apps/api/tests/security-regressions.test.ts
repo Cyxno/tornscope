@@ -29,9 +29,15 @@ beforeAll(async () => {
   recoveryToken = `tok_${randomBytes(12).toString("hex")}`;
   process.env.OWNER_RECOVERY_TOKEN = recoveryToken;
   process.env.OWNER_BIND_TOKEN = "";
+  // The bind exercise below IS the emergency-recovery scenario, which is
+  // opt-in in production: re-binding a bound owner requires the explicit
+  // flag (a leaked recovery token alone must stay dead on a live server).
+  process.env.OWNER_BIND_ENABLED = "true";
 });
 
 afterAll(async () => {
+  delete process.env.OWNER_BIND_ENABLED;
+  delete process.env.OWNER_RECOVERY_TOKEN;
   for (const id of cleanupUserIds) {
     await db.userSession.deleteMany({ where: { userId: id } }).catch(() => undefined);
     await db.appSetting.deleteMany({ where: { userId: id } }).catch(() => undefined);

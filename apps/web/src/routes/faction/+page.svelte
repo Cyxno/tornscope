@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { FactionOverviewResponse, FactionRankedWarsResponse, FactionMembersResponse, FactionOcsResponse, FactionLedgerResponse, FactionOcRow } from "@tornscope/shared";
-  import { formatMoneyCompact, formatDateTime, formatSignedMoney, formatDate, ocParticipationState, OC_PARTICIPATION_LABELS } from "@tornscope/shared";
+  import { formatMoneyCompact, formatDateTime, formatSignedMoney, formatDate, ocParticipationState, OC_PARTICIPATION_LABELS, OC_PARTICIPATION_HINTS, userInAnyKnownOc } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
   import { dateRange } from "$lib/state.svelte";
   import PageHeader from "$lib/components/PageHeader.svelte";
@@ -63,15 +63,6 @@
 
   const resultBadge = (r: string) =>
     r === "win" ? "border-positive/30 bg-positive/10 text-positive" : r === "loss" ? "border-negative/30 bg-negative/10 text-negative" : "border-border bg-surface-2 text-fg-muted";
-
-  /**
-   * Participation is a semantic state, never blank: participating (the
-   * payload includes the current Torn ID), not participating (list available,
-   * ID absent) or unavailable (the payload cannot answer).
-   */
-  function mineState(oc: { myParticipation: boolean; participantsIdentifiable: boolean }) {
-    return ocParticipationState(oc);
-  }
 
   function payoutKindLabel(kind: string, scenario: string | null): string {
     return kind === "oc" ? `OC payout${scenario ? ` · ${scenario}` : ""}` : "Unmatched faction income";
@@ -280,19 +271,23 @@
       </Panel>
     {:else if tab === "oc" && ocs}
       {@const active = ocs.ocs.filter((o) => o.state === "active")}
-      {@const mine = active.filter((o) => mineState(o) === "participating")}
-      {@const identifiableExists = active.some((o) => o.participantsIdentifiable)}
-      {@const others = active.filter((o) => mineState(o) !== "participating")}
+      {@const inAnyOc = userInAnyKnownOc(active)}
+      {@const mine = active.filter((o) => o.myParticipation)}
+      {@const others = active.filter((o) => !o.myParticipation)}
       {@const completed = ocs.ocs.filter((o) => o.state === "completed")}
       {@const expired = ocs.ocs.filter((o) => o.state === "expired")}
 
-      {#snippet participationCell(oc: FactionOcRow)}
-        {#if mineState(oc) === "participating"}
+      {#snippet participationCell(oc: FactionOcRow, contextual = true)}
+        {@const state = ocParticipationState(oc, { userInAnyKnownOc: contextual ? inAnyOc : false })}
+        {@const hint = OC_PARTICIPATION_HINTS[state]}
+        {#if state === "participating"}
           <span class="rounded-full border border-accent/40 bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent">{OC_PARTICIPATION_LABELS.participating}</span>
-        {:else if mineState(oc) === "not_participating"}
+        {:else if state === "assigned_elsewhere"}
+          <span class="text-xs text-fg-muted" title={hint ?? undefined}>{OC_PARTICIPATION_LABELS.assigned_elsewhere}</span>
+        {:else if state === "not_participating"}
           <span class="text-xs text-fg-faint">{OC_PARTICIPATION_LABELS.not_participating}</span>
         {:else}
-          <span class="text-xs text-fg-faint" title="The current API payload does not carry participant ids, so membership cannot be determined">{OC_PARTICIPATION_LABELS.unavailable}</span>
+          <span class="text-xs text-fg-faint" title={hint ?? undefined}>{OC_PARTICIPATION_LABELS.unavailable}</span>
         {/if}
       {/snippet}
 
@@ -302,8 +297,8 @@
           <div class="px-6 pb-6 pt-2">
             <StateMessage
               state="empty"
-              title={identifiableExists ? "You are not currently assigned to an organized crime." : "Your OC participation cannot be determined with the current API access."}
-              hint={identifiableExists ? "When a faction slot lists you, the crime appears here." : "The stored payload carries no participant ids — grant Faction Crimes access in Torn so membership can be read."}
+              title={active.some((o) => o.participantsIdentifiable) ? "You are not currently assigned to an organized crime." : "Your organized crime assignment cannot be determined with the current API permissions."}
+              hint={active.some((o) => o.participantsIdentifiable) ? "When a faction slot lists you, the crime appears here." : "The stored payloads carry no participant lists — grant Faction Crimes access in Torn so membership can be read."}
             />
           </div>
         {:else}
@@ -317,6 +312,9 @@
                   {/if}
                   <span class="rounded-full border border-border bg-surface-2 px-2 py-0.5 text-[11px] text-fg-muted">{oc.status}</span>
                   <span class="tnum text-xs text-fg-muted" title="Slots with a listed participant out of total slots">{oc.slotsFilled} / {oc.slotsTotal} slots filled</span>
+                  {#if oc.myPosition}
+                    <span class="rounded-full border border-accent/30 bg-accent/5 px-2 py-0.5 text-[11px] text-accent" title="Your slot in this crime">Your role: {oc.myPosition}</span>
+                  {/if}
                   {#if oc.readyAt}
                     <span class="text-xs text-fg-faint">Ready {formatDateTime(oc.readyAt)}</span>
                   {:else if oc.planningAt}
@@ -330,8 +328,8 @@
         {/if}
       </Panel>
 
-      <!-- Other active organized crimes -->
-      <Panel title="Other active organized crimes" caption={`${others.length} other crime${others.length === 1 ? "" : "s"} currently recruiting or in planning`} flush>
+      <!-- Other active organized crimes: slot availability + contextual status -->
+      <Panel title="Other active organized crimes" caption={`${others.length} other crime${others.length === 1 ? "" : "s"} — slot availability is separate from your participation`} flush>
         {#if others.length === 0}
           <div class="px-6 pb-6 pt-2"><StateMessage state="empty" title="No other active organized crimes" /></div>
         {:else}
@@ -342,9 +340,9 @@
                   <th class="py-2.5 pl-6 pr-4 font-medium">Crime</th>
                   <th class="py-2.5 pr-4 font-medium">Tier</th>
                   <th class="py-2.5 pr-4 font-medium">Status</th>
-                  <th class="py-2.5 pr-4 text-right font-medium">Slots filled</th>
+                  <th class="py-2.5 pr-4 font-medium">Slots</th>
                   <th class="py-2.5 pr-4 font-medium">Ready / start</th>
-                  <th class="py-2.5 pr-6 font-medium">Participation</th>
+                  <th class="py-2.5 pr-6 font-medium">Your status</th>
                 </tr>
               </thead>
               <tbody>
@@ -353,7 +351,14 @@
                     <td class="py-2.5 pl-6 pr-4 font-medium text-fg">{oc.name}</td>
                     <td class="py-2.5 pr-4">{#if oc.tier !== null}<span class="text-fg-muted">Tier {oc.tier}</span>{:else}<span class="text-xs text-fg-faint">Tier unavailable</span>{/if}</td>
                     <td class="py-2.5 pr-4"><span class="rounded-full border border-border bg-surface-2 px-2 py-0.5 text-[11px] text-fg-muted">{oc.status}</span></td>
-                    <td class="tnum py-2.5 pr-4 text-right text-fg-muted">{oc.slotsFilled}/{oc.slotsTotal}</td>
+                    <td class="py-2.5 pr-4">
+                      <span class="tnum text-fg-muted">{oc.slotsFilled}/{oc.slotsTotal}</span>
+                      {#if oc.slotsFilled >= oc.slotsTotal && oc.slotsTotal > 0}
+                        <span class="ml-1.5 rounded-full border border-border bg-surface-2 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-fg-faint">Full</span>
+                      {:else}
+                        <span class="ml-1.5 text-[11px] text-fg-faint">{oc.slotsTotal - oc.slotsFilled} open</span>
+                      {/if}
+                    </td>
                     <td class="py-2.5 pr-4 text-xs text-fg-faint">
                       {#if oc.readyAt}{formatDateTime(oc.readyAt)}
                       {:else if oc.planningAt}planning since {formatDateTime(oc.planningAt)}
@@ -365,6 +370,10 @@
               </tbody>
             </table>
           </div>
+          <p class="px-6 pt-3 text-xs text-fg-faint">
+            Slot counts come from the faction crime payload; your status comes from participant data. Open slots never
+            imply anything about your participation, and an empty roster positively shows you are not in it.
+          </p>
         {/if}
       </Panel>
 
@@ -399,7 +408,7 @@
                     <td class="tnum py-2.5 pr-4 text-right {oc.rewardMoney !== null && oc.rewardMoney > 0 ? 'text-fg-muted' : 'text-fg-faint'}">{oc.rewardMoney !== null ? formatMoneyCompact(oc.rewardMoney) : "—"}</td>
                     <td class="tnum py-2.5 pr-4 text-right text-fg-muted">{oc.rewardRespect !== null ? oc.rewardRespect : "—"}</td>
                     <td class="tnum py-2.5 pr-4 text-right text-fg-muted">{oc.rewardItems ? oc.rewardItems.reduce((s, i) => s + i.quantity, 0) : "—"}</td>
-                    <td class="py-2.5 pr-6">{@render participationCell(oc)}</td>
+                    <td class="py-2.5 pr-6">{@render participationCell(oc, false)}</td>
                   </tr>
                 {/each}
               </tbody>

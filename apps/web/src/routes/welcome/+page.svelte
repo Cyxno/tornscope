@@ -3,7 +3,7 @@
   import { onMount } from "svelte";
   import { endpoints, ApiClientError } from "$lib/api";
   import type { ApiKeyStatusResponse, ApiKeyValidationResponse, ExistingProfileInfo, KeyCapabilitiesDto, SyncResource } from "@tornscope/shared";
-  import { branding, moduleAvailability, resourceRequirementLabel, summarizeKeyAccess } from "@tornscope/shared";
+  import { branding, CAPABILITY_LABELS, moduleAvailability, resourceRequirementLabel, summarizeKeyAccess } from "@tornscope/shared";
   import { refreshMe, me } from "$lib/state.svelte";
 
   let apiKey = $state("");
@@ -227,6 +227,13 @@
   );
   const limitedAccess = $derived(accessSummary !== null && accessSummary.levelName !== "Full");
 
+  /** Human-readable per-capability list for the "exactly what this key allows" disclosure. */
+  function capabilityList(caps: KeyCapabilitiesDto): Array<{ label: string; granted: boolean }> {
+    return (Object.keys(CAPABILITY_LABELS) as Array<keyof typeof CAPABILITY_LABELS>)
+      .filter((key) => key in caps)
+      .map((key) => ({ label: CAPABILITY_LABELS[key]!.label, granted: Boolean((caps as Record<string, unknown>)[key]) }));
+  }
+
   const caps = $derived(me.data?.capabilities ?? null);
   const modules = $derived(moduleAvailability(caps ?? {
     canReadUserBasic: false, canReadUserBars: false, canReadUserCooldowns: false, canReadUserEducation: false,
@@ -305,27 +312,87 @@
           <p class="mt-3 text-center text-xs text-fg-faint">Seeded example player, clearly marked — switch to your own data whenever you're ready.</p>
         {/if}
 
+        <!-- Privacy & key choice — shown BEFORE any key is entered or validated -->
+        <div class="mt-6 space-y-4 rounded-xl border border-border bg-bg-raise px-4 py-4 text-left text-[12px] leading-relaxed text-fg-muted">
+          <p class="text-[11px] font-semibold uppercase tracking-[0.14em] text-fg-faint">Limited or Full — your choice, explained</p>
+          <div class="grid gap-4 sm:grid-cols-2">
+            <div>
+              <p class="font-semibold text-fg">
+                Limited Access
+                <span class="ml-1 rounded-full border border-positive/30 bg-positive/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-positive">privacy-first</span>
+              </p>
+              <p class="mt-1">Recommended if you prefer to share less Torn data. A valid choice — TornScope works fully with it, showing clearly-marked gaps instead of zeros.</p>
+              <p class="mt-1.5 text-fg-faint"><span class="text-fg-muted">Can provide:</span> basic profile &amp; current state, live bars/cooldowns, stats and net-worth snapshots, combat history where Torn allows it.</p>
+              <p class="mt-1 text-fg-faint"><span class="text-fg-muted">May not provide:</span> detailed personal logs, historical flight/economy/drug reconstruction, complete timeline.</p>
+            </div>
+            <div>
+              <p class="font-semibold text-fg">
+                Full Access
+                <span class="ml-1 rounded-full border border-border bg-surface-2 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-fg-faint">optional</span>
+              </p>
+              <p class="mt-1">Optional — unlocks TornScope's richest analytics: detailed user logs (money, drug, travel and crime history), events, and faction data where granted.</p>
+              <p class="mt-1.5 text-fg-faint">Full Access can expose considerably more private Torn activity to TornScope, including detailed logs. Only use it if you trust the server running TornScope and want the additional analytics.</p>
+            </div>
+          </div>
+
+          <details class="group">
+            <summary class="cursor-pointer select-none text-[11px] font-semibold uppercase tracking-[0.14em] text-fg-faint transition-colors hover:text-fg-muted">
+              Who can see my data? · the honest trust model
+            </summary>
+            <ul class="mt-2 space-y-1.5">
+              <li>• TornScope runs on <span class="text-fg">this server</span> — not on Torn's and not on a neutral cloud.</li>
+              <li>• Your API key is stored encrypted (AES-256-GCM) and is never sent back to your browser. Torn keys are read-only: they cannot perform in-game actions.</li>
+              <li>• However, the server must decrypt the key whenever it contacts Torn for you. That means <span class="text-fg">the person who controls this TornScope server technically has access to the data the key permits</span>. Self-hosting it yourself is the strongest form of control.</li>
+              <li>• If you prefer to share less, choose a Limited key — it genuinely limits what any TornScope server can collect about you.</li>
+            </ul>
+          </details>
+
+          <details class="group">
+            <summary class="cursor-pointer select-none text-[11px] font-semibold uppercase tracking-[0.14em] text-fg-faint transition-colors hover:text-fg-muted">
+              What does TornScope store?
+            </summary>
+            <ul class="mt-2 space-y-1.5">
+              <li>• Your Torn API credential, <span class="text-fg">encrypted at rest</span> — decrypted only for outgoing Torn requests, never returned to the browser.</li>
+              <li>• Normalized analytics collected from Torn: events, history and snapshots your key permits.</li>
+              <li>• An opaque browser session identifier (never the API key) and your profile/display settings.</li>
+              <li>• Disconnecting the key stops all future sync; <span class="text-fg">already-collected history is kept</span> unless you explicitly delete the profile.</li>
+            </ul>
+          </details>
+        </div>
+
         <div class="mt-6 space-y-2 border-t border-border pt-4 text-center text-[11px] leading-relaxed text-fg-faint">
           <p>
             No account needed: this browser gets its own anonymous TornScope profile.
-            Your API key is stored encrypted server-side; the browser keeps only a session identifier —
-            clearing this site's cookies detaches the profile.
-          </p>
-          <p>
-            Torn API keys are read-only and cannot perform in-game actions. Broader permissions expose more of your
-            private Torn data — including detailed activity and log history — so a limited key is a valid privacy choice.
+            Clearing this site's cookies detaches the profile; signing in again with the same API key restores access.
           </p>
         </div>
       {:else if step === 2 && detected && accessSummary}
         <!-- Detected access: shown BEFORE anything is stored or synced -->
         <div class="space-y-5">
           <div class="space-y-1 text-center">
-            <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-faint">Detected API access</p>
+            <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-faint">Detected key</p>
             <p class="font-display text-2xl font-medium text-fg">{accessSummary.levelName} Access</p>
+            <p class="text-xs text-fg-muted">
+              Privacy: <span class={limitedAccess ? "text-positive" : "text-warning"}>{limitedAccess ? "Reduced data exposure" : "Broader Torn data access"}</span>
+            </p>
             {#if accessSummary.accessType}
               <p class="text-xs text-fg-faint">{accessSummary.accessType} key{accessSummary.level !== null ? ` · Torn access level ${accessSummary.level}` : ""}</p>
             {/if}
           </div>
+
+          <p class="text-center text-xs text-fg-faint">
+            TornScope modules:
+            {#if detected.capabilities}
+              {moduleAvailability(detected.capabilities).filter((m) => m.available).length} available
+              {#if moduleAvailability(detected.capabilities).some((m) => !m.available)}
+                · {moduleAvailability(detected.capabilities).filter((m) => !m.available).length} partial/unavailable
+              {:else}
+                · full supported analytics available
+              {/if}
+            {:else}
+              —
+            {/if}
+          </p>
 
           <div class="grid gap-1.5 rounded-xl border border-border bg-bg-raise px-4 py-4 text-[13px] sm:grid-cols-2">
             <div>
@@ -351,6 +418,23 @@
             </div>
           </div>
 
+          {#if detected.capabilities}
+            <details class="rounded-xl border border-border bg-bg-raise px-4 py-3">
+              <summary class="cursor-pointer select-none text-[11px] font-semibold uppercase tracking-[0.14em] text-fg-faint transition-colors hover:text-fg-muted">
+                See exactly what this key allows TornScope to read
+              </summary>
+              <ul class="mt-2 grid gap-1 text-[12px] sm:grid-cols-2">
+                {#each capabilityList(detected.capabilities) as cap (cap.label)}
+                  <li class="flex items-center gap-2">
+                    <span class="h-1.5 w-1.5 rounded-full {cap.granted ? 'bg-positive' : 'bg-border-strong'}"></span>
+                    <span class={cap.granted ? "text-fg-muted" : "text-fg-faint"}>{cap.label}</span>
+                    {#if !cap.granted}<span class="text-[10px] uppercase tracking-wide text-fg-faint">not granted</span>{/if}
+                  </li>
+                {/each}
+              </ul>
+            </details>
+          {/if}
+
           <p class="text-center text-[13px] leading-relaxed text-fg-muted">
             {#if limitedAccess}
               You can continue with this key. TornScope will only sync data your key permits —
@@ -370,7 +454,7 @@
             disabled={saving}
             onclick={() => void startTracking()}
           >
-            {saving ? "Connecting…" : "Continue — start tracking"}
+            {saving ? "Connecting…" : "Continue with this key — start tracking"}
           </button>
           <button class="w-full text-center text-xs text-fg-faint transition-colors hover:text-fg" onclick={backToKeyForm}>
             Use a different key

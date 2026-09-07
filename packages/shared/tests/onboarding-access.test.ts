@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { resourceAllowed, summarizeKeyAccess } from "../src/capabilities.js";
 import { accessLevelName } from "../src/today.js";
-import { OC_PARTICIPATION_LABELS, ocParticipationState } from "../src/oc.js";
+import { OC_PARTICIPATION_HINTS, OC_PARTICIPATION_LABELS, ocParticipationState, userInAnyKnownOc } from "../src/oc.js";
 import type { KeyCapabilities } from "../src/torn.js";
 
 /** A Full Access key blob (all selections). */
@@ -73,19 +73,36 @@ describe("summarizeKeyAccess (first-run access detection)", () => {
   });
 });
 
-describe("ocParticipationState (three explicit states, never blank)", () => {
+describe("ocParticipationState (semantic states derived from participant data, never slot counts)", () => {
   it("positively identifies participation by Torn ID", () => {
     expect(ocParticipationState({ myParticipation: true, participantsIdentifiable: true })).toBe("participating");
     expect(OC_PARTICIPATION_LABELS.participating).toBe("You are participating");
   });
 
-  it("reports not participating only when the participant list is available and the ID is absent", () => {
-    expect(ocParticipationState({ myParticipation: false, participantsIdentifiable: true })).toBe("not_participating");
-    expect(OC_PARTICIPATION_LABELS.not_participating).toBe("Not participating");
+  it("open slots NEVER imply participation unavailable — an empty roster answers the question", () => {
+    // All slots empty: the roster is visible and positively proves absence.
+    expect(ocParticipationState({ myParticipation: false, participantsIdentifiable: true }, { userInAnyKnownOc: false })).toBe("not_participating");
+  });
+
+  it("full slots do not imply participation is known — data availability decides", () => {
+    // A full OC whose payload lacks any slot structure stays unavailable.
+    expect(ocParticipationState({ myParticipation: false, participantsIdentifiable: false }, { userInAnyKnownOc: false })).toBe("unavailable");
+    expect(OC_PARTICIPATION_LABELS.unavailable).toBe("Participation unavailable");
+  });
+
+  it("a user already in one OC sees the contextual state on other OCs", () => {
+    expect(ocParticipationState({ myParticipation: false, participantsIdentifiable: true }, { userInAnyKnownOc: true })).toBe("assigned_elsewhere");
+    expect(OC_PARTICIPATION_LABELS.assigned_elsewhere).toBe("Already assigned to another OC");
+    expect(OC_PARTICIPATION_HINTS.assigned_elsewhere).toContain("one OC assignment at a time");
+  });
+
+  it("context derives from positively-participating identifiable active OCs only", () => {
+    expect(userInAnyKnownOc([{ myParticipation: true, participantsIdentifiable: true }])).toBe(true);
+    expect(userInAnyKnownOc([{ myParticipation: true, participantsIdentifiable: false }])).toBe(false);
+    expect(userInAnyKnownOc([{ myParticipation: false, participantsIdentifiable: true }])).toBe(false);
   });
 
   it("reports unavailable when the payload cannot answer — never a blank or a guess", () => {
-    expect(ocParticipationState({ myParticipation: false, participantsIdentifiable: false })).toBe("unavailable");
-    expect(OC_PARTICIPATION_LABELS.unavailable).toBe("Participation unavailable");
+    expect(ocParticipationState({ myParticipation: false, participantsIdentifiable: false }, { userInAnyKnownOc: false })).toBe("unavailable");
   });
 });

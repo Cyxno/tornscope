@@ -227,38 +227,46 @@
         {/if}
       </Panel>
 
-      <Panel title="Rehab" caption="Rehab visits = sessions grouped within 12 hours (TornScope heuristic, not official Torn data)">
+      <Panel title="Rehab" caption="One Torn Rehab log = one visit; sessions come from Torn's explicit rehab-times count">
         <div class="grid grid-cols-3 gap-4">
           <div>
-            <p class="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint" title="Sessions grouped when they occur within 12 hours of each other">Rehab visits</p>
-            <p class="tnum mt-1 text-xl font-semibold text-fg">{data.rehab.trips}</p>
-            <p class="tnum text-[11px] text-fg-faint">{data.rehab.sessions} sessions</p>
+            <p class="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint" title="One Torn Rehab log row is one visit — Torn pre-groups each visit into a single log">Visits</p>
+            <p class="tnum mt-1 text-xl font-semibold text-fg">{data.rehab.visits}</p>
+            <p class="tnum text-[11px] text-fg-faint">
+              {#if data.rehab.sessions !== null}{data.rehab.sessions} sessions{#if data.rehab.sessionsUnavailable > 0} · {data.rehab.sessionsUnavailable} unknown{/if}{:else}Sessions unavailable{/if}
+            </p>
           </div>
           <div>
-            <p class="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint">Sessions / visit</p>
-            <p class="tnum mt-1 text-xl font-semibold text-fg">{data.rehab.averageSessionsPerTrip ?? "—"}</p>
-            <p class="tnum text-[11px] text-fg-faint">{data.rehab.averageCostPerSession.value !== null ? `${formatMoneyCompact(data.rehab.averageCostPerSession.value).replace("-", "")}/session` : ""}</p>
+            <p class="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint" title="Mean of Torn's explicit per-visit session counts (rehab_times)">Sessions / visit</p>
+            <p class="tnum mt-1 text-xl font-semibold text-fg">{data.rehab.averageSessionsPerVisit ?? "—"}</p>
+            <p class="tnum text-[11px] text-fg-faint">{data.rehab.averageCostPerSession.value !== null ? `${formatMoneyCompact(data.rehab.averageCostPerSession.value).replace("-", "")}/session` : "cost/session unavailable"}</p>
           </div>
           <div>
             <p class="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint">Total spend</p>
             <p class="tnum mt-1 text-xl font-semibold text-negative">{data.rehab.totalSpend.value !== null ? `-${formatMoneyCompact(data.rehab.totalSpend.value).replace("-", "")}` : "—"}</p>
-            <p class="tnum text-[11px] text-fg-faint">{data.rehab.averageCostPerTrip.value !== null ? `${formatMoneyCompact(data.rehab.averageCostPerTrip.value).replace("-", "")}/visit` : ""}</p>
+            <p class="tnum text-[11px] text-fg-faint">{data.rehab.averageCostPerVisit.value !== null ? `${formatMoneyCompact(data.rehab.averageCostPerVisit.value).replace("-", "")}/visit` : ""}</p>
           </div>
         </div>
-        {#if data.rehab.tripTrend.length >= 2}
+        {#if data.rehab.sessionsUnavailable > 0 && data.rehab.sessions === null}
+          <p class="mt-3 rounded-xl border border-warning/30 bg-warning/5 px-4 py-2 text-[11px] leading-relaxed text-warning">
+            Torn's logs for this range did not carry the per-visit session count, so sessions are shown as unavailable —
+            never inferred from log counts or money.
+          </p>
+        {/if}
+        {#if data.rehab.visitTrend.length >= 2}
           <div class="mt-4">
-            <p class="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint">Cost per visit, grouped sessions (oldest → newest)</p>
+            <p class="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint">Cost per visit (oldest → newest)</p>
             <div class="mt-2 flex items-end gap-1.5">
-              {#each data.rehab.tripTrend.slice(-16) as trip, i (trip.startedAt)}
-                {@const maxCost = Math.max(...data.rehab.tripTrend.slice(-16).map((t) => t.cost ?? 0), 1)}
-                <div class="group relative flex-1" title="{formatDateTime(trip.startedAt)} · {trip.sessions} session{trip.sessions === 1 ? '' : 's'} · total {trip.cost !== null ? `-${formatMoneyCompact(trip.cost)}` : 'cost unknown'}">
-                  <div class="w-full rounded-t bg-negative/60 transition-colors group-hover:bg-negative" style="height: {Math.max(4, Math.round(((trip.cost ?? 0) / maxCost) * 64))}px"></div>
+              {#each data.rehab.visitTrend.slice(-16) as visit, i (visit.startedAt)}
+                {@const maxCost = Math.max(...data.rehab.visitTrend.slice(-16).map((t) => t.cost ?? 0), 1)}
+                <div class="group relative flex-1" title="{formatDateTime(visit.startedAt)} · {visit.sessions !== null ? `${visit.sessions} session${visit.sessions === 1 ? '' : 's'}` : 'sessions unavailable'} · total {visit.cost !== null ? `-${formatMoneyCompact(visit.cost)}` : 'cost unknown'}{visit.costPerSession !== null ? ` · ${formatMoneyCompact(visit.costPerSession)}/session` : ''}">
+                  <div class="w-full rounded-t bg-negative/60 transition-colors group-hover:bg-negative" style="height: {Math.max(4, Math.round(((visit.cost ?? 0) / maxCost) * 64))}px"></div>
                 </div>
               {/each}
             </div>
             <p class="mt-1 text-[11px] text-fg-faint">
-              Each bar = one visit's TOTAL cost (all its sessions combined); the session list below shows per-session costs.
-              Rehab cost rises as addiction deepens.
+              Each bar = one visit's TOTAL cost (all its sessions included — Torn reports the visit total directly).
+              Hover a bar for its session count and cost per session.
             </p>
           </div>
         {/if}
@@ -270,8 +278,10 @@
           {@const anyPercent = data.rehab.recent.some((v) => v.rehabPercent !== null)}
           <ul class="mt-5 divide-y divide-border">
             {#each data.rehab.recent.slice(0, 6) as visit (visit.occurredAt)}
+              {@const trend = data.rehab.visitTrend.find((t) => t.startedAt === visit.occurredAt)}
               <li class="flex items-baseline justify-between gap-3 py-2.5">
                 <span class="tnum text-[13px] text-fg-muted">{formatDateTime(visit.occurredAt)}</span>
+                <span class="text-[13px] text-fg">{trend?.sessions !== null && trend?.sessions !== undefined ? `${trend.sessions} session${trend.sessions === 1 ? "" : "s"}` : "sessions unavailable"}</span>
                 {#if anyPercent}
                   <span class="text-[13px] text-fg">{visit.rehabPercent !== null ? `${visit.rehabPercent}%` : "—"}</span>
                 {/if}

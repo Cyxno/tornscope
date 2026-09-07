@@ -87,6 +87,8 @@ export interface ConsumptionEventInput {
   source: string;
   sourceRef: string;
   raw: unknown;
+  /** Optional structured notes (e.g. container/yield provenance). */
+  metadata?: unknown;
 }
 
 /** Torn item-catalog types that map to tracked consumption categories. */
@@ -109,6 +111,8 @@ export interface RehabEventInput {
   occurredAt: Date;
   rehabPercent: number | null;
   cost: bigint | null;
+  /** Explicit session count from Torn (`rehab_times`); null when absent. */
+  sessions: number | null;
   addictionPointsRemoved: number | null;
   sourceRef: string;
   raw: unknown;
@@ -470,6 +474,26 @@ export function normalizeLogEntry(log: TornUserLog, ctx: NormalizeContext): Norm
         writes.unmapped += 1;
         break;
       }
+      // CONTAINER USES: when the payload carries `item2` (the yielded item —
+      // a number or an array for multi-yield boxes), `quantity` counts the
+      // YIELDED items, not containers used. One "Item use drug pack" with
+      // quantity 10 = ONE pack (converted into 10 of some drug), so valuing
+      // quantity × container price multiplied the pack price by its contents
+      // count (5 packs showed as ~$213M instead of ~$21M). The container is
+      // consumed exactly once; the yield rides along in the raw payload.
+      const yieldPayload = (data as { item2?: unknown }).item2;
+      if (yieldPayload !== undefined && yieldPayload !== null) {
+        const yieldQuantity = pickNumber(data, QTY_KEYS);
+        writes.consumptionEvents.push({
+          ...consumptionFromCatalog(ctx, itemId, name, category, 1, occurredAt, ref, log),
+          metadata: {
+            containerUse: true,
+            yieldQuantity: yieldQuantity ?? null,
+            note: "Torn quantity counts the yielded items, not containers used",
+          },
+        });
+        break;
+      }
       const rawQty = pickNumber(data, QTY_KEYS) ?? 1;
       writes.consumptionEvents.push(consumptionFromCatalog(ctx, itemId, name, category, rawQty, occurredAt, ref, log));
       break;
@@ -479,13 +503,18 @@ export function normalizeLogEntry(log: TornUserLog, ctx: NormalizeContext): Norm
       // Real payload (category "Travel", title "Rehab"):
       // {cost, addiction, rehab_times, happy_increased} — there is no
       // rehab-percentage field; `addiction` is the addiction level at visit.
+      // ONE log row is ONE visit; `rehab_times` is the explicit number of
+      // rehab sessions purchased during it (live-verified: 2–4 per visit).
       const cost = pickNumber(data, COST_KEYS) ?? pickNumber(params, COST_KEYS);
       const percent = pickNumber(data, PERCENT_KEYS) ?? pickNumber(params, PERCENT_KEYS);
-      const points = pickNumber(data, ["points_removed", "addiction_removed", "addiction_points"]) ?? pickNumber(params, ["points_removed", "addiction_removed", "addiction_points"]);
+      const points = pickNumber(data, ["points_removed", "addiction_removed", "addiction_points"]) ?? pickNumber(params, ["points_removed", "addiction_points"]);
+      const sessionsRaw = pickNumber(data, ["rehab_times", "rehab_sessions", "sessions"]) ?? pickNumber(params, ["rehab_times", "rehab_sessions", "sessions"]);
+      const sessions = sessionsRaw !== null ? Math.max(1, Math.round(sessionsRaw)) : null;
       writes.rehabEvents.push({
         occurredAt,
         rehabPercent: percent,
         cost: cost !== null ? BigInt(Math.round(cost)) : null,
+        sessions,
         addictionPointsRemoved: points,
         sourceRef: ref,
         raw: log,

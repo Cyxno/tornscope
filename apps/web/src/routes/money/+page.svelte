@@ -88,7 +88,7 @@
     energy: "Energy drinks",
     candy: "Candy",
     temporary: "Temporary items",
-    drug_pack: "Drug packs (multi-item boxes)",
+    drug_pack: "Drug Packs (each converts into drugs, valued when used)",
     other: "Other consumables",
   };
 
@@ -150,27 +150,58 @@
   );
 
   /** Distinct pie palettes: inflow (greens/teals) vs outflow (reds/ambers). */
-  const INFLOW_PALETTE = ["#2dd4bf", "#14b8a6", "#3fd68f", "#5eead4", "#8fd6c0", "#a7f3d0", "#6ee7b7", "#34d399"];
-  const OUTFLOW_PALETTE = ["#f87171", "#fb923c", "#f0b24a", "#e879a0", "#d4a5a5", "#c084fc", "#fca5a5", "#fbbf24"];
+  const INFLOW_PALETTE = ["#2dd4bf", "#14b8a6", "#3fd68f", "#5eead4", "#8fd6c0", "#a7f3d0"];
+  const OUTFLOW_PALETTE = ["#f87171", "#fb923c", "#f0b24a", "#e879a0", "#d4a5a5", "#c084fc"];
+  const DONUT_TOP_N = 5;
 
-  function labelledDonut(rows: Array<{ category: string; total: number }>, palette: string[], name: string, labeler: (category: string) => string) {
-    const top = rows.slice(0, 8);
+  /**
+   * Slice categories into top-N + "Everything else", with the EXACT colors
+   * the donut uses so the external legend always matches the graphic.
+   */
+  function donutSlices(rows: Array<{ category: string; total: number }>, palette: string[], labeler: (category: string) => string) {
+    const total = rows.reduce((s, r) => s + r.total, 0) || 1;
+    const top = rows.slice(0, DONUT_TOP_N);
+    const rest = rows.slice(DONUT_TOP_N);
+    const slices = top.map((r, i) => ({
+      name: labeler(r.category),
+      value: r.total,
+      color: palette[i % palette.length]!,
+      share: r.total / total,
+    }));
+    if (rest.length > 0) {
+      slices.push({
+        name: `Everything else (${rest.length})`,
+        value: rest.reduce((s, r) => s + r.total, 0),
+        color: "#4b5563",
+        share: rest.reduce((s, r) => s + r.total, 0) / total,
+      });
+    }
+    return slices;
+  }
+
+  /** Compact donut: NO in-chart legend — the legend is rendered as HTML below. */
+  function donutOption(slices: Array<{ name: string; value: number; color: string }>, name: string) {
     return {
       tooltip: { ...TOOLTIP, trigger: "item", formatter: "{b}: {c} ({d}%)" },
-      legend: { ...LEGEND, type: "scroll", orient: "vertical", right: 2, top: "middle", textStyle: { color: C.label, fontSize: 10.5 } },
       series: [
         {
           name,
           type: "pie",
-          radius: ["48%", "72%"],
-          center: ["34%", "50%"],
+          radius: ["52%", "76%"],
+          center: ["50%", "50%"],
           label: { show: false },
+          labelLine: { show: false },
           itemStyle: { borderRadius: 4, borderColor: "#151518", borderWidth: 2 },
-          data: top.map((r, i) => ({ name: labeler(r.category), value: r.total, itemStyle: { color: palette[i % palette.length] } })),
+          data: slices.map((s) => ({ name: s.name, value: s.value, itemStyle: { color: s.color } })),
         },
       ],
     };
   }
+
+  const receivedSlices = $derived(donutSlices(summary?.incomeByCategory ?? [], INFLOW_PALETTE, incomeLabel));
+  const spentSlices = $derived(donutSlices(summary?.expensesByCategory ?? [], OUTFLOW_PALETTE, expenseLabel));
+  const receivedDonut = $derived(receivedSlices.length > 0 ? donutOption(receivedSlices, "Cash received") : null);
+  const spentDonut = $derived(spentSlices.length > 0 ? donutOption(spentSlices, "Cash spent") : null);
 
   const cumulativeOption = $derived.by(() => {
     if (!summary || summary.cumulativeNetSeries.length === 0) return null;
@@ -290,7 +321,7 @@
         </p>
       {/if}
 
-      <Panel title="Cash spent by category" caption="Where the Cash Spent total goes — consumed inventory is NOT part of this">
+      <Panel title="Cash spent by category" caption="Buying inventory is an asset purchase — using it later is consumption (section B), never the same accounting event">
         {#if economy.cashFlow.expensesByCategory.length === 0}
           <StateMessage state="empty" title="No cash expenses in this range" />
         {:else}
@@ -473,18 +504,46 @@
           <Chart option={flowOption} height={280} />
         {/if}
       </Panel>
-      <Panel title="Received vs spent mix" caption="Explicit labels: received categories (left) vs spent categories (right)">
+      <Panel title="Received vs spent mix" caption="Top categories by side — legends sit below each chart, never over the graphic">
         {#if summary.incomeByCategory.length === 0 && summary.expensesByCategory.length === 0}
           <StateMessage state="empty" title="No categories to break down" />
         {:else}
-          <div class="grid grid-cols-2 gap-4">
-            <div>
-              <Chart option={labelledDonut(summary.incomeByCategory, INFLOW_PALETTE, "Cash received", incomeLabel)} height={220} />
-              <p class="mt-1 text-center text-[11px] uppercase tracking-[0.14em] text-positive">Cash received</p>
+          <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+            <div class="min-w-0">
+              <p class="mb-1 text-center text-[11px] font-semibold uppercase tracking-[0.14em] text-positive">Cash received</p>
+              {#if receivedDonut}
+                <Chart option={receivedDonut} height={190} />
+              {:else}
+                <div class="flex h-[190px] items-center justify-center text-xs text-fg-faint">No received cash in this range</div>
+              {/if}
+              <ul class="mx-auto mt-2 grid max-w-sm gap-1 text-xs">
+                {#each receivedSlices as slice (slice.name)}
+                  <li class="flex items-baseline gap-2">
+                    <span class="h-2 w-2 shrink-0 rounded-full" style="background: {slice.color}"></span>
+                    <span class="min-w-0 flex-1 truncate text-fg-muted" title={slice.name}>{slice.name}</span>
+                    <span class="tnum text-fg-muted">{formatMoneyCompact(slice.value)}</span>
+                    <span class="tnum w-9 text-right text-fg-faint">{Math.round(slice.share * 100)}%</span>
+                  </li>
+                {/each}
+              </ul>
             </div>
-            <div>
-              <Chart option={labelledDonut(summary.expensesByCategory, OUTFLOW_PALETTE, "Cash spent", expenseLabel)} height={220} />
-              <p class="mt-1 text-center text-[11px] uppercase tracking-[0.14em] text-negative">Cash spent</p>
+            <div class="min-w-0">
+              <p class="mb-1 text-center text-[11px] font-semibold uppercase tracking-[0.14em] text-negative">Cash spent</p>
+              {#if spentDonut}
+                <Chart option={spentDonut} height={190} />
+              {:else}
+                <div class="flex h-[190px] items-center justify-center text-xs text-fg-faint">No spent cash in this range</div>
+              {/if}
+              <ul class="mx-auto mt-2 grid max-w-sm gap-1 text-xs">
+                {#each spentSlices as slice (slice.name)}
+                  <li class="flex items-baseline gap-2">
+                    <span class="h-2 w-2 shrink-0 rounded-full" style="background: {slice.color}"></span>
+                    <span class="min-w-0 flex-1 truncate text-fg-muted" title={slice.name}>{slice.name}</span>
+                    <span class="tnum text-fg-muted">{formatMoneyCompact(slice.value)}</span>
+                    <span class="tnum w-9 text-right text-fg-faint">{Math.round(slice.share * 100)}%</span>
+                  </li>
+                {/each}
+              </ul>
             </div>
           </div>
         {/if}

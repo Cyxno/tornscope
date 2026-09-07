@@ -28,7 +28,7 @@ export async function getDrugsSummary(userId: string, rangeInput: DateRangeInput
     db.rehabEvent.findMany({
       where: { userId, occurredAt: { gte: new Date(range.from * 1000), lte: new Date(range.to * 1000) } },
       orderBy: { occurredAt: "desc" },
-      select: { occurredAt: true, rehabPercent: true, cost: true },
+      select: { occurredAt: true, rehabPercent: true, cost: true, sessions: true },
     }),
     loadMarketPrices(db),
     resolveXanaxItemId(db),
@@ -167,6 +167,7 @@ export async function getDrugsSummary(userId: string, rangeInput: DateRangeInput
     occurredAt: Math.floor(r.occurredAt.getTime() / 1000),
     cost: bigintToNumber(r.cost),
     rehabPercent: r.rehabPercent,
+    sessions: r.sessions,
   }));
   const rehab = calculateRehabStats(rehabEvents, range.from, range.to);
 
@@ -215,17 +216,15 @@ export async function getDrugsSummary(userId: string, rangeInput: DateRangeInput
     dailySeries: stats.dailySeries,
     rehab: {
       totalSpend: { value: rehab.totalSpend, provenance: rehab.provenance },
-      trips: rehab.trips,
+      visits: rehab.visits,
       sessions: rehab.sessions,
-      averageSessionsPerTrip: rehab.averageSessionsPerTrip !== null ? Math.round(rehab.averageSessionsPerTrip * 10) / 10 : null,
+      sessionsUnavailable: rehab.sessionsUnavailable,
+      averageSessionsPerVisit: rehab.averageSessionsPerVisit !== null ? Math.round(rehab.averageSessionsPerVisit * 10) / 10 : null,
       averageCostPerSession: { value: rehab.averageCostPerSession, provenance: rehab.provenance },
-      averageCostPerTrip: { value: rehab.averageCostPerTrip, provenance: rehab.provenance },
+      averageCostPerVisit: { value: rehab.averageCostPerVisit, provenance: rehab.provenance },
       latestAt: rehab.latestAt,
       averageSpend: { value: rehab.averageSpend, provenance: rehab.provenance },
-      tripTrend: rehab.tripClusters
-        .slice()
-        .sort((a, b) => a.startedAt - b.startedAt)
-        .map((t) => ({ startedAt: t.startedAt, sessions: t.sessions, cost: t.cost })),
+      visitTrend: rehab.visitTrend.map((t) => ({ startedAt: t.startedAt, sessions: t.sessions, cost: t.cost, costPerSession: t.costPerSession })),
       recent: rehab.history.slice(0, 10).map((h) => ({
         occurredAt: h.occurredAt,
         rehabPercent: h.rehabPercent,

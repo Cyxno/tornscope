@@ -71,14 +71,14 @@ describe("calculateDrugStats", () => {
 });
 
 describe("calculateRehabStats", () => {
-  it("sums spend, counts trips, and reports the latest rehab", () => {
+  it("sums spend, counts visits, and reports the latest rehab", () => {
     const events: RehabEventLike[] = [
       { occurredAt: T0, cost: 50_000, rehabPercent: 20 },
       { occurredAt: T0 + DAY, cost: 75_000, rehabPercent: 40 },
       { occurredAt: T0 + 2 * DAY, cost: null, rehabPercent: null },
     ];
     const stats = calculateRehabStats(events, T0, T0 + 3 * DAY);
-    expect(stats.trips).toBe(3);
+    expect(stats.visits).toBe(3);
     expect(stats.totalSpend).toBe(125_000);
     expect(stats.averageSpend).toBeCloseTo(62_500);
     expect(stats.latestAt).toBe(T0 + 2 * DAY);

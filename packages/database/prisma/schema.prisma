@@ -453,13 +453,17 @@ model ConsumptionEvent {
   @@index([userId, category])
 }
 
-/// Rehabilitation visits.
+/// Rehabilitation visits. One row = one visit; `sessions` is the explicit
+/// `rehab_times` count from Torn (sessions purchased during the visit).
 model RehabEvent {
   id                    String   @id @default(cuid())
   userId                String
   occurredAt            DateTime
   rehabPercent          Int?
   cost                  BigInt?
+  /// Explicit session count from Torn (`rehab_times`); null when the source
+  /// payload did not carry it — rendered "Sessions unavailable", never 1.
+  sessions              Int?
   addictionPointsRemoved Int?
   source                String   @default("torn_log")
   sourceRef             String

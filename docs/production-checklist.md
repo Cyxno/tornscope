@@ -42,3 +42,13 @@ Complete every item before exposing TornScope on a public hostname
 
 ## Backups
 - [ ] `pg_dump` verified restorable. The command lives in Settings → "Server administration · Backups", which is visible ONLY to the server owner (server-derived role, never a client flag); ordinary users see user-focused copy instead of infrastructure details.
+
+## Owner binding / recovery
+- The owner is identified EXCLUSIVELY server-side: `User.role == "owner" && !isDemo` on the session's resolved profile. Never from Torn ID, key level, cookies, or client state.
+- The bind/recovery token itself NEVER reaches the browser — the API exposes only an `ownerBindAvailable` boolean.
+- First bind: set `OWNER_BIND_TOKEN`, bind once from the owner browser; the profile is then permanently claimed.
+- Recovery AFTER binding is opt-in and must stay disabled in normal production:
+  1. `OWNER_BIND_ENABLED=true` in `.env`, restart the api/worker (`docker compose -f docker-compose.unraid.yml up -d`)
+  2. bind from the trusted browser with `OWNER_RECOVERY_TOKEN`
+  3. remove `OWNER_BIND_ENABLED` again and restart.
+  With the flag unset, the Settings recovery section is hidden for everyone and the bind endpoint refuses re-binding even if a recovery token is present in the environment.
