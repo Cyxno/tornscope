@@ -10,7 +10,7 @@ Torn's API shows the *present*; it does not give you your financial history, dru
 
 The product intentionally combines ideas from Torn.Report (information density, drug analytics) and YATA (reliable tracking), rebuilt on a modern architecture.
 
-## Features (MVP)
+## Features
 
 | Area | What you get |
 | --- | --- |
