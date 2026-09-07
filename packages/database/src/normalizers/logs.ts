@@ -127,7 +127,7 @@ export interface TravelTransitionInput {
 export interface TravelItemEventInput {
   occurredAt: Date;
   destination: string | null;
-  category: "plushie" | "flower" | "other";
+  category: "plushie" | "flower" | "xanax" | "other";
   itemId: number;
   itemName: string | null;
   quantity: number;
@@ -275,12 +275,14 @@ export function itemNameFromUseTitle(title: string): string | null {
   return m ? m[1]!.trim() : null;
 }
 
-function isPlushieOrFlower(name: string | null, catalogType?: string | null): "plushie" | "flower" | "other" {
+function isPlushieOrFlower(name: string | null, catalogType?: string | null): "plushie" | "flower" | "xanax" | "other" {
   // The catalog type is authoritative ("Teddy Bear" is a Plushie without the
   // word in its name); the name heuristic is only a fallback.
   const t = catalogType?.toLowerCase();
   if (t === "plushie") return "plushie";
   if (t === "flower") return "flower";
+  // Xanax is a top-level travel commodity, never folded into "other".
+  if (name && /xanax/i.test(name)) return "xanax";
   if (name && /plushie/i.test(name)) return "plushie";
   if (name && /flower|rose|daffodil|orchid|heather|ceibo|edeweiss|peony|cherry blossom|african daisy|tribulus|banana orchid|crocus|kuala/i.test(name)) return "flower";
   return "other";

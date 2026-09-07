@@ -271,6 +271,18 @@ export const MeResponseSchema = z.object({
   accessLevel: z.number().nullable(),
   /** True when the legacy owner bind flow is still available. */
   ownerBindAvailable: z.boolean(),
+  /**
+   * True when THIS session's server-derived role is the deployment's server
+   * owner (role "owner", non-demo). Server-derived only — never a client
+   * boolean. Gates infrastructure/administration information in the UI.
+   */
+  isServerOwner: z.boolean(),
+  /**
+   * Deployed build identifier (git sha injected at Docker build time).
+   * Server-owner visibility only: deployment details are not shown to
+   * ordinary users. Null for non-owners.
+   */
+  build: z.object({ commit: z.string().nullable() }),
   torn: z
     .object({
       tornId: z.number(),
@@ -299,8 +311,6 @@ export const MeResponseSchema = z.object({
    * the historical backfill.
    */
   setupPhase: z.enum(["no_key", "queued", "syncing", "partial", "caught_up", "failed"]),
-  /** Deployed build identifier (git sha injected at Docker build time). */
-  build: z.object({ commit: z.string() }),
 });
 export type MeResponse = z.infer<typeof MeResponseSchema>;
 
@@ -411,6 +421,31 @@ export const DashboardResponseSchema = z.object({
     unknownValue: z.number(),
     /** Internal movements between owned accounts (bank invest/withdraw). */
     bankTransfers: z.number(),
+    /**
+     * Receiving-side breakdown: earned income vs asset sales vs other, with
+     * explicit labels ("Item Market sales", never a bare "Items"). Rows
+     * reconcile EXACTLY to cashInflow.value; no event is counted twice.
+     */
+    cashReceived: z
+      .object({
+        total: z.number(),
+        earned: z.object({
+          total: z.number(),
+          /** OC payouts — earned, but credited to the faction member balance. */
+          ocPayouts: z.number(),
+          rows: z.array(z.object({ key: z.string(), label: z.string(), amount: z.number() })),
+        }),
+        assetSales: z.object({
+          total: z.number(),
+          rows: z.array(z.object({ key: z.string(), label: z.string(), amount: z.number() })),
+        }),
+        other: z.object({
+          total: z.number(),
+          rows: z.array(z.object({ key: z.string(), label: z.string(), amount: z.number() })),
+        }),
+        unclassified: z.object({ total: z.number(), count: z.number() }),
+      })
+      .nullable(),
     /**
      * Net worth snapshot delta over the range. This is a SNAPSHOT DELTA —
      * it includes item/stock/property price moves, cash and asset movement —
@@ -893,7 +928,18 @@ export const FactionOcRowSchema = z.object({
   /** Grouped lifecycle state derived from the Torn status string. */
   state: z.enum(["active", "completed", "expired"]),
   difficulty: z.number().nullable(),
+  /**
+   * OC tier — Torn's difficulty rating is the tier number players refer to.
+   * Null when Torn provides no tier/difficulty for this OC (never guessed).
+   */
+  tier: z.number().nullable(),
   executedAt: z.number().nullable(),
+  /** Planning/start times where Torn provides them (unix seconds). */
+  planningAt: z.number().nullable(),
+  readyAt: z.number().nullable(),
+  /** Slots positively filled (participant present) out of total slots. */
+  slotsFilled: z.number(),
+  slotsTotal: z.number(),
   myParticipation: z.boolean(),
   /** False when the stored payload carries no participant ids ("Mine" = Unavailable). */
   participantsIdentifiable: z.boolean(),
@@ -1014,17 +1060,45 @@ export const DrugsSummaryResponseSchema = z.object({
     coverage: z.enum(["full", "partial", "unavailable"]),
   }),
   /**
-   * Xanax funding split, evidence-based: sponsored = faction armory news
-   * event at the same timestamp as the use; personal = matched to a personal
-   * purchase record; unknown = gifts and untraceable uses (never assumed
-   * personal). armoryHistory exposes what the API source can actually cover.
+   * Xanax funding, provenance-aware (stock-flow ledger):
+   * - confirmedFaction: faction armory evidence tied to the member and time
+   *   (use at the logged moment, or stock drawn from an armory withdrawal);
+   * - confirmedPersonal: drawn from a recorded personal/travel purchase —
+   *   ANY time, never clipped to the selected range;
+   * - confirmedOther: explicit external evidence (e.g. a gift log);
+   * - openingInventoryUnknown: drawn from stock that demonstrably existed
+   *   before the range but whose origin is not proven by records;
+   * - unknown: no ledger coverage at all (no pre-range evidence).
+   *
+   * The `personal`/`factionSponsored`/`unknownFunded` trio is the legacy
+   * aggregate view (unknownFunded = everything not positively attributed).
+   * A missing purchase inside the window NEVER implies unknown funding.
    */
   xanaxFunding: z.object({
     used: z.number(),
+    confirmedPersonal: z.number(),
+    confirmedFaction: z.number(),
+    confirmedOther: z.number(),
+    openingInventoryUnknown: z.number(),
+    unknown: z.number(),
+    /** Ledger state at the range start. */
+    openingStock: z.object({
+      /** Recorded stock still held at the range start. */
+      knownUnits: z.number(),
+      fromRecordedPurchases: z.number(),
+      fromFaction: z.number(),
+      fromOther: z.number(),
+      /** Proven-but-unrecorded stock at the range start (origin unknown). */
+      unrecorded: z.number(),
+    }),
+    /** Earliest acquisition/use evidence feeding the ledger (unix seconds). */
+    earliestEvidenceAt: z.number().nullable(),
+    /** True when evidence exists strictly before the selected range. */
+    hasPreRangeEvidence: z.boolean(),
     personal: z.number(),
     /** Linked to a faction armory / faction transfer record. */
     factionSponsored: z.number(),
-    /** Gifts plus uses with no traceable source. */
+    /** Everything not positively attributed (legacy aggregate). */
     unknownFunded: z.number(),
     armoryHistory: z.object({
       /** True when at least one armory news event is stored. */
@@ -1116,6 +1190,21 @@ export const TravelSummaryResponseSchema = z.object({
   profitPerHour: KpiValueSchema,
   topDestination: z.object({ destination: z.string().nullable(), profit: z.number().nullable() }),
   topItem: z.object({ item: z.string().nullable(), profit: z.number().nullable() }),
+  /**
+   * Economically important items surfaced BY NAME with their share of travel
+   * spend — meaningful items (e.g. Xanax) never hide inside "other".
+   */
+  topItems: z.array(
+    z.object({
+      item: z.string(),
+      category: z.string(),
+      quantity: z.number(),
+      spend: z.number(),
+      estimatedProfit: z.number().nullable(),
+      /** Fraction of total in-range travel spend (0..1). */
+      spendShare: z.number(),
+    })
+  ),
   profitSeries: z.array(z.object({ t: z.number(), profit: z.number() })),
   profitByDestination: z.array(
     z.object({ destination: z.string(), trips: z.number(), profit: z.number(), provenance: ProvenanceSchema })
@@ -1201,7 +1290,8 @@ export type SyncStatusResponse = z.infer<typeof SyncStatusResponseSchema>;
 /** Full sync + system health for the Sync Status page. */
 export const SyncHealthResponseSchema = z.object({
   running: z.boolean(),
-  build: z.object({ commit: z.string() }),
+  /** Deployment identity — server-owner only; null for ordinary users. */
+  build: z.object({ commit: z.string().nullable() }),
   /**
    * Infrastructure topology (postgres/redis/worker/queues) is disclosed ONLY
    * to the server owner; other viewers get null and the UI shows a

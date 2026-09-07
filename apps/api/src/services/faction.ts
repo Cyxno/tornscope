@@ -428,13 +428,25 @@ export async function getFactionOcs(userId: string, rangeInput: DateRangeInput):
         };
       });
       const items = Array.isArray(rewards.items) ? rewards.items.map((it) => ({ id: Number(it.id ?? 0), quantity: Number(it.quantity ?? 1) })) : null;
+      const slotsTotal = slots.length;
+      // A slot is "filled" only when the payload positively carries a member.
+      const slotsFilled = slots.filter((s) => typeof s.user?.id === "number").length;
+      // OC tier: Torn's difficulty rating IS the tier number players refer to
+      // (verified against Torn's OC 2.0 payload, which exposes `difficulty`
+      // and no separate tier field). Null stays null — never guessed.
+      const tier = typeof oc.difficulty === "number" ? oc.difficulty : null;
       return {
         ocId: oc.ocId,
         name: oc.name,
         status: oc.status,
         state: ocState(oc.status),
         difficulty: oc.difficulty,
+        tier,
         executedAt: oc.executedAt ? Math.floor(oc.executedAt.getTime() / 1000) : null,
+        planningAt: oc.planningAt ? Math.floor(oc.planningAt.getTime() / 1000) : null,
+        readyAt: oc.readyAt ? Math.floor(oc.readyAt.getTime() / 1000) : null,
+        slotsFilled,
+        slotsTotal,
         myParticipation,
         // True only when the payload actually carries participant ids —
         // otherwise "Mine" is Unavailable, not silently "no".

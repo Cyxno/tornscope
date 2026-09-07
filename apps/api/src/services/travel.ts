@@ -65,6 +65,9 @@ export async function getTravelSummary(userId: string, rangeInput: DateRangeInpu
     },
     topDestination: { destination: topDest?.destination ?? null, profit: topDest?.estimatedProfit ?? null },
     topItem: topItem,
+    // Economically important items surfaced BY NAME (never hidden in
+    // "other") — Xanax included as a first-class category.
+    topItems: findTopItems(trips),
     profitSeries: buildProfitSeries(trips, range.from, range.to),
     profitByDestination: summary.byDestination.map((d) => ({
       destination: d.destination,
@@ -252,4 +255,39 @@ function findTopItem(trips: LoadedTrip[], marketPrices: Map<number, bigint>): { 
     .sort((a, b) => b[1].profit - a[1].profit);
   const best = sorted[0];
   return best ? { item: best[0], profit: best[1].profit } : { item: null, profit: null };
+}
+
+/**
+ * Per-item totals across in-range trips so economically important items are
+ * surfaced BY NAME with their share of travel spend (dynamic "other"):
+ * anything meaningful shows up here instead of hiding in a catch-all.
+ */
+function findTopItems(trips: LoadedTrip[]): Array<{ item: string; category: string; quantity: number; spend: number; estimatedProfit: number | null; spendShare: number }> {
+  const totalSpend = trips.reduce((s, t) => s + t.items.reduce((x, i) => x + i.totalCost, 0), 0);
+  const perItem = new Map<string, { item: string; category: string; quantity: number; spend: number; profit: number; profitKnown: boolean }>();
+  for (const trip of trips) {
+    for (const item of trip.items) {
+      const key = item.itemName ?? `Item ${item.itemId}`;
+      const current = perItem.get(key) ?? { item: key, category: item.category, quantity: 0, spend: 0, profit: 0, profitKnown: true };
+      current.quantity += item.quantity;
+      current.spend += item.totalCost;
+      if (item.estimatedUnitValue !== null) {
+        current.profit += item.estimatedUnitValue * item.quantity - item.totalCost;
+      } else {
+        current.profitKnown = false;
+      }
+      perItem.set(key, current);
+    }
+  }
+  return [...perItem.values()]
+    .sort((a, b) => b.spend - a.spend)
+    .slice(0, 8)
+    .map((v) => ({
+      item: v.item,
+      category: v.category,
+      quantity: v.quantity,
+      spend: v.spend,
+      estimatedProfit: v.profitKnown ? v.profit : null,
+      spendShare: totalSpend > 0 ? v.spend / totalSpend : 0,
+    }));
 }

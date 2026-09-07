@@ -1,4 +1,4 @@
-import { RateLimiter, TornApiClient, TornEndpoints, type TornClientLogger } from "@tornscope/torn-api";
+import { RateLimiter, TornApiClient, TornEndpoints, type TornClientLogger, type TornClientMetrics } from "@tornscope/torn-api";
 import { EncryptionService, encryptionFromEnv, getPrismaClient, type PrismaClientType } from "@tornscope/database";
 import { env, logger } from "./env.js";
 
@@ -32,13 +32,22 @@ export class WorkerContext {
 
   /** Build Torn endpoints bound to a decrypted key. */
   torn(apiKey: string): TornEndpoints {
+    return this.createTorn(apiKey).endpoints;
+  }
+
+  /**
+   * Build Torn endpoints AND expose the client's request counters so a sync
+   * run can record how many Torn calls it made — including denied ones and
+   * timeouts — in its SyncRun stats. Counters carry no key material.
+   */
+  createTorn(apiKey: string): { endpoints: TornEndpoints; metrics: TornClientMetrics } {
     const client = new TornApiClient(apiKey, {
       baseUrl: env.tornBaseUrl,
       minRequestIntervalMs: env.tornMinRequestIntervalMs,
       rateLimiter: this.rateLimiter,
       logger: tornLoggerAdapter,
     });
-    return new TornEndpoints(client);
+    return { endpoints: new TornEndpoints(client), metrics: client.metrics };
   }
 }
 

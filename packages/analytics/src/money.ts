@@ -398,3 +398,218 @@ export function aggregateMoneySemantics(events: readonly MoneyEventLike[], from:
     provenance: "exact",
   };
 }
+
+/* -------------------------------------------------------------------------- */
+/* Cash received / spent breakdown (reconciling)                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Explicit labels for cash-income categories. Never render a bare category
+ * id like "Items": the same word must not mean "items sold for cash" in the
+ * cash-received section and "inventory value" in the wealth section.
+ */
+export const CASH_INCOME_LABELS: Record<string, string> = {
+  salary: "Salary",
+  crime: "Crime cash",
+  mugging: "Muggings",
+  ranked_war: "Ranked war payouts",
+  missions: "Missions",
+  casino: "Casino",
+  bazaar: "Bazaar sales",
+  items: "Item Market sales",
+  trading: "Trade proceeds",
+  auction: "Auction proceeds",
+  points: "Points sold",
+  stock: "Stock sales",
+  travel: "Travel goods sold",
+  plushie: "Plushie sales",
+  flower: "Flower sales",
+  drugs: "Drug sales",
+  other: "Other received",
+};
+
+export const CASH_EXPENSE_LABELS: Record<string, string> = {
+  rehab: "Rehab",
+  education: "Education",
+  hospital: "Hospital",
+  jail: "Bail / jail",
+  housing: "Property upkeep",
+  bazaar: "Bazaar purchases",
+  items: "Item Market purchases",
+  trading: "Trade payments",
+  auction: "Auction bids",
+  points: "Points bought",
+  stock: "Stock purchases",
+  travel: "Travel goods bought",
+  plushie: "Plushies bought",
+  flower: "Flowers bought",
+  drugs: "Drugs bought",
+  other: "Other spending",
+};
+
+/** Income categories that are earnings (raise total value directly). */
+const EARNED_INCOME_CATEGORIES = new Set(["crime", "mugging", "ranked_war", "salary", "missions", "casino", "faction"]);
+/** Income categories that are asset -> cash conversions. */
+const ASSET_SALE_CATEGORIES = new Set(["bazaar", "items", "trading", "auction", "points", "stock", "travel", "plushie", "flower", "drugs"]);
+
+export interface CashFlowEventLike {
+  category: string;
+  direction: MoneyDirection;
+  /** Signed; positive = received. */
+  amount: number;
+  /** Faction income carrying OC scenario metadata (an OC payout credited to
+   * the faction member balance — earned, but not wallet cash). */
+  ocPayout?: boolean;
+}
+
+export interface CashFlowRow {
+  /** Stable bucket id ( OC payouts split faction income). */
+  key: string;
+  /** Explicit user-facing label. */
+  label: string;
+  amount: number;
+}
+
+export interface CashReceivedBreakdown {
+  /** Exactly the income that aggregateMoneySemantics counts as cashInflow. */
+  total: number;
+  earned: { total: number; ocPayouts: number; rows: CashFlowRow[] };
+  assetSales: { total: number; rows: CashFlowRow[] };
+  /** Income that could not be classified as earned or asset sale. */
+  other: { total: number; rows: CashFlowRow[] };
+  /** Unclassifiable income rows — reported, never silently folded in. */
+  unclassified: { total: number; count: number };
+}
+
+/**
+ * Partition received cash into earned income vs asset sales vs other, with
+ * per-row labels. Construction guarantees `earned.total + assetSales.total +
+ * other.total === total` and no event is counted twice. OC payouts stay in
+ * earned income with their own row (the wallet section explains they credit
+ * the faction balance, not the wallet).
+ */
+export function buildCashReceivedBreakdown(events: readonly CashFlowEventLike[]): CashReceivedBreakdown {
+  const earnedRows = new Map<string, CashFlowRow>();
+  const assetRows = new Map<string, CashFlowRow>();
+  const otherRows = new Map<string, CashFlowRow>();
+  let earnedTotal = 0;
+  let ocPayouts = 0;
+  let assetTotal = 0;
+  let otherTotal = 0;
+  let total = 0;
+  let unclassifiedTotal = 0;
+  let unclassifiedCount = 0;
+
+  const addRow = (map: Map<string, CashFlowRow>, key: string, label: string, amount: number): void => {
+    const existing = map.get(key);
+    if (existing) existing.amount += amount;
+    else map.set(key, { key, label, amount });
+  };
+
+  for (const event of events) {
+    if (event.amount === 0) continue;
+    if (event.direction !== "income") continue;
+    // Mirror aggregateMoneySemantics: neutral rows are internal movements and
+    // unknown-direction rows are never counted as received.
+    if (classifyMoneySemantics(event) === "unknown") {
+      unclassifiedTotal += Math.abs(event.amount);
+      unclassifiedCount += 1;
+      continue;
+    }
+    total += event.amount;
+    const isOcPayout = event.ocPayout === true;
+    if (event.category === "faction" && isOcPayout) {
+      earnedTotal += event.amount;
+      ocPayouts += event.amount;
+      addRow(earnedRows, "oc_payout", "OC payouts (credited to faction balance)", event.amount);
+      continue;
+    }
+    if (EARNED_INCOME_CATEGORIES.has(event.category)) {
+      earnedTotal += event.amount;
+      const label = event.category === "faction" ? "Faction income" : CASH_INCOME_LABELS[event.category] ?? event.category;
+      addRow(earnedRows, event.category, label, event.amount);
+      continue;
+    }
+    if (ASSET_SALE_CATEGORIES.has(event.category)) {
+      assetTotal += event.amount;
+      addRow(assetRows, event.category, CASH_INCOME_LABELS[event.category] ?? event.category, event.amount);
+      continue;
+    }
+    otherTotal += event.amount;
+    addRow(otherRows, event.category, CASH_INCOME_LABELS[event.category] ?? event.category, event.amount);
+  }
+
+  const sortRows = (map: Map<string, CashFlowRow>): CashFlowRow[] =>
+    [...map.values()].sort((a, b) => b.amount - a.amount);
+
+  return {
+    total,
+    earned: { total: earnedTotal, ocPayouts, rows: sortRows(earnedRows) },
+    assetSales: { total: assetTotal, rows: sortRows(assetRows) },
+    other: { total: otherTotal, rows: sortRows(otherRows) },
+    unclassified: { total: unclassifiedTotal, count: unclassifiedCount },
+  };
+}
+
+export interface CashSpentBreakdown {
+  total: number;
+  /** True expenses (value consumed/lost). */
+  expenses: { total: number; rows: CashFlowRow[] };
+  /** Asset purchases (cash -> owned asset). */
+  assetPurchases: { total: number; rows: CashFlowRow[] };
+  other: { total: number; rows: CashFlowRow[] };
+  unclassified: { total: number; count: number };
+}
+
+/** Mirror of buildCashReceivedBreakdown for the spending side. */
+export function buildCashSpentBreakdown(events: readonly CashFlowEventLike[]): CashSpentBreakdown {
+  const expenseRows = new Map<string, CashFlowRow>();
+  const assetRows = new Map<string, CashFlowRow>();
+  const otherRows = new Map<string, CashFlowRow>();
+  let expenseTotal = 0;
+  let assetTotal = 0;
+  let otherTotal = 0;
+  let total = 0;
+  let unclassifiedTotal = 0;
+  let unclassifiedCount = 0;
+
+  const addRow = (map: Map<string, CashFlowRow>, key: string, label: string, amount: number): void => {
+    const existing = map.get(key);
+    if (existing) existing.amount += amount;
+    else map.set(key, { key, label, amount });
+  };
+
+  for (const event of events) {
+    const magnitude = Math.abs(event.amount);
+    if (event.amount === 0 || event.direction !== "expense") continue;
+    if (classifyMoneySemantics(event) === "unknown") {
+      unclassifiedTotal += magnitude;
+      unclassifiedCount += 1;
+      continue;
+    }
+    total += magnitude;
+    if (EARNED_INCOME_CATEGORIES.has(event.category) || ["rehab", "education", "hospital", "jail", "housing"].includes(event.category)) {
+      expenseTotal += magnitude;
+      addRow(expenseRows, event.category, CASH_EXPENSE_LABELS[event.category] ?? event.category, magnitude);
+      continue;
+    }
+    if (ASSET_SALE_CATEGORIES.has(event.category)) {
+      assetTotal += magnitude;
+      addRow(assetRows, event.category, CASH_EXPENSE_LABELS[event.category] ?? event.category, magnitude);
+      continue;
+    }
+    otherTotal += magnitude;
+    addRow(otherRows, event.category, CASH_EXPENSE_LABELS[event.category] ?? event.category, magnitude);
+  }
+
+  const sortRows = (map: Map<string, CashFlowRow>): CashFlowRow[] =>
+    [...map.values()].sort((a, b) => b.amount - a.amount);
+
+  return {
+    total,
+    expenses: { total: expenseTotal, rows: sortRows(expenseRows) },
+    assetPurchases: { total: assetTotal, rows: sortRows(assetRows) },
+    other: { total: otherTotal, rows: sortRows(otherRows) },
+    unclassified: { total: unclassifiedTotal, count: unclassifiedCount },
+  };
+}

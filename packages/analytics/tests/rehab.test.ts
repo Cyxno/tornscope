@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { calculateRehabStats, clusterRehabTrips } from "../src/rehab.js";
-import { splitXanaxFunding } from "../../../apps/api/src/services/drugs.js";
 
 /**
  * Rehab contract: rehab is an EXPENSE. Costs are stored positive (money out)
@@ -74,53 +73,5 @@ describe("calculateRehabStats", () => {
     const s = calculateRehabStats([], 0, to);
     expect(s.trips).toBe(0);
     expect(s.totalSpend).toBe(0);
-  });
-});
-
-describe("splitXanaxFunding", () => {
-  const DAY = 86_400;
-
-  it("puts untraceable uses in Unknown funding — never assumed personal", () => {
-    const r = splitXanaxFunding([{ occurredAt: 100 }, { occurredAt: 200 }], [], [], []);
-    expect(r).toEqual({ personal: 0, factionSponsored: 0, unknownFunded: 2 });
-  });
-
-  it("matches sponsored armory events by near-simultaneous timestamp", () => {
-    // Armory news and the personal use log share the exact second (verified live).
-    const r = splitXanaxFunding([{ occurredAt: DAY + 3600 }, { occurredAt: DAY + 7200 }], [DAY + 3600], [], []);
-    expect(r.factionSponsored).toBe(1);
-    expect(r.unknownFunded).toBe(1);
-    expect(r.personal).toBe(0);
-  });
-
-  it("does not match supply older than the window or in the future", () => {
-    const r = splitXanaxFunding([{ occurredAt: 30 * DAY }], [DAY], [], []);
-    expect(r.factionSponsored).toBe(0);
-    expect(r.unknownFunded).toBe(1);
-  });
-
-  it("gifts fund the Unknown bucket, never Personal", () => {
-    const r = splitXanaxFunding([{ occurredAt: DAY + 600 }, { occurredAt: DAY + 1200 }], [], [DAY], []);
-    expect(r.unknownFunded).toBe(2);
-    expect(r.personal).toBe(0);
-    expect(r.factionSponsored).toBe(0);
-  });
-
-  it("personal requires a matching purchase record", () => {
-    const r = splitXanaxFunding([{ occurredAt: DAY + 600 }], [], [], [DAY]);
-    expect(r.personal).toBe(1);
-    expect(r.unknownFunded).toBe(0);
-    // With no purchase record the same use stays Unknown.
-    const noPurchase = splitXanaxFunding([{ occurredAt: DAY + 600 }], [], [], []);
-    expect(noPurchase.personal).toBe(0);
-    expect(noPurchase.unknownFunded).toBe(1);
-  });
-
-  it("sponsored wins over gift and gift wins over purchase when all exist", () => {
-    const uses = [{ occurredAt: DAY + 600 }, { occurredAt: DAY + 1200 }, { occurredAt: DAY + 1800 }];
-    const r = splitXanaxFunding(uses, [DAY + 600], [DAY + 1200], [DAY + 1800]);
-    expect(r.factionSponsored).toBe(1);
-    expect(r.unknownFunded).toBe(1);
-    expect(r.personal).toBe(1);
   });
 });

@@ -2,6 +2,7 @@
   import type { DashboardResponse } from "@tornscope/shared";
   import { formatMoneyCompact, formatKpiValue, periodLabel, formatDate, formatSignedMoney } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
+  import { incomeLabel, expenseLabel } from "$lib/labels";
   import { dateRange, me } from "$lib/state.svelte";
   import { clientPermissionMessage } from "$lib/capabilities";
   import { formatRelative } from "$lib/reltime";
@@ -108,17 +109,8 @@
   const topIncome = $derived(data?.incomeByCategory.slice(0, 5) ?? []);
   const topExpenses = $derived(data?.expensesByCategory.slice(0, 5) ?? []);
 
-  /**
-   * Selling items (bazaar / item market / trades / auctions) is CASH IN, not
-   * profit: inventory value left the stock. Called out explicitly so the
-   * inflow total is never read as economic gain.
-   */
-  const SALES_CATEGORIES = new Set(["bazaar", "items", "trading", "auction"]);
-  const soldInventoryIncome = $derived(
-    (data?.incomeByCategory ?? []).filter((c) => SALES_CATEGORIES.has(String(c.category))).reduce((s, c) => s + c.total, 0)
-  );
-
   /** Semantic badges per category row: conversion vs true income/expense. */
+  const SALES_CATEGORIES = new Set(["bazaar", "items", "trading", "auction"]);
   const ASSET_CATEGORIES = new Set(["bazaar", "items", "trading", "auction", "points", "stock", "travel", "plushie", "flower", "drugs"]);
   const isInflowConversion = (category: string): boolean => SALES_CATEGORIES.has(category) || category === "points";
   const isOutflowConversion = (category: string): boolean => ASSET_CATEGORIES.has(category);
@@ -200,20 +192,29 @@
       <div class="grid grid-cols-2 gap-px border-t border-border bg-border md:grid-cols-4">
         <Stat label="Cash" value={formatKpiValue(data.cash)} provenance="exact" />
         <Stat
-          label="{period} Cash Inflow"
+          label="{period} Cash received"
           value={formatKpiValue(data.financial.cashInflow)}
           provenance="derived"
           tone="positive"
+          title="Cash that entered the wallet (technical label: cash inflow). Earnings and asset sales are broken out below — cash received is not profit."
           sub={`earned ${formatMoneyCompact(data.financial.trueIncome)} · asset sales ${formatMoneyCompact(data.financial.assetSales)}`}
         />
         <Stat
-          label="{period} Cash Outflow"
+          label="{period} Cash spent"
           value={formatKpiValue(data.financial.cashOutflow)}
           provenance="derived"
           tone="negative"
+          title="Cash that left the wallet (technical label: cash outflow). Most spending buys assets you still own."
           sub={`true expenses ${formatMoneyCompact(data.financial.trueExpense)} · asset purchases ${formatMoneyCompact(data.financial.assetPurchases)}`}
         />
-        <Stat label="Rehab spend" value={formatKpiValue(data.rehabSpend)} provenance={data.rehabSpend.provenance} />
+        <Stat
+          label="{period} Earned income"
+          value={logsBlocked ? "—" : formatMoneyCompact(data.financial.trueIncome)}
+          provenance="derived"
+          tone="positive"
+          title="Money earned — raises total wealth (salary, crime, payouts). Asset sales are NOT income: the items left your inventory."
+          sub={`net worth change ${data.networthCoverage === "none" ? "—" : `${(data.networthChange.value ?? 0) >= 0 ? "+" : ""}${formatMoneyCompact(data.networthChange.value)}`}`}
+        />
       </div>
     </section>
 
@@ -287,9 +288,79 @@
     <!-- Flow + activity -->
     <section class="grid gap-6 lg:grid-cols-6">
       <div class="lg:col-span-2">
-        <Panel title="Cash inflow" caption="Everything that entered the wallet — earnings and asset conversions are different things">
+        <Panel title="Cash received" caption="Where incoming cash came from — earnings and asset sales are different things">
           {#if logsBlocked}
             <StateMessage state="permission" title={logsBlocked.title} hint={logsBlocked.hint} />
+          {:else if data.financial.cashReceived}
+            {@const cr = data.financial.cashReceived}
+            <div class="space-y-4 text-[13px]">
+              <div class="flex items-baseline justify-between">
+                <span class="font-medium text-fg">Cash received</span>
+                <span class="tnum font-semibold text-positive">{formatMoneyCompact(cr.total)}</span>
+              </div>
+              <div>
+                <div class="flex items-baseline justify-between">
+                  <span class="font-medium text-fg">Earned income</span>
+                  <span class="tnum text-positive">{formatMoneyCompact(cr.earned.total)}</span>
+                </div>
+                <ul class="mt-1.5 space-y-1 pl-3 text-xs text-fg-muted">
+                  {#each cr.earned.rows as row (row.key)}
+                    <li class="flex items-baseline justify-between gap-3">
+                      <span>{row.label}</span>
+                      <span class="tnum">{formatMoneyCompact(row.amount)}</span>
+                    </li>
+                  {/each}
+                  {#if cr.earned.rows.length === 0}
+                    <li class="text-fg-faint">No earned income in this range</li>
+                  {/if}
+                </ul>
+              </div>
+              <div>
+                <div class="flex items-baseline justify-between">
+                  <span class="font-medium text-fg">Asset sales</span>
+                  <span class="tnum text-fg-muted" title="Cash received for something you owned — a conversion, not earnings. The items left your inventory.">{formatMoneyCompact(cr.assetSales.total)}</span>
+                </div>
+                <ul class="mt-1.5 space-y-1 pl-3 text-xs text-fg-muted">
+                  {#each cr.assetSales.rows as row (row.key)}
+                    <li class="flex items-baseline justify-between gap-3">
+                      <span>{row.label}</span>
+                      <span class="tnum">{formatMoneyCompact(row.amount)}</span>
+                    </li>
+                  {/each}
+                  {#if cr.assetSales.rows.length === 0}
+                    <li class="text-fg-faint">No asset sales in this range</li>
+                  {/if}
+                </ul>
+              </div>
+              {#if cr.other.rows.length > 0}
+                <div>
+                  <div class="flex items-baseline justify-between">
+                    <span class="font-medium text-fg">Other received</span>
+                    <span class="tnum text-fg-muted">{formatMoneyCompact(cr.other.total)}</span>
+                  </div>
+                  <ul class="mt-1.5 space-y-1 pl-3 text-xs text-fg-muted">
+                    {#each cr.other.rows as row (row.key)}
+                      <li class="flex items-baseline justify-between gap-3">
+                        <span>{row.label}</span>
+                        <span class="tnum">{formatMoneyCompact(row.amount)}</span>
+                      </li>
+                    {/each}
+                  </ul>
+                </div>
+              {/if}
+              {#if cr.unclassified.count > 0}
+                <p class="text-[11px] text-warning">
+                  {formatMoneyCompact(cr.unclassified.total)} across {cr.unclassified.count} entr{cr.unclassified.count === 1 ? "y" : "ies"} could not be classified and is NOT counted above.
+                </p>
+              {/if}
+              <p class="border-t border-border pt-3 text-[11px] leading-relaxed text-fg-faint">
+                Earned income + asset sales + other = cash received, exactly — no event is counted twice.
+                Asset sales are <span class="text-fg-muted">conversions</span>, not profit: the items left your inventory.
+                {#if cr.earned.ocPayouts > 0}
+                  OC payouts are credited to your faction balance (withdrawable there), not your wallet.
+                {/if}
+              </p>
+            </div>
           {:else if topIncome.length === 0}
             <StateMessage state="empty" title="No money events in this range" />
           {:else}
@@ -298,7 +369,7 @@
                 <li>
                   <div class="flex items-baseline justify-between gap-3 text-[13px]">
                     <span class="text-fg">
-                      <span class="capitalize">{row.category}</span>
+                      {incomeLabel(String(row.category))}
                       {#if isInflowConversion(String(row.category))}
                         <span class="ml-1.5 rounded-full border border-border bg-surface-2 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-fg-faint" title="Asset conversion: cash received for something you owned — not earnings">conversion</span>
                       {:else}
@@ -313,17 +384,11 @@
                 </li>
               {/each}
             </ul>
-            {#if soldInventoryIncome > 0}
-              <p class="mt-4 border-t border-border pt-3 text-[11px] leading-relaxed text-fg-faint">
-                Includes {formatMoneyCompact(soldInventoryIncome)} from selling assets (bazaar, item market, trades) — that is
-                <span class="text-fg-muted">Asset Movement</span>, not earnings and not profit: the items left your inventory.
-              </p>
-            {/if}
           {/if}
         </Panel>
       </div>
       <div class="lg:col-span-2">
-        <Panel title="Cash outflow" caption="Everything that left the wallet — true expenses and asset conversions are different things">
+        <Panel title="Cash spent" caption="Where cash went — true expenses and asset purchases are different things">
           {#if logsBlocked}
             <StateMessage state="permission" title={logsBlocked.title} hint={logsBlocked.hint} />
           {:else if topExpenses.length === 0}
@@ -334,9 +399,9 @@
                 <li>
                   <div class="flex items-baseline justify-between gap-3 text-[13px]">
                     <span class="text-fg">
-                      <span class="capitalize">{row.category}</span>
+                      {expenseLabel(String(row.category))}
                       {#if isOutflowConversion(String(row.category))}
-                        <span class="ml-1.5 rounded-full border border-border bg-surface-2 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-fg-faint" title="Asset conversion: value still owned in another form (items, points, stocks, bank) — not an economic loss">conversion</span>
+                        <span class="ml-1.5 rounded-full border border-border bg-surface-2 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-fg-faint" title="Asset purchase: value still owned in another form (items, points, stocks) — not an economic loss">asset purchase</span>
                       {:else}
                         <span class="ml-1.5 rounded-full border border-negative/30 bg-negative/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-negative" title="True expense: value gone (fees, upkeep, rehab, losses)">true expense</span>
                       {/if}
@@ -351,8 +416,8 @@
             </ul>
             {#if data.financial.assetPurchases > 0}
               <p class="mt-4 border-t border-border pt-3 text-[11px] leading-relaxed text-fg-faint">
-                {formatMoneyCompact(data.financial.assetPurchases)} of this bought assets you still own (items, points, stocks,
-                bank deposits) — <span class="text-fg-muted">Asset Movement</span>. True expenses:
+                {formatMoneyCompact(data.financial.assetPurchases)} of this bought assets you still own (items, points, stocks) —
+                <span class="text-fg-muted">Asset purchases</span>, not lost value. True expenses:
                 {formatMoneyCompact(data.financial.trueExpense)}.
               </p>
             {/if}

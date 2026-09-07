@@ -25,11 +25,16 @@ const handler: RequestHandler = async ({ request, params, url, getClientAddress 
   url.searchParams.forEach((value, key) => target.searchParams.set(key, value));
 
   const headers: Record<string, string> = {
-    "content-type": request.headers.get("content-type") ?? "application/json",
     accept: "application/json",
   };
   const cookie = request.headers.get("cookie");
   if (cookie) headers.cookie = cookie;
+  // Body-less mutations (DELETE, payload-free POST) must NOT carry a
+  // content-type: the backend's JSON parser would reject the empty body
+  // ("Body cannot be empty when content-type is set"). Only attach one when
+  // there is an actual body to describe.
+  const body = request.method === "GET" || request.method === "HEAD" ? undefined : await request.text();
+  if (body) headers["content-type"] = request.headers.get("content-type") ?? "application/json";
   // The API is a trusted single hop behind THIS proxy: forward the real
   // client address so per-IP rate limits key on actual visitors, not on the
   // web container's IP (all visitors would otherwise share one bucket).
@@ -43,7 +48,7 @@ const handler: RequestHandler = async ({ request, params, url, getClientAddress 
   const proxied = await fetch(target, {
     method: request.method,
     headers,
-    body: request.method === "GET" || request.method === "HEAD" ? undefined : await request.text(),
+    body,
   });
 
   const responseHeaders = new Headers({ "content-type": proxied.headers.get("content-type") ?? "application/json" });

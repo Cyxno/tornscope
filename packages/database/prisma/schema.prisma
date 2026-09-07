@@ -41,6 +41,7 @@ enum DrugOutcome {
 enum TravelItemCategory {
   plushie
   flower
+  xanax
   other
 }
 

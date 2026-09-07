@@ -41,4 +41,4 @@ Complete every item before exposing TornScope on a public hostname
 - [ ] Security headers present: CSP, nosniff, Referrer-Policy, Permissions-Policy.
 
 ## Backups
-- [ ] `pg_dump` verified restorable (Settings → Data & backups shows the command).
+- [ ] `pg_dump` verified restorable. The command lives in Settings → "Server administration · Backups", which is visible ONLY to the server owner (server-derived role, never a client flag); ordinary users see user-focused copy instead of infrastructure details.

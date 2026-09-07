@@ -488,11 +488,23 @@
     </div>
   </Panel>
 
-  <Panel title="Data & backups" caption="Your history may be unrecoverable from Torn later">
-    <p class="max-w-2xl text-[13px] leading-relaxed text-fg-muted">
-      All historical data lives in the PostgreSQL volume on your Unraid server. Schedule regular dumps so the history
-      you build survives disk trouble:
-    </p>
-    <pre class="mt-3 overflow-x-auto rounded-xl border border-border bg-bg-raise px-4 py-3 font-mono text-xs text-fg-muted">docker compose -f docker-compose.unraid.yml exec postgres pg_dump -U tornscope tornscope | gzip &gt; tornscope-backup.sql.gz</pre>
-  </Panel>
+  {#if me?.isServerOwner}
+    <Panel title="Server administration · Backups" caption="Owner only — your history may be unrecoverable from Torn later">
+      <p class="max-w-2xl text-[13px] leading-relaxed text-fg-muted">
+        All historical data lives in the PostgreSQL volume on your Unraid server. Schedule regular dumps so the history
+        you build survives disk trouble:
+      </p>
+      <pre class="mt-3 overflow-x-auto rounded-xl border border-border bg-bg-raise px-4 py-3 font-mono text-xs text-fg-muted">docker compose -f docker-compose.unraid.yml exec postgres pg_dump -U tornscope tornscope | gzip &gt; tornscope-backup.sql.gz</pre>
+      {#if me?.build?.commit}
+        <p class="mt-3 text-xs text-fg-faint">Deployed build: <span class="font-mono">{me.build.commit}</span></p>
+      {/if}
+    </Panel>
+  {:else}
+    <Panel title="Your data" caption="What happens when you disconnect">
+      <p class="max-w-2xl text-[13px] leading-relaxed text-fg-muted">
+        Your historical TornScope data remains stored on this server when you disconnect your API key.
+        Syncing simply pauses; reconnecting the same Torn identity continues building on the history you already have.
+      </p>
+    </Panel>
+  {/if}
 </div>

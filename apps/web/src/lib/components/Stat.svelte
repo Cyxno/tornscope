@@ -12,6 +12,7 @@
     provenance,
     tone = "neutral",
     sub,
+    title,
   }: {
     label: string;
     value: string;
@@ -19,6 +20,8 @@
     provenance?: "exact" | "derived" | "estimated";
     tone?: "neutral" | "positive" | "negative" | "accent";
     sub?: string | null;
+    /** Optional tooltip clarifying what the figure means. */
+    title?: string | null;
   } = $props();
 
   const toneClass = {
@@ -37,7 +40,7 @@
     {/if}
   </div>
   <div class="mt-2.5 flex items-baseline gap-2.5">
-    <span class="tnum text-2xl font-semibold {toneClass[tone]}">{value}</span>
+    <span class="tnum text-2xl font-semibold {toneClass[tone]}" title={title ?? undefined}>{value}</span>
     {#if delta}
       <span class="text-xs font-medium {delta.startsWith('-') ? 'text-negative' : 'text-positive'}">{delta}</span>
     {/if}

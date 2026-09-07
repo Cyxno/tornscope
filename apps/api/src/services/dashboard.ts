@@ -10,6 +10,7 @@ import {
   aggregateCrimeStats,
   aggregateMoneyEvents,
   aggregateMoneySemantics,
+  buildCashReceivedBreakdown,
   buildWalletBridge,
   calculateDrugStats,
   calculateRehabStats,
@@ -112,6 +113,12 @@ export async function getDashboard(userId: string, rangeInput: DateRangeInput): 
     amount: bigintToNumber(r.amount) ?? 0,
     description: r.description,
     source: r.source,
+    // Faction income carrying OC scenario metadata = an OC payout credited
+    // to the FACTION MEMBER BALANCE (earned, but never wallet cash).
+    ocPayout:
+      r.category === "faction" && r.direction === "income"
+        ? Boolean(((r.metadata ?? {}) as { data?: { scenario?: string } }).data?.scenario)
+        : false,
   }));
   const agg = aggregateMoneyEvents(moneyEvents, range.from, range.to, autoInterval(range));
   const fin = aggregateMoneySemantics(moneyEvents, range.from, range.to);
@@ -314,6 +321,12 @@ export async function getDashboard(userId: string, rangeInput: DateRangeInput): 
       assetPurchases: fin.assetOutflow,
       unknownValue: fin.unknownValue,
       bankTransfers: fin.bankTransfers,
+      // Receiving-side breakdown (earned vs asset sales vs other) with
+      // explicit labels; rows reconcile exactly to cashInflow.value.
+      cashReceived:
+        moneyAvailability === "unavailable"
+          ? null
+          : buildCashReceivedBreakdown(moneyEvents.map(({ category, direction, amount, ocPayout }) => ({ category, direction, amount, ocPayout }))),
       // Snapshot delta only — includes price moves and asset movement, so it
       // is labeled Net Worth Change, never profit or economic gain.
       economicGain: {

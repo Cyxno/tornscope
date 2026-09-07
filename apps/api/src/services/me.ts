@@ -6,16 +6,20 @@ import type {
   ProfileLinkResult,
 } from "@tornscope/shared";
 import {
+  CAPABILITY_RECHECK_SECONDS,
   compareCapabilities,
   deriveKeyCapabilities,
   deriveSetupPhase,
   normalizeCapabilitiesWithFallback,
+  resourceAllowed,
+  resourceRequirementLabel,
   SYNC_RESOURCES,
   buildSyncJobId,
   SYNC_JOB_NAME,
   DEMO_USER_EMAIL,
   type CapabilityChange,
   type KeyCapabilities,
+  type SyncResource,
 } from "@tornscope/shared";
 import { normalizeDonatorStatus, type TornEndpoints } from "@tornscope/torn-api";
 import {
@@ -68,7 +72,7 @@ async function clearDemoViewFlag(db: ReturnType<typeof getPrismaClient>, userId:
 }
 
 /** GET /api/me */
-export async function getMe(user: { id: string; displayName: string; timezone: string; isDemo: boolean }): Promise<MeResponse> {
+export async function getMe(user: { id: string; displayName: string; timezone: string; isDemo: boolean; role?: string }): Promise<MeResponse> {
   const db = getPrismaClient();
   const [account, credential, syncStates, demoUser, activeSessions] = await Promise.all([
     db.tornAccount.findUnique({ where: { userId: user.id } }),
@@ -93,6 +97,11 @@ export async function getMe(user: { id: string; displayName: string; timezone: s
     ? normalizeCapabilitiesWithFallback(credential.capabilities, credential.accessLevel)
     : null;
 
+  // Server-derived role: infrastructure/administration visibility is granted
+  // to the deployment's owner ONLY (the non-demo "owner" role). A client
+  // boolean is never trusted, and the role never leaves the server.
+  const isServerOwner = user.role === "owner" && !user.isDemo;
+
   return {
     userId: user.id,
     displayName: user.displayName,
@@ -102,6 +111,7 @@ export async function getMe(user: { id: string; displayName: string; timezone: s
     accessType: credential && !credential.revokedAt ? credential.accessType : null,
     accessLevel: credential && !credential.revokedAt ? credential.accessLevel : null,
     ownerBindAvailable: await ownerBindAvailableFor(user.id),
+    isServerOwner,
     activeSessions,
     torn: account
       ? {
@@ -129,7 +139,7 @@ export async function getMe(user: { id: string; displayName: string; timezone: s
         lastAttemptAt: s.lastAttemptAt ? Math.floor(s.lastAttemptAt.getTime() / 1000) : null,
       })),
     }),
-    build: { commit: buildCommit() },
+    build: { commit: isServerOwner ? buildCommit() : null },
   };
 }
 
@@ -397,6 +407,10 @@ export async function saveApiKey(
 
   // Sync schedules exist per user from the first valid key onward.
   await ensureSyncStates(db, user.id);
+  // A key UPGRADE must immediately re-enable resources a previous (weaker)
+  // key parked as capability_denied — otherwise upgraded profiles would stay
+  // limited for up to one re-check interval.
+  await resetCapabilityDeniedStates(db, user.id, capabilities);
   // New credentials: access-denied categories may retry promptly (cursor kept).
   await resetAccessDeniedCategories(db, user.id);
   // A real key always takes precedence over the demo view (this owner only).
@@ -425,16 +439,28 @@ export async function saveApiKey(
   }
 
   if (!hadIdentityBefore) {
-    await enqueueInitialBackfill(ctx, user.id);
+    await enqueueInitialBackfill(ctx, user.id, capabilities);
   }
 
   return { status: await getApiKeyStatus(user.id), newProfileId: createdNewProfile ? user.id : null };
 }
 
-/** Enqueue the initial backfill for every resource, server-side. */
-async function enqueueInitialBackfill(ctx: ReturnType<typeof getApiContext>, userId: string): Promise<void> {
+/**
+ * Enqueue the initial backfill server-side — CAPABILITY-AWARE:
+ * - resources the key cannot answer are never enqueued at all (they would
+ *   only burn claim/decrypt/DB-write cycles on the serialized worker);
+ * - they are marked capability_denied IMMEDIATELY, so the first-run screen
+ *   shows "Skipped — permission unavailable" without waiting for every job
+ *   to be processed by the worker first.
+ */
+async function enqueueInitialBackfill(ctx: ReturnType<typeof getApiContext>, userId: string, capabilities: KeyCapabilities): Promise<void> {
   const enqueueErrors: string[] = [];
+  const deniedResources: SyncResource[] = [];
   for (const resource of SYNC_RESOURCES) {
+    if (!resourceAllowed(capabilities, resource)) {
+      deniedResources.push(resource);
+      continue;
+    }
     try {
       await ctx.syncQueue.add(
         SYNC_JOB_NAME,
@@ -445,9 +471,35 @@ async function enqueueInitialBackfill(ctx: ReturnType<typeof getApiContext>, use
       enqueueErrors.push(`${resource}: ${(err as Error).message}`);
     }
   }
-  if (enqueueErrors.length === SYNC_RESOURCES.length) {
+  const allowedCount = SYNC_RESOURCES.length - deniedResources.length;
+  if (enqueueErrors.length > 0 && enqueueErrors.length === allowedCount) {
     throw errors.internal(`Could not queue the initial sync: ${enqueueErrors[0] ?? "unknown queue error"}`);
   }
+  for (const resource of deniedResources) {
+    const message = `Permission required: this key does not include ${resourceRequirementLabel(resource)}. Grant it in Torn to sync this resource.`;
+    await ctx.db.syncState.updateMany({
+      where: { userId, resource, status: { not: "running" } },
+      data: {
+        status: "capability_denied",
+        errorMessage: message,
+        nextRunAt: new Date(Date.now() + CAPABILITY_RECHECK_SECONDS * 1000),
+      },
+    });
+  }
+}
+
+/**
+ * Key upgrades: resources parked as capability_denied by a WEAKER previous
+ * key become due again immediately. Only currently-allowed resources are
+ * touched — denied ones keep their parked state.
+ */
+async function resetCapabilityDeniedStates(db: ReturnType<typeof getPrismaClient>, userId: string, capabilities: KeyCapabilities): Promise<void> {
+  const nowAllowed = SYNC_RESOURCES.filter((resource) => resourceAllowed(capabilities, resource));
+  if (nowAllowed.length === 0) return;
+  await db.syncState.updateMany({
+    where: { userId, resource: { in: nowAllowed }, status: "capability_denied" },
+    data: { status: "idle", errorMessage: null, errorCount: 0, nextRunAt: new Date() },
+  });
 }
 
 /** What the route must do after a successful linkProfile call. */

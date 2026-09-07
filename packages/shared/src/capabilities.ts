@@ -1,4 +1,6 @@
 import type { KeyCapabilities, CapabilityKey } from "./torn.js";
+import { SYNC_RESOURCES } from "./torn.js";
+import { accessLevelName } from "./today.js";
 import type { SyncResource } from "./torn.js";
 
 /**
@@ -242,6 +244,14 @@ export function featureAvailability(
 /* -------------------------------------------------------------------------- */
 
 /**
+ * How often a capability-blocked resource re-checks whether the key's
+ * permissions changed. Shared by the worker runner, the scheduler and the
+ * API's initial-backfill marking so every layer parks denied resources for
+ * exactly as long.
+ */
+export const CAPABILITY_RECHECK_SECONDS = 6 * 3600;
+
+/**
  * The capability each sync resource genuinely needs. Null = public/no key
  * capability required. The worker refuses to enqueue/run resources whose
  * requirement is missing and marks them capability-blocked instead of
@@ -276,4 +286,69 @@ export function resourceRequirementLabel(resource: SyncResource): string {
   const required = RESOURCE_REQUIREMENTS[resource];
   if (required === null) return "public source";
   return CAPABILITY_LABELS[required]!.label;
+}
+
+/* -------------------------------------------------------------------------- */
+/* First-run access detection summary                                          */
+/* -------------------------------------------------------------------------- */
+
+/** User-facing label per sync resource (onboarding detection screen). */
+export const RESOURCE_LABELS: Record<SyncResource, string> = {
+  profile: "Basic profile data",
+  personal_stats: "Live stats",
+  networth: "Net worth snapshots",
+  drugs: "Drug history",
+  travel: "Flight & travel history",
+  rehab: "Rehab history",
+  money_logs: "Economy & money logs",
+  events: "Event history",
+  faction_basic: "Faction overview",
+  faction: "Faction detail (members, armory, balance)",
+  ranked_wars: "Ranked wars",
+  chains: "Faction chains",
+  organized_crimes: "Organized crimes",
+  attacks: "Combat & attack history",
+  torn_catalog: "Item catalog (public)",
+};
+
+export interface OnboardingAccessSummary {
+  /** Numeric Torn access level from /key/info (nullable when unknown). */
+  level: number | null;
+  /** "Limited" / "Full" / "Minimal" / "Public" / "unknown". */
+  levelName: string;
+  accessType: string | null;
+  /** Resources this key CAN collect, with user-facing labels. */
+  available: string[];
+  /** Resources this key can NEVER collect, with the missing permission. */
+  unavailable: Array<{ label: string; reason: string }>;
+  /** Honest non-error copy describing what TornScope will do with this key. */
+  note: string;
+}
+
+/**
+ * Summarize what a detected key can and cannot do — pure, shared by the
+ * welcome flow (first run) and the settings key-replace preview. Limited
+ * access is a normal, workable state here, never an error: TornScope simply
+ * syncs only what the key permits.
+ */
+export function summarizeKeyAccess(
+  capabilities: KeyCapabilities | null | undefined,
+  accessLevel: number | null | undefined,
+  accessType: string | null | undefined
+): OnboardingAccessSummary {
+  const levelName = accessLevelName(accessLevel);
+  const available: string[] = [];
+  const unavailable: Array<{ label: string; reason: string }> = [];
+  for (const resource of SYNC_RESOURCES) {
+    if (resourceAllowed(capabilities, resource)) {
+      available.push(RESOURCE_LABELS[resource]!);
+    } else {
+      unavailable.push({ label: RESOURCE_LABELS[resource]!, reason: resourceRequirementLabel(resource) });
+    }
+  }
+  const note =
+    levelName === "Full"
+      ? "Full Access unlocks TornScope's complete supported historical analytics."
+      : "You can continue with this key. TornScope will only sync data your key permits — unavailable areas are marked instead of shown as zeros.";
+  return { level: accessLevel ?? null, levelName, accessType: accessType ?? null, available, unavailable, note };
 }

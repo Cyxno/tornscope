@@ -166,24 +166,46 @@
 
     {#if !histBlocked}
     {#if data.xanaxFunding.used > 0}
-      <p class="rounded-xl border border-border bg-surface px-5 py-3 text-xs leading-relaxed text-fg-muted">
-        <span class="font-medium text-fg">Xanax funding:</span>
-        {data.xanaxFunding.used} used —
-        <span class="text-fg">{data.xanaxFunding.personal} personal detected</span> (matched to a personal purchase record)
-        · <span class="text-positive">{data.xanaxFunding.factionSponsored} sponsored detected</span> (faction armory use at the same logged moment)
-        · <span class="text-warning">{data.xanaxFunding.unknownFunded} unknown funding</span> (gifts + uses without a traceable source).
+      <div class="space-y-2 rounded-xl border border-border bg-surface px-5 py-4 text-xs leading-relaxed text-fg-muted">
+        <p>
+          <span class="font-medium text-fg">Xanax funding:</span>
+          {data.xanaxFunding.used} used —
+          {#if data.xanaxFunding.confirmedFaction > 0}
+            <span class="text-positive">{data.xanaxFunding.confirmedFaction} faction-sponsored</span> (armory evidence at the logged moment)
+          {/if}
+          {#if data.xanaxFunding.confirmedPersonal > 0}
+            {#if data.xanaxFunding.confirmedFaction > 0} · {/if}<span class="text-fg">{data.xanaxFunding.confirmedPersonal} confirmed personal</span> (drawn from a recorded purchase)
+          {/if}
+          {#if data.xanaxFunding.confirmedOther > 0}
+            · {data.xanaxFunding.confirmedOther} external source (gift/trade)
+          {/if}
+          {#if data.xanaxFunding.openingInventoryUnknown > 0}
+            · <span class="text-warning">{data.xanaxFunding.openingInventoryUnknown} from opening inventory</span> (stock held before this range — origin not proven)
+          {/if}
+          {#if data.xanaxFunding.unknown > 0}
+            · <span class="text-warning">{data.xanaxFunding.unknown} unknown source</span>
+          {/if}
+          {#if data.xanaxFunding.confirmedFaction === 0 && data.xanaxFunding.confirmedPersonal === 0 && data.xanaxFunding.confirmedOther === 0 && data.xanaxFunding.openingInventoryUnknown === 0}
+            all uses lack traceable supply records
+          {/if}.
+        </p>
+        <p class="text-fg-faint">
+          Classification uses a stock ledger over all recorded purchases, travel hauls, gifts and faction armory events —
+          not just activity inside the selected range. Opening inventory counts as stock you already held when the range
+          began; its origin is shown as unknown unless records prove otherwise.
+        </p>
         {#if data.xanaxFunding.armoryHistory.available}
-          <span class="text-fg-faint">
+          <p class="text-fg-faint">
             Faction armory history covers events since {formatDate(data.xanaxFunding.armoryHistory.earliestAt)} ({data.xanaxFunding.armoryHistory.events} armory events stored);
-            uses before that date cannot be classified and stay Unknown rather than assumed personal.
-          </span>
+            uses before that date cannot be matched to armory evidence and stay unclassified rather than assumed personal.
+          </p>
         {:else}
-          <span class="text-warning">
-            Faction armory history is not available through the connected API source, so some Xanax funding cannot be determined —
-            unclassified uses are shown as Unknown, never as personal.
-          </span>
+          <p class="text-warning">
+            Faction armory history is not available through the connected API source, so faction sponsorship cannot be
+            detected — uses stay unattributed rather than assumed personal.
+          </p>
         {/if}
-      </p>
+      </div>
     {/if}
 
     <!-- Hero chart -->

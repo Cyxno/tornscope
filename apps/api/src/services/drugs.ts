@@ -3,7 +3,7 @@ import {
   type DateRangeInput,
   type DrugsSummaryResponse,
 } from "@tornscope/shared";
-import { calculateDrugStats, calculateRehabStats } from "@tornscope/analytics";
+import { calculateDrugStats, calculateRehabStats, classifyXanaxFunding, type XanaxAcquisition } from "@tornscope/analytics";
 import { bigintToNumber, getPrismaClient, loadMarketPrices } from "@tornscope/database";
 import { liveAvailability, loadAvailabilityContext, sectionAvailability } from "./availability.js";
 
@@ -11,53 +11,6 @@ import { liveAvailability, loadAvailabilityContext, sectionAvailability } from "
 async function resolveXanaxItemId(db: ReturnType<typeof getPrismaClient>): Promise<number | null> {
   const row = await db.tornItemCatalog.findFirst({ where: { name: { equals: "Xanax", mode: "insensitive" } }, select: { itemId: true } });
   return row?.itemId ?? null;
-}
-
-/**
- * Funding split for Xanax uses. Three-way, evidence-based:
- * - Sponsored detected: a faction armory news event for THIS player + item
- *   at (near) the same timestamp — armory uses land in the personal log at
- *   the exact second the armory news records them (verified live).
- * - Personal detected: matched FIFO to a PERSONAL PURCHASE record (item sale
- *   logs carry exact item ids — a use counts as personal only then).
- * - Unknown funding: everything else — player gifts and uses that cannot be
- *   traced to any supply record. Never silently assumed personal.
- * War timing alone is never treated as sponsorship.
- */
-export function splitXanaxFunding(
-  uses: Array<{ occurredAt: number }>,
-  sponsoredSupply: number[],
-  unknownSupply: number[],
-  purchasedSupply: number[] = [],
-  matchWindowSeconds = 14 * 86_400,
-  sponsoredToleranceSeconds = 300
-): { personal: number; factionSponsored: number; unknownFunded: number } {
-  const sponsored = [...sponsoredSupply].sort((a, b) => a - b);
-  const unknown = [...unknownSupply].sort((a, b) => a - b);
-  const purchased = [...purchasedSupply].sort((a, b) => a - b);
-  let factionSponsored = 0;
-  let personal = 0;
-  for (const use of [...uses].sort((a, b) => a.occurredAt - b.occurredAt)) {
-    const sIdx = sponsored.findIndex((t) => Math.abs(use.occurredAt - t) <= sponsoredToleranceSeconds);
-    if (sIdx !== -1) {
-      sponsored.splice(sIdx, 1);
-      factionSponsored += 1;
-      continue;
-    }
-    const uIdx = unknown.findIndex((t) => t <= use.occurredAt && use.occurredAt - t <= matchWindowSeconds);
-    if (uIdx !== -1) {
-      // A gift is a detected external source — but not a personal purchase.
-      unknown.splice(uIdx, 1);
-      continue;
-    }
-    const pIdx = purchased.findIndex((t) => t <= use.occurredAt && use.occurredAt - t <= matchWindowSeconds);
-    if (pIdx !== -1) {
-      purchased.splice(pIdx, 1);
-      personal += 1;
-    }
-    // Unmatched uses fall into Unknown funding (returned as the remainder).
-  }
-  return { personal, factionSponsored, unknownFunded: uses.length - factionSponsored - personal };
 }
 
 /** Drug use + rehab analytics. Drug costs are estimated from market prices. */
@@ -92,7 +45,7 @@ export async function getDrugsSummary(userId: string, rangeInput: DateRangeInput
 
   const stats = calculateDrugStats(drugEvents, priceMap, range.from, range.to, "day", drugFilter ? new Set(drugFilter) : null);
 
-  // ---- Xanax per day + funding --------------------------------------------
+  // ---- Xanax per day + provenance-aware funding ledger ---------------------
   const xanaxUses = drugEvents.filter((e) => e.drugName?.toLowerCase() === "xanax" || (xanaxItemId !== null && e.drugItemId === xanaxItemId));
   const trackingStart = earliestDrug ? Math.floor(earliestDrug.occurredAt.getTime() / 1000) : null;
   const coverageStart = trackingStart !== null ? Math.max(range.from, trackingStart) : range.from;
@@ -101,11 +54,14 @@ export async function getDrugsSummary(userId: string, rangeInput: DateRangeInput
     drugEvents.length === 0 ? "unavailable" : trackingStart !== null && trackingStart > range.from ? "partial" : "full";
   const xanaxPerDay = xanaxUses.length > 0 ? xanaxUses.length / coveredDays : null;
 
-  const [supplyLogs, purchaseRows, armoryEvents, earliestArmory] = await Promise.all([
+  // Ledger inputs are gathered across the FULL recorded history (only capped
+  // at the range end): acquisitions before the range feed opening stock, and
+  // provenance must never change just because the UI range changed.
+  const [supplyLogs, purchaseRows, travelPurchaseRows, armoryRows, earliestArmory, owner] = await Promise.all([
     db.timelineEvent.findMany({
       where: {
         userId,
-        occurredAt: { gte: new Date((coverageStart - 30 * 86_400) * 1000), lte: new Date(range.to * 1000) },
+        occurredAt: { lte: new Date(range.to * 1000) },
         OR: [
           { title: { contains: "loan item", mode: "insensitive" } },
           { title: { contains: "armory", mode: "insensitive" } },
@@ -120,52 +76,89 @@ export async function getDrugsSummary(userId: string, rangeInput: DateRangeInput
             userId,
             direction: "expense",
             category: { in: ["bazaar", "items", "trading"] },
-            occurredAt: { gte: new Date((coverageStart - 30 * 86_400) * 1000), lte: new Date(range.to * 1000) },
+            occurredAt: { lte: new Date(range.to * 1000) },
             metadata: { path: ["data", "items"], array_contains: [{ id: xanaxItemId }] },
           },
           select: { occurredAt: true, metadata: true },
         })
       : Promise.resolve([] as Array<{ occurredAt: Date; metadata: unknown }>),
     xanaxItemId !== null
+      ? db.travelItemEvent.findMany({
+          where: { userId, itemId: xanaxItemId, occurredAt: { lte: new Date(range.to * 1000) } },
+          select: { occurredAt: true, quantity: true },
+        })
+      : Promise.resolve([] as Array<{ occurredAt: Date; quantity: number }>),
+    xanaxItemId !== null
       ? db.factionArmoryEvent.findMany({
-          where: { userId, itemId: xanaxItemId, action: "used" },
-          select: { memberId: true, occurredAt: true, quantity: true },
+          where: { userId, itemId: xanaxItemId, action: { in: ["used", "lent", "gave"] } },
+          select: { memberId: true, action: true, occurredAt: true, quantity: true },
           orderBy: { occurredAt: "asc" },
         })
-      : Promise.resolve([] as Array<{ memberId: number | null; occurredAt: Date; quantity: number }>),
+      : Promise.resolve([] as Array<{ memberId: number | null; action: string; occurredAt: Date; quantity: number }>),
     db.factionArmoryEvent.findFirst({ where: { userId }, orderBy: { occurredAt: "asc" }, select: { occurredAt: true } }),
+    db.tornAccount.findUnique({ where: { userId }, select: { tornId: true } }),
   ]);
-  const sponsoredSupply: number[] = [];
-  const unknownSupply: number[] = [];
-  for (const log of supplyLogs) {
-    const meta = JSON.stringify(log.metadata ?? {});
-    const mentionsXanax = meta.includes('"206"') || /xanax/i.test(meta) || /xanax/i.test(log.title);
-    if (!mentionsXanax) continue;
-    if (/^faction/i.test(log.title)) sponsoredSupply.push(Math.floor(log.occurredAt.getTime() / 1000));
-    else if (/sent .* from /i.test(log.title)) unknownSupply.push(Math.floor(log.occurredAt.getTime() / 1000));
-  }
-  const purchasedSupply: number[] = [];
+
+  const isOwnerRow = (memberId: number | null): boolean =>
+    owner?.tornId === null || owner?.tornId === undefined || memberId === null || memberId === owner.tornId;
+
+  const acquisitions: XanaxAcquisition[] = [];
+  // Personal purchases: money logs carry exact item ids (bazaar/item market/
+  // trades). Every unit is one acquisition event in the ledger.
   for (const row of purchaseRows) {
     const meta = (row.metadata ?? {}) as { data?: { items?: Array<{ id?: number; qty?: number }> } };
     const qty = (meta.data?.items ?? []).filter((i) => i.id === xanaxItemId).reduce((s, i) => s + (typeof i.qty === "number" ? i.qty : 1), 0);
-    for (let i = 0; i < qty; i += 1) purchasedSupply.push(Math.floor(row.occurredAt.getTime() / 1000));
+    if (qty > 0) acquisitions.push({ occurredAt: Math.floor(row.occurredAt.getTime() / 1000), units: qty, source: "personal_purchase" });
   }
-  const owner = await db.tornAccount.findUnique({ where: { userId }, select: { tornId: true } });
-  const armorySupply: number[] = [];
-  for (const e of armoryEvents) {
-    // Only this member's armory usage counts as their sponsored supply.
-    if (owner?.tornId !== null && owner?.tornId !== undefined && e.memberId !== null && e.memberId !== owner.tornId) continue;
-    for (let i = 0; i < e.quantity; i += 1) armorySupply.push(Math.floor(e.occurredAt.getTime() / 1000));
+  // Travel purchases: Xanax bought abroad is a first-class acquisition record
+  // with exact quantity (never double-counted — money logs for abroad buys
+  // use the "travel" category, not bazaar/items/trading).
+  for (const row of travelPurchaseRows) {
+    if (row.quantity > 0) acquisitions.push({ occurredAt: Math.floor(row.occurredAt.getTime() / 1000), units: row.quantity, source: "travel_purchase" });
   }
-  const funding = splitXanaxFunding(
-    xanaxUses.map((u) => ({ occurredAt: u.occurredAt })),
-    armorySupply,
-    unknownSupply,
-    purchasedSupply
-  );
+  // Gifts: explicit evidence of an external (non-personal, non-faction) source.
+  for (const log of supplyLogs) {
+    const meta = JSON.stringify(log.metadata ?? {});
+    const mentionsXanax = meta.includes(`"${xanaxItemId}"`) || /xanax/i.test(meta) || /xanax/i.test(log.title);
+    if (!mentionsXanax) continue;
+    if (/^faction/i.test(log.title)) continue; // armory table is the authoritative faction source
+    if (/sent .* from /i.test(log.title)) acquisitions.push({ occurredAt: Math.floor(log.occurredAt.getTime() / 1000), units: 1, source: "gift" });
+  }
+  // Faction armory withdrawals to THIS member (lent/gave) are faction-source
+  // acquisitions; "used" actions are use-time sponsorship evidence.
+  const armoryUseTimes: number[] = [];
+  for (const e of armoryRows) {
+    if (!isOwnerRow(e.memberId)) continue;
+    const t = Math.floor(e.occurredAt.getTime() / 1000);
+    if (e.action === "used") {
+      for (let i = 0; i < e.quantity; i += 1) armoryUseTimes.push(t);
+    } else if (e.quantity > 0) {
+      acquisitions.push({ occurredAt: t, units: e.quantity, source: "faction_armory" });
+    }
+  }
+  // Uses before the selected range: prove possession and consume the
+  // pre-range stock so opening inventory is real, not assumed.
+  const preRangeUseRows =
+    xanaxUses.length > 0
+      ? await db.drugEvent.findMany({
+          where: {
+            userId,
+            occurredAt: { lt: new Date(range.from * 1000) },
+            OR: [{ drugName: { equals: "Xanax", mode: "insensitive" } }, ...(xanaxItemId !== null ? [{ drugItemId: xanaxItemId }] : [])],
+          },
+          select: { occurredAt: true },
+        })
+      : [];
+  const funding = classifyXanaxFunding({
+    uses: xanaxUses.map((u) => ({ occurredAt: u.occurredAt })),
+    acquisitions,
+    preRangeUses: preRangeUseRows.map((r) => ({ occurredAt: Math.floor(r.occurredAt.getTime() / 1000) })),
+    armoryUseTimes,
+    rangeFrom: range.from,
+  });
   const armoryHistory = {
-    available: armoryEvents.length > 0,
-    events: armoryEvents.length,
+    available: armoryRows.length > 0,
+    events: armoryRows.filter((e) => e.action === "used" && isOwnerRow(e.memberId)).length,
     earliestAt: earliestArmory ? Math.floor(earliestArmory.occurredAt.getTime() / 1000) : null,
   };
 
@@ -196,9 +189,20 @@ export async function getDrugsSummary(userId: string, rangeInput: DateRangeInput
     },
     xanaxFunding: {
       used: xanaxUses.length,
-      personal: funding.personal,
-      factionSponsored: funding.factionSponsored,
-      unknownFunded: funding.unknownFunded,
+      // Provenance-aware buckets (evidence-based, range-independent).
+      confirmedPersonal: funding.confirmedPersonal,
+      confirmedFaction: funding.confirmedFaction,
+      confirmedOther: funding.confirmedOther,
+      openingInventoryUnknown: funding.openingInventoryUnknown,
+      unknown: funding.unknown,
+      openingStock: funding.openingStock,
+      earliestEvidenceAt: funding.earliestEvidenceAt,
+      hasPreRangeEvidence: funding.hasPreRangeEvidence,
+      // Legacy aggregate view kept for compatibility: `unknownFunded`
+      // contains everything that is NOT positively personal/faction.
+      personal: funding.confirmedPersonal,
+      factionSponsored: funding.confirmedFaction,
+      unknownFunded: funding.confirmedOther + funding.openingInventoryUnknown + funding.unknown,
       armoryHistory,
     },
     byDrug: stats.byDrug.map((row) => ({

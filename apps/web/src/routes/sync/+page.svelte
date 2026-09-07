@@ -212,9 +212,12 @@
     description="What the worker has collected, when it will collect again, and what went wrong — if anything."
   >
     {#snippet actions()}
-      <span class="hidden rounded-full border border-border bg-surface px-3 py-1.5 text-xs text-fg-faint sm:inline" title="Deployed build">
-        build {health?.build.commit ?? me.data?.build.commit ?? "dev"}
-      </span>
+      {#if health?.build.commit ?? me.data?.build.commit}
+        <!-- Deployment identity is owner-only: hidden entirely for others -->
+        <span class="hidden rounded-full border border-border bg-surface px-3 py-1.5 text-xs text-fg-faint sm:inline" title="Deployed build">
+          build {health?.build.commit ?? me.data?.build.commit}
+        </span>
+      {/if}
     {/snippet}
   </PageHeader>
 

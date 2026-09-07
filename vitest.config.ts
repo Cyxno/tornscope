@@ -21,5 +21,8 @@ export default defineConfig({
     ],
     // Database/Redis integration tests are skipped unless services are reachable.
     testTimeout: 15000,
+    // Defaults for DB-backed suites: the modules they import read
+    // encryption/rate-limit env at load time, before test-file bodies run.
+    setupFiles: ["./vitest.setup.ts"],
   },
 });

@@ -1,7 +1,7 @@
 import type { Queue } from "bullmq";
 import type { SyncJobData } from "./queues.js";
 import { ensureSyncStates, getSyncStates, setSetting, getSetting } from "@tornscope/database";
-import { SYNC_RESOURCES, SYNC_JOB_NAME, buildSyncJobId, type SyncResource } from "@tornscope/shared";
+import { CAPABILITY_RECHECK_SECONDS, hasCompleteCapabilityShape, normalizeCapabilitiesWithFallback, resourceAllowed, SYNC_RESOURCES, SYNC_JOB_NAME, buildSyncJobId, type SyncResource } from "@tornscope/shared";
 import { getPrismaClient } from "@tornscope/database";
 import { logger } from "./env.js";
 
@@ -16,12 +16,19 @@ import { logger } from "./env.js";
 
 const BOOTSTRAP_FLAG = "scheduler_bootstrap_done";
 
+/**
+ * Known-denied resources are never claimed, decrypted or handed to a handler
+ * — the tick just advances their next re-check (CAPABILITY_RECHECK_SECONDS).
+ * This keeps a Limited key from paying claim+decrypt+write overhead for every
+ * denied resource on every cycle.
+ */
+
 export async function enqueueDueSyncs(syncQueue: Queue<SyncJobData>): Promise<void> {
   const db = getPrismaClient();
 
   const credentials = await db.apiCredential.findMany({
     where: { revokedAt: null },
-    select: { userId: true },
+    select: { userId: true, accessLevel: true, capabilities: true },
   });
   const userIds = [...new Set(credentials.map((c) => c.userId))];
   if (userIds.length === 0) return;
@@ -36,6 +43,13 @@ export async function enqueueDueSyncs(syncQueue: Queue<SyncJobData>): Promise<vo
         await ensureSyncStates(db, userId);
         await setSetting(db, BOOTSTRAP_FLAG, true, userId);
       }
+
+      // Authoritative capability blob only: an incomplete/stale blob must NOT
+      // gate at the scheduler (the runner detects and backfills it instead).
+      const credential = credentials.find((c) => c.userId === userId);
+      const caps = credential && hasCompleteCapabilityShape(credential.capabilities)
+        ? normalizeCapabilitiesWithFallback(credential.capabilities, credential.accessLevel)
+        : null;
 
       const states = await getSyncStates(db, userId);
       for (const state of states) {
@@ -56,6 +70,21 @@ export async function enqueueDueSyncs(syncQueue: Queue<SyncJobData>): Promise<vo
 
           const dueAt = state.nextRunAt?.getTime() ?? 0;
           if (state.status !== "running" && dueAt > now) continue;
+
+          // Capability gate BEFORE enqueueing: a resource the stored key can
+          // never answer is not claimed/decrypted/processed — the tick just
+          // pushes its next re-check out. A capability upgrade resets these
+          // states immediately (saveApiKey), so nothing is parked wrongly.
+          if (caps && !resourceAllowed(caps, resource)) {
+            await db.syncState.update({
+              where: { userId_resource: { userId, resource } },
+              data: {
+                status: "capability_denied",
+                nextRunAt: new Date(now + CAPABILITY_RECHECK_SECONDS * 1000),
+              },
+            });
+            continue;
+          }
 
           // Enqueue FIRST, advance nextRunAt only on success: if the queue
           // add throws, the resource stays due instead of being silently

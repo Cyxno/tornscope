@@ -2,6 +2,7 @@
   import type { EconomySummaryResponse, MoneySummaryResponse, MoneyEventDto, Paginated } from "@tornscope/shared";
   import { MONEY_CATEGORIES, formatMoneyCompact, formatMoneyFull, formatDateTime, formatKpiValue, periodLabel, formatSignedMoney, formatDate } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
+  import { incomeLabel, expenseLabel } from "$lib/labels";
   import { dateRange } from "$lib/state.svelte";
   import PageHeader from "$lib/components/PageHeader.svelte";
   import Panel from "$lib/components/Panel.svelte";
@@ -152,7 +153,7 @@
   const INFLOW_PALETTE = ["#2dd4bf", "#14b8a6", "#3fd68f", "#5eead4", "#8fd6c0", "#a7f3d0", "#6ee7b7", "#34d399"];
   const OUTFLOW_PALETTE = ["#f87171", "#fb923c", "#f0b24a", "#e879a0", "#d4a5a5", "#c084fc", "#fca5a5", "#fbbf24"];
 
-  function labelledDonut(rows: Array<{ category: string; total: number }>, palette: string[], name: string) {
+  function labelledDonut(rows: Array<{ category: string; total: number }>, palette: string[], name: string, labeler: (category: string) => string) {
     const top = rows.slice(0, 8);
     return {
       tooltip: { ...TOOLTIP, trigger: "item", formatter: "{b}: {c} ({d}%)" },
@@ -165,7 +166,7 @@
           center: ["34%", "50%"],
           label: { show: false },
           itemStyle: { borderRadius: 4, borderColor: "#151518", borderWidth: 2 },
-          data: top.map((r, i) => ({ name: r.category, value: r.total, itemStyle: { color: palette[i % palette.length] } })),
+          data: top.map((r, i) => ({ name: labeler(r.category), value: r.total, itemStyle: { color: palette[i % palette.length] } })),
         },
       ],
     };
@@ -196,13 +197,13 @@
     if (!summary || summary.flowSeries.length === 0) return null;
     return {
       tooltip: { ...TOOLTIP, trigger: "axis" },
-      legend: { ...LEGEND, data: ["Cash inflow", "Cash outflow"], top: 0, right: 0 },
+      legend: { ...LEGEND, data: ["Cash received", "Cash spent"], top: 0, right: 0 },
       grid: GRID,
       xAxis: timeAxis(summary.flowSeries.map((p) => dayLabel(p.t))),
       yAxis: valueAxis(),
       series: [
-        { name: "Cash inflow", type: "bar", data: summary.flowSeries.map((p) => p.income), barMaxWidth: 12, itemStyle: { color: C.positive, borderRadius: [3, 3, 0, 0] } },
-        { name: "Cash outflow", type: "bar", data: summary.flowSeries.map((p) => -p.expenses), barMaxWidth: 12, itemStyle: { color: C.negative, borderRadius: [3, 3, 0, 0] } },
+        { name: "Cash received", type: "bar", data: summary.flowSeries.map((p) => p.income), barMaxWidth: 12, itemStyle: { color: C.positive, borderRadius: [3, 3, 0, 0] } },
+        { name: "Cash spent", type: "bar", data: summary.flowSeries.map((p) => -p.expenses), barMaxWidth: 12, itemStyle: { color: C.negative, borderRadius: [3, 3, 0, 0] } },
       ],
     };
   });
@@ -226,7 +227,7 @@
   {:else if summary && economy}
     <!-- ═══ A. Cash flow ═══ -->
     <section class="space-y-6">
-      <h2 class="text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-faint">A · Cash Flow — money that moved through your wallet</h2>
+      <h2 class="text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-faint">A · Cash Received &amp; Spent — money that moved through your wallet</h2>
       {#if cashBlocked && cashAv}
         <!-- Cash flow needs User Logs: a permission state, never $0 -->
         <StateMessage
@@ -243,8 +244,8 @@
         </p>
       {/if}
       <div class="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border shadow-panel md:grid-cols-4">
-        <Stat label="{period} Cash Inflow" value={formatKpiValue(economy.cashFlow.income)} provenance="exact" tone="positive" sub={`earned ${formatMoneyCompact(economy.cashFlow.trueIncome)} · asset sales ${formatMoneyCompact(economy.cashFlow.assetInflow)}`} />
-        <Stat label="{period} Cash Outflow" value={formatKpiValue(economy.cashFlow.expenses)} provenance="exact" tone="negative" sub={`true expenses ${formatMoneyCompact(economy.cashFlow.trueExpense)} · asset purchases ${formatMoneyCompact(economy.cashFlow.assetOutflow)}`} />
+        <Stat label="{period} Cash received" value={formatKpiValue(economy.cashFlow.income)} provenance="exact" tone="positive" sub={`earned ${formatMoneyCompact(economy.cashFlow.trueIncome)} · asset sales ${formatMoneyCompact(economy.cashFlow.assetInflow)}`} />
+        <Stat label="{period} Cash spent" value={formatKpiValue(economy.cashFlow.expenses)} provenance="exact" tone="negative" sub={`true expenses ${formatMoneyCompact(economy.cashFlow.trueExpense)} · asset purchases ${formatMoneyCompact(economy.cashFlow.assetOutflow)}`} />
         <Stat label="{period} Net Cash Flow" value={formatKpiValue(economy.cashFlow.netCashFlow)} provenance="exact" tone={(economy.cashFlow.netCashFlow.value ?? 0) >= 0 ? "positive" : "negative"} />
         <Stat
           label="Top cash outflow"
@@ -268,15 +269,15 @@
       {#if economy.sales.cashReceived > 0}
         <div class="grid grid-cols-1 gap-px overflow-hidden rounded-xl border border-border bg-border md:grid-cols-3">
           <div class="bg-surface p-5 text-center">
-            <p class="text-[10px] uppercase tracking-[0.14em] text-fg-faint">Sold assets — cash received</p>
+            <p class="text-[10px] uppercase tracking-[0.14em] text-fg-faint">Sale proceeds (cash received)</p>
             <p class="tnum mt-1 text-xl font-semibold text-fg">{formatMoneyCompact(economy.sales.cashReceived)}</p>
           </div>
           <div class="bg-surface p-5 text-center">
-            <p class="text-[10px] uppercase tracking-[0.14em] text-fg-faint">Est. inventory value sold</p>
+            <p class="text-[10px] uppercase tracking-[0.14em] text-fg-faint">Estimated item value sold</p>
             <p class="tnum mt-1 text-xl font-semibold text-fg-muted">{economy.sales.inventoryValueRemoved !== null ? formatMoneyCompact(economy.sales.inventoryValueRemoved) : "Unavailable"}</p>
           </div>
           <div class="bg-surface p-5 text-center">
-            <p class="text-[10px] uppercase tracking-[0.14em] text-fg-faint" title="Cash received minus estimated catalog value of the sold items">Estimated value difference</p>
+            <p class="text-[10px] uppercase tracking-[0.14em] text-fg-faint" title="Sale proceeds minus estimated catalog value of the sold items. Not called profit: acquisition cost is not reliably known.">Estimated value difference</p>
             <p class="tnum mt-1 text-xl font-semibold {((economy.sales.economicResult ?? 0) >= 0 ? 'text-positive' : 'text-negative')}">
               {economy.sales.economicResult !== null ? formatSignedMoney(economy.sales.economicResult) : "Partial"}
             </p>
@@ -289,7 +290,7 @@
         </p>
       {/if}
 
-      <Panel title="Cash outflow by category" caption="Where the Cash Outflow total goes — consumed inventory is NOT part of this">
+      <Panel title="Cash spent by category" caption="Where the Cash Spent total goes — consumed inventory is NOT part of this">
         {#if economy.cashFlow.expensesByCategory.length === 0}
           <StateMessage state="empty" title="No cash expenses in this range" />
         {:else}
@@ -319,7 +320,7 @@
                   </tr>
                 {/each}
                 <tr class="font-semibold">
-                  <td class="py-2.5 pr-4 text-fg" colspan="2">Total Cash Outflow</td>
+                  <td class="py-2.5 pr-4 text-fg" colspan="2">Total cash spent</td>
                   <td class="tnum py-2.5 pr-4 text-right text-negative">{formatMoneyCompact(economy.cashFlow.expenses.value ?? 0)}</td>
                   <td class="tnum py-2.5 text-right text-fg-faint">100%</td>
                 </tr>
@@ -465,25 +466,25 @@
     </Panel>
 
     <section class="grid gap-6 lg:grid-cols-2">
-      <Panel title="Cash inflow vs outflow" caption="Per-day cash movement in both directions" flush>
+      <Panel title="Cash received vs spent" caption="Per-day cash movement in both directions" flush>
         {#if !flowOption}
           <StateMessage state="empty" title="No flow to show" />
         {:else}
           <Chart option={flowOption} height={280} />
         {/if}
       </Panel>
-      <Panel title="Inflow vs outflow mix" caption="Distinct palettes + legend: inflow categories (left) vs outflow categories (right)">
+      <Panel title="Received vs spent mix" caption="Explicit labels: received categories (left) vs spent categories (right)">
         {#if summary.incomeByCategory.length === 0 && summary.expensesByCategory.length === 0}
           <StateMessage state="empty" title="No categories to break down" />
         {:else}
           <div class="grid grid-cols-2 gap-4">
             <div>
-              <Chart option={labelledDonut(summary.incomeByCategory, INFLOW_PALETTE, "Cash inflow")} height={220} />
-              <p class="mt-1 text-center text-[11px] uppercase tracking-[0.14em] text-positive">Cash inflow</p>
+              <Chart option={labelledDonut(summary.incomeByCategory, INFLOW_PALETTE, "Cash received", incomeLabel)} height={220} />
+              <p class="mt-1 text-center text-[11px] uppercase tracking-[0.14em] text-positive">Cash received</p>
             </div>
             <div>
-              <Chart option={labelledDonut(summary.expensesByCategory, OUTFLOW_PALETTE, "Cash outflow")} height={220} />
-              <p class="mt-1 text-center text-[11px] uppercase tracking-[0.14em] text-negative">Cash outflow</p>
+              <Chart option={labelledDonut(summary.expensesByCategory, OUTFLOW_PALETTE, "Cash spent", expenseLabel)} height={220} />
+              <p class="mt-1 text-center text-[11px] uppercase tracking-[0.14em] text-negative">Cash spent</p>
             </div>
           </div>
         {/if}

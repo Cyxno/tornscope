@@ -1,6 +1,6 @@
 import { TornApiError } from "@tornscope/torn-api";
 import { claimResource, completeResource, progressResource, recordSyncRun, ensureSyncStates } from "@tornscope/database";
-import { deriveKeyCapabilities, hasCompleteCapabilityShape, normalizeCapabilitiesWithFallback, resourceAllowed, resourceRequirementLabel, type KeyCapabilities, type SyncResource } from "@tornscope/shared";
+import { CAPABILITY_RECHECK_SECONDS, deriveKeyCapabilities, hasCompleteCapabilityShape, normalizeCapabilitiesWithFallback, resourceAllowed, resourceRequirementLabel, type KeyCapabilities, type SyncResource } from "@tornscope/shared";
 import { SYNC_HANDLERS } from "./handlers.js";
 import { getWorkerContext } from "../context.js";
 import { logger } from "../env.js";
@@ -13,10 +13,14 @@ export interface SyncOutcome {
 }
 
 /**
- * How often a capability-blocked resource re-checks whether the key's
- * permissions changed (replaces hammering endpoints known to be denied).
+ * How long a live /key/info capability detection stays cached per credential.
+ * Legacy/stale capability blobs would otherwise force one /key/info call per
+ * resource job — a purely metadata round-trip (rate-limited, serialized)
+ * multiplied by 15 resources, which made the whole pipeline visibly slower.
  */
-const CAPABILITY_RECHECK_SECONDS = 6 * 3600;
+const CAPABILITY_DETECTION_TTL_MS = 10 * 60_000;
+
+const capabilityDetectionCache = new Map<string, { caps: KeyCapabilities; expiresAt: number }>();
 
 /**
  * Resolve the credential's capabilities. Credentials stored before capability
@@ -24,6 +28,11 @@ const CAPABILITY_RECHECK_SECONDS = 6 * 3600;
  * are stale (their missing keys would wrongly read as false) — both trigger a
  * one-time re-detection from /key/info so gating works for every existing
  * profile without a manual re-save.
+ *
+ * Failure handling: a transient /key/info error must NEVER disable gating for
+ * every resource (that used to mass-mark resources capability_denied for 6h).
+ * The detection is cached per credential and, when unavailable, the stored
+ * blob is level-normalized as a read-only fallback (never persisted).
  */
 async function resolveCapabilities(
   ctx: ReturnType<typeof getWorkerContext>,
@@ -36,6 +45,9 @@ async function resolveCapabilities(
   const storedComplete = hasCompleteCapabilityShape(credential.capabilities);
   const stored = storedComplete ? normalizeCapabilitiesWithFallback(credential.capabilities, credential.accessLevel) : null;
   if (stored) return stored;
+
+  const cached = capabilityDetectionCache.get(credential.id);
+  if (cached && cached.expiresAt > Date.now()) return cached.caps;
   try {
     const info = await ctx.torn(apiKey).keyInfo();
     const raw = (info.info.selections ?? {}) as { user?: unknown; faction?: unknown };
@@ -49,12 +61,16 @@ async function resolveCapabilities(
       },
       typeof info.info.access.level === "number" ? info.info.access.level : null
     );
+    capabilityDetectionCache.set(credential.id, { caps, expiresAt: Date.now() + CAPABILITY_DETECTION_TTL_MS });
     await ctx.db.apiCredential.update({ where: { id: credential.id }, data: { capabilities: caps as never } });
     logger.info({ userId }, "capabilities backfilled from /key/info");
     return caps;
   } catch (err) {
-    logger.warn({ userId, err: (err as Error).message }, "capability detection failed; resource gating unavailable this run");
-    return null;
+    // Degrade to the numeric level instead of null (null would deny every
+    // non-public resource and park them for 6h off one metadata hiccup).
+    const fallback = normalizeCapabilitiesWithFallback(null, credential.accessLevel);
+    logger.warn({ userId, err: (err as Error).message }, "capability detection failed; falling back to stored access level for this run");
+    return fallback;
   }
 }
 
@@ -153,7 +169,7 @@ export async function runResourceSync(
   };
 
   try {
-    const torn = ctx.torn(apiKey);
+    const { endpoints: torn, metrics } = ctx.createTorn(apiKey);
     logger.info({ userId, resource, stage: "torn_requests" }, "calling torn api");
     const result = await handler({
       userId,
@@ -195,9 +211,27 @@ export async function runResourceSync(
         categoriesSkipped: result.categoriesSkipped ?? null,
         pagesWalked: result.pagesWalked ?? null,
         recordsInserted: result.records,
+        durationMs: Date.now() - startedAt.getTime(),
+        tornRequests: metrics.requests,
+        deniedRequests: metrics.denied,
+        timeouts: metrics.timeouts,
+        retries: metrics.retries,
       },
     });
-    logger.info({ userId, resource, stage: "job_completed", records: result.records, durationMs: Date.now() - startedAt.getTime() }, "sync success");
+    logger.info(
+      {
+        userId,
+        resource,
+        stage: "job_completed",
+        records: result.records,
+        durationMs: Date.now() - startedAt.getTime(),
+        tornRequests: metrics.requests,
+        deniedRequests: metrics.denied,
+        timeouts: metrics.timeouts,
+        retries: metrics.retries,
+      },
+      "sync success"
+    );
     return { ok: true, records: result.records };
   } catch (err) {
     const message =
@@ -220,6 +254,7 @@ export async function runResourceSync(
       status: "failed",
       recordsCollected: 0,
       errorMessage: message,
+      stats: { durationMs: Date.now() - startedAt.getTime() },
     });
 
     const level = err instanceof TornApiError && err.kind === "key_invalid" ? "error" : "warn";

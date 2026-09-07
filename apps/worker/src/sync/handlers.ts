@@ -126,7 +126,7 @@ export const syncTornCatalog: SyncHandler = async ({ torn }) => {
 /* profile: identity, state snapshot, faction membership                      */
 /* -------------------------------------------------------------------------- */
 
-export const syncProfile: SyncHandler = async ({ userId, torn }) => {
+export const syncProfile: SyncHandler = async ({ userId, torn, capabilities }) => {
   const ctx = getWorkerContext();
   const now = new Date();
   let records = 0;
@@ -162,29 +162,37 @@ export const syncProfile: SyncHandler = async ({ userId, torn }) => {
   );
 
   if (p.faction_id !== null && p.faction_id !== undefined) {
-    try {
-      const faction = await torn.factionBasic();
-      const f = faction.basic;
-      if (f.id === p.faction_id) {
-        await upsertFaction(ctx.db, {
-          id: f.id,
-          name: f.name,
-          tag: (f.tag as string | undefined) ?? null,
-          leaderId: (f.leader_id as number | undefined) ?? null,
-          coLeaderId: (f.co_leader_id as number | null | undefined) ?? null,
-          respect: (f.respect as number | undefined) ?? null,
-          daysOld: (f.days_old as number | undefined) ?? null,
-          capacity: (f.capacity as number | undefined) ?? null,
-          members: (f.members as number | undefined) ?? null,
-          bestChain: (f.best_chain as number | undefined) ?? null,
-        });
-        await insertFactionSnapshot(ctx.db, userId, f.id, now, f.members ?? null, f.respect ?? null, f);
-        records += 2;
+    // Capability-aware: a key without faction basic access would burn one
+    // guaranteed access-denied Torn call here on EVERY profile sync (every
+    // 5 minutes) — the single largest avoidable cost of a Limited key on the
+    // serialized worker pipeline. Membership is still recorded from the
+    // profile payload, which needs no extra permission.
+    const canFetchFaction = capabilities ? capabilities.canReadFactionBasic : true;
+    if (canFetchFaction) {
+      try {
+        const faction = await torn.factionBasic();
+        const f = faction.basic;
+        if (f.id === p.faction_id) {
+          await upsertFaction(ctx.db, {
+            id: f.id,
+            name: f.name,
+            tag: (f.tag as string | undefined) ?? null,
+            leaderId: (f.leader_id as number | undefined) ?? null,
+            coLeaderId: (f.co_leader_id as number | null | undefined) ?? null,
+            respect: (f.respect as number | undefined) ?? null,
+            daysOld: (f.days_old as number | undefined) ?? null,
+            capacity: (f.capacity as number | undefined) ?? null,
+            members: (f.members as number | undefined) ?? null,
+            bestChain: (f.best_chain as number | undefined) ?? null,
+          });
+          await insertFactionSnapshot(ctx.db, userId, f.id, now, f.members ?? null, f.respect ?? null, f);
+          records += 2;
+        }
+      } catch (err) {
+        // Faction details need permissions the key may not grant; profile sync
+        // must not fail because of it.
+        logger.warn({ err: (err as Error).message, userId }, "faction basic fetch failed during profile sync");
       }
-    } catch (err) {
-      // Faction details need permissions the key may not grant; profile sync
-      // must not fail because of it.
-      logger.warn({ err: (err as Error).message, userId }, "faction basic fetch failed during profile sync");
     }
     await upsertFactionMembership(ctx.db, userId, p.faction_id, `profile:${p.id}`, null, now);
   }

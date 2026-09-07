@@ -20,6 +20,18 @@ export async function buildServer(): Promise<FastifyInstance> {
     bodyLimit: 256 * 1024,
   });
 
+  // A body-less mutation carrying "content-type: application/json" would hit
+  // the JSON parser and fail with "Body cannot be empty..." before route
+  // logic runs. Proxies and generic clients like to stamp that header, so
+  // strip it whenever there is no body to parse (defense in depth — the web
+  // proxy and browser client also avoid sending it).
+  app.addHook("onRequest", async (req) => {
+    const hasBody = req.headers["content-length"] !== undefined && req.headers["content-length"] !== "0";
+    if (!hasBody && req.headers["content-type"]) {
+      delete req.headers["content-type"];
+    }
+  });
+
   await app.register(helmet, {
     contentSecurityPolicy: false, // JSON API only
     referrerPolicy: { policy: "no-referrer" },

@@ -2,16 +2,24 @@
   import { goto } from "$app/navigation";
   import { onMount } from "svelte";
   import { endpoints, ApiClientError } from "$lib/api";
-  import type { ApiKeyStatusResponse, ExistingProfileInfo, KeyCapabilitiesDto } from "@tornscope/shared";
-  import { branding, moduleAvailability } from "@tornscope/shared";
+  import type { ApiKeyStatusResponse, ApiKeyValidationResponse, ExistingProfileInfo, KeyCapabilitiesDto, SyncResource } from "@tornscope/shared";
+  import { branding, moduleAvailability, resourceRequirementLabel, summarizeKeyAccess } from "@tornscope/shared";
   import { refreshMe, me } from "$lib/state.svelte";
 
   let apiKey = $state("");
   let validating = $state(false);
+  let saving = $state(false);
   let loadingDemo = $state(false);
   let error = $state<string | null>(null);
   let status = $state<ApiKeyStatusResponse | null>(null);
+  // 1 = key form · 2 = detected access · 3 = existing-profile link ·
+  // 4 = import progress · 5 = generic saving spinner
   let step = $state(1);
+
+  // Detected access (step 2) — validated live against Torn WITHOUT storing
+  // anything, so the access summary is shown BEFORE the first sync starts.
+  let detected = $state<ApiKeyValidationResponse | null>(null);
+  let storedKey = $state(""); // kept in memory only until used or cleared
 
   // Existing-profile reuse (Phase: profile reuse / multi-device linking).
   // Set when the backend answers a key save with `profile_exists`.
@@ -20,11 +28,10 @@
     incoming: { accessLevel: number | null; accessType: string | null; capabilities: KeyCapabilitiesDto | null };
     downgrade: boolean;
   } | null>(null);
-  let storedKey = $state(""); // kept in memory only until used or cleared
   let linking = $state(false);
   let replacing = $state(false);
 
-  // Step 3 progress (resource-level — never an invented overall percentage).
+  // Step 4 progress (resource-level — never an invented overall percentage).
   type ResourceRow = { resource: string; status: string; lastSuccessAt: number | null; recordsCollected: number; errorMessage: string | null };
   let syncRows = $state<ResourceRow[]>([]);
   let syncRunning = $state(false);
@@ -33,17 +40,23 @@
   const RESOURCE_LABELS: Record<string, string> = {
     profile: "Profile",
     networth: "Net worth",
-    personal_stats: "Stats",
-    drugs: "Drugs",
+    personal_stats: "Live stats",
+    drugs: "Drug history",
     rehab: "Rehab",
-    money_logs: "Money",
+    money_logs: "Economy",
     travel: "Travel",
-    events: "Timeline",
+    events: "Events",
     faction_basic: "Faction",
+    faction: "Faction detail",
+    ranked_wars: "Ranked wars",
+    chains: "Chains",
+    organized_crimes: "Organized crimes",
+    attacks: "Combat",
     torn_catalog: "Catalog",
   };
 
-  async function validateAndSave() {
+  /** Step 1: validate against Torn without storing anything. */
+  async function validateKey() {
     if (apiKey.trim().length < 10) {
       error = "That doesn't look like a valid Torn API key.";
       return;
@@ -52,13 +65,29 @@
     error = null;
     storedKey = apiKey.trim();
     try {
-      // The backend validates, stores the encrypted credential, detects the
-      // player and queues the initial backfill itself.
-      status = await endpoints.saveApiKey(storedKey);
+      detected = await endpoints.validateApiKey(storedKey);
       apiKey = "";
+      step = 2;
+    } catch (err) {
+      error = err instanceof ApiClientError ? err.message : (err as Error).message;
+    } finally {
+      validating = false;
+    }
+  }
+
+  /** Step 2 → 4: store the validated key; the backend queues the initial
+   * backfill itself (capability-aware — resources the key cannot answer are
+   * never run). */
+  async function startTracking() {
+    if (!detected) return;
+    saving = true;
+    error = null;
+    try {
+      status = await endpoints.saveApiKey(storedKey);
       storedKey = "";
+      detected = null;
       await refreshMe(); // drop stale "not configured" state immediately
-      step = 3;
+      step = 4;
       void pollSync();
     } catch (err) {
       if (err instanceof ApiClientError && err.code === "profile_exists") {
@@ -73,7 +102,7 @@
             incoming: details.incoming ?? { accessLevel: null, accessType: null, capabilities: null },
             downgrade: details.downgrade === true,
           };
-          step = 2;
+          step = 3;
         } else {
           error = err.message;
         }
@@ -81,7 +110,7 @@
         error = err instanceof ApiClientError ? err.message : (err as Error).message;
       }
     } finally {
-      validating = false;
+      saving = false;
     }
   }
 
@@ -97,7 +126,7 @@
       existing = null;
       await refreshMe();
       status = await endpoints.apiKeyStatus();
-      step = 3;
+      step = 4;
       void pollSync();
     } catch (err) {
       error = err instanceof ApiClientError ? err.message : (err as Error).message;
@@ -119,7 +148,7 @@
       existing = null;
       await refreshMe();
       status = await endpoints.apiKeyStatus();
-      step = 3;
+      step = 4;
       void pollSync();
     } catch (err) {
       error = err instanceof ApiClientError ? err.message : (err as Error).message;
@@ -134,6 +163,12 @@
     step = 1;
   }
 
+  function backToKeyForm() {
+    detected = null;
+    storedKey = "";
+    step = 1;
+  }
+
   async function pollSync() {
     try {
       const s = await endpoints.syncStatus();
@@ -144,13 +179,18 @@
     }
   }
 
-  function rowState(row: ResourceRow): { label: string; cls: string } {
-    if (row.status === "running") return { label: row.lastSuccessAt === null ? "importing" : "syncing", cls: "text-accent" };
-    if (row.errorMessage && row.lastSuccessAt === null) return { label: "failed", cls: "text-negative" };
-    if (row.lastSuccessAt !== null) {
-      return { label: row.recordsCollected > 0 ? `ready · ${row.recordsCollected.toLocaleString("en-US")} records` : "ready", cls: "text-positive" };
+  function rowState(row: ResourceRow): { label: string; cls: string; skipped: boolean } {
+    if (row.status === "running") return { label: row.lastSuccessAt === null ? "importing" : "syncing", cls: "text-accent", skipped: false };
+    // Capability-blocked: this key can never fetch this resource. Not an
+    // error, not a zero — an explicit skip with the missing permission named.
+    if (row.status === "capability_denied") {
+      return { label: `Skipped — ${resourceRequirementLabel(row.resource as SyncResource)} permission unavailable`, cls: "text-fg-faint", skipped: true };
     }
-    return { label: "queued", cls: "text-fg-faint" };
+    if (row.errorMessage && row.lastSuccessAt === null) return { label: "failed", cls: "text-negative", skipped: false };
+    if (row.lastSuccessAt !== null) {
+      return { label: row.recordsCollected > 0 ? `ready · ${row.recordsCollected.toLocaleString("en-US")} records` : "ready", cls: "text-positive", skipped: false };
+    }
+    return { label: "waiting", cls: "text-fg-faint", skipped: false };
   }
 
   async function retryFailed() {
@@ -182,6 +222,11 @@
     void goto("/today");
   }
 
+  const accessSummary = $derived(
+    detected ? summarizeKeyAccess(detected.capabilities, detected.accessLevel, detected.accessType) : null
+  );
+  const limitedAccess = $derived(accessSummary !== null && accessSummary.levelName !== "Full");
+
   const caps = $derived(me.data?.capabilities ?? null);
   const modules = $derived(moduleAvailability(caps ?? {
     canReadUserBasic: false, canReadUserBars: false, canReadUserCooldowns: false, canReadUserEducation: false,
@@ -196,7 +241,7 @@
 
   onMount(() => {
     const poll = setInterval(() => {
-      if (step === 3) void pollSync();
+      if (step === 4) void pollSync();
     }, 3000);
     return () => clearInterval(poll);
   });
@@ -234,9 +279,9 @@
         <button
           class="mt-5 w-full rounded-xl bg-accent-strong py-3 text-sm font-semibold text-bg transition-colors hover:bg-accent disabled:opacity-40"
           disabled={validating}
-          onclick={() => void validateAndSave()}
+          onclick={() => void validateKey()}
         >
-          {validating ? "Validating with Torn…" : "Validate & start tracking"}
+          {validating ? "Validating with Torn…" : "Validate key"}
         </button>
         <p class="mt-3 text-center text-xs text-fg-faint">
           TornScope also works with limited permissions. More access unlocks additional analytics.
@@ -271,7 +316,67 @@
             private Torn data — including detailed activity and log history — so a limited key is a valid privacy choice.
           </p>
         </div>
-      {:else if step === 2 && existing}
+      {:else if step === 2 && detected && accessSummary}
+        <!-- Detected access: shown BEFORE anything is stored or synced -->
+        <div class="space-y-5">
+          <div class="space-y-1 text-center">
+            <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-faint">Detected API access</p>
+            <p class="font-display text-2xl font-medium text-fg">{accessSummary.levelName} Access</p>
+            {#if accessSummary.accessType}
+              <p class="text-xs text-fg-faint">{accessSummary.accessType} key{accessSummary.level !== null ? ` · Torn access level ${accessSummary.level}` : ""}</p>
+            {/if}
+          </div>
+
+          <div class="grid gap-1.5 rounded-xl border border-border bg-bg-raise px-4 py-4 text-[13px] sm:grid-cols-2">
+            <div>
+              <p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-positive">Available with this key</p>
+              <ul class="mt-1 space-y-0.5 text-fg-muted">
+                {#each accessSummary.available as label (label)}
+                  <li>· {label}</li>
+                {/each}
+              </ul>
+            </div>
+            <div>
+              <p class="text-[10px] font-semibold uppercase tracking-[0.12em] {limitedAccess ? 'text-fg-faint' : 'text-positive'}">
+                {limitedAccess ? "Unavailable with this key" : "Complete coverage"}
+              </p>
+              <ul class="mt-1 space-y-0.5 text-fg-faint">
+                {#each accessSummary.unavailable as item (item.label)}
+                  <li>· {item.label}</li>
+                {/each}
+                {#if accessSummary.unavailable.length === 0}
+                  <li>· Everything TornScope supports</li>
+                {/if}
+              </ul>
+            </div>
+          </div>
+
+          <p class="text-center text-[13px] leading-relaxed text-fg-muted">
+            {#if limitedAccess}
+              You can continue with this key. TornScope will only sync data your key permits —
+              unavailable areas are clearly marked, never shown as zeros. Collected history is kept
+              forever, and upgrading the key later fills in what it missed.
+            {:else}
+              {accessSummary.note}
+            {/if}
+          </p>
+
+          {#if error}
+            <p class="text-sm text-negative">{error}</p>
+          {/if}
+
+          <button
+            class="w-full rounded-xl bg-accent-strong py-3 text-sm font-semibold text-bg transition-colors hover:bg-accent disabled:opacity-40"
+            disabled={saving}
+            onclick={() => void startTracking()}
+          >
+            {saving ? "Connecting…" : "Continue — start tracking"}
+          </button>
+          <button class="w-full text-center text-xs text-fg-faint transition-colors hover:text-fg" onclick={backToKeyForm}>
+            Use a different key
+          </button>
+        </div>
+      {:else if step === 3 && existing}
         <!-- Existing TornScope profile found: link, don't duplicate -->
         <div class="space-y-5">
           <div class="space-y-1 text-center">
@@ -344,7 +449,7 @@
             <p class="text-sm text-negative">{error}</p>
           {/if}
         </div>
-      {:else if step === 2}
+      {:else if step === 3}
         <div class="flex flex-col items-center gap-4 py-6">
           <div class="h-6 w-6 animate-spin rounded-full border-2 border-border-strong border-t-accent"></div>
           <p class="text-sm text-fg-muted">Key saved. Kicking off the initial sync of your Torn history…</p>
@@ -364,9 +469,15 @@
           {#if me.data?.capabilities}
             <div class="rounded-xl border border-border bg-bg-raise px-4 py-3">
               <div class="flex items-center justify-between">
-                <span class="text-[11px] font-semibold uppercase tracking-[0.14em] text-fg-faint">API Access</span>
+                <span class="text-[11px] font-semibold uppercase tracking-[0.14em] text-fg-faint">Detected API access</span>
                 <span class="text-sm font-semibold text-fg">{me.data.accessType ?? "Detected"}{me.data.accessLevel ? ` · level ${me.data.accessLevel}` : ""}</span>
               </div>
+              {#if me.data.accessLevel !== null && me.data.accessLevel < 4}
+                <p class="mt-1.5 text-[12px] leading-relaxed text-fg-muted">
+                  Limited Access — TornScope only syncs what this key permits. Resources the key cannot
+                  answer are skipped below, never rendered as zeros.
+                </p>
+              {/if}
               <div class="mt-2 grid gap-1.5 text-[12px] sm:grid-cols-2">
                 <div>
                   <p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-positive">Available</p>
@@ -391,12 +502,14 @@
             </div>
           {/if}
 
-          <!-- Resource-level progress (no invented overall percentage) -->
+          <!-- Resource-level progress (no invented overall percentage).
+               Capability-blocked resources show an explicit skip so the
+               Limited-vs-Full behavior is understandable at a glance. -->
           <div class="rounded-xl border border-border bg-bg-raise px-4 py-2">
             {#each syncRows as row (row.resource)}
               <div class="flex items-center justify-between gap-3 border-b border-border/50 py-2 last:border-0">
-                <span class="text-[13px] text-fg">{RESOURCE_LABELS[row.resource] ?? row.resource}</span>
-                <span class="tnum text-xs {rowState(row).cls}">{rowState(row).label}</span>
+                <span class="text-[13px] {rowState(row).skipped ? 'text-fg-faint' : 'text-fg'}">{RESOURCE_LABELS[row.resource] ?? row.resource}</span>
+                <span class="tnum text-right text-xs {rowState(row).cls}">{rowState(row).label}</span>
               </div>
             {:else}
               <p class="py-3 text-center text-xs text-fg-faint">
@@ -423,9 +536,9 @@
       {/if}
     </div>
 
-    {#if step !== 3 && status?.tornId}
+    {#if (step === 2 && detected?.tornId) || (step !== 2 && step !== 4 && status?.tornId)}
       <p class="text-center text-xs text-fg-muted">
-        Detected player: <span class="text-fg">{status.tornName}</span> [{status.tornId}]
+        Detected player: <span class="text-fg">{step === 2 ? detected?.tornName : status?.tornName}</span> [{step === 2 ? detected?.tornId : status?.tornId}]
       </p>
     {/if}
   </div>

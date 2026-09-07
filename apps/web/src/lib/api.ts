@@ -98,12 +98,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   get: <T>(path: string) => request<T>(path),
+  /**
+   * JSON POST. When `body` is omitted nothing is sent at all — no body and
+   * no content-type — so payload-free endpoints stay valid HTTP instead of
+   * tripping the backend's "Body cannot be empty when content-type is set"
+   * JSON parser error. Pass `{}` explicitly when the endpoint contract
+   * expects a (possibly empty) JSON object.
+   */
   post: <T>(path: string, body?: unknown) =>
-    request<T>(path, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body ?? {}),
-    }),
+    request<T>(
+      path,
+      body === undefined
+        ? { method: "POST" }
+        : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) },
+    ),
+  /** DELETE never carries a body or content-type. */
   del: <T>(path: string) => request<T>(path, { method: "DELETE" }),
 };
 
@@ -177,8 +186,8 @@ export const endpoints = {
   syncStatus: () => api.get<{ running: boolean; resources: Array<{ resource: string; status: string; lastAttemptAt: number | null; lastSuccessAt: number | null; nextRunAt: number | null; recordsCollected: number; errorMessage: string | null }> }>("/sync/status"),
   syncHealth: () => api.get<SyncHealthResponse>("/sync/health"),
   syncRun: (resource: string, force = false) => api.post<{ queued: boolean }>("/sync/run", { resource, force }),
-  syncRetryFailed: () => api.post<{ queued: string[] }>("/sync/retry-failed"),
-  syncBackfill: () => api.post<{ queued: number }>("/sync/backfill"),
+  syncRetryFailed: () => api.post<{ queued: string[] }>("/sync/retry-failed", {}),
+  syncBackfill: () => api.post<{ queued: number }>("/sync/backfill", {}),
   setDemoView: (enabled: boolean) => api.post<MeResponse>("/demo-view", { enabled }),
   apiKeyStatus: () => api.get<ApiKeyStatusResponse>("/settings/api-key"),
   saveApiKey: (key: string, confirmNewProfile?: boolean) =>

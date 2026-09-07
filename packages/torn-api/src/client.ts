@@ -70,9 +70,38 @@ export interface TornPage<T> {
   metadata: TornMetadata | undefined;
 }
 
+/**
+ * Process-local request accounting for one client instance. Used to measure
+ * sync efficiency (denied/timeout/retry pressure) WITHOUT ever exposing the
+ * key — counters only, no URLs, no params.
+ */
+export interface TornClientMetrics {
+  requests: number;
+  /** Requests Torn answered with an access/permission error (kind=access_denied). */
+  denied: number;
+  /** Requests that aborted on the client timeout. */
+  timeouts: number;
+  /** Retry attempts after a retryable failure. */
+  retries: number;
+  /** Requests that ended in any error. */
+  errors: number;
+  totalDurationMs: number;
+}
+
+function emptyMetrics(): TornClientMetrics {
+  return { requests: 0, denied: 0, timeouts: 0, retries: 0, errors: 0, totalDurationMs: 0 };
+}
+
 export class TornApiClient {
   private readonly limiter: RateLimiter;
   private readonly opts: TornApiClientOptions;
+  /** Cumulative counters since client construction (never reset). */
+  readonly metrics: TornClientMetrics = emptyMetrics();
+
+  /** Point-in-time copy of the counters (for per-run deltas). */
+  metricsSnapshot(): TornClientMetrics {
+    return { ...this.metrics };
+  }
 
   constructor(
     /** API key is held privately and never logged. */
@@ -111,8 +140,11 @@ export class TornApiClient {
       try {
         return await this.limiter.run(() => this.requestOnce(path, params));
       } catch (err) {
+        this.metrics.errors += 1;
+        if (err instanceof TornApiError && err.kind === "access_denied") this.metrics.denied += 1;
         const retryable = err instanceof TornApiError && err.retryable;
         if (!retryable || attempt > this.opts.maxRetries) throw err;
+        this.metrics.retries += 1;
         const isRateLimit = err instanceof TornApiError && err.kind === "rate_limited";
         const delay = this.backoffDelay(attempt, isRateLimit);
         this.opts.logger.warn?.({ path: sanitizePath(path), attempt, delayMs: delay }, "retrying torn api request");
@@ -256,6 +288,7 @@ export class TornApiClient {
   private async requestOnce(path: string, params: TornRequestParams): Promise<TornPage<unknown>> {
     const url = this.buildUrl(path, params);
     const startedAt = Date.now();
+    this.metrics.requests += 1;
     let response: Response;
     try {
       response = await this.opts.fetchImpl!(url, {
@@ -267,10 +300,15 @@ export class TornApiClient {
         signal: AbortSignal.timeout(this.opts.timeoutMs),
       });
     } catch (err) {
+      this.metrics.totalDurationMs += Date.now() - startedAt;
+      if ((err as { name?: string }).name === "TimeoutError" || (err as { cause?: { name?: string } }).cause?.name === "TimeoutError") {
+        this.metrics.timeouts += 1;
+      }
       throw new TornNetworkError(`torn api request failed: ${sanitizePath(path)}`, err);
     }
 
     const durationMs = Date.now() - startedAt;
+    this.metrics.totalDurationMs += durationMs;
     this.opts.logger.debug?.({ path: sanitizePath(path), status: response.status, durationMs }, "torn api request");
 
     let body: RawTornResponse;

@@ -23,8 +23,12 @@ export const TRAVEL_DESTINATIONS = [
 export type TravelDestination = (typeof TRAVEL_DESTINATIONS)[number];
 export const TORN_HOME = "Torn" as const;
 
-/** Item classes we track for travel profitability. */
-export const TRAVEL_ITEM_CATEGORIES = ["plushie", "flower", "other"] as const;
+/**
+ * Item classes we track for travel profitability. Xanax is first-class:
+ * for many players it is a major travel-income commodity and must not
+ * disappear inside "other".
+ */
+export const TRAVEL_ITEM_CATEGORIES = ["plushie", "flower", "xanax", "other"] as const;
 export type TravelItemCategory = (typeof TRAVEL_ITEM_CATEGORIES)[number];
 
 /**

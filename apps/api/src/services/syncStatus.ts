@@ -90,7 +90,8 @@ async function buildSyncHealth(userId: string, isOwner: boolean) {
 
   return {
     running: states.some((s) => s.status === "running"),
-    build: { commit: process.env.GIT_SHA ?? "dev" },
+    // Deployment identity is owner-only information; guests get null.
+    build: { commit: isOwner ? (process.env.GIT_SHA ?? "dev") : null },
     // Infrastructure topology is owner-only; guests get null and the UI shows
     // a permission state instead of fake status dots.
     system: isOwner
@@ -223,12 +224,6 @@ export function deriveResourcePhase(s: SyncStateRow, categories: CategoryStateLi
  */
 const MANUAL_COOLDOWN_MS = 60_000;
 
-/** Guests without an active credential must never enqueue Torn API work. */
-async function hasActiveCredential(db: ReturnType<typeof getPrismaClient>, userId: string): Promise<boolean> {
-  const cred = await db.apiCredential.findUnique({ where: { userId }, select: { revokedAt: true } });
-  return Boolean(cred && !cred.revokedAt);
-}
-
 export async function requestManualSync(
   userId: string,
   resource: string,
@@ -309,9 +304,15 @@ const BACKFILL_COOLDOWN_MS = 5 * 60_000;
 
 export async function restartBackfill(userId: string): Promise<{ queued: number; retryAfterSeconds?: number }> {
   const db = getPrismaClient();
-  if (!(await hasActiveCredential(db, userId))) {
+  const credential = await db.apiCredential.findUnique({ where: { userId } });
+  if (!credential || credential.revokedAt) {
     return { queued: 0, retryAfterSeconds: 0 };
   }
+  // Capability-aware: resources the key cannot answer are never enqueued and
+  // stay parked at their re-check interval instead of cycling through the
+  // worker as instant capability_denied jobs.
+  const caps = normalizeCapabilitiesWithFallback(credential.capabilities, credential.accessLevel);
+  const allowedResources = SYNC_RESOURCES.filter((resource) => resourceAllowed(caps, resource));
   const last = await db.appSetting.findUnique({ where: { userId_key: { userId, key: BACKFILL_FLAG } } });
   const lastAt = Number(last?.value ?? 0);
   if (Number.isFinite(lastAt) && lastAt > 0 && Date.now() - lastAt < BACKFILL_COOLDOWN_MS) {
@@ -324,7 +325,7 @@ export async function restartBackfill(userId: string): Promise<{ queued: number;
   });
 
   await db.syncState.updateMany({
-    where: { userId, status: { not: "running" } },
+    where: { userId, resource: { in: allowedResources }, status: { not: "running" } },
     data: { lastTimestamp: null, cursor: null, nextRunAt: new Date() },
   });
   // A real historical backfill ignores adaptive scheduling: every category
@@ -336,7 +337,7 @@ export async function restartBackfill(userId: string): Promise<{ queued: number;
 
   const ctx = getApiContext();
   let queued = 0;
-  for (const resource of SYNC_RESOURCES) {
+  for (const resource of allowedResources) {
     try {
       await ctx.syncQueue.add(
         SYNC_JOB_NAME,

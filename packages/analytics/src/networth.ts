@@ -147,7 +147,8 @@ export const NETWORTH_CATEGORY_LABELS: Record<NetworthCategoryChange["key"], str
   cash: "Cash",
   banks: "Bank",
   stocks: "Stocks",
-  items: "Items",
+  // Unambiguous: this is inventory VALUE held, not "items sold" or "items bought".
+  items: "Items (inventory value)",
   property: "Property",
   points: "Points",
   company: "Company",

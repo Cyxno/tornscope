@@ -77,9 +77,10 @@
     };
   });
 
-  /** Friendly haul categories; the pie splits by PURCHASED QUANTITY. */
-  const CATEGORY_LABELS: Record<string, string> = { flower: "Flowers", plushie: "Plushies", other: "Other" };
-  const CATEGORY_COLOR: Record<string, string> = { plushie: C.warning, flower: C.pink, other: C.accent };
+  /** Friendly haul categories; the pie splits by PURCHASED QUANTITY.
+   * Xanax is first-class: a major travel commodity must not hide in Other. */
+  const CATEGORY_LABELS: Record<string, string> = { flower: "Flowers", plushie: "Plushies", xanax: "Xanax", other: "Other" };
+  const CATEGORY_COLOR: Record<string, string> = { plushie: C.warning, flower: C.pink, xanax: C.violet, other: C.accent };
   const haulOption = $derived.by(() => {
     if (!summary || summary.itemsByCategory.length === 0) return null;
     return {
@@ -185,11 +186,50 @@
         </Panel>
       </div>
       <div class="lg:col-span-2">
-        <Panel title="What you haul" caption="Items bought abroad by quantity — flowers, plushies, other" flush>
+        <Panel title="What you haul" caption="Items bought abroad — plushies, flowers, Xanax and the rest, by quantity" flush>
           {#if !haulOption}
             <StateMessage state="empty" title="No purchases in this range" />
           {:else}
-            <Chart option={haulOption} height={300} />
+            <Chart option={haulOption} height={280} />
+          {/if}
+          {#if summary && summary.itemsByCategory.length > 0}
+            <div class="border-t border-border px-5 py-3">
+              <ul class="space-y-1 text-xs text-fg-muted">
+                {#each summary.itemsByCategory as row (row.category)}
+                  <li class="flex items-baseline justify-between gap-3">
+                    <span>{CATEGORY_LABELS[row.category] ?? row.category}</span>
+                    <span class="tnum">
+                      {formatMoneyCompact(row.spend)} spend
+                      {#if row.estimatedValue !== null}
+                        · {formatMoneyCompact(row.estimatedValue)} est. value
+                      {/if}
+                    </span>
+                  </li>
+                {/each}
+              </ul>
+            </div>
+          {/if}
+          {#if summary && summary.topItems.length > 0}
+            <div class="border-t border-border px-5 py-3">
+              <p class="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-fg-faint">Top items by spend</p>
+              <ul class="space-y-1 text-xs text-fg-muted">
+                {#each summary.topItems as row (row.item)}
+                  <li class="flex items-baseline justify-between gap-3">
+                    <span class="text-fg">{row.item} <span class="text-fg-faint">({CATEGORY_LABELS[row.category] ?? row.category})</span></span>
+                    <span class="tnum">
+                      {Math.round(row.spendShare * 100)}% of spend · {row.quantity}×
+                      {#if row.estimatedProfit !== null}
+                        · <span class={row.estimatedProfit >= 0 ? "text-positive" : "text-negative"}>{formatMoneyCompact(row.estimatedProfit)}</span>
+                      {/if}
+                    </span>
+                  </li>
+                {/each}
+              </ul>
+              <p class="mt-2 text-[11px] leading-relaxed text-fg-faint">
+                Estimated values use Torn market prices (conservative, same semantics as other travel goods). Xanax you
+                consume personally is tracked under Drugs — this section is travel merchandise only.
+              </p>
+            </div>
           {/if}
         </Panel>
       </div>
