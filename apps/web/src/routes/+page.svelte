@@ -1,7 +1,8 @@
 <script lang="ts">
-  import type { DashboardResponse } from "@tornscope/shared";
+  import type { DashboardResponse, TodayResponse } from "@tornscope/shared";
   import { formatMoneyCompact, formatKpiValue, periodLabel, formatDate, formatSignedMoney } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
+import LiveNow from "$lib/components/LiveNow.svelte";
   import { incomeLabel, expenseLabel } from "$lib/labels";
   import { dateRange, me } from "$lib/state.svelte";
   import { clientPermissionMessage } from "$lib/capabilities";
@@ -15,6 +16,7 @@
   import { C, TOOLTIP, LEGEND, GRID, timeAxis, valueAxis, dayLabel, hourLabel, tealArea } from "$lib/charts";
 
   let data = $state<DashboardResponse | null>(null);
+  let today = $state<TodayResponse | null>(null);
   let loading = $state(true);
   let error = $state<string | null>(null);
   let reloadToken = $state(0);
@@ -23,7 +25,12 @@
     loading = true;
     error = null;
     try {
-      data = await endpoints.dashboard({ preset: dateRange.preset, from: dateRange.from, to: dateRange.to });
+      const [dash, todayRes] = await Promise.all([
+        endpoints.dashboard({ preset: dateRange.preset, from: dateRange.from, to: dateRange.to }),
+        endpoints.today().catch(() => null),
+      ]);
+      data = dash;
+      today = todayRes;
     } catch (err) {
       error = err instanceof ApiClientError ? err.message : (err as Error).message;
     } finally {
@@ -220,6 +227,9 @@
       </div>
     </section>
 
+    <!-- Right now: live state chips (same Today source — one calculation) -->
+    <LiveNow today={today} onOpenToday={() => (window.location.href = "/today")} />
+
     <!-- Net worth over time -->
     <Panel
       title="Net worth over time"
@@ -228,6 +238,9 @@
         : "Hourly snapshots from the sync worker — exact Torn-provided values"}
       flush
     >
+      {#snippet actions()}
+        <a href="/economy" class="pr-4 text-xs font-medium text-accent transition-opacity hover:opacity-80">Explore →</a>
+      {/snippet}
       {#if !networthOption}
         <StateMessage state={networthBlocked ? "permission" : "empty"} title={networthBlocked ? networthBlocked.title : "No networth history in this range"} hint={networthBlocked ? networthBlocked.hint : "Snapshots appear as the worker runs. Try a wider range or check Sync Status."} />
       {:else}
@@ -239,6 +252,7 @@
     <section aria-label="Wallet movement" class="space-y-3">
       <div class="flex items-center justify-between">
         <h2 class="text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-faint">Wallet — actual cash on hand and its movement</h2>
+        <a href="/economy" class="text-xs font-medium text-accent transition-opacity hover:opacity-80">Economy →</a>
         {#if data.wallet.coverage === "partial"}
           <span class="text-[11px] text-warning">partial snapshot coverage</span>
         {/if}
@@ -291,6 +305,9 @@
     <section class="grid gap-6 lg:grid-cols-6">
       <div class="lg:col-span-2">
         <Panel title="Cash received" caption="Where incoming cash came from — earnings and asset sales are different things">
+      {#snippet actions()}
+        <a href="/economy" class="pr-4 text-xs font-medium text-accent transition-opacity hover:opacity-80">Explore →</a>
+      {/snippet}
           {#if logsBlocked}
             <StateMessage state="permission" title={logsBlocked.title} hint={logsBlocked.hint} />
           {:else if data.financial.cashReceived}
@@ -391,6 +408,9 @@
       </div>
       <div class="lg:col-span-2">
         <Panel title="Cash spent" caption="Where cash went — true expenses and asset purchases are different things">
+      {#snippet actions()}
+        <a href="/economy" class="pr-4 text-xs font-medium text-accent transition-opacity hover:opacity-80">Explore →</a>
+      {/snippet}
           {#if logsBlocked}
             <StateMessage state="permission" title={logsBlocked.title} hint={logsBlocked.hint} />
           {:else if topExpenses.length === 0}
@@ -471,6 +491,9 @@
         {/if}
       </Panel>
       <Panel title="Faction" caption="Ranked war status and faction income" flush>
+      {#snippet actions()}
+        <a href="/faction" class="pr-4 text-xs font-medium text-accent transition-opacity hover:opacity-80">Open Faction →</a>
+      {/snippet}
         {#if !data.faction}
           <StateMessage state="empty" title="No faction membership" />
         {:else}

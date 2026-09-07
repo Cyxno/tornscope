@@ -46,3 +46,11 @@ Complete every item before exposing TornScope on a public hostname
       docker compose -f docker-compose.unraid.yml exec postgres pg_dump -U tornscope tornscope | gzip > tornscope-backup.sql.gz
       ```
 
+
+## Push notifications (Web Push)
+- Generate VAPID keys once: `npx web-push generate-vapid-keys`
+- Put `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` in `.env`; restart api/worker.
+  (This deployment already has them configured.)
+- Public key is served to browsers (`/api/notifications/vapid-public-key`); the private key never leaves the server.
+- Subscriptions live in `PushSubscription` (one row per browser, scoped to the profile); the service worker is `/sw.js`.
+- A profile may have several devices; disabling one never affects the others.

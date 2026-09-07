@@ -25,6 +25,7 @@ import type {
   TodayResponse,
   TravelSummaryResponse,
   TravelTripDto,
+  NotificationsStatusResponse,
 } from "@tornscope/shared";
 
 /**
@@ -202,4 +203,20 @@ export const endpoints = {
   signOutOtherSessions: () => api.post<{ revoked: number }>("/session/sign-out-others", {}),
   deleteProfile: () => api.post<{ deleted: boolean }>("/profile/delete", {}),
   deleteApiKey: () => api.del<{ deleted: boolean }>("/settings/api-key"),
+
+  // ---- Push notifications ----
+  notificationsStatus: (currentEndpoint?: string) =>
+    api.get<NotificationsStatusResponse>(`/notifications${currentEndpoint ? `?endpoint=${encodeURIComponent(currentEndpoint)}` : ""}`),
+  notificationsSubscribe: (subscription: { endpoint: string; keys: { p256dh: string; auth: string } }) =>
+    api.post<{ ok: true }>("/notifications/subscribe", subscription),
+  notificationsUnsubscribe: (endpoint: string) => api.post<{ ok: true }>("/notifications/unsubscribe", { endpoint }),
+  notificationsDisableDevice: (id: string) => api.post<{ ok: true }>("/notifications/disable-device", { id }),
+  notificationsUpdatePreferences: (prefs: {
+    categories?: Record<string, boolean>;
+    sensitiveDetails?: boolean;
+    quietStartMin?: number | null;
+    quietEndMin?: number | null;
+  }) => api.post<NotificationsStatusResponse["preferences"]>("/notifications/preferences", prefs),
+  notificationsTest: (endpoint: string) => api.post<{ sent: boolean }>("/notifications/test", { endpoint }),
+  notificationsVapidPublicKey: () => api.get<{ publicKey: string | null }>("/notifications/vapid-public-key"),
 };

@@ -26,6 +26,11 @@ export const env = {
    * Set TRUST_PROXY=false only for direct unproxied exposure.
    */
   trustProxy: process.env.TRUST_PROXY !== "false",
+  /** Web Push VAPID keys. Private key NEVER leaves the server; the public
+   *  key is served to browsers (required for push subscription). */
+  vapidPublicKey: process.env.VAPID_PUBLIC_KEY ?? "",
+  vapidPrivateKey: process.env.VAPID_PRIVATE_KEY ?? "",
+  vapidSubject: process.env.VAPID_SUBJECT ?? "mailto:alerts@tornscope.local",
   /** Owner binding stays enabled until explicitly disabled post-migration. */
   /** Abandoned anonymous profiles older than this are cleaned up. */
   guestRetentionDays: Number(process.env.GUEST_PROFILE_RETENTION_DAYS ?? 60),

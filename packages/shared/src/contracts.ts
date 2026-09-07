@@ -1410,3 +1410,30 @@ export const ApiErrorSchema = z.object({
   }),
 });
 export type ApiErrorBody = z.infer<typeof ApiErrorSchema>;
+
+/* -------------------------------------------------------------------------- */
+/* Push notifications                                                          */
+/* -------------------------------------------------------------------------- */
+
+export const NotificationsStatusResponseSchema = z.object({
+  /** False when the server has no VAPID keys configured. */
+  pushConfigured: z.boolean(),
+  devices: z.array(
+    z.object({
+      id: z.string(),
+      userAgent: z.string().nullable(),
+      createdAt: z.number(),
+      lastSeenAt: z.number(),
+      /** True when this row is the browser making the request. */
+      current: z.boolean(),
+    })
+  ),
+  preferences: z.object({
+    categories: z.record(z.string(), z.boolean()),
+    sensitiveDetails: z.boolean(),
+    quietStartMin: z.number().nullable(),
+    quietEndMin: z.number().nullable(),
+    enabledAt: z.number().nullable(),
+  }),
+});
+export type NotificationsStatusResponse = z.infer<typeof NotificationsStatusResponseSchema>;

@@ -8,3 +8,4 @@ export * from "./today.js";
 export * from "./queues.js";
 export * from "./oc.js";
 export * from "./labels.js";
+export * from "./notifications.js";

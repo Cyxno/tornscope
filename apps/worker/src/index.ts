@@ -1,5 +1,6 @@
 import { enqueueDueSyncs } from "./scheduler.js";
 import { maybeRunDailyMaintenance } from "./maintenance.js";
+import { evaluateNotifications } from "./notifications/engine.js";
 import { runResourceSync } from "./sync/runner.js";
 import { env, logger } from "./env.js";
 import { queueRedis } from "./redis.js";
@@ -59,6 +60,10 @@ async function main(): Promise<void> {
   const schedulerWorker = createSchedulerWorker(env.redisUrl, async () => {
     await enqueueDueSyncs(syncQueue);
     await maybeRunDailyMaintenance();
+    // Push notification evaluation: self-throttled (min 2 min), only for
+    // profiles with an active device subscription. Never per-minute Torn
+    // polling — timer checks are gated by stored next-eligible timestamps.
+    await evaluateNotifications();
   });
   schedulerWorker.on("error", (err) => logger.error({ err: (err as Error).message }, "scheduler worker error"));
 

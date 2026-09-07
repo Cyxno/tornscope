@@ -89,6 +89,10 @@ model User {
   factionChains        FactionChain[]
   organizedCrimes      OrganizedCrime[]
   factionBalanceSnapshots FactionBalanceSnapshot[]
+  pushSubscriptions    PushSubscription[]
+  notificationPreference NotificationPreference?
+  notificationState    NotificationState?
+  notificationDeliveries NotificationDelivery[]
 }
 
 /// The Torn player connected to a user.
@@ -580,6 +584,8 @@ model MoneyEvent {
 /// Unified chronological timeline entries.
 model TimelineEvent {
   id          String   @id @default(cuid())
+  /// Monotonic insertion sequence (notification cursor). NOT event time.
+  seq         BigInt   @default(autoincrement()) @unique
   userId      String
   occurredAt  DateTime
   type        String
@@ -851,4 +857,85 @@ model RankedWarPayout {
   user User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, sourceRef])
+}
+
+/* -------------------------------------------------------------------------- */
+/* Push notifications                                                          */
+/* -------------------------------------------------------------------------- */
+
+/// One browser/device Web Push subscription. Belongs to EXACTLY one profile;
+/// devices subscribe and are revoked independently.
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  /// Web Push endpoint URL (unique per browser registration).
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  /// Best-effort client description from subscription-time navigator data.
+  userAgent String?
+  createdAt DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+  revokedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deliveries NotificationDelivery[]
+
+  @@index([userId])
+}
+
+/// Per-profile notification preferences + activation boundary. One row per
+/// user; created (with enabledAt = now) when push is first enabled, which is
+/// the cursor that prevents historical floods.
+model NotificationPreference {
+  userId           String  @id
+  /// Category toggles keyed by canonical category id; absent = default.
+  categories       Json
+  /// Include amounts/senders in notification bodies. Default OFF (privacy).
+  sensitiveDetails Boolean @default(false)
+  /// Quiet hours in the user's timezone (minutes since midnight); null = off.
+  quietStartMin    Int?
+  quietEndMin      Int?
+  /// Activation boundary: only events observed after this instant are
+  /// eligible for delivery. Set when preferences are first created.
+  enabledAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// Dedup ledger: one row per delivered (subscription, event, type). The
+/// unique constraint makes worker restarts and re-evaluations idempotent.
+model NotificationDelivery {
+  id               String   @id @default(cuid())
+  userId           String
+  subscriptionId   String
+  eventKey         String
+  notificationType String
+  sentAt           DateTime @default(now())
+  status           String   @default("sent")
+
+  user User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription PushSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@unique([subscriptionId, eventKey, notificationType])
+  @@index([userId, sentAt])
+}
+
+/// Latest observed live-state snapshot per user (timers diffing). Stores the
+/// previous bars/cooldowns/travel/education/bank state so the worker can
+/// detect active → ready transitions, plus nextEligibleAt so the engine only
+/// queries Torn when a tracked timer can actually have changed.
+model NotificationState {
+  userId         String   @id
+  /// Previous live snapshot (Json): cooldowns, travel, education, bank, bars.
+  previousState  Json?
+  /// Earliest instant at which re-fetching live state could yield a new
+  /// transition. Null = nothing tracked; the engine may fetch on its cadence.
+  nextEligibleAt DateTime?
+  /// Highest TimelineEvent insertion-sequence evaluated for notifications.
+  lastTimelineSeq BigInt   @default(0)
+  updatedAt      DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

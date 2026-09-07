@@ -6,6 +6,7 @@
   import { formatRelative } from "$lib/reltime";
   import PageHeader from "$lib/components/PageHeader.svelte";
   import Panel from "$lib/components/Panel.svelte";
+import NotificationsSettings from "$lib/components/NotificationsSettings.svelte";
   import StateMessage from "$lib/components/StateMessage.svelte";
 
   let status = $state<ApiKeyStatusResponse | null>(null);
@@ -423,6 +424,10 @@
       <li>• Deleting this TornScope profile removes that profile's stored data permanently.</li>
       <li>• Clearing this site's cookies detaches the browser from its profile; a valid API key for the same Torn account can link this browser to the existing profile again.</li>
     </ul>
+  </Panel>
+
+  <Panel title="Notifications" caption="TornScope alerts on this device — timers, Torn attention events, OC">
+    <NotificationsSettings />
   </Panel>
 
   <Panel title="Display defaults" caption="Timezone, currency and price basis used across TornScope">

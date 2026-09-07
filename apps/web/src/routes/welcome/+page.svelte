@@ -259,9 +259,8 @@
 <div class="flex min-h-screen items-center justify-center px-5 py-14">
   <div class="w-full max-w-xl space-y-10">
     <div class="space-y-3 text-center">
-      <a href="/" class="inline-flex items-center gap-2.5">
-        <span class="h-2 w-2 rounded-full bg-accent shadow-glow"></span>
-        <span class="text-[15px] font-semibold tracking-tight text-fg">TornScope</span>
+      <a href="/" class="inline-flex items-center justify-center" title="TornScope">
+        <img src="/brand/tornscope-logo.png" alt="TornScope" class="h-14 w-auto" />
       </a>
       <h1 class="font-display text-5xl font-medium leading-tight text-fg">
         A private record of<br />your <span class="italic text-accent">Torn life</span>.

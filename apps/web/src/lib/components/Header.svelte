@@ -26,9 +26,15 @@
 
 <header class="sticky top-0 z-40 border-b border-border bg-bg/85 backdrop-blur-md">
   <div class="mx-auto flex h-16 max-w-6xl items-center justify-between gap-6 px-5">
-    <!-- Brand -->
-    <a href="/" class="group flex items-center gap-2.5">
-      <span class="h-2 w-2 rounded-full bg-accent shadow-glow transition-transform group-hover:scale-110"></span>
+    <!-- Brand: scope/radar mark + wordmark text (the full wide logo would
+         compress navigation; the mark preserves the supplied identity) -->
+    <a href="/" class="group flex items-center gap-2.5" title="TornScope">
+      <img
+        src="/icons/tornscope-96.png"
+        alt=""
+        aria-hidden="true"
+        class="h-8 w-8 rounded-lg transition-transform group-hover:scale-105"
+      />
       <span class="text-[15px] font-semibold tracking-tight text-fg">TornScope</span>
     </a>
 

@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { DateRangeSchema, PaginationQuerySchema, TORN_DRUG_NAMES, resolveDateRange, type DateRangePreset } from "@tornscope/shared";import { resolveSessionUser, assertSameOrigin, rebindCurrentSession, clearSessionCookie, currentSessionTokenHash, requestIsSecure, type SessionUser } from "./auth.js";
 import { checkRateLimit, clientIp } from "./ratelimit.js";
+import { env } from "./env.js";
 import { errors, mapTornError, AppError } from "./errors.js";
 import { getMoneyEvents, getMoneySummary } from "./services/money.js";
 import { cursorWhere, encodeCursor } from "./cursor.js";
@@ -29,6 +30,7 @@ import { getToday } from "./services/today.js";
 import { getMe, getApiKeyStatus, saveApiKey, validateApiKey, linkProfile, deleteApiKey, setDemoView, deleteProfile, signOutOtherSessions } from "./services/me.js";
 import { deleteEmptyProfile } from "@tornscope/database";
 import { getSyncStatus, getSyncHealth, requestManualSync, retryFailedSyncs, restartBackfill } from "./services/syncStatus.js";
+import { getNotificationsStatus, subscribePush, unsubscribePush, disableDevice, updatePreferences, sendTestNotification } from "./services/notifications.js";
 import { getPrismaClient } from "@tornscope/database";
 
 function parseRange(query: Record<string, unknown>) {
@@ -418,6 +420,69 @@ export function registerRoutes(app: FastifyInstance): void {
     if (!limit.ok) throw errors.validation({ formErrors: ["Too many attempts — try again later."], fieldErrors: {} });
     await deleteApiKey(user.id);
     return { deleted: true };
+  });
+
+  // ---- Push notifications (browser-bound, per-profile) --------------------
+
+  app.get("/api/notifications", async (req) => {
+    const user = currentUser(req);
+    // The current browser identifies itself by its (unique) endpoint URL via
+    // query — headers would be stripped by the same-origin proxy.
+    const q = z.object({ endpoint: z.string().url().max(1000).optional() }).safeParse(req.query);
+    return getNotificationsStatus(user, q.success ? q.data.endpoint ?? null : null);
+  });
+
+  app.post("/api/notifications/subscribe", async (req) => {
+    const user = currentUser(req);
+    const body = z
+      .object({
+        endpoint: z.string().url().max(1000),
+        keys: z.object({ p256dh: z.string().min(10), auth: z.string().min(10) }),
+      })
+      .safeParse(req.body);
+    if (!body.success) throw errors.validation(body.error.flatten());
+    const ua = req.headers["user-agent"] ?? null;
+    await subscribePush(user, body.data, typeof ua === "string" ? ua : null);
+    return { ok: true };
+  });
+
+  app.post("/api/notifications/unsubscribe", async (req) => {
+    const user = currentUser(req);
+    const body = z.object({ endpoint: z.string().url().max(1000) }).safeParse(req.body);
+    if (!body.success) throw errors.validation(body.error.flatten());
+    return unsubscribePush(user, body.data.endpoint);
+  });
+
+  app.post("/api/notifications/disable-device", async (req) => {
+    const user = currentUser(req);
+    const body = z.object({ id: z.string().min(1) }).safeParse(req.body);
+    if (!body.success) throw errors.validation(body.error.flatten());
+    return disableDevice(user, body.data.id);
+  });
+
+  app.post("/api/notifications/preferences", async (req) => {
+    const user = currentUser(req);
+    const body = z
+      .object({
+        categories: z.record(z.string(), z.boolean()).optional(),
+        sensitiveDetails: z.boolean().optional(),
+        quietStartMin: z.number().int().min(0).max(1439).nullable().optional(),
+        quietEndMin: z.number().int().min(0).max(1439).nullable().optional(),
+      })
+      .safeParse(req.body);
+    if (!body.success) throw errors.validation(body.error.flatten());
+    return updatePreferences(user, body.data);
+  });
+
+  app.post("/api/notifications/test", async (req) => {
+    const user = currentUser(req);
+    const body = z.object({ endpoint: z.string().url().max(1000) }).safeParse(req.body);
+    if (!body.success) throw errors.validation(body.error.flatten());
+    return sendTestNotification(user, body.data.endpoint);
+  });
+
+  app.get("/api/notifications/vapid-public-key", async () => {
+    return { publicKey: env.vapidPublicKey || null };
   });
 
   // Destructive: deletes THIS browser profile, its encrypted key, sync state
