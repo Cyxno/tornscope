@@ -7,10 +7,13 @@ import { calculateDrugStats, calculateRehabStats, classifyXanaxFunding, type Xan
 import { bigintToNumber, getPrismaClient, loadMarketPrices } from "@tornscope/database";
 import { liveAvailability, loadAvailabilityContext, sectionAvailability } from "./availability.js";
 
-/** Xanax item id in the Torn catalog (authoritative name match at runtime). */
-async function resolveXanaxItemId(db: ReturnType<typeof getPrismaClient>): Promise<number | null> {
-  const row = await db.tornItemCatalog.findFirst({ where: { name: { equals: "Xanax", mode: "insensitive" } }, select: { itemId: true } });
-  return row?.itemId ?? null;
+/** Xanax item id + catalog freshness (authoritative name match at runtime). */
+async function resolveXanaxItem(db: ReturnType<typeof getPrismaClient>): Promise<{ itemId: number; priceUpdatedAt: Date } | null> {
+  const row = await db.tornItemCatalog.findFirst({
+    where: { name: { equals: "Xanax", mode: "insensitive" } },
+    select: { itemId: true, updatedAt: true },
+  });
+  return row ? { itemId: row.itemId, priceUpdatedAt: row.updatedAt } : null;
 }
 
 /** Drug use + rehab analytics. Drug costs are estimated from market prices. */
@@ -19,7 +22,7 @@ export async function getDrugsSummary(userId: string, rangeInput: DateRangeInput
   const range = resolveDateRange(rangeInput);
   const availCtx = await loadAvailabilityContext(userId);
 
-  const [drugRows, rehabRows, marketPrices, xanaxItemId, earliestDrug] = await Promise.all([
+  const [drugRows, rehabRows, marketPrices, xanaxItem, earliestDrug] = await Promise.all([
     db.drugEvent.findMany({
       where: { userId, occurredAt: { gte: new Date(range.from * 1000), lte: new Date(range.to * 1000) } },
       orderBy: { occurredAt: "asc" },
@@ -31,10 +34,12 @@ export async function getDrugsSummary(userId: string, rangeInput: DateRangeInput
       select: { occurredAt: true, rehabPercent: true, cost: true, sessions: true },
     }),
     loadMarketPrices(db),
-    resolveXanaxItemId(db),
+    resolveXanaxItem(db),
     db.drugEvent.findFirst({ where: { userId }, orderBy: { occurredAt: "asc" }, select: { occurredAt: true } }),
   ]);
 
+  const xanaxItemId = xanaxItem?.itemId ?? null;
+  const xanaxPriceUpdatedAt = xanaxItem?.priceUpdatedAt ?? null;
   const drugEvents = drugRows.map((r) => ({
     occurredAt: Math.floor(r.occurredAt.getTime() / 1000),
     drugItemId: r.drugItemId,
@@ -219,6 +224,7 @@ export async function getDrugsSummary(userId: string, rangeInput: DateRangeInput
        */
       values: {
         unitPrice: xanaxValues.unitPrice,
+        priceUpdatedAt: xanaxPriceUpdatedAt !== null ? Math.floor(xanaxPriceUpdatedAt.getTime() / 1000) : null,
         consumption: xanaxValues.consumption,
         factionSponsored: xanaxValues.factionSponsored,
         confirmedPersonal: xanaxValues.confirmedPersonal,

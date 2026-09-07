@@ -1,4 +1,4 @@
-import type { MoneyCategory, MoneyDirection, Provenance } from "@tornscope/shared";
+import { humanLabel, INCOME_LABELS, EXPENSE_LABELS, type MoneyCategory, type MoneyDirection, type Provenance } from "@tornscope/shared";
 import { bucketAxis, bucketStart, cumulative, type Interval } from "./series.js";
 
 /**
@@ -404,48 +404,13 @@ export function aggregateMoneySemantics(events: readonly MoneyEventLike[], from:
 /* -------------------------------------------------------------------------- */
 
 /**
- * Explicit labels for cash-income categories. Never render a bare category
- * id like "Items": the same word must not mean "items sold for cash" in the
- * cash-received section and "inventory value" in the wealth section.
+ * Canonical finance label maps — defined ONCE in @tornscope/shared and
+ * re-exported here so every chart, table and card uses the same strings.
  */
-export const CASH_INCOME_LABELS: Record<string, string> = {
-  salary: "Salary",
-  crime: "Crime cash",
-  mugging: "Muggings",
-  ranked_war: "Ranked war payouts",
-  missions: "Missions",
-  casino: "Casino",
-  bazaar: "Bazaar sales",
-  items: "Item Market sales",
-  trading: "Trade proceeds",
-  auction: "Auction proceeds",
-  points: "Points sold",
-  stock: "Stock sales",
-  travel: "Travel goods sold",
-  plushie: "Plushie sales",
-  flower: "Flower sales",
-  drugs: "Drug sales",
-  other: "Other received",
-};
-
-export const CASH_EXPENSE_LABELS: Record<string, string> = {
-  rehab: "Rehab",
-  education: "Education",
-  hospital: "Hospital",
-  jail: "Bail / jail",
-  housing: "Property upkeep",
-  bazaar: "Bazaar purchases",
-  items: "Item Market purchases",
-  trading: "Trade payments",
-  auction: "Auction bids",
-  points: "Points bought",
-  stock: "Stock purchases",
-  travel: "Travel goods bought",
-  plushie: "Plushies bought",
-  flower: "Flowers bought",
-  drugs: "Drugs bought",
-  other: "Other spending",
-};
+export const CASH_INCOME_LABELS: Record<string, string> = INCOME_LABELS;
+export const CASH_EXPENSE_LABELS: Record<string, string> = EXPENSE_LABELS;
+const financeIncomeLabel = (category: string): string => INCOME_LABELS[category] ?? humanLabel(category);
+const financeExpenseLabel = (category: string): string => EXPENSE_LABELS[category] ?? humanLabel(category);
 
 /** Income categories that are earnings (raise total value directly). */
 const EARNED_INCOME_CATEGORIES = new Set(["crime", "mugging", "ranked_war", "salary", "missions", "casino", "faction"]);
@@ -526,17 +491,17 @@ export function buildCashReceivedBreakdown(events: readonly CashFlowEventLike[])
     }
     if (EARNED_INCOME_CATEGORIES.has(event.category)) {
       earnedTotal += event.amount;
-      const label = event.category === "faction" ? "Faction income" : CASH_INCOME_LABELS[event.category] ?? event.category;
+      const label = event.category === "faction" ? "Faction income" : financeIncomeLabel(event.category);
       addRow(earnedRows, event.category, label, event.amount);
       continue;
     }
     if (ASSET_SALE_CATEGORIES.has(event.category)) {
       assetTotal += event.amount;
-      addRow(assetRows, event.category, CASH_INCOME_LABELS[event.category] ?? event.category, event.amount);
+      addRow(assetRows, event.category, financeIncomeLabel(event.category), event.amount);
       continue;
     }
     otherTotal += event.amount;
-    addRow(otherRows, event.category, CASH_INCOME_LABELS[event.category] ?? event.category, event.amount);
+    addRow(otherRows, event.category, financeIncomeLabel(event.category), event.amount);
   }
 
   const sortRows = (map: Map<string, CashFlowRow>): CashFlowRow[] =>
@@ -590,16 +555,16 @@ export function buildCashSpentBreakdown(events: readonly CashFlowEventLike[]): C
     total += magnitude;
     if (EARNED_INCOME_CATEGORIES.has(event.category) || ["rehab", "education", "hospital", "jail", "housing"].includes(event.category)) {
       expenseTotal += magnitude;
-      addRow(expenseRows, event.category, CASH_EXPENSE_LABELS[event.category] ?? event.category, magnitude);
+      addRow(expenseRows, event.category, financeExpenseLabel(event.category), magnitude);
       continue;
     }
     if (ASSET_SALE_CATEGORIES.has(event.category)) {
       assetTotal += magnitude;
-      addRow(assetRows, event.category, CASH_EXPENSE_LABELS[event.category] ?? event.category, magnitude);
+      addRow(assetRows, event.category, financeExpenseLabel(event.category), magnitude);
       continue;
     }
     otherTotal += magnitude;
-    addRow(otherRows, event.category, CASH_EXPENSE_LABELS[event.category] ?? event.category, magnitude);
+    addRow(otherRows, event.category, financeExpenseLabel(event.category), magnitude);
   }
 
   const sortRows = (map: Map<string, CashFlowRow>): CashFlowRow[] =>

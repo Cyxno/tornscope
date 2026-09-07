@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { DrugsSummaryResponse } from "@tornscope/shared";
   import { TORN_DRUG_NAMES, formatMoneyCompact, formatDateTime, formatDate } from "@tornscope/shared";
+  import { formatRelative } from "$lib/reltime";
   import { endpoints, ApiClientError } from "$lib/api";
   import { dateRange } from "$lib/state.svelte";
   import PageHeader from "$lib/components/PageHeader.svelte";
@@ -29,6 +30,14 @@
     selectAll = true;
     selected = [];
   }
+
+  /** Freshness-aware tooltip: consumption value, not personal spend. */
+  const xanaxValueTooltip = $derived.by(() => {
+    const refreshed = data?.xanaxFunding.values.priceUpdatedAt
+      ? ` Catalog market data refreshed ${formatRelative(data.xanaxFunding.values.priceUpdatedAt)}.`
+      : "";
+    return `Market value of all Xanax used at current catalog prices — a consumption value, NOT personal spend (sponsored Xanax costs you $0).${refreshed}`;
+  });
 
   async function load() {
     loading = true;
@@ -156,7 +165,7 @@
         label="Estimated consumption value"
         value={histBlocked ? "—" : data.xanaxFunding.values.consumption !== null ? formatMoneyCompact(data.xanaxFunding.values.consumption) : "—"}
         provenance="estimated"
-        title="Market value of all Xanax used at current catalog prices. This is consumption value — NOT what you personally spent (sponsored Xanax costs you $0)."
+        title={xanaxValueTooltip}
       />
       <Stat
         label="Avg value / use"

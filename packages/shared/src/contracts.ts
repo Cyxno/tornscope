@@ -1113,6 +1113,8 @@ export const DrugsSummaryResponseSchema = z.object({
      */
     values: z.object({
       unitPrice: z.number().nullable(),
+      /** Catalog market-data freshness (unix seconds of the price upsert). */
+      priceUpdatedAt: z.number().nullable(),
       consumption: z.number().nullable(),
       factionSponsored: z.number().nullable(),
       confirmedPersonal: z.number().nullable(),

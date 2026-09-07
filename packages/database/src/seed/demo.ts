@@ -1,5 +1,5 @@
 import { Prisma } from "../generated/client/client.js";
-import { getPrismaClient, ensureSyncStates, upsertCatalogEntries } from "../index.js";
+import { getPrismaClient, ensureSyncStates } from "../index.js";
 import { DEMO_USER_EMAIL } from "@tornscope/shared";
 
 /**
@@ -158,16 +158,19 @@ async function main(): Promise<void> {
   const itemIdByName = new Map<number, string>();
 
   /* ------------------------ item catalog (market prices) ----------------- */
-  await upsertCatalogEntries(db, [
-    ...DRUGS.map((d) => ({ itemId: d.itemId, name: d.name, type: "Drug", marketPrice: BigInt(d.price) })),
-    ...PLUSHIES.map((p) => ({ itemId: p.itemId, name: p.name, type: "Plushie", marketPrice: BigInt(p.market) })),
-    ...FLOWERS.map((f) => ({ itemId: f.itemId, name: f.name, type: "Flower", marketPrice: BigInt(f.market) })),
-  ]);
+  // ISOLATION: TornItemCatalog is a GLOBAL table shared by every profile, so
+  // the demo seed must NEVER write to it — its synthetic prices (e.g. Xanax
+  // at $45k) would overwrite real Torn market prices for production
+  // analytics. Demo reads whatever the real catalog holds; the demo's own
+  // consumption rows carry explicit per-row values below.
 
   /* ---------------------------- drug events ------------------------------ */
   // Each use also produces a consumption event (same derivation the real
   // normalizer performs) so Drugs and Economy can never contradict each
   // other in the demo dataset.
+  const demoItemIds = [...DRUGS.map((d) => d.itemId), ...PLUSHIES.map((p) => p.itemId), ...FLOWERS.map((f) => f.itemId)];
+  const catalogRows = await db.tornItemCatalog.findMany({ where: { itemId: { in: demoItemIds } }, select: { itemId: true, marketPrice: true } });
+  const realPrices = new Map<number, bigint>(catalogRows.filter((r) => r.marketPrice !== null).map((r) => [r.itemId, r.marketPrice as bigint]));
   const drugRows = [];
   const drugConsumptionRows = [];
   for (let t = start; t < now; t += HOUR * 8) {
@@ -183,6 +186,8 @@ async function main(): Promise<void> {
         source: "demo",
         sourceRef: `demo:drug:${t}`,
       });
+      const catalogPrice = realPrices.get(drug.itemId);
+      const unitPrice = catalogPrice ?? BigInt(drug.price);
       drugConsumptionRows.push({
         userId: user.id,
         occurredAt: new Date((t + between(0, HOUR)) * 1000),
@@ -190,8 +195,8 @@ async function main(): Promise<void> {
         itemName: drug.name,
         category: "drug",
         quantity: 1,
-        unitValue: BigInt(drug.price),
-        totalValue: BigInt(drug.price),
+        unitValue: unitPrice,
+        totalValue: unitPrice,
         valuationMethod: "catalog_market_price",
         provenance: "estimated",
         source: "derived_drug_event",

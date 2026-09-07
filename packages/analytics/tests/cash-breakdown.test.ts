@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { aggregateMoneySemantics, buildCashReceivedBreakdown, buildCashSpentBreakdown, CASH_INCOME_LABELS } from "../src/money.js";
+import { aggregateMoneySemantics, buildCashReceivedBreakdown, buildCashSpentBreakdown, CASH_INCOME_LABELS, CASH_EXPENSE_LABELS } from "../src/money.js";
+import { EXPENSE_LABELS, INCOME_LABELS } from "@tornscope/shared";
 
 /**
  * Cash-flow terminology contract:
@@ -54,9 +55,12 @@ describe("buildCashReceivedBreakdown", () => {
   });
 
   it("gives item sales an explicit label — never a bare 'Items'", () => {
-    expect(CASH_INCOME_LABELS["items"]).toBe("Item Market sales");
+    expect(CASH_INCOME_LABELS['items']).toBe('Item Market Sales');
+    // single canonical source: analytics re-exports the shared maps
+    expect(CASH_INCOME_LABELS).toBe(INCOME_LABELS);
+    expect(CASH_EXPENSE_LABELS).toBe(EXPENSE_LABELS);
     const b = buildCashReceivedBreakdown([{ category: "items", direction: "income", amount: 14_000_000 }]);
-    expect(b.assetSales.rows[0]!.label).toBe("Item Market sales");
+    expect(b.assetSales.rows[0]!.label).toBe("Item Market Sales");
     // The row must NOT be in earned income: selling items is not earnings.
     expect(b.earned.rows).toHaveLength(0);
   });

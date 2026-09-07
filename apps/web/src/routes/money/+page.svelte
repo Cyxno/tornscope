@@ -2,7 +2,7 @@
   import type { EconomySummaryResponse, MoneySummaryResponse, MoneyEventDto, Paginated } from "@tornscope/shared";
   import { MONEY_CATEGORIES, formatMoneyCompact, formatMoneyFull, formatDateTime, formatKpiValue, periodLabel, formatSignedMoney, formatDate } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
-  import { incomeLabel, expenseLabel } from "$lib/labels";
+  import { incomeLabel, expenseLabel, humanLabel } from "@tornscope/shared";
   import { dateRange } from "$lib/state.svelte";
   import PageHeader from "$lib/components/PageHeader.svelte";
   import Panel from "$lib/components/Panel.svelte";
@@ -94,34 +94,9 @@
 
   const topConsumedValue = $derived(economy?.consumption.byCategory[0]?.totalValue || 1);
 
-  /** Friendly cash-expense groups; the rows always sum to Cash Expenses. */
-  const EXPENSE_LABELS: Record<string, string> = {
-    rehab: "Rehab",
-    casino: "Casino",
-    items: "Item purchases",
-    bazaar: "Bazaar purchases",
-    plushie: "Plushies",
-    flower: "Flowers",
-    travel: "Travel purchases",
-    points: "Points",
-    stock: "Stocks",
-    housing: "Property upkeep",
-    crime: "Crime",
-    mugging: "Mugging",
-    trading: "Trades",
-    auction: "Auctions",
-    drugs: "Drugs",
-    faction: "Faction",
-    salary: "Salary",
-    education: "Education",
-    hospital: "Hospital",
-    jail: "Jail",
-    city_bank: "Bank",
-  };
-
   const expenseBreakdown = $derived(
     (economy?.cashFlow.expensesByCategory ?? []).map((row) => ({
-      label: EXPENSE_LABELS[row.category] ?? row.category,
+      label: expenseLabel(String(row.category)),
       category: String(row.category),
       total: row.total,
     }))
@@ -282,7 +257,7 @@
         <Stat label="{period} Net Cash Flow" value={formatKpiValue(economy.cashFlow.netCashFlow)} provenance="exact" tone={(economy.cashFlow.netCashFlow.value ?? 0) >= 0 ? "positive" : "negative"} />
         <Stat
           label="Top cash outflow"
-          value={summary.largestExpenseCategory.category ?? "—"}
+          value={summary.largestExpenseCategory.category ? expenseLabel(String(summary.largestExpenseCategory.category)) : "—"}
           sub={summary.largestExpenseCategory.total !== null ? formatMoneyCompact(summary.largestExpenseCategory.total) : null}
           provenance="exact"
         />
@@ -595,7 +570,7 @@
                 <tr class="border-b border-border/50 transition-colors last:border-0 hover:bg-surface-2/50">
                   <td class="tnum whitespace-nowrap py-2.5 pr-4 text-xs text-fg-faint">{formatDateTime(event.occurredAt)}</td>
                   <td class="py-2.5 pr-4">
-                    <span class="rounded-full border border-border bg-surface-2 px-2 py-0.5 text-[11px] capitalize text-fg-muted">{event.category}</span>
+                    <span class="rounded-full border border-border bg-surface-2 px-2 py-0.5 text-[11px] text-fg-muted">{humanLabel(event.category)}</span>
                   </td>
                   <td class="max-w-[360px] truncate py-2.5 pr-4 text-fg" title={event.description ?? ""}>{event.description ?? event.subcategory ?? "—"}</td>
                   <td class="tnum py-2.5 pr-4 text-right font-medium {event.direction === 'income' ? 'text-positive' : 'text-fg-faint'}">

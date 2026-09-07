@@ -30,7 +30,9 @@ export async function upsertCatalogEntries(db: PrismaClientType, entries: Catalo
         VALUES ${values}
         ON CONFLICT ("itemId")
         DO UPDATE SET "name" = EXCLUDED."name", "type" = EXCLUDED."type",
-                      "marketPrice" = EXCLUDED."marketPrice", "updatedAt" = now()
+                      -- a missing price in the source must never wipe a stored one
+                      "marketPrice" = COALESCE(EXCLUDED."marketPrice", "TornItemCatalog"."marketPrice"),
+                      "updatedAt" = now()
       `
     );
   }

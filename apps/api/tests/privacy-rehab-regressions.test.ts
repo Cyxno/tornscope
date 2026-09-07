@@ -296,3 +296,21 @@ suite("travel history range consistency", () => {
     expect(history.items.some((t) => t.id.includes === undefined && t.destination === "Mexico" && t.departedAt * 1000 < Date.now() - 7 * DAY * 1000)).toBe(false);
   });
 });
+
+/* -------------------------------------------------------------------------- */
+/* Xanax item mapping + price freshness through the API                        */
+/* -------------------------------------------------------------------------- */
+import { upsertCatalogEntries as upsertCatalog } from "@tornscope/database";
+
+suite("xanax item mapping and price freshness", () => {
+  it("resolves the correct item id and exposes catalog freshness with the unit price", async () => {
+    await upsertCatalog(db, [{ itemId: 206, name: "Xanax", type: "Drug", marketPrice: BigInt(852_200) }]);
+    const drugs = await getDrugsSummary(user.id, { preset: "7d" }, null);
+    expect(drugs.xanaxFunding.values.unitPrice).toBe(852_200);
+    expect(drugs.xanaxFunding.values.priceUpdatedAt).not.toBeNull();
+    // Freshness is a unix-seconds timestamp in the sane past.
+    const ageDays = (Date.now() / 1000) - (drugs.xanaxFunding.values.priceUpdatedAt ?? 0);
+    expect(ageDays).toBeGreaterThanOrEqual(0);
+    expect(ageDays).toBeLessThan(400);
+  });
+});

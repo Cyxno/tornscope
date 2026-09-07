@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { formatDateTime, formatDate, type SyncHealthResponse } from "@tornscope/shared";
+  import { formatDateTime, formatDate, RESOURCE_LABELS, humanLabel, type SyncHealthResponse } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
   import { formatRelative } from "$lib/reltime";
   import { me } from "$lib/state.svelte";
@@ -253,7 +253,7 @@
               <div class="min-w-[220px] flex-1">
                 <div class="flex items-center gap-2.5">
                   <span class="h-2 w-2 rounded-full {phaseOf(row).dot}"></span>
-                  <span class="text-[13px] font-semibold capitalize text-fg">{row.resource.replace(/_/g, " ")}</span>
+                  <span class="text-[13px] font-semibold capitalize text-fg">{RESOURCE_LABELS[row.resource] ?? humanLabel(row.resource)}</span>
                   <span class="text-[11px] {phaseOf(row).text}">{phaseOf(row).label}</span>
                   <span class="text-[11px] text-fg-faint">{frequencyHint[row.resource] ?? ""}</span>
                 </div>
