@@ -70,6 +70,8 @@
   ];
 </script>
 
+<svelte:head><title>Timeline · TornScope</title></svelte:head>
+
 <div class="space-y-10">
   <PageHeader
     eyebrow="History"
@@ -102,7 +104,7 @@
       action={{ label: "Review API access in Settings", run: () => (window.location.href = "/settings") }}
     />
   {:else if events && events.items.length === 0}
-    <StateMessage state="empty" title="Quiet in this range" hint="No timeline entries match. Widen the date range or wait for the next sync." />
+    <StateMessage state="empty" title="Quiet in this range" hint={me.data?.isDemo ? "Synthetic example data — the demo dataset has no timeline entries here." : "No timeline entries match. Widen the date range or wait for the next sync."} />
   {:else if events}
     <div class="space-y-10">
       {#each dayGroups as group (group.day)}

@@ -240,6 +240,8 @@
   });
 </script>
 
+<svelte:head><title>Economy · TornScope</title></svelte:head>
+
 <div class="space-y-10">
   <PageHeader
     eyebrow="Finance"

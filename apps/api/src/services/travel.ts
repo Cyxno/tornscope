@@ -93,7 +93,11 @@ export async function getTravelHistory(userId: string, rangeInput: DateRangeInpu
   const marketPrices = await loadMarketPrices(db);
   const { trips } = await loadTrips(userId, range.from, range.to, marketPrices);
 
-  const dtos: TravelTripDto[] = trips
+  // Range consistency: the loader keeps a ±7d attach window so purchases
+  // can be linked to trips, but the HISTORY the user requested covers
+  // [from, to] only — the same window the summary stats use.
+  const inRange = trips.filter((t) => t.departedAt >= range.from && t.departedAt <= range.to);
+  const dtos: TravelTripDto[] = inRange
     .sort((a, b) => b.departedAt - a.departedAt)
     .map((trip) => {
       const econ = calculateTripEconomics(trip);

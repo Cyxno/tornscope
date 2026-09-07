@@ -198,6 +198,8 @@
   };
 </script>
 
+<svelte:head><title>Today · TornScope</title></svelte:head>
+
 <div class="space-y-10">
   <PageHeader eyebrow="Live status" title="Today" description="Everything that matters right now.">
     {#snippet actions()}

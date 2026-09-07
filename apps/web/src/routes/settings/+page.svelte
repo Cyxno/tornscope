@@ -192,6 +192,8 @@
   };
 </script>
 
+<svelte:head><title>Settings · TornScope</title></svelte:head>
+
 <div class="space-y-10">
   <PageHeader
     eyebrow="System"
@@ -419,11 +421,11 @@
       <li>• Connecting your key from a new browser links that browser to your existing profile; the stored key is never replaced silently and history is never imported twice.</li>
       <li>• Disconnecting the key stops all Torn syncing; collected history is kept unless you delete it.</li>
       <li>• Deleting this TornScope profile removes that profile's stored data permanently.</li>
-      <li>• Clearing this site's cookies detaches the browser from its profile; signing in again with your API key restores access to the same data.</li>
+      <li>• Clearing this site's cookies detaches the browser from its profile; a valid API key for the same Torn account can link this browser to the existing profile again.</li>
     </ul>
   </Panel>
 
-  <Panel title="Display defaults" caption="Per-user preferences arrive with multi-user support">
+  <Panel title="Display defaults" caption="Timezone, currency and price basis used across TornScope">
     <dl class="grid grid-cols-1 gap-x-8 gap-y-5 md:grid-cols-3">
       <div>
         <dt class="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint">Timezone</dt>
@@ -442,8 +444,9 @@
 
   <Panel title="Delete this TornScope profile" caption="Destructive and irreversible — different from disconnecting">
     <p class="max-w-2xl text-[13px] leading-relaxed text-fg-muted">
-      Removes this browser's profile: the encrypted API key, sync state, settings and all personal analytics collected
-      for it. Other profiles are never affected. Collected history is kept unless you explicitly delete the profile here.
+      Removes the TornScope profile linked to this browser: the encrypted API key, sync state, settings and all personal
+      analytics collected for it. Other profiles are never affected. Other browsers linked to the same profile must
+      disconnect separately.
     </p>
     <div class="mt-4 flex items-center gap-3">
       <button
@@ -460,7 +463,7 @@
 
   <Panel title="Your data" caption="What happens when you disconnect">
     <p class="max-w-2xl text-[13px] leading-relaxed text-fg-muted">
-      Your historical TornScope data remains stored on this server when you disconnect your API key.
+      Your historical TornScope data remains stored on the TornScope server when you disconnect your API key.
       Syncing simply pauses; reconnecting the same Torn identity continues building on the history you already have.
     </p>
   </Panel>

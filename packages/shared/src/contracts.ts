@@ -364,7 +364,11 @@ export const DashboardResponseSchema = z.object({
   combat: z
     .object({
       attacksMade: z.number(),
+      /** Wins across BOTH directions (outgoing wins + successful defenses). */
       wins: z.number(),
+      outgoingWins: z.number(),
+      /** Incoming attacks the player successfully defended. */
+      incomingDefended: z.number(),
     })
     .nullable(),
   /** Faction summary: latest ranked war + personal payouts in range. */
@@ -934,6 +938,25 @@ export const FactionOcRowSchema = z.object({
   rewardMoney: z.number().nullable(),
   rewardRespect: z.number().nullable(),
   rewardItems: z.array(z.object({ id: z.number(), quantity: z.number() })).nullable(),
+  /** Reward items resolved to names/kinds with per-item estimated values. */
+  rewardItemsDetailed: z.array(
+    z.object({
+      itemId: z.number(),
+      name: z.string(),
+      quantity: z.number(),
+      kind: z.enum(["drug", "weapon", "vehicle", "armor", "other"]),
+      estimatedUnitValue: z.number().nullable(),
+      estimatedValue: z.number().nullable(),
+    })
+  ),
+  /**
+   * Cash (Torn-reported) + estimated catalog value of priced reward items.
+   * Null when the OC carries no item rewards; unpriced items are excluded
+   * from the total and flagged by rewardValueComplete.
+   */
+  rewardEstimatedTotal: z.number().nullable(),
+  /** False when some reward item has no catalog price (total is partial). */
+  rewardValueComplete: z.boolean(),
   payoutPercentage: z.number().nullable(),
   paidBy: z.number().nullable(),
   paidAt: z.number().nullable(),
@@ -1083,6 +1106,18 @@ export const DrugsSummaryResponseSchema = z.object({
     earliestEvidenceAt: z.number().nullable(),
     /** True when evidence exists strictly before the selected range. */
     hasPreRangeEvidence: z.boolean(),
+    /**
+     * Estimated catalog values per bucket. `consumption` values ALL Xanax
+     * used at market price — it is NOT personal spend. Sponsored units cost
+     * the player $0; opening-inventory value is an estimate only.
+     */
+    values: z.object({
+      unitPrice: z.number().nullable(),
+      consumption: z.number().nullable(),
+      factionSponsored: z.number().nullable(),
+      confirmedPersonal: z.number().nullable(),
+      openingInventory: z.number().nullable(),
+    }),
     personal: z.number(),
     /** Linked to a faction armory / faction transfer record. */
     factionSponsored: z.number(),

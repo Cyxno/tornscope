@@ -104,6 +104,8 @@
   });
 </script>
 
+<svelte:head><title>Travel · TornScope</title></svelte:head>
+
 <div class="space-y-10">
   <PageHeader
     eyebrow="Travel · Trading"
@@ -301,7 +303,7 @@
                             {#each trip.items as item (item.id)}
                               <tr class="border-t border-border/40">
                                 <td class="py-1.5 pr-4 text-fg">{item.itemName}</td>
-                                <td class="py-1.5 pr-4 capitalize text-fg-muted">{item.category}</td>
+                                <td class="py-1.5 pr-4 text-fg-muted">{CATEGORY_LABELS[item.category] ?? item.category}</td>
                                 <td class="tnum py-1.5 pr-4 text-right text-fg-muted">{item.quantity}</td>
                                 <td class="tnum py-1.5 pr-4 text-right text-fg-muted">{formatMoneyCompact(item.unitCost)}</td>
                                 <td class="tnum py-1.5 pr-4 text-right text-fg-muted">{item.estimatedUnitValue !== null ? formatMoneyCompact(item.estimatedUnitValue) : "—"}</td>

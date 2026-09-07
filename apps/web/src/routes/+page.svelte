@@ -123,8 +123,10 @@
   const networthBlocked = $derived(clientPermissionMessage(caps, "networth_history"));
 </script>
 
+<svelte:head><title>Overview · TornScope</title></svelte:head>
+
 <div class="space-y-10">
-  <PageHeader eyebrow="Overview" title="The big picture" description="A living summary of your Torn life — wealth, habits and movement, tracked continuously from your own server.">
+  <PageHeader eyebrow="Overview" title="The big picture" description="A living summary of your Torn life — wealth, habits and movement, tracked continuously on the TornScope server.">
     {#snippet actions()}
       <SegmentedDateRange />
     {/snippet}
@@ -371,9 +373,9 @@
                     <span class="text-fg">
                       {incomeLabel(String(row.category))}
                       {#if isInflowConversion(String(row.category))}
-                        <span class="ml-1.5 rounded-full border border-border bg-surface-2 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-fg-faint" title="Asset conversion: cash received for something you owned — not earnings">conversion</span>
+                        <span class="ml-1.5 rounded-full border border-border bg-surface-2 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide whitespace-nowrap text-fg-faint" title="Asset conversion: cash received for something you owned — not earnings">conversion</span>
                       {:else}
-                        <span class="ml-1.5 rounded-full border border-positive/30 bg-positive/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-positive" title="Earned money — raises total wealth">earned</span>
+                        <span class="ml-1.5 rounded-full border border-positive/30 bg-positive/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide whitespace-nowrap text-positive" title="Earned money — raises total wealth">earned</span>
                       {/if}
                     </span>
                     <span class="tnum font-medium {isInflowConversion(String(row.category)) ? 'text-fg-muted' : 'text-positive'}">+{formatMoneyCompact(row.total)}</span>
@@ -403,7 +405,7 @@
                       {#if isOutflowConversion(String(row.category))}
                         <span class="ml-1.5 rounded-full border border-border bg-surface-2 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-fg-faint" title="Asset purchase: value still owned in another form (items, points, stocks) — not an economic loss">asset purchase</span>
                       {:else}
-                        <span class="ml-1.5 rounded-full border border-negative/30 bg-negative/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-negative" title="True expense: value gone (fees, upkeep, rehab, losses)">true expense</span>
+                        <span class="ml-1.5 rounded-full border border-negative/30 bg-negative/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide whitespace-nowrap text-negative" title="True expense: value gone (fees, upkeep, rehab, losses)">true expense</span>
                       {/if}
                     </span>
                     <span class="tnum font-medium {isOutflowConversion(String(row.category)) ? 'text-fg-muted' : 'text-negative'}">-{formatMoneyCompact(row.total)}</span>
@@ -482,7 +484,7 @@
               <p class="mt-1 font-medium text-fg">
                 {#if data.faction.lastWar}
                   <span class={data.faction.lastWar.result === "win" ? "text-positive" : data.faction.lastWar.result === "loss" ? "text-negative" : "text-fg-muted"}>
-                    {data.faction.lastWar.result === "ongoing" ? "ongoing" : data.faction.lastWar.result}
+                    {data.faction.lastWar.result === "ongoing" ? "Ongoing" : data.faction.lastWar.result === "win" ? "Win" : data.faction.lastWar.result === "loss" ? "Loss" : "Draw"}
                   </span>
                   {/if}
               </p>
@@ -522,24 +524,28 @@
           </p>
         {/if}
       </Panel>
-      <Panel title="Combat" caption="Attacks made and wins in range" flush>
+      <Panel title="Combat" caption="Outgoing attacks, outgoing wins and successful defenses in range" flush>
         {#if attacksBlocked}
           <StateMessage state="permission" title={attacksBlocked.title} hint={attacksBlocked.hint} />
         {:else if !data.combat}
           <StateMessage state="empty" title="No combat activity in this range" />
         {:else}
-          <div class="grid grid-cols-2 gap-px bg-border">
+          <div class="grid grid-cols-3 gap-px bg-border">
             <div class="bg-surface p-5 text-center">
               <p class="tnum text-2xl font-semibold text-fg">{data.combat.attacksMade}</p>
-              <p class="mt-1 text-[10px] uppercase tracking-[0.14em] text-fg-faint">attacks made</p>
+              <p class="mt-1 text-[10px] uppercase tracking-[0.14em] text-fg-faint">Outgoing attacks</p>
             </div>
             <div class="bg-surface p-5 text-center">
-              <p class="tnum text-2xl font-semibold text-positive">{data.combat.wins}</p>
-              <p class="mt-1 text-[10px] uppercase tracking-[0.14em] text-fg-faint">wins</p>
+              <p class="tnum text-2xl font-semibold text-positive">{data.combat.outgoingWins}</p>
+              <p class="mt-1 text-[10px] uppercase tracking-[0.14em] text-fg-faint">Outgoing wins</p>
+            </div>
+            <div class="bg-surface p-5 text-center">
+              <p class="tnum text-2xl font-semibold text-positive">{data.combat.incomingDefended}</p>
+              <p class="mt-1 text-[10px] uppercase tracking-[0.14em] text-fg-faint">Successful defenses</p>
             </div>
           </div>
           <p class="px-5 pt-3 text-xs text-fg-faint">
-            {period} combat activity — exact from your Torn attacks record. <a href="/combat" class="text-accent">Explore →</a>
+            {period} combat, exact from your Torn attacks record — direction is explicit so attack and defense counts never blur. <a href="/combat" class="text-accent">Explore →</a>
           </p>
         {/if}
       </Panel>

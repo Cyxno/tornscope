@@ -162,6 +162,19 @@ export async function getDrugsSummary(userId: string, rangeInput: DateRangeInput
     earliestAt: earliestArmory ? Math.floor(earliestArmory.occurredAt.getTime() / 1000) : null,
   };
 
+  // Per-bucket ESTIMATED VALUES at the current catalog market price. These
+  // are consumption values, NOT personal spend: faction-sponsored Xanax has
+  // a personal cost of $0 regardless of its market value, and opening
+  // inventory has no acquisition cost in the ledger.
+  const xanaxPrice = xanaxItemId !== null ? priceMap.get(xanaxItemId) ?? null : null;
+  const xanaxValues = {
+    unitPrice: xanaxPrice,
+    consumption: xanaxPrice !== null ? xanaxPrice * xanaxUses.length : null,
+    factionSponsored: xanaxPrice !== null ? xanaxPrice * funding.confirmedFaction : null,
+    confirmedPersonal: xanaxPrice !== null ? xanaxPrice * funding.confirmedPersonal : null,
+    openingInventory: xanaxPrice !== null ? xanaxPrice * funding.openingInventoryUnknown : null,
+  };
+
   // ---- Rehab ---------------------------------------------------------------
   const rehabEvents = rehabRows.map((r) => ({
     occurredAt: Math.floor(r.occurredAt.getTime() / 1000),
@@ -199,6 +212,18 @@ export async function getDrugsSummary(userId: string, rangeInput: DateRangeInput
       openingStock: funding.openingStock,
       earliestEvidenceAt: funding.earliestEvidenceAt,
       hasPreRangeEvidence: funding.hasPreRangeEvidence,
+      /**
+       * Estimated catalog values per bucket — consumption value, never
+       * personal spend. The player's personal cash cost of faction-sponsored
+       * units is exactly $0.
+       */
+      values: {
+        unitPrice: xanaxValues.unitPrice,
+        consumption: xanaxValues.consumption,
+        factionSponsored: xanaxValues.factionSponsored,
+        confirmedPersonal: xanaxValues.confirmedPersonal,
+        openingInventory: xanaxValues.openingInventory,
+      },
       // Legacy aggregate view kept for compatibility: `unknownFunded`
       // contains everything that is NOT positively personal/faction.
       personal: funding.confirmedPersonal,

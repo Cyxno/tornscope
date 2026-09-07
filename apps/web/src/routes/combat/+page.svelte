@@ -80,6 +80,8 @@
   });
 </script>
 
+<svelte:head><title>Combat · TornScope</title></svelte:head>
+
 <div class="space-y-10">
   <PageHeader
     eyebrow="Combat"

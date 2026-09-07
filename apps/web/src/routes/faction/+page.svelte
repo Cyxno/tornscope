@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { FactionOverviewResponse, FactionRankedWarsResponse, FactionMembersResponse, FactionOcsResponse, FactionLedgerResponse, FactionOcRow } from "@tornscope/shared";
-  import { formatMoneyCompact, formatDateTime, formatSignedMoney, formatDate, ocParticipationState, OC_PARTICIPATION_LABELS, OC_PARTICIPATION_HINTS, userInAnyKnownOc } from "@tornscope/shared";
+  import { formatMoneyCompact, formatDateTime, formatSignedMoney, formatDate, formatDecimal, ocParticipationState, OC_PARTICIPATION_LABELS, OC_PARTICIPATION_HINTS, userInAnyKnownOc } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
   import { dateRange } from "$lib/state.svelte";
   import PageHeader from "$lib/components/PageHeader.svelte";
@@ -65,7 +65,7 @@
     r === "win" ? "border-positive/30 bg-positive/10 text-positive" : r === "loss" ? "border-negative/30 bg-negative/10 text-negative" : "border-border bg-surface-2 text-fg-muted";
 
   function payoutKindLabel(kind: string, scenario: string | null): string {
-    return kind === "oc" ? `OC payout${scenario ? ` · ${scenario}` : ""}` : "Unmatched faction income";
+    return kind === "oc" ? `OC payout${scenario ? ` · ${scenario}` : ""}` : "Unmatched faction payout";
   }
 
   // Faction permissions are independent of user permissions: each tab checks
@@ -86,6 +86,8 @@
     return current && !availabilityHasData(current) ? availabilityMessage(current) : null;
   });
 </script>
+
+<svelte:head><title>Faction · TornScope</title></svelte:head>
 
 <div class="space-y-10">
   <PageHeader
@@ -139,7 +141,7 @@
           label="My faction income"
           value={formatMoneyCompact(overview.payouts.ocTotal + overview.payouts.unmatchedTotal + overview.payouts.knownTotal)}
           provenance="derived"
-          sub={`OC ${formatMoneyCompact(overview.payouts.ocTotal)} · war-linked ${formatMoneyCompact(overview.payouts.knownTotal)} · unmatched ${formatMoneyCompact(overview.payouts.unmatchedTotal)}`}
+          sub={`OC ${formatMoneyCompact(overview.payouts.ocTotal)} · ranked war ${formatMoneyCompact(overview.payouts.knownTotal)} · unmatched ${formatMoneyCompact(overview.payouts.unmatchedTotal)}`}
         />
       </div>
       <p class="text-xs text-fg-faint">
@@ -153,7 +155,7 @@
             <div class="bg-surface p-5 text-center"><p class="text-[10px] uppercase tracking-[0.14em] text-fg-faint">Opponent</p><p class="mt-1 font-medium text-fg">{overview.currentWar.opponentName ?? "—"}</p></div>
             <div class="bg-surface p-5 text-center"><p class="text-[10px] uppercase tracking-[0.14em] text-fg-faint">Score</p><p class="tnum mt-1 font-medium text-fg">{overview.currentWar.ourScore ?? "—"} : {overview.currentWar.opponentScore ?? "—"}</p></div>
             <div class="bg-surface p-5 text-center"><p class="text-[10px] uppercase tracking-[0.14em] text-fg-faint">Target</p><p class="tnum mt-1 font-medium text-fg">{overview.currentWar.targetScore ?? "—"}</p></div>
-            <div class="bg-surface p-5 text-center"><p class="text-[10px] uppercase tracking-[0.14em] text-fg-faint">My war activity</p><p class="tnum mt-1 font-medium text-fg">{overview.currentWar.myAttacks} attacks · {overview.currentWar.myRespect} respect</p></div>
+            <div class="bg-surface p-5 text-center"><p class="text-[10px] uppercase tracking-[0.14em] text-fg-faint">My war activity</p><p class="tnum mt-1 font-medium text-fg">{overview.currentWar.myAttacks} outgoing attacks · {formatDecimal(overview.currentWar.myRespect)} respect</p></div>
           </div>
         </Panel>
       {/if}
@@ -214,7 +216,7 @@
                     <td class="py-2.5 pr-4"><span class={`rounded-full border px-2 py-0.5 text-[11px] ${resultBadge(w.result)}`}>{w.result}</span></td>
                     <td class="tnum py-2.5 pr-4 text-right text-fg-muted">{w.ourScore ?? "—"} : {w.opponentScore ?? "—"}</td>
                     <td class="tnum py-2.5 pr-4 text-right text-fg-muted">{w.myAttacks}</td>
-                    <td class="tnum py-2.5 pr-4 text-right text-fg-muted">{w.myRespect.toFixed(1)}</td>
+                    <td class="tnum py-2.5 pr-4 text-right text-fg-muted">{formatDecimal(w.myRespect)}</td>
                     <td class="tnum py-2.5 pr-4 text-right text-fg-muted">{formatMoneyCompact(w.knownPayoutTotal)}</td>
                     <td class="tnum py-2.5 pr-6 text-right font-medium {w.personalPayout !== null ? 'text-positive' : 'text-fg-faint'}">{w.personalPayout !== null ? formatMoneyCompact(w.personalPayout) : "unmatched"}</td>
                   </tr>
@@ -260,7 +262,7 @@
                       {/if}
                     </td>
                     <td class="tnum py-2.5 pr-4 text-right text-fg-muted">{m.warAttacks}</td>
-                    <td class="tnum py-2.5 pr-6 text-right text-fg-muted">{m.warRespect.toFixed(1)}</td>
+                    <td class="tnum py-2.5 pr-6 text-right text-fg-muted">{formatDecimal(m.warRespect)}</td>
                   </tr>
                 {/each}
               </tbody>
@@ -281,7 +283,7 @@
         {@const state = ocParticipationState(oc, { userInAnyKnownOc: contextual ? inAnyOc : false })}
         {@const hint = OC_PARTICIPATION_HINTS[state]}
         {#if state === "participating"}
-          <span class="rounded-full border border-accent/40 bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent">{OC_PARTICIPATION_LABELS.participating}</span>
+          <span class="rounded-full border border-accent/40 bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent">{contextual ? OC_PARTICIPATION_LABELS.participating : "You participated"}</span>
         {:else if state === "assigned_elsewhere"}
           <span class="text-xs text-fg-muted" title={hint ?? undefined}>{OC_PARTICIPATION_LABELS.assigned_elsewhere}</span>
         {:else if state === "not_participating"}
@@ -378,7 +380,7 @@
       </Panel>
 
       <!-- Completed: rewards exist (money can honestly be $0) -->
-      <Panel title="Completed" caption={`${completed.length} executed crime${completed.length === 1 ? "" : "s"} — exact rewards from Torn`} flush>
+      <Panel title="Completed" caption={`${completed.length} executed crime${completed.length === 1 ? "" : "s"} — actual rewards as reported by Torn`} flush>
         {#if completed.length === 0}
           <div class="px-6 pb-6 pt-2"><StateMessage state="empty" title="No completed organized crimes in the stored history" /></div>
         {:else}
@@ -390,14 +392,15 @@
                   <th class="py-2.5 pr-4 font-medium">Tier</th>
                   <th class="py-2.5 pr-4 font-medium">Result</th>
                   <th class="py-2.5 pr-4 font-medium">Executed</th>
-                  <th class="py-2.5 pr-4 text-right font-medium">Reward cash</th>
+                  <th class="py-2.5 pr-4 font-medium">Actual rewards</th>
                   <th class="py-2.5 pr-4 text-right font-medium">Respect</th>
-                  <th class="py-2.5 pr-4 text-right font-medium">Items</th>
+                  <th class="py-2.5 pr-4 text-right font-medium">Est. total value</th>
                   <th class="py-2.5 pr-6 font-medium">Participation</th>
                 </tr>
               </thead>
               <tbody>
                 {#each completed.slice(0, 30) as oc (oc.ocId)}
+                  {@const hasItems = (oc.rewardItemsDetailed?.length ?? 0) > 0}
                   <tr class="border-b border-border/50 last:border-0 hover:bg-surface-2/50">
                     <td class="py-2.5 pl-6 pr-4 font-medium text-fg">{oc.name}</td>
                     <td class="py-2.5 pr-4">{#if oc.tier !== null}<span class="text-fg-muted">Tier {oc.tier}</span>{:else}<span class="text-xs text-fg-faint">—</span>{/if}</td>
@@ -405,9 +408,39 @@
                       <span class={`rounded-full border px-2 py-0.5 text-[11px] ${oc.status === "Successful" ? "border-positive/30 bg-positive/10 text-positive" : "border-negative/30 bg-negative/10 text-negative"}`}>{oc.status}</span>
                     </td>
                     <td class="tnum whitespace-nowrap py-2.5 pr-4 text-xs text-fg-faint">{oc.executedAt ? formatDateTime(oc.executedAt) : "—"}</td>
-                    <td class="tnum py-2.5 pr-4 text-right {oc.rewardMoney !== null && oc.rewardMoney > 0 ? 'text-fg-muted' : 'text-fg-faint'}">{oc.rewardMoney !== null ? formatMoneyCompact(oc.rewardMoney) : "—"}</td>
-                    <td class="tnum py-2.5 pr-4 text-right text-fg-muted">{oc.rewardRespect !== null ? oc.rewardRespect : "—"}</td>
-                    <td class="tnum py-2.5 pr-4 text-right text-fg-muted">{oc.rewardItems ? oc.rewardItems.reduce((s, i) => s + i.quantity, 0) : "—"}</td>
+                    <td class="py-2.5 pr-4">
+                      {#if oc.rewardMoney === null && !hasItems && oc.rewardRespect === null}
+                        <span class="text-xs text-fg-faint">—</span>
+                      {:else}
+                        <div class="space-y-0.5 text-xs">
+                          <!-- Torn's $0 cash is a real reported value; items/respect are the actual reward -->
+                          <p class={oc.rewardMoney ? "text-fg-muted" : "text-fg-faint"}>
+                            Cash <span class="tnum">{oc.rewardMoney !== null ? formatMoneyCompact(oc.rewardMoney) : "—"}</span>
+                            {#if oc.rewardMoney === 0 && (hasItems || (oc.rewardRespect ?? 0) > 0)}
+                              <span class="text-fg-faint">· paid in items/respect</span>
+                            {/if}
+                          </p>
+                          {#if hasItems}
+                            {#each oc.rewardItemsDetailed! as item (item.itemId + ":" + item.quantity)}
+                              <p class="text-fg-muted">
+                                {item.quantity} × {item.name}
+                                {#if item.estimatedValue !== null}
+                                  <span class="tnum text-fg-faint">({formatMoneyCompact(item.estimatedValue)})</span>
+                                {/if}
+                              </p>
+                            {/each}
+                          {/if}
+                        </div>
+                      {/if}
+                    </td>
+                    <td class="tnum py-2.5 pr-4 text-right text-fg-muted">{oc.rewardRespect !== null ? formatDecimal(oc.rewardRespect) : "—"}</td>
+                    <td class="tnum py-2.5 pr-4 text-right text-fg-muted">
+                      {#if oc.rewardEstimatedTotal !== null}
+                        {formatMoneyCompact(oc.rewardEstimatedTotal)}{#if !oc.rewardValueComplete}<span class="text-fg-faint" title="Some reward items have no catalog price — the total covers priced items only.">*</span>{/if}
+                      {:else}
+                        <span class="text-fg-faint" title="No priced reward items to estimate">—</span>
+                      {/if}
+                    </td>
                     <td class="py-2.5 pr-6">{@render participationCell(oc, false)}</td>
                   </tr>
                 {/each}
@@ -415,13 +448,15 @@
             </table>
           </div>
           <p class="px-6 pt-3 text-xs text-fg-faint">
-            Torn reports $0 reward cash for most OC 2.0 payouts (rewards are respect + items, split by payout percentage) — a $0 is Torn's own value, not missing data.
+            Cash is Torn-reported; item values are estimated from the Torn catalog. A $0 cash reward is a real reported
+            value — most OC 2.0 payouts pay in respect and items instead. "Est. total value" combines reported cash with
+            priced items; items without a catalog price are listed but not valued.
           </p>
         {/if}
       </Panel>
 
       <!-- Expired / cancelled: no execution, no rewards — never rendered as empty reward columns -->
-      <Panel title="Expired / cancelled" caption={`${expired.length} crime${expired.length === 1 ? "" : "s"} that expired or was cancelled before execution — no rewards exist`} flush>
+      <Panel title="Expired / cancelled" caption="Crimes that expired or were cancelled before execution — no rewards exist" flush>
         {#if expired.length === 0}
           <div class="px-6 pb-6 pt-2"><StateMessage state="empty" title="Nothing expired" /></div>
         {:else}
@@ -475,7 +510,7 @@
                       {#if p.kind === "oc"}
                         <span class="whitespace-nowrap rounded-full border border-violet-400/30 bg-violet-400/10 px-2 py-0.5 text-[11px] font-medium text-violet-300">OC payout{p.scenario ? ` · ${p.scenario}` : ""}</span>
                       {:else}
-                        <span class="whitespace-nowrap rounded-full border border-border bg-surface-2 px-2 py-0.5 text-[11px] text-fg-muted">Unmatched faction income</span>
+                        <span class="whitespace-nowrap rounded-full border border-border bg-surface-2 px-2 py-0.5 text-[11px] text-fg-muted">Unmatched faction payout</span>
                       {/if}
                     </td>
                     <td class="max-w-[300px] truncate py-2.5 pr-4 text-fg" title={p.description ?? ""}>{p.description ?? "—"}</td>
@@ -486,7 +521,7 @@
             </table>
           </div>
           <p class="px-6 pt-3 text-xs text-fg-faint">
-            “Unmatched faction income” has no confirmed ranked-war or OC linkage — it is never presented as a war payout.
+            “Unmatched faction payout” has no confirmed ranked-war or OC linkage — it is never presented as a war payout.
           </p>
         {/if}
       </Panel>

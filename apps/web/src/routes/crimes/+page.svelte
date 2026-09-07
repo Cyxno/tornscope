@@ -82,6 +82,8 @@
   });
 </script>
 
+<svelte:head><title>Crimes · TornScope</title></svelte:head>
+
 <div class="space-y-10">
   <PageHeader
     eyebrow="Crime"
@@ -122,7 +124,7 @@
       </div>
       <div class="bg-surface p-7 text-center">
         <p class="tnum text-4xl font-semibold text-positive">{summary.successRate !== null ? `${Math.round(summary.successRate * 100)}%` : "—"}</p>
-        <p class="mt-1 text-[11px] uppercase tracking-[0.14em] text-fg-faint">success rate · {summary.successful}W / {summary.failed}F</p>
+        <p class="mt-1 text-[11px] uppercase tracking-[0.14em] text-fg-faint">success rate · {summary.successful} successful · {summary.failed} failed</p>
       </div>
       <div class="bg-surface p-7 text-center">
         <p class="tnum text-4xl font-semibold {summary.netCrimeCash >= 0 ? "text-positive" : "text-negative"}">{formatSignedMoney(summary.netCrimeCash)}</p>

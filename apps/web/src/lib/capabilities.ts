@@ -1,4 +1,5 @@
 import type { FeatureAvailabilityDto, KeyCapabilitiesDto } from "@tornscope/shared";
+import { me } from "./state.svelte";
 import { featureAvailability, FEATURE_REQUIREMENTS, moduleAvailability } from "@tornscope/shared";
 
 /**
@@ -6,8 +7,28 @@ import { featureAvailability, FEATURE_REQUIREMENTS, moduleAvailability } from "@
  * The rule: permission problems NEVER render as zeros or "No data".
  */
 
-export function availabilityMessage(av: FeatureAvailabilityDto): { state: "permission" | "stale" | "empty"; title: string; hint: string } {
-  if (av.state === "unavailable_permission") {
+export function availabilityMessage(
+  av: FeatureAvailabilityDto,
+  opts: { isDemo?: boolean } = {}
+): { state: "permission" | "stale" | "empty"; title: string; hint: string } {
+  // Demo presents synthetic data naturally: missing sections are just empty
+  // demo sections, never permission/stale complaints about a key that does
+  // not exist in demo mode.
+  const isDemo = opts.isDemo ?? me.data?.isDemo === true;
+  if (isDemo) {
+    return av.state === 'unavailable_source' || av.state === 'unavailable_permission'
+      ? {
+          state: 'empty',
+          title: 'No demo data in this range',
+          hint: 'Synthetic example data — the demo dataset does not include this section.',
+        }
+      : {
+          state: 'empty',
+          title: 'Demo data',
+          hint: 'Synthetic example data included with the demo dataset.',
+        };
+  }
+  if (av.state === 'unavailable_permission') {
     return {
       state: "permission",
       title: "Unavailable with current API permissions",

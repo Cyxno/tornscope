@@ -151,3 +151,148 @@ suite("rehab visits vs sessions through the API", () => {
     expect(drugs.rehab.visitTrend).toHaveLength(3);
   });
 });
+
+/* -------------------------------------------------------------------------- */
+/* Demo availability: synthetic data never reads as a permission problem       */
+/* -------------------------------------------------------------------------- */
+import { upsertCatalogEntries } from "@tornscope/database";
+import { getFactionOcs } from "../src/services/faction.js";
+import { getTravelHistory, getTravelSummary } from "../src/services/travel.js";
+
+suite("demo availability semantics", () => {
+  it("a demo profile with stored drug data gets available_historical — never stale/permission", async () => {
+    const demoUser = await db.user.create({ data: { displayName: "Privacy-Demo", role: "owner", isDemo: true } });
+    cleanupIds.push(demoUser.id);
+    await db.drugEvent.create({
+      data: {
+        userId: demoUser.id,
+        occurredAt: new Date(),
+        drugItemId: 206,
+        drugName: "Xanax",
+        outcome: "success",
+        source: "demo",
+        sourceRef: `demo-test:${randomBytes(3).toString("hex")}`,
+      },
+    });
+    await db.syncState.create({
+      data: { userId: demoUser.id, resource: "drugs", recordsCollected: 120, lastSuccessAt: new Date() },
+    });
+    const drugs = await getDrugsSummary(demoUser.id, { preset: "30d" }, null);
+    expect(drugs.availability?.history.state).toBe("available_historical");
+    expect(drugs.availability?.history.requiresLabel).toBeNull();
+    // No stale/permission messaging data leaks into the demo payload.
+    expect(JSON.stringify(drugs.availability)).not.toContain("an API key");
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Xanax per-bucket values: consumption vs personal vs sponsored vs opening    */
+/* -------------------------------------------------------------------------- */
+suite("xanax value semantics", () => {
+  it("sponsored personal cost is $0 while consumption value includes sponsored units", async () => {
+    const u = await db.user.create({ data: { displayName: "Privacy-Xan", role: "user" } });
+    cleanupIds.push(u.id);
+    const price = 840_000;
+    await upsertCatalogEntries(db, [{ itemId: 206, name: "Xanax", type: "Drug", marketPrice: BigInt(price) }]);
+    const base = Math.floor(Date.now() / 1000) - 3600;
+    // 5 uses: 2 armory-sponsored (use logged with armory news at the same second), 3 unattributed.
+    const uses: Array<{ occurredAt: Date; drugItemId: number | null; drugName: string; outcome: "success"; source: string; sourceRef: string }> = [];
+    const armory: Array<{ userId: string; factionId: number; memberId: number | null; itemId: number; itemName: string; action: string; quantity: number; occurredAt: Date; source: string; sourceRef: string }> = [];
+    for (let i = 0; i < 5; i++) {
+      const t = base - i * 600;
+      uses.push({
+        userId: u.id,
+        occurredAt: new Date(t * 1000),
+        drugItemId: 206,
+        drugName: "Xanax",
+        outcome: "success",
+        source: "demo",
+        sourceRef: `xv:${i}:${randomBytes(2).toString("hex")}`,
+      });
+      if (i < 2) {
+        armory.push({
+          userId: u.id, factionId: 1, memberId: 777, itemId: 206, itemName: "Xanax", action: "used",
+          quantity: 1, occurredAt: new Date((t - 5) * 1000), source: "demo", sourceRef: `xv-armory:${i}`,
+        });
+      }
+    }
+    await db.drugEvent.createMany({ data: uses });
+    await db.factionArmoryEvent.createMany({ data: armory });
+    await db.tornAccount.create({ data: { userId: u.id, tornId: 777, name: "XanPlayer", level: 40, firstSeenAt: new Date(), lastSeenAt: new Date() } });
+
+    const drugs = await getDrugsSummary(u.id, { preset: "7d" }, null);
+    expect(drugs.xanaxFunding.used).toBe(5);
+    expect(drugs.xanaxFunding.confirmedFaction).toBe(2);
+    // Consumption value covers ALL used units (sponsored included).
+    expect(drugs.xanaxFunding.values.consumption).toBe(5 * price);
+    expect(drugs.xanaxFunding.values.factionSponsored).toBe(2 * price);
+    expect(drugs.xanaxFunding.values.unitPrice).toBe(price);
+    // Opening inventory value only covers opening-unknown units (never labeled spend).
+    expect(drugs.xanaxFunding.values.openingInventory).toBe((drugs.xanaxFunding.openingInventoryUnknown) * price);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* OC rewards: items with names/estimated values; zero cash is a real value    */
+/* -------------------------------------------------------------------------- */
+suite("oc reward details", () => {
+  it("resolves item rewards to valued, named lines and estimates the total", async () => {
+    const u = await db.user.create({ data: { displayName: "Privacy-OC", role: "user" } });
+    cleanupIds.push(u.id);
+    await upsertCatalogEntries(db, [
+      { itemId: 206, name: "Xanax", type: "Drug", marketPrice: BigInt(840_000) },
+      // No catalog entry for 999999: unpriced item must render with null value.
+    ]);
+    await db.organizedCrime.create({
+      data: {
+        userId: u.id,
+        factionId: 1,
+        ocId: 9001,
+        name: "Reward Test",
+        difficulty: 5,
+        status: "Successful",
+        executedAt: new Date(),
+        slots: [{ position: "Muscle", user: { id: 55_600_200 }, checkpoint_pass_rate: 1 }],
+        rewards: { money: 0, respect: 136, items: [{ id: 206, quantity: 15 }, { id: 999_999, quantity: 1 }] },
+      },
+    });
+    const ocs = await getFactionOcs(u.id, { preset: "90d" });
+    const oc = ocs.ocs.find((o) => o.ocId === 9001)!;
+    expect(oc.rewardItemsDetailed).toHaveLength(2);
+    expect(oc.rewardItemsDetailed[0]).toMatchObject({ name: "Xanax", quantity: 15, kind: "drug", estimatedValue: 15 * 840_000 });
+    // Unpriced item: shown, value unavailable.
+    expect(oc.rewardItemsDetailed[1]!.name).toBe("Item 999999");
+    expect(oc.rewardItemsDetailed[1]!.estimatedValue).toBeNull();
+    expect(oc.rewardValueComplete).toBe(false);
+    // Total = reported cash (0) + priced items only.
+    expect(oc.rewardEstimatedTotal).toBe(15 * 840_000);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Travel history range consistency                                            */
+/* -------------------------------------------------------------------------- */
+suite("travel history range consistency", () => {
+  it("history covers exactly the requested range — no ±7d attach-window leakage", async () => {
+    const u = await db.user.create({ data: { displayName: "Privacy-Travel", role: "user" } });
+    cleanupIds.push(u.id);
+    const now = Date.now() / 1000;
+    const DAY = 86_400;
+    for (const [departedDaysAgo, ref] of [[1, "in-range"], [4, "in-range-2"], [10, "outside-before"]] as const) {
+      await db.travelEvent.create({
+        data: {
+          userId: u.id, destination: "Mexico", source: "trip", sourceRef: `trip:${ref}`,
+          departedAt: new Date((now - departedDaysAgo * DAY) * 1000),
+          returnedAt: new Date((now - (departedDaysAgo - 0.5) * DAY) * 1000),
+        },
+      });
+    }
+    const summary = await getTravelSummary(u.id, { preset: "7d" });
+    const history = await getTravelHistory(u.id, { preset: "7d" }, 50);
+    // Summary counts only in-range departures; history must agree.
+    expect(history.items.length).toBe(summary.trips);
+    // A trip 10 days back (inside the loader's 7d attach window of a 7d range
+    // start) must NOT appear in a 7D history.
+    expect(history.items.some((t) => t.id.includes === undefined && t.destination === "Mexico" && t.departedAt * 1000 < Date.now() - 7 * DAY * 1000)).toBe(false);
+  });
+});

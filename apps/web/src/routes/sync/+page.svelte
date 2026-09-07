@@ -200,6 +200,8 @@
   }
 </script>
 
+<svelte:head><title>Sync · TornScope</title></svelte:head>
+
 <div class="space-y-10">
   <PageHeader
     eyebrow="System"
@@ -219,6 +221,7 @@
     <!-- Resources -->
     <Panel title="Resources" caption="Manual syncs are queued and rate-limited to protect your Torn API budget">
       {#snippet actions()}
+        {#if !me.data?.isDemo}
         <div class="flex items-center gap-2">
           <button
             class="rounded-full border border-border-strong px-3 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:border-accent hover:text-accent disabled:opacity-40"
@@ -235,9 +238,14 @@
             {restarting ? "Restarting…" : "Restart backfill"}
           </button>
         </div>
+        {/if}
       {/snippet}
       {#if health.resources.length === 0}
-        <StateMessage state="empty" title="No sync configuration yet" hint="Connect an API key in Settings to start collecting history." />
+        {#if me.data?.isDemo}
+          <StateMessage state="empty" title="Demo data" hint="Synthetic example data — the demo dataset does not include live sync state." />
+        {:else}
+          <StateMessage state="empty" title="No sync configuration yet" hint="Connect an API key in Settings to start collecting history." />
+        {/if}
       {:else}
         <ul class="divide-y divide-border">
           {#each health.resources as row (row.resource)}
@@ -283,6 +291,7 @@
                     {expandedCategories.has(row.resource) ? "Hide" : "Show"} categories ({row.categories.length})
                   </button>
                 {/if}
+                {#if !me.data?.isDemo}
                 <button
                   class="rounded-full border border-border-strong px-3.5 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:border-accent hover:text-accent disabled:opacity-40"
                   disabled={syncing[row.resource] || row.status === "running"}
@@ -290,6 +299,7 @@
                 >
                   {row.status === "running" ? "Running…" : "Sync now"}
                 </button>
+                {/if}
               </div>
             </li>
             {#if expandedCategories.has(row.resource) && row.categories.length > 0}

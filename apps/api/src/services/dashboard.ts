@@ -386,7 +386,7 @@ export async function getDashboard(userId: string, rangeInput: DateRangeInput): 
               range.from,
               range.to
             );
-            return { attacksMade: stats.attacksMade, wins: stats.wins };
+            return { attacksMade: stats.attacksMade, wins: stats.wins, outgoingWins: stats.outgoingWins, incomingDefended: stats.incomingDefended };
           })()
         : null,
     consumedValue: {

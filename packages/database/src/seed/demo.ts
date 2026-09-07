@@ -165,7 +165,11 @@ async function main(): Promise<void> {
   ]);
 
   /* ---------------------------- drug events ------------------------------ */
+  // Each use also produces a consumption event (same derivation the real
+  // normalizer performs) so Drugs and Economy can never contradict each
+  // other in the demo dataset.
   const drugRows = [];
+  const drugConsumptionRows = [];
   for (let t = start; t < now; t += HOUR * 8) {
     if (rand() < 0.55) {
       const drug = weightedPick(DRUGS);
@@ -179,14 +183,31 @@ async function main(): Promise<void> {
         source: "demo",
         sourceRef: `demo:drug:${t}`,
       });
+      drugConsumptionRows.push({
+        userId: user.id,
+        occurredAt: new Date((t + between(0, HOUR)) * 1000),
+        itemId: drug.itemId,
+        itemName: drug.name,
+        category: "drug",
+        quantity: 1,
+        unitValue: BigInt(drug.price),
+        totalValue: BigInt(drug.price),
+        valuationMethod: "catalog_market_price",
+        provenance: "estimated",
+        source: "derived_drug_event",
+        sourceRef: `demo:drug:${t}`,
+        metadata: { demo: true },
+      });
       itemIdByName.set(drug.itemId, drug.name);
     }
   }
   await db.drugEvent.createMany({ data: drugRows });
+  await db.consumptionEvent.createMany({ data: drugConsumptionRows, skipDuplicates: true });
 
   /* --------------------------- rehab events ------------------------------ */
   const rehabRows = [];
   for (let t = start; t < now; t += DAY * between(6, 12)) {
+    const sessions = between(2, 4);
     rehabRows.push({
       userId: user.id,
       occurredAt: new Date(t * 1000),
@@ -197,6 +218,7 @@ async function main(): Promise<void> {
         { weight: 1, value: 80 },
       ]).value,
       cost: BigInt(between(80_000, 900_000)),
+      sessions,
       addictionPointsRemoved: between(40, 140),
       source: "demo",
       sourceRef: `demo:rehab:${t}`,

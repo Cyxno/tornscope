@@ -74,7 +74,7 @@
 
   <footer class="border-t border-border">
     <div class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-5 py-5 text-xs text-fg-faint sm:px-6">
-      <p>TornScope — a private record of your Torn life. Data stays on your own server.</p>
+      <p>TornScope — a private record of your Torn life. Your data stays on the TornScope server hosting this instance.</p>
       <p class="flex items-center gap-3">
         <a href="/sync" class="transition-colors hover:text-fg-muted">Sync</a>
         <a href="/settings" class="transition-colors hover:text-fg-muted">Settings</a>

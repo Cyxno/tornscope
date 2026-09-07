@@ -76,3 +76,81 @@ describe("owner/admin product surface removal", () => {
     expect(client).not.toContain("bindOwner");
   });
 });
+
+/* -------------------------------------------------------------------------- */
+/* Live UX + semantics consistency pass                                       */
+/* -------------------------------------------------------------------------- */
+
+describe("demo UX", () => {
+  const capabilities = read("../../web/src/lib/capabilities.ts");
+  it("availabilityMessage renders demo copy instead of permission/stale complaints", () => {
+    expect(capabilities).toContain("me.data?.isDemo");
+    expect(capabilities).toContain("Synthetic example data");
+  });
+
+  it("sync page hides non-functional sync actions in demo", () => {
+    expect(syncPage).toContain("!me.data?.isDemo");
+  });
+});
+
+describe("xanax personal-cost semantics", () => {
+  it("labels the consumption value as NOT personal spend and sponsored cost as $0", () => {
+    expect(welcomeDrugsPage()).toContain("Estimated consumption value");
+    expect(welcomeDrugsPage()).toContain("Personal cost $0");
+    expect(welcomeDrugsPage()).toContain("Opening inventory — origin unknown");
+    expect(welcomeDrugsPage()).not.toContain('label="Estimated spend"');
+  });
+  function welcomeDrugsPage(): string {
+    return read("../../web/src/routes/drugs/+page.svelte");
+  }
+});
+
+describe("labels and casing", () => {
+  it("overview combat panel uses direction-aware labels", () => {
+    expect(read("../../web/src/routes/+page.svelte")).toContain("Outgoing attacks");
+    expect(read("../../web/src/routes/+page.svelte")).toContain("Successful defenses");
+  });
+
+  it("completed OC rows read 'You participated' for historical participation", () => {
+    expect(read("../../web/src/routes/faction/+page.svelte")).toContain("You participated");
+  });
+
+  it("expired OC caption is grammatical", () => {
+    const faction = read("../../web/src/routes/faction/+page.svelte");
+    expect(faction).toContain("Crimes that expired or were cancelled");
+    expect(faction).not.toContain("that expired or was cancelled");
+  });
+
+  it("OC completed table distinguishes Torn-reported cash from estimated total value", () => {
+    const faction = read("../../web/src/routes/faction/+page.svelte");
+    expect(faction).toContain("Est. total value");
+    expect(faction).toContain("paid in items/respect");
+    expect(faction).not.toContain("Reward cash");
+  });
+});
+
+describe("document titles", () => {
+  it("app.html has a default title and pages set route-aware titles", () => {
+    expect(read("../../web/src/app.html")).toContain("<title>TornScope</title>");
+    for (const [path, expected] of [
+      ["../../web/src/routes/+page.svelte", "Overview · TornScope"],
+      ["../../web/src/routes/drugs/+page.svelte", "Drugs · TornScope"],
+      ["../../web/src/routes/travel/+page.svelte", "Travel · TornScope"],
+      ["../../web/src/routes/faction/+page.svelte", "Faction · TornScope"],
+      ["../../web/src/routes/settings/+page.svelte", "Settings · TornScope"],
+    ] as const) {
+      expect(read(path)).toContain(`<title>${expected}</title>`);
+    }
+  });
+});
+
+describe("profile/browser wording", () => {
+  it("uses linked-profile wording instead of one-browser-one-profile", () => {
+    const welcome = read("../../web/src/routes/welcome/+page.svelte");
+    expect(welcome).toContain("multiple browsers can link to the same TornScope profile");
+    expect(welcome).toContain("a valid API key for the same Torn account");
+    expect(welcome).not.toContain("your own server");
+    const settings = read("../../web/src/routes/settings/+page.svelte");
+    expect(settings).not.toContain("Per-user preferences arrive");
+  });
+});

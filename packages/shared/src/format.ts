@@ -71,3 +71,14 @@ export function formatKpiValue(
   if (kpi.value === null || kpi.availability === "unavailable") return "—";
   return format(kpi.value);
 }
+
+/**
+ * Domain-appropriate decimal formatting for fractional game stats (respect,
+ * averages): rounds to 2 decimals and strips floating-point artifacts, e.g.
+ * 36.60000000000001 → "36.6".
+ */
+export function formatDecimal(value: number | null | undefined, maxDecimals = 2): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  const rounded = Math.round(value * 10 ** maxDecimals) / 10 ** maxDecimals;
+  return rounded.toLocaleString("en-US", { maximumFractionDigits: maxDecimals });
+}

@@ -16,7 +16,7 @@ import {
   KpiValue,
 } from "@tornscope/shared";
 import { deriveMemberStats, matchPayout, matchOcPayout, warCombatEvents, summarizeWars, warResult, type WarLike, type PayoutCandidateInput, type WarCombatEventLike, type PayoutMatch } from "@tornscope/analytics";
-import { bigintToNumber, getPrismaClient } from "@tornscope/database";
+import { bigintToNumber, getPrismaClient, loadItemNameMap, loadItemTypeMap, loadMarketPrices } from "@tornscope/database";
 import { loadAvailabilityContext, sectionAvailability } from "./availability.js";
 
 /** Load the user's combat events for war derivation (metadata holds the flags). */
@@ -375,11 +375,27 @@ export async function getFactionChains(userId: string, rangeInput: DateRangeInpu
 }
 
 /** Organized crimes with personal participation and exact rewards. */
+
+/**
+ * Reward kind from the Torn item catalog type (fallback: name). Used to
+ * group item rewards into user-facing categories (Xanax, weapons, vehicles,
+ * armor, other) — never fabricated: unknown types stay "other".
+ */
+function rewardKind(type: string | null | undefined, name: string): "drug" | "weapon" | "vehicle" | "armor" | "other" {
+  const t = type?.toLowerCase() ?? "";
+  if (t === "drug" || /xanax/i.test(name)) return "drug";
+  if (t === "weapon") return "weapon";
+  if (t === "vehicle") return "vehicle";
+  if (t === "armor") return "armor";
+  return "other";
+}
+
 export async function getFactionOcs(userId: string, rangeInput: DateRangeInput): Promise<FactionOcsResponse> {
   const db = getPrismaClient();
   const range = resolveDateRange(rangeInput);
   const account = await db.tornAccount.findUnique({ where: { userId }, select: { tornId: true } });
   const resolved = account?.tornId ?? null;
+  const [itemNames, itemTypes, marketPrices] = await Promise.all([loadItemNameMap(db), loadItemTypeMap(db), loadMarketPrices(db)]);
 
   // Everything stored: active (planning/recruiting), completed and expired.
   const ocs = await db.organizedCrime.findMany({
@@ -428,6 +444,26 @@ export async function getFactionOcs(userId: string, rangeInput: DateRangeInput):
         };
       });
       const items = Array.isArray(rewards.items) ? rewards.items.map((it) => ({ id: Number(it.id ?? 0), quantity: Number(it.quantity ?? 1) })) : null;
+      // Reward items with catalog names, kinds and estimated values. An item
+      // the catalog cannot price still renders — its value stays null.
+      const rewardItemsDetailed = (items ?? []).map((it) => {
+        const name = itemNames.get(it.id) ?? `Item ${it.id}`;
+        const type = itemTypes.get(it.id) ?? null;
+        const price = marketPrices.get(it.id);
+        return {
+          itemId: it.id,
+          name,
+          quantity: it.quantity,
+          kind: rewardKind(type, name),
+          estimatedUnitValue: price !== undefined ? Number(price) : null,
+          estimatedValue: price !== undefined ? Number(price) * it.quantity : null,
+        };
+      });
+      const pricedTotal = rewardItemsDetailed.reduce((s, r) => s + (r.estimatedValue ?? 0), 0);
+      const rewardValueComplete = rewardItemsDetailed.every((r) => r.estimatedValue !== null);
+      const rewardMoney = typeof rewards.money === "number" ? rewards.money : null;
+      const rewardEstimatedTotal =
+        rewardItemsDetailed.length > 0 ? pricedTotal + (rewardMoney ?? 0) : null;
       const slotsTotal = slots.length;
       // A slot is "filled" only when the payload positively carries a member.
       const slotsFilled = slots.filter((s) => typeof s.user?.id === "number").length;
@@ -455,9 +491,12 @@ export async function getFactionOcs(userId: string, rangeInput: DateRangeInput):
         // it — an empty roster positively proves the user is not in it — so
         // "unavailable" is reserved for OCs with no slot payload at all.
         participantsIdentifiable: slots.length > 0,
-        rewardMoney: typeof rewards.money === "number" ? rewards.money : null,
+        rewardMoney,
         rewardRespect: typeof rewards.respect === "number" ? rewards.respect : null,
         rewardItems: items,
+        rewardItemsDetailed,
+        rewardEstimatedTotal,
+        rewardValueComplete,
         payoutPercentage: typeof rewards.payout?.percentage === "number" ? rewards.payout.percentage : null,
         paidBy: typeof rewards.payout?.paid_by === "number" ? rewards.payout.paid_by : null,
         // Torn reports payout timestamps in unix SECONDS (verified against

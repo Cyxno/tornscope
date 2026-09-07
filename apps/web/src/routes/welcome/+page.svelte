@@ -254,6 +254,8 @@
   });
 </script>
 
+<svelte:head><title>TornScope — a private record of your Torn life</title></svelte:head>
+
 <div class="flex min-h-screen items-center justify-center px-5 py-14">
   <div class="w-full max-w-xl space-y-10">
     <div class="space-y-3 text-center">
@@ -265,7 +267,7 @@
         A private record of<br />your <span class="italic text-accent">Torn life</span>.
       </h1>
       <p class="mx-auto max-w-md text-sm leading-relaxed text-fg-muted">
-        {branding.tagline} — continuously collected, normalized and stored on your own server, from the very first sync onward.
+        {branding.tagline} — continuously collected and normalized on the TornScope server, from the very first sync onward.
       </p>
     </div>
 
@@ -367,8 +369,8 @@
 
         <div class="mt-6 space-y-2 border-t border-border pt-4 text-center text-[11px] leading-relaxed text-fg-faint">
           <p>
-            No account needed: this browser gets its own anonymous TornScope profile.
-            Clearing this site's cookies detaches the profile; signing in again with the same API key restores access.
+            No account needed: each browser has its own session, and multiple browsers can link to the same TornScope profile.
+            Clearing this site's cookies detaches the browser from its profile; a valid API key for the same Torn account can link it again.
           </p>
         </div>
       {:else if step === 2 && detected && accessSummary}
