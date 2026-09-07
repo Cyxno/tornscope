@@ -130,14 +130,17 @@ describe("labels and casing", () => {
 });
 
 describe("document titles", () => {
-  it("app.html has a default title and pages set route-aware titles", () => {
-    expect(read("../../web/src/app.html")).toContain("<title>TornScope</title>");
+  it("exactly one title per page: app.html has none (no duplicate-title bug) and pages set route-aware titles", () => {
+    // A static app.html title rendered FIRST in <head>, so it won over the
+    // per-page titles — app.html must contain no title element at all.
+    expect(read("../../web/src/app.html")).not.toContain("<title>");
     for (const [path, expected] of [
       ["../../web/src/routes/+page.svelte", "Overview · TornScope"],
       ["../../web/src/routes/drugs/+page.svelte", "Drugs · TornScope"],
       ["../../web/src/routes/travel/+page.svelte", "Travel · TornScope"],
       ["../../web/src/routes/faction/+page.svelte", "Faction · TornScope"],
       ["../../web/src/routes/settings/+page.svelte", "Settings · TornScope"],
+      ["../../web/src/routes/+error.svelte", "Error · TornScope"],
     ] as const) {
       expect(read(path)).toContain(`<title>${expected}</title>`);
     }
