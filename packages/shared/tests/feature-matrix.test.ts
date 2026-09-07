@@ -4,7 +4,9 @@ import {
   compareCapabilities,
   deriveKeyCapabilities,
   featureAvailability,
+  hasCompleteCapabilityShape,
   normalizeCapabilities,
+  normalizeCapabilitiesWithFallback,
   resourceAllowed,
   resourceRequirementLabel,
   capabilityLevel,
@@ -92,6 +94,56 @@ describe("normalizeCapabilities (legacy credential blobs)", () => {
     expect(normalizeCapabilities(null)).toBeNull();
     expect(normalizeCapabilities({})).toBeNull();
     expect(normalizeCapabilities("x")).toBeNull();
+  });
+});
+
+describe("legacy 13-key blobs must not block resources the key actually has", () => {
+  // The exact blob shape stored by the earlier deployment.
+  const STALE_BLOB = {
+    canReadUserBars: true,
+    canReadUserLogs: true,
+    canReadUserBasic: true,
+    canReadUserMoney: true,
+    canReadFactionLogs: false,
+    canReadUserAttacks: true,
+    canReadFactionBasic: true,
+    canReadUserNetworth: true,
+    canReadFactionCrimes: true,
+    canReadFactionBalance: true,
+    canReadFactionMembers: true,
+    canReadFactionArmoryNews: true,
+    canReadFactionRankedWars: true,
+  };
+
+  it("incomplete-shape blobs are detected as stale (worker re-detects)", () => {
+    expect(hasCompleteCapabilityShape(STALE_BLOB)).toBe(false);
+    expect(hasCompleteCapabilityShape({ ...normalizeCapabilities(STALE_BLOB)!, canReadUserEvents: false })).toBe(true);
+  });
+
+  it("read paths fall back to the numeric level for the missing keys", () => {
+    // A Full key (level 4) with a stale blob keeps working everywhere.
+    const c = normalizeCapabilitiesWithFallback(STALE_BLOB, 4);
+    expect(c).not.toBeNull();
+    expect(c!.canReadUserCooldowns).toBe(true);
+    expect(c!.canReadUserEducation).toBe(true);
+    expect(c!.canReadUserTravel).toBe(true);
+    expect(c!.canReadUserEvents).toBe(true);
+    expect(c!.canReadUserPersonalStats).toBe(true);
+    // Faction keys are never invented from the level alone (conservative);
+    // the worker's re-detection fills them from /key/info.
+    expect(c!.canReadFactionChains).toBe(false);
+    // Explicit booleans stay authoritative even on a stale blob.
+    expect(c!.canReadFactionLogs).toBe(false);
+    expect(resourceAllowed(c, "events")).toBe(true);
+  });
+
+  it("a Limited key's stale blob does not gain Full-only powers", () => {
+    const c = normalizeCapabilitiesWithFallback(STALE_BLOB, 3);
+    // Level fallback cannot grant anything above the level either — but the
+    // explicit stored booleans (which a Limited key would not have) win:
+    // they are what the previous model detected.
+    expect(c!.canReadUserLogs).toBe(true); // explicit from detection
+    expect(c!.canReadFactionChains).toBe(false); // missing + level 3
   });
 });
 

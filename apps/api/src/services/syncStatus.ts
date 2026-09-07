@@ -1,5 +1,5 @@
 import { getSyncStates, getSyncCategoryStates, getPrismaClient, type SyncStateRow } from "@tornscope/database";
-import { deriveSetupPhase, normalizeCapabilities, resourceAllowed, resourceRequirementLabel, SYNC_JOB_NAME, SCHEDULER_QUEUE, buildSyncJobId, SYNC_RESOURCES, type SyncResource } from "@tornscope/shared";
+import { deriveSetupPhase, normalizeCapabilitiesWithFallback, resourceAllowed, resourceRequirementLabel, SYNC_JOB_NAME, SCHEDULER_QUEUE, buildSyncJobId, SYNC_RESOURCES, type SyncResource } from "@tornscope/shared";
 import { AppError } from "../errors.js";
 import { getApiContext } from "../context.js";
 import { queueRedis } from "../redis.js";
@@ -244,7 +244,7 @@ export async function requestManualSync(
     return { queued: false, retryAfterSeconds: 0 };
   }
   // Capability gate: "Sync now" must respect what the key can access.
-  if (!resourceAllowed(normalizeCapabilities(credential.capabilities), resource as SyncResource)) {
+  if (!resourceAllowed(normalizeCapabilitiesWithFallback(credential.capabilities, credential.accessLevel), resource as SyncResource)) {
     throw new AppError(
       "permission_required",
       `Your API key does not include ${resourceRequirementLabel(resource as SyncResource)} — this resource cannot be synced with the current key.`,
@@ -281,7 +281,7 @@ export async function retryFailedSyncs(userId: string): Promise<{ queued: string
   if (!credential || credential.revokedAt) {
     return { queued: [] };
   }
-  const caps = normalizeCapabilities(credential.capabilities);
+  const caps = normalizeCapabilitiesWithFallback(credential.capabilities, credential.accessLevel);
   const states = await db.syncState.findMany({ where: { userId, status: "failed" } });
   const ctx = getApiContext();
   const queued: string[] = [];

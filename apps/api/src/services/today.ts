@@ -25,7 +25,7 @@ import type {
   TornUserTravel,
 } from "@tornscope/torn-api";
 import { TornApiError } from "@tornscope/torn-api";
-import { normalizeCapabilities, type KeyCapabilities } from "@tornscope/shared";
+import { normalizeCapabilitiesWithFallback, type KeyCapabilities } from "@tornscope/shared";
 import { getApiContext } from "../context.js";
 import { errors } from "../errors.js";
 
@@ -281,9 +281,10 @@ async function fetchToday(userId: string): Promise<TodayResponse> {
   }
 
   // Skip requests the key cannot answer anyway (saves rate budget). The
-  // detected per-selection capabilities decide; legacy credentials without
-  // stored capabilities fall back to the conservative access-level check.
-  const caps = normalizeCapabilities(credential.capabilities);
+  // detected per-selection capabilities decide; legacy capability blobs and
+  // credentials without stored capabilities fall back to the conservative
+  // access-level check for the keys those blobs predate.
+  const caps = normalizeCapabilitiesWithFallback(credential.capabilities, accessLevel);
   const capAllowed = (capability: keyof KeyCapabilities | null, fallbackLevel: number): boolean => {
     if (caps) return capability === null ? true : caps[capability];
     return accessLevel === null || accessLevel >= fallbackLevel;

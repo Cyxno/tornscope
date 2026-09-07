@@ -256,6 +256,37 @@ export function normalizeCapabilities(raw: unknown): KeyCapabilities | null {
   return any ? out : null;
 }
 
+/**
+ * True when the blob carries every capability key of the CURRENT model.
+ * Older deployments stored a 13-key subset; treating their missing keys as
+ * false would wrongly block resources the key actually has, so callers use
+ * this to decide between "authoritative" and "stale, re-detect".
+ */
+export function hasCompleteCapabilityShape(raw: unknown): boolean {
+  if (typeof raw !== "object" || raw === null) return false;
+  const source = raw as Record<string, unknown>;
+  return CAPABILITY_KEYS.every((key) => typeof source[key] === "boolean");
+}
+
+/**
+ * Normalize for READ paths: a legacy (incomplete-shape) blob keeps its
+ * explicit booleans, while MISSING keys fall back to the numeric access
+ * level — the conservative pre-capability behavior — instead of false.
+ * Returns null only when the blob has no boolean data at all.
+ */
+export function normalizeCapabilitiesWithFallback(raw: unknown, accessLevel: number | null | undefined): KeyCapabilities | null {
+  const normalized = normalizeCapabilities(raw);
+  if (!normalized) return null;
+  if (hasCompleteCapabilityShape(raw)) return normalized;
+  const level = typeof accessLevel === "number" ? accessLevel : 0;
+  const levelFallback = deriveKeyCapabilities(null, level);
+  const source = raw as Record<string, unknown>;
+  for (const key of CAPABILITY_KEYS) {
+    if (typeof source[key] !== "boolean") normalized[key] = levelFallback[key];
+  }
+  return normalized;
+}
+
 export interface KeySelections {
   user?: string[] | null;
   faction?: string[] | null;

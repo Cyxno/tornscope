@@ -1,6 +1,6 @@
 import { TornApiError } from "@tornscope/torn-api";
 import { claimResource, completeResource, progressResource, recordSyncRun, ensureSyncStates } from "@tornscope/database";
-import { deriveKeyCapabilities, normalizeCapabilities, resourceAllowed, resourceRequirementLabel, type KeyCapabilities, type SyncResource } from "@tornscope/shared";
+import { deriveKeyCapabilities, hasCompleteCapabilityShape, normalizeCapabilitiesWithFallback, resourceAllowed, resourceRequirementLabel, type KeyCapabilities, type SyncResource } from "@tornscope/shared";
 import { SYNC_HANDLERS } from "./handlers.js";
 import { getWorkerContext } from "../context.js";
 import { logger } from "../env.js";
@@ -20,8 +20,10 @@ const CAPABILITY_RECHECK_SECONDS = 6 * 3600;
 
 /**
  * Resolve the credential's capabilities. Credentials stored before capability
- * persistence carried no detection — backfill it once from /key/info so
- * gating works for every existing profile without a manual re-save.
+ * persistence carried no detection, and blobs from the earlier 13-key model
+ * are stale (their missing keys would wrongly read as false) — both trigger a
+ * one-time re-detection from /key/info so gating works for every existing
+ * profile without a manual re-save.
  */
 async function resolveCapabilities(
   ctx: ReturnType<typeof getWorkerContext>,
@@ -29,7 +31,10 @@ async function resolveCapabilities(
   credential: { id: string; accessLevel: number | null; accessType: string | null; capabilities: unknown },
   apiKey: string
 ): Promise<KeyCapabilities | null> {
-  const stored = normalizeCapabilities(credential.capabilities);
+  // Read paths fall back to the numeric level for legacy blobs; the GATE,
+  // however, needs the real selections — so stale blobs force re-detection.
+  const storedComplete = hasCompleteCapabilityShape(credential.capabilities);
+  const stored = storedComplete ? normalizeCapabilitiesWithFallback(credential.capabilities, credential.accessLevel) : null;
   if (stored) return stored;
   try {
     const info = await ctx.torn(apiKey).keyInfo();

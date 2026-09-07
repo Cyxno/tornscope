@@ -9,6 +9,7 @@ import {
   compareCapabilities,
   deriveKeyCapabilities,
   deriveSetupPhase,
+  normalizeCapabilitiesWithFallback,
   SYNC_RESOURCES,
   buildSyncJobId,
   SYNC_JOB_NAME,
@@ -88,7 +89,9 @@ export async function getMe(user: { id: string; displayName: string; timezone: s
     .map((s) => s.lastSuccessAt?.getTime() ?? 0)
     .reduce((a, b) => Math.max(a, b), 0);
 
-  const capabilitiesRaw = (credential?.capabilities ?? null) as KeyCapabilities | null;
+  const capabilitiesRaw = credential
+    ? normalizeCapabilitiesWithFallback(credential.capabilities, credential.accessLevel)
+    : null;
 
   return {
     userId: user.id,
@@ -147,7 +150,7 @@ export async function getApiKeyStatus(userId: string): Promise<ApiKeyStatusRespo
     tornId: account?.tornId ?? null,
     tornName: account?.name ?? null,
     logAccessAvailable: credential.logAccessAvailable,
-    capabilities: (credential.capabilities ?? null) as KeyCapabilities | null,
+    capabilities: normalizeCapabilitiesWithFallback(credential.capabilities, credential.accessLevel),
   };
 }
 

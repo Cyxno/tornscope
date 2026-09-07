@@ -1,5 +1,6 @@
 import {
   featureAvailability,
+  normalizeCapabilitiesWithFallback,
   resourceAllowed,
   type FeatureAvailability as FeatureAvailabilityDto,
   type KeyCapabilities,
@@ -31,10 +32,12 @@ export interface AvailabilityContext {
 export async function loadAvailabilityContext(userId: string): Promise<AvailabilityContext> {
   const db = getPrismaClient();
   const [credential, states] = await Promise.all([
-    db.apiCredential.findUnique({ where: { userId }, select: { capabilities: true, revokedAt: true } }),
+    db.apiCredential.findUnique({ where: { userId }, select: { capabilities: true, accessLevel: true, revokedAt: true } }),
     db.syncState.findMany({ where: { userId }, select: { resource: true, lastSuccessAt: true, recordsCollected: true, status: true } }),
   ]);
-  const caps = credential && !credential.revokedAt ? ((credential.capabilities ?? null) as KeyCapabilities | null) : null;
+  const caps = credential && !credential.revokedAt
+    ? normalizeCapabilitiesWithFallback(credential.capabilities, credential.accessLevel)
+    : null;
   return { caps, states: new Map(states.map((s) => [s.resource, s])) };
 }
 
