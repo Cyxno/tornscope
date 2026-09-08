@@ -53,9 +53,9 @@
     const t = today;
     if (!t) return [];
     const defs = [
-      { cd: t.cooldowns.drug, icon: "drug", label: "Drug", href: "https://www.torn.com/items.php#/drugs" },
-      { cd: t.cooldowns.booster, icon: "booster", label: "Booster", href: "https://www.torn.com/items.php#/alcohol" },
-      { cd: t.cooldowns.medical, icon: "medical", label: "Medical", href: "https://www.torn.com/items.php#/medical" },
+      { cd: t.cooldowns.drug, icon: "drug", label: "Drug", href: "https://www.torn.com/item.php" },
+      { cd: t.cooldowns.booster, icon: "booster", label: "Booster", href: "https://www.torn.com/item.php" },
+      { cd: t.cooldowns.medical, icon: "medical", label: "Medical", href: "https://www.torn.com/item.php" },
     ] as const;
     return defs.map(({ cd, icon, label, href }) => {
       const display = cooldownDisplay(cd, serverNowMs);
