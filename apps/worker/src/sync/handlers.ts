@@ -592,11 +592,13 @@ export const syncTravelLogs: SyncHandler = async (args) =>
 // Financial surface. Beyond the obvious money keywords this includes the real
 // category names observed in a live 180-day history: "Company", "Job",
 // "Property", "Shops", "Item market", "Donator", "Offshore bank", "Piggy
-// bank", "Loan". The normalizer decides which entries are actual movements.
+// bank", "Loan", "Gym". The normalizer decides which entries are actual
+// movements.
 export const syncMoneyLogs: SyncHandler = async (args) =>
   syncLogsByCategories(args, "money_logs", await resolveCategoryIds(args.userId, [
     "trade", "money", "bazaar", "bank", "casino", "stock", "salary", "points", "auction", "crime", "mug", "payout",
     "company", "job", "property", "shop", "item market", "donator", "offshore", "piggy", "loan", "upkeep", "faction", "attacking",
+    "gym",
   ]));
 
 /* -------------------------------------------------------------------------- */

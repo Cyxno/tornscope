@@ -206,6 +206,66 @@ export const donatorSubscription = fixtureLog("Subscription success", "Donator",
 /** Old-style generic money log (legacy category titles). */
 export const legacyUnknownMovement = fixtureLog("Money moved", "Money", { amount: 123_456 });
 
+/* ---------------- rental market + gym (2026-09-08 incident) -------------- */
+/*
+ * Real payloads behind the "top cash outflow showed Bazaar $8.45m instead of
+ * the $17m Private Island rent extension" bug. All shapes verbatim from the
+ * live timeline archive (audit 2026-09-08).
+ */
+
+/** 10x Xanax (item 206) from Deadringers's bazaar — an asset conversion. */
+export const bazaarBuyXanax = fixtureLog("Bazaar buy", "Bazaars", {
+  items: [{ id: 206, qty: 10, uid: null }],
+  seller: 2_560_768,
+  cost_each: 844_700,
+  cost_total: 8_447_000,
+});
+
+/** Initial rental of GinoMontero's Private Island: 20 days for $18,000,000. */
+export const propertyRentalPayment = fixtureLog("Property rental market rent renter", "Property", {
+  days: 20,
+  rent: 18_000_000,
+  happy: 4_225,
+  owner: 2_637_154,
+  property: 13,
+  property_id: 3_577_982,
+});
+
+/**
+ * The EXTENSION OFFER ("...has offered you a 20 day extension ... for
+ * $17,000,000"). Payload is identical to the acceptance log, but NO cash
+ * moves until the renter accepts — must never become a MoneyEvent.
+ */
+export const propertyRentalExtensionOffer = fixtureLog("Property rental market extension renter", "Property", {
+  days: 20,
+  rent: 17_000_000,
+  happy: 5_025,
+  owner: 2_637_154,
+  property: 13,
+  property_id: 3_577_982,
+});
+
+/** Accepting the offer: the real -$17,000,000 payment. */
+export const propertyRentalExtensionAccept = fixtureLog("Property rental market extension accept renter", "Property", {
+  days: 20,
+  rent: 17_000_000,
+  happy: 5_025,
+  owner: 2_637_154,
+  property: 13,
+  property_id: 3_577_982,
+});
+
+/** Rental expiry notice — informational, no money in the payload. */
+export const propertyRentalExpire = fixtureLog("Property rental market rent expire renter", "Property", {
+  happy: 4_225,
+  owner: 2_906_038,
+  property: 13,
+  property_id: 5_922_054,
+});
+
+/** Gym membership purchase (Gun Shop) for $10,000,000. */
+export const gymPurchase = fixtureLog("Gym purchase", "Gym", { gym: 18, cost: 10_000_000 });
+
 /* -------------------------------- rehab --------------------------------- */
 
 export const rehabVisit = fixtureLog("Rehab", "Travel", {

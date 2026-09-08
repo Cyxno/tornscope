@@ -296,6 +296,7 @@ export function classifyMoneySemantics(event: {
     case "hospital":
     case "jail":
     case "housing":
+    case "gym":
       return income ? "true_income" : "true_expense";
     // Banks are transfers (neutral direction already keeps them out of P&L);
     // if they ever arrive as income/expense rows they are conversions.
@@ -553,7 +554,7 @@ export function buildCashSpentBreakdown(events: readonly CashFlowEventLike[]): C
       continue;
     }
     total += magnitude;
-    if (EARNED_INCOME_CATEGORIES.has(event.category) || ["rehab", "education", "hospital", "jail", "housing"].includes(event.category)) {
+    if (EARNED_INCOME_CATEGORIES.has(event.category) || ["rehab", "education", "hospital", "jail", "housing", "gym"].includes(event.category)) {
       expenseTotal += magnitude;
       addRow(expenseRows, event.category, financeExpenseLabel(event.category), magnitude);
       continue;

@@ -128,6 +128,7 @@ export const MONEY_CATEGORIES = [
   "hospital",
   "jail",
   "housing",
+  "gym",
   "auction",
   "missions",
   "other",

@@ -189,6 +189,7 @@ export const MONEY_AMOUNT_KEYS = [
   "money_mugged",
   "balance_change",
   "upkeep_paid",
+  "rent",
   "cost_total",
   "cost",
   "pay",
@@ -242,6 +243,11 @@ export interface MoneyPlan {
  *  Company         Company employee pay                   income  (pay)
  *  Job             Job pay                                income  (pay)
  *  Property        Property upkeep                        expense (upkeep_paid)
+ *  Property        Property rental market rent renter     expense (rent — initial rental payment)
+ *  Property        Property rental market extension accept renter  expense (rent — accepted offer)
+ *  Property        Property rental market extension renter none    (the OFFER — same payload, no cash moved)
+ *  Property        Property rental market rent expire renter none  (expiry notice)
+ *  Gym             Gym purchase                           expense (cost)
  *  Crimes          Crime success ... sell ...             income  (money_gained)
  *  Crimes          Crime critical fail money loss         expense (money_lost)
  *  Trades          Trade money incoming                   income  (money, actual credit)
@@ -262,6 +268,11 @@ export function moneyPlanFor(category: string, title: string): MoneyPlan | null 
   if (is(/win casino tokens$/)) return { category: "casino", direction: "neutral", skip: true, transfer: false };
   if (is(/^trade money (add|outgoing|remove)/)) return { category: "trading", direction: "neutral", skip: true, transfer: false };
   if (is(/^subscription success|^donator/)) return { category: "other", direction: "neutral", skip: true, transfer: false };
+  // Rental market non-movements: the OFFER carries the same `rent` payload as
+  // its later acceptance (skipping it here is what prevents double-counting
+  // the payment), and an expiry moves no cash.
+  if (is(/^property rental market extension renter$/)) return { category: "housing", direction: "neutral", skip: true, transfer: false };
+  if (is(/^property rental market rent expire renter$/)) return { category: "housing", direction: "neutral", skip: true, transfer: false };
 
   // --- transfers: money moves between the player's own pools ---
   if (is(/^bank invest/)) return { category: "city_bank", direction: "neutral", skip: false, transfer: true };
@@ -288,6 +299,13 @@ export function moneyPlanFor(category: string, title: string): MoneyPlan | null 
   if (is(/^company employee pay|^company pay/)) return { category: "salary", direction: "income", skip: false, transfer: false };
   if (is(/^job pay/)) return { category: "salary", direction: "income", skip: false, transfer: false };
   if (is(/^property upkeep|^upkeep/)) return { category: "housing", direction: "expense", skip: false, transfer: false };
+  // Renter-side rental market payments (category "Property"): taking a new
+  // rental and accepting an extension both pay `rent` up front — real cash
+  // out, no asset created.
+  if (is(/^property rental market rent renter$/)) return { category: "housing", direction: "expense", skip: false, transfer: false };
+  if (is(/^property rental market extension accept renter$/)) return { category: "housing", direction: "expense", skip: false, transfer: false };
+  // Gym memberships (category "Gym"): a service fee, not an asset.
+  if (is(/^gym purchase$/)) return { category: "gym", direction: "expense", skip: false, transfer: false };
   if (is(/^stock buy/)) return { category: "stock", direction: "expense", skip: false, transfer: false };
   if (is(/^stock sell/)) return { category: "stock", direction: "income", skip: false, transfer: false };
   if (is(/^trade money incoming|^trade completed money/)) return { category: "trading", direction: "income", skip: false, transfer: false };
@@ -398,7 +416,7 @@ export function routeLog(category: string, title: string): LogRoute {
     "money", "bank", "bazaar", "casino", "stock", "point", "auction", "crime",
     "mug", "payout", "faction", "trade", "salary", "job", "company", "property",
     "shop", "item market", "donator", "loan", "upkeep", "piggy", "offshore",
-    "item use stash",
+    "item use stash", "gym",
   ];
   if (MONEY_ROUTE_WORDS.some((kw) => c.includes(kw) || t.includes(kw))) return "money";
 

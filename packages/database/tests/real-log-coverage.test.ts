@@ -5,6 +5,7 @@ import {
   bankInvest,
   bankWithdraw,
   bazaarAdd,
+  bazaarBuyXanax,
   bazaarSell,
   casinoLotteryBet,
   casinoSpinStart,
@@ -17,6 +18,7 @@ import {
   drugUseXanax,
   drugUseXanaxOverdose,
   factionPayoutBalanceReceive,
+  gymPurchase,
   itemAbroadBuy,
   itemAbroadBuyZeroQty,
   itemMarketSell,
@@ -29,6 +31,10 @@ import {
   pointsMarketAdd,
   pointsMarketBuy,
   pointsMarketSell,
+  propertyRentalExpire,
+  propertyRentalExtensionAccept,
+  propertyRentalExtensionOffer,
+  propertyRentalPayment,
   propertyUpkeep,
   rehabVisit,
   stashBoxMoney,
@@ -152,6 +158,59 @@ describe("money coverage over real log titles", () => {
   });
 });
 
+describe("rental market + gym classification (2026-09-08 incident)", () => {
+  /**
+   * The top-outflow bug: a $17m Private Island rent extension and a $10m gym
+   * membership were invisible to the ledger while an $8.447m bazaar purchase
+   * showed as the period's top cash outflow. These pin the real payloads.
+   */
+  it("maps the accepted rental extension via rent to a housing expense", () => {
+    expect(moneyOf(propertyRentalExtensionAccept)).toMatchObject({
+      category: "housing",
+      direction: "expense",
+      amount: -17_000_000n,
+      subcategory: "Property rental market extension accept renter",
+    });
+  });
+
+  it("maps the initial rental payment via rent to a housing expense", () => {
+    expect(moneyOf(propertyRentalPayment)).toMatchObject({
+      category: "housing",
+      direction: "expense",
+      amount: -18_000_000n,
+    });
+  });
+
+  it("does NOT book the rental extension OFFER (same payload, no cash moved)", () => {
+    const writes = normalizeLogEntry(propertyRentalExtensionOffer, ctx);
+    expect(writes.moneyEvents).toHaveLength(0);
+    expect(writes.timelineEvents).toHaveLength(1); // still on the timeline
+  });
+
+  it("does NOT book the rental expiry notice", () => {
+    const writes = normalizeLogEntry(propertyRentalExpire, ctx);
+    expect(writes.moneyEvents).toHaveLength(0);
+    expect(writes.timelineEvents).toHaveLength(1);
+  });
+
+  it("maps Gym purchase via cost to a gym expense", () => {
+    expect(moneyOf(gymPurchase)).toMatchObject({
+      category: "gym",
+      direction: "expense",
+      amount: -10_000_000n,
+    });
+    expect(routeLog("Gym", "Gym purchase")).toBe("money");
+  });
+
+  it("keeps the Bazaar buy classified as a bazaar expense (asset conversion)", () => {
+    expect(moneyOf(bazaarBuyXanax)).toMatchObject({
+      category: "bazaar",
+      direction: "expense",
+      amount: -8_447_000n,
+    });
+  });
+});
+
 describe("rehab under the Travel category (real Torn filing)", () => {
   it("routes the Rehab title to rehab + one expense, not travel", () => {
     const writes = normalizeLogEntry(rehabVisit, ctx);
@@ -248,6 +307,8 @@ describe("every normalized entry lands on the timeline exactly once", () => {
     tradeMoneyEscrowAdd, stashBoxMoney, donatorSubscription, rehabVisit,
     travelDepartTorn, travelArriveAbroad, travelDepartAbroad, travelArriveTorn, itemAbroadBuy,
     drugUseXanax, drugUseXanaxOverdose,
+    bazaarBuyXanax, propertyRentalPayment, propertyRentalExtensionOffer,
+    propertyRentalExtensionAccept, propertyRentalExpire, gymPurchase,
   ];
   for (const log of all) {
     it(`timeline entry for "${log.details.title}"`, () => {

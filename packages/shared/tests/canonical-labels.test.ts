@@ -16,7 +16,7 @@ describe("humanLabel (canonical map)", () => {
     expect(humanLabel("city_bank")).toBe("City Bank");
     expect(humanLabel("ranked_war")).toBe("Ranked War");
     expect(humanLabel("item_market")).toBe("Item Market");
-    expect(humanLabel("housing")).toBe("Property Upkeep");
+    expect(humanLabel("housing")).toBe("Property");
     expect(humanLabel("faction")).toBe("Faction");
     expect(humanLabel("travel")).toBe("Travel Goods");
   });
@@ -54,7 +54,8 @@ describe("finance context labels (charts and tables share these)", () => {
     expect(expenseLabel("flower")).toBe("Flowers Bought");
     expect(expenseLabel("travel")).toBe("Travel Goods Bought");
     expect(expenseLabel("items")).toBe("Item Market Purchases");
-    expect(expenseLabel("housing")).toBe("Property Upkeep");
+    expect(expenseLabel("housing")).toBe("Property Rent & Upkeep");
+    expect(expenseLabel("gym")).toBe("Gym Membership");
     expect(expenseLabel("rehab")).toBe("Rehab");
   });
 
