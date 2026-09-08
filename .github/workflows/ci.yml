@@ -54,6 +54,9 @@ jobs:
           pnpm exec prisma migrate deploy --schema packages/database/prisma/schema.prisma
         env:
           DATABASE_URL: postgresql://tornscope:ci-test-password@localhost:5432/tornscope_test
+      - name: Build internal packages needed by seed
+        run: pnpm --filter @tornscope/shared --filter @tornscope/torn-api build
+
       - name: Seed demo data (required by some DB-backed tests)
         run: |
           pnpm exec tsx packages/database/src/seed/demo.ts
