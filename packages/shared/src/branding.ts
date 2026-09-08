@@ -8,7 +8,13 @@
 export const branding = {
   appName: "TornScope",
   tagline: "Torn analytics & history portal",
-  repoUrl: "https://github.com/your-org/tornscope",
+  repoUrl: "https://github.com/Cyxno/tornscope",
+  /**
+   * Public release version shown in the product (About panel, onboarding).
+   * Must match the release tag this main branch is preparing; bump together
+   * with the root package.json version.
+   */
+  publicVersion: "v0.1.0-beta.1",
 } as const;
 
 export type Branding = typeof branding;

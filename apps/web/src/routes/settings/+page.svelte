@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { ApiKeyStatusResponse, ApiKeyValidationResponse, KeyCapabilitiesDto, MeResponse } from "@tornscope/shared";
-  import { CAPABILITY_KEYS, FEATURE_REQUIREMENTS, capabilityLevel } from "@tornscope/shared";
+  import { branding, CAPABILITY_KEYS, FEATURE_REQUIREMENTS, capabilityLevel } from "@tornscope/shared";
   import { onMount } from "svelte";
   import { endpoints, ApiClientError } from "$lib/api";
   import { formatRelative } from "$lib/reltime";
@@ -471,5 +471,53 @@ import NotificationsSettings from "$lib/components/NotificationsSettings.svelte"
       Your historical TornScope data remains stored on the TornScope server when you disconnect your API key.
       Syncing simply pauses; reconnecting the same Torn identity continues building on the history you already have.
     </p>
+  </Panel>
+
+  <Panel title="About TornScope" caption="Release status, maintainer and independence">
+    <dl class="grid grid-cols-1 gap-x-8 gap-y-5 md:grid-cols-3">
+      <div>
+        <dt class="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint">Status</dt>
+        <dd class="mt-1">
+          <span class="inline-flex items-center gap-2 text-fg">
+            Public Beta
+            <span class="rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.16em] text-accent">Beta</span>
+          </span>
+        </dd>
+      </div>
+      <div>
+        <dt class="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint">Release</dt>
+        <dd class="tnum mt-1 text-fg">{branding.publicVersion}</dd>
+      </div>
+      <div>
+        <dt class="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint">Maintainer</dt>
+        <dd class="mt-1 text-fg">
+          <a
+            href="https://www.torn.com/profiles.php?XID=1816206"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="underline decoration-border underline-offset-2 transition-colors hover:text-accent hover:decoration-accent"
+          >Cyxno on Torn</a>
+        </dd>
+      </div>
+    </dl>
+    <div class="mt-5 max-w-2xl space-y-2 border-t border-border pt-4 text-[13px] leading-relaxed text-fg-muted">
+      <p>
+        TornScope is in public beta: historical tracking and analytics are actively being refined, and updates
+        may occasionally include fixes and database migrations. Collected history is kept across updates — if you
+        self-host this instance, keep your own backups as well.
+      </p>
+      <p>
+        Found a bug or rough edge, need help, or interested in a private TornScope Docker deployment?
+        <a
+          href="https://www.torn.com/profiles.php?XID=1816206"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="text-accent underline decoration-border underline-offset-2 transition-colors hover:decoration-accent"
+        >Contact Cyxno on Torn</a>.
+      </p>
+      <p class="text-[12px] text-fg-faint">
+        TornScope is an independent community project — not operated, endorsed, or hosted by Torn.
+      </p>
+    </div>
   </Panel>
 </div>

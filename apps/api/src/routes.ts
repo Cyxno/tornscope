@@ -31,6 +31,7 @@ import { getMe, getApiKeyStatus, saveApiKey, validateApiKey, linkProfile, delete
 import { deleteEmptyProfile } from "@tornscope/database";
 import { getSyncStatus, getSyncHealth, requestManualSync, retryFailedSyncs, restartBackfill } from "./services/syncStatus.js";
 import { getApiContext } from "./context.js";
+import { checkReadiness } from "./services/readiness.js";
 import { getNotificationsStatus, subscribePush, unsubscribePush, disableDevice, updatePreferences, sendTestNotification } from "./services/notifications.js";
 import { getPrismaClient } from "@tornscope/database";
 
@@ -85,46 +86,23 @@ export function registerRoutes(app: FastifyInstance): void {
   app.get("/api/health", async () => ({ status: "ok" }));
 
   // Readiness: can the hosted application actually serve users? Checks
-  // PostgreSQL, Redis and worker heartbeat — never Torn API. Returns 503
-  // when any dependency is unreachable. Response carries no credentials,
-  // connection strings or topology details.
+  // PostgreSQL, Redis and worker heartbeat — never Torn API. (Migration
+  // state is implicit: the API only starts after the migrate service
+  // completed.) Returns 503 when any dependency is unreachable. Response
+  // carries no credentials, connection strings or topology details.
   app.get("/api/ready", async (_req, reply) => {
     const db = getPrismaClient();
-    const checks: Record<string, string> = {};
-    let allOk = true;
-    try {
-      await db.$queryRaw`SELECT 1`;
-      checks.database = "ok";
-    } catch {
-      checks.database = "unreachable";
-      allOk = false;
-    }
-    try {
-      const ctx = getApiContext();
-      const { queueRedis } = await import("./redis.js");
-      const redis = await queueRedis(ctx.syncQueue);
-      const pong = await Promise.race([
-        redis.ping(),
-        new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 3000)),
-      ]) as string;
-      checks.redis = pong === "PONG" ? "ok" : "unreachable";
-      const beat = await Promise.race([
-        redis.get("tornscope:worker:heartbeat"),
-        new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 2000)),
-      ]) as string | null;
-      const recent = beat !== null && Date.now() - Number(beat) < 180_000;
-      checks.worker = recent ? "ok" : "stale";
-      if (!recent) allOk = false;
-    } catch {
-      checks.redis = "unreachable";
-      checks.worker = "unreachable";
-      allOk = false;
-    }
-    if (!allOk) {
+    const ctx = getApiContext();
+    const { queueRedis } = await import("./redis.js");
+    const result = await checkReadiness({
+      dbPing: () => db.$queryRaw`SELECT 1`,
+      withRedis: (fn) => queueRedis(ctx.syncQueue).then(fn),
+    });
+    if (!result.ready) {
       reply.status(503);
-      return { status: "not_ready", ...checks };
+      return { status: "not_ready", ...result.checks };
     }
-    return { status: "ready", ...checks };
+    return { status: "ready", ...result.checks };
   });
 
   app.get("/api/me", async (req) => {

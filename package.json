@@ -1,6 +1,6 @@
 {
   "name": "tornscope",
-  "version": "0.1.0",
+  "version": "0.1.0-beta.1",
   "private": true,
   "description": "TornScope - self-hostable Torn.com analytics and history portal",
   "type": "module",

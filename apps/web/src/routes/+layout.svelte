@@ -17,7 +17,7 @@
   });
 
   // First-run flow: without a connected Torn player, route to /welcome.
-  // Settings stays reachable — it hosts the legacy owner recovery flow.
+  // Settings stays reachable — key management lives there too.
   $effect(() => {
     if (
       me.loaded &&
@@ -74,10 +74,27 @@
 
   <footer class="border-t border-border">
     <div class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-5 py-5 text-xs text-fg-faint sm:px-6">
-      <p>TornScope — a private record of your Torn life. Your data stays on the TornScope server hosting this instance.</p>
+      <p>
+        TornScope — a private record of your Torn life.
+        <span class="text-fg-muted">Public Beta</span> · maintained by
+        <a
+          href="https://www.torn.com/profiles.php?XID=1816206"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="underline decoration-border underline-offset-2 transition-colors hover:text-fg-muted hover:decoration-fg-faint"
+          title="Contact Cyxno on Torn — help, bug reports, private Docker deployments"
+        >Cyxno</a>. Your data stays on the TornScope server hosting this instance.
+      </p>
       <p class="flex items-center gap-3">
         <a href="/sync" class="transition-colors hover:text-fg-muted">Sync</a>
         <a href="/settings" class="transition-colors hover:text-fg-muted">Settings</a>
+        <a
+          href="https://www.torn.com/profiles.php?XID=1816206"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="transition-colors hover:text-fg-muted"
+          title="Help, beta feedback or a private TornScope Docker deployment"
+        >Contact</a>
       </p>
     </div>
   </footer>

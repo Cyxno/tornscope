@@ -92,3 +92,29 @@ jobs:
         run: pnpm build
       - name: Docker compose config
         run: docker compose config --quiet
+
+  # Docker is the recommended deployment path, so CI must prove the real
+  # production images build and the full stack boots and becomes ready.
+  # Runs in its own job (no host port conflicts with the verify job's
+  # postgres/redis service containers) under an isolated Compose project.
+  docker:
+    runs-on: ubuntu-latest
+    needs: verify
+    env:
+      POSTGRES_USER: tornscope
+      POSTGRES_PASSWORD: ci-smoke-postgres-password
+      POSTGRES_DB: tornscope
+      API_KEY_ENCRYPTION_KEY: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      GIT_SHA: ${{ github.sha }}
+      COMPOSE_PROJECT_NAME: tornscope-smoke
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate compose config with CI env
+        run: docker compose config --quiet
+      - name: Build production images (api, worker, web)
+        run: docker compose build
+      - name: Smoke test (up → readiness → /api/ready)
+        run: bash scripts/ci/docker-smoke-test.sh
+        env:
+          SMOKE_WEB_URL: http://127.0.0.1:5173
+          SMOKE_TIMEOUT: 300

@@ -259,14 +259,24 @@
 <div class="flex min-h-screen items-center justify-center px-5 py-14">
   <div class="w-full max-w-xl space-y-10">
     <div class="space-y-3 text-center">
-      <a href="/" class="inline-flex items-center justify-center" title="TornScope">
-        <img src="/brand/tornscope-logo.png" alt="TornScope" class="h-14 w-auto" />
-      </a>
+      <div class="flex items-center justify-center gap-3">
+        <a href="/" class="inline-flex items-center justify-center" title="TornScope">
+          <img src="/brand/tornscope-logo.png" alt="TornScope" class="h-14 w-auto" />
+        </a>
+        <span
+          class="rounded-full border border-accent/30 bg-accent/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-accent"
+          title="TornScope is in public beta"
+        >Public Beta</span>
+      </div>
       <h1 class="font-display text-5xl font-medium leading-tight text-fg">
         A private record of<br />your <span class="italic text-accent">Torn life</span>.
       </h1>
       <p class="mx-auto max-w-md text-sm leading-relaxed text-fg-muted">
         {branding.tagline} — continuously collected and normalized on the TornScope server, from the very first sync onward.
+      </p>
+      <p class="mx-auto max-w-md text-xs leading-relaxed text-fg-faint">
+        TornScope is in public beta ({branding.publicVersion}): historical tracking and analytics are actively
+        being refined, and you may see occasional fixes along the way.
       </p>
     </div>
 
@@ -363,6 +373,8 @@
 
           <p class="border-t border-border pt-3 text-[11px] text-fg-faint">
             Self-hosting TornScope yourself gives you the strongest control over your data.
+            Need help, or interested in a private TornScope Docker deployment?
+            <a href="https://www.torn.com/profiles.php?XID=1816206" target="_blank" rel="noopener noreferrer" class="text-fg-muted underline decoration-border underline-offset-2 transition-colors hover:text-accent">Contact Cyxno on Torn</a>.
           </p>
         </div>
 

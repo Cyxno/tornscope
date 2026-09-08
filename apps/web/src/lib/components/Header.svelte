@@ -36,6 +36,12 @@
         class="h-8 w-8 rounded-lg transition-transform group-hover:scale-105"
       />
       <span class="text-[15px] font-semibold tracking-tight text-fg">TornScope</span>
+      <!-- Persistent Public Beta marker: subtle, in the design system's chip
+           language; the release status should never read as stable/GA. -->
+      <span
+        class="rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.16em] text-accent"
+        title="TornScope is in public beta"
+      >Beta</span>
     </a>
 
     <!-- Primary navigation: horizontal, pill segmented -->

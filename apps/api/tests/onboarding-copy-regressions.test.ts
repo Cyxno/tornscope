@@ -157,3 +157,54 @@ describe("profile/browser wording", () => {
     expect(settings).not.toContain("Per-user preferences arrive");
   });
 });
+
+describe("public beta presentation", () => {
+  const header = read("../../web/src/lib/components/Header.svelte");
+  const layout = read("../../web/src/routes/+layout.svelte");
+
+  it("header shows a subtle persistent Beta badge beside the wordmark", () => {
+    expect(header).toContain(">Beta</span>");
+    expect(header).toContain("TornScope is in public beta");
+  });
+
+  it("footer marks Public Beta and links the maintainer safely", () => {
+    expect(layout).toContain("Public Beta");
+    expect(layout).toContain("maintained by");
+    expect(layout).toContain('href="https://www.torn.com/profiles.php?XID=1816206"');
+    expect(layout).toContain('target="_blank"');
+    expect(layout).toContain('rel="noopener noreferrer"');
+  });
+
+  it("footer offers a Contact path (help / private deployment)", () => {
+    expect(layout).toContain(">Contact</a>");
+    expect(layout).toContain("private TornScope Docker deployment");
+  });
+
+  it("onboarding states the public beta status and expectations", () => {
+    expect(welcome).toContain("Public Beta");
+    expect(welcome).toContain("public beta");
+    expect(welcome).toContain("actively");
+  });
+
+  it("welcome offers the private-deployment contact path", () => {
+    expect(welcome).toContain("private TornScope Docker deployment");
+    expect(welcome).toContain("Contact Cyxno on Torn");
+    // External links must open safely.
+    expect(welcome).toContain('rel="noopener noreferrer"');
+  });
+
+  it("settings hosts an About panel with release version and independence note", () => {
+    expect(settings).toContain("About TornScope");
+    expect(settings).toContain("Public Beta");
+    expect(settings).toContain("branding.publicVersion");
+    expect(settings).toContain("not operated, endorsed, or hosted by Torn");
+    expect(settings).toContain("keep your own backups");
+  });
+
+  it("shared branding carries the real repository URL and beta version", () => {
+    const brandingSrc = read("../../../packages/shared/src/branding.ts");
+    expect(brandingSrc).toContain("https://github.com/Cyxno/tornscope");
+    expect(brandingSrc).not.toContain("your-org");
+    expect(brandingSrc).toContain('publicVersion: "v0.1.0-beta.1"');
+  });
+});

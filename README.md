@@ -2,7 +2,10 @@
 
 **TornScope** is a self-hostable analytics and history portal for [Torn](https://www.torn.com). Connect a Torn API key and get a modern, data-rich dashboard that **continuously collects, normalizes, stores and analyzes historical account data** — not just a mirror of what the API returns today.
 
-> Screenshots: *(placeholder — add screenshots of the dashboard, drugs, money, travel and timeline pages here)*
+> **Public Beta** — TornScope is an independent community project, currently released as
+> **v0.1.0-beta.1 (public beta)**. It is not operated, endorsed, or hosted by Torn.
+> See [Public beta — what to expect](#public-beta--what-to-expect) and
+> [Contact & private deployments](#contact--private-deployments).
 
 ## Why
 
@@ -82,17 +85,98 @@ tornscope/
 
 ## Quick start (Docker)
 
+Fresh install, nothing else required — the two secret commands below write
+generated values straight into `.env` (no copy/pasting secrets by hand):
+
+**Linux / macOS:**
+
 ```bash
-git clone <your-repo-url> tornscope && cd tornscope
+git clone https://github.com/Cyxno/tornscope.git tornscope && cd tornscope
 cp .env.example .env
 
-# generate the encryption master key and put it in .env
-node -e "console.log('API_KEY_ENCRYPTION_KEY=' + require('crypto').randomBytes(32).toString('hex'))"
+# Database password (hex: URL-safe, no quoting or encoding pitfalls)
+sed -i.bak "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$(openssl rand -hex 16)/" .env && rm .env.bak
+
+# API key encryption master key (32 bytes = 64 hex chars, AES-256-GCM)
+sed -i.bak "s/^API_KEY_ENCRYPTION_KEY=.*/API_KEY_ENCRYPTION_KEY=$(openssl rand -hex 32)/" .env && rm .env.bak
 
 docker compose up -d --build
 ```
 
-Open **http://localhost:5173**, follow the welcome flow (paste any Torn API key — limited permissions work too, more access unlocks additional analytics) and the worker starts collecting history immediately.
+**Windows PowerShell** (5.1 or later):
+
+```powershell
+git clone https://github.com/Cyxno/tornscope.git tornscope
+cd tornscope
+Copy-Item .env.example .env
+
+$rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+$pgBytes  = [byte[]]::new(16); $rng.GetBytes($pgBytes)   # database password
+$keyBytes = [byte[]]::new(32); $rng.GetBytes($keyBytes)  # AES-256 master key
+$pgPassword = -join ($pgBytes  | ForEach-Object { $_.ToString("x2") })
+$masterKey  = -join ($keyBytes | ForEach-Object { $_.ToString("x2") })
+
+(Get-Content .env -Encoding UTF8) | ForEach-Object {
+  $_ -replace '^POSTGRES_PASSWORD=.*$', "POSTGRES_PASSWORD=$pgPassword" -replace '^API_KEY_ENCRYPTION_KEY=.*$', "API_KEY_ENCRYPTION_KEY=$masterKey"
+} | Set-Content .env -Encoding UTF8
+
+docker compose up -d --build
+```
+
+Both variants leave every other value at its localhost default, which works
+out of the box. Exposing TornScope beyond localhost requires extra origin
+configuration — see [Running TornScope outside localhost](#running-tornscope-outside-localhost).
+
+Then open **http://localhost:5173**, follow the welcome flow (paste any Torn API key — limited permissions work too, more access unlocks additional analytics) and the worker starts collecting history immediately.
+
+## Public beta — what to expect
+
+TornScope is in public beta. In practice that means:
+
+- Historical tracking and analytics are actively being refined — figures can change as normalization improves.
+- Updates may include occasional fixes and database migrations during beta. With Docker Compose, migrations apply automatically on startup.
+- Collected history is stored server-side and is intentionally kept across updates, but self-hosters should maintain their own backups (see [Backup recommendations](#backup-recommendations)).
+- Bugs and edge cases are expected. Reports are welcome — see [Contact & private deployments](#contact--private-deployments).
+
+Beta does not mean careless: sync, encryption and session security are treated as stable foundations. It does mean you should not bet irreplaceable data on zero changes — keep backups.
+
+## Contact & private deployments
+
+TornScope is maintained by **Cyxno** — reach out on Torn:
+[profiles.php?XID=1816206](https://www.torn.com/profiles.php?XID=1816206).
+
+Good reasons to write:
+
+- You found a bug or beta rough edge (a short description + what you expected is perfect).
+- You need help with a self-hosted install.
+- You would prefer a **private TornScope Docker deployment** (privately hosted, or a private/request-only install arrangement) instead of the public beta — ask, and availability can be discussed.
+
+Notes:
+
+- The public beta can be self-hosted by anyone; private deployment/assistance is an optional arrangement, not a paid product.
+- TornScope is an independent community project — **not an official Torn service**. Support is best-effort; there is no commercial SLA.
+- Once the repository becomes public, GitHub Issues will be the preferred channel for bug reports. Until then, contact Cyxno directly.
+
+## Instance access model — read before exposing TornScope
+
+TornScope currently does not provide an instance-owner login or invite-only
+mode. **Any visitor who can reach your instance can create their own browser
+profile and connect a Torn API key.** Publicly exposing an instance is
+effectively open registration.
+
+What this means:
+
+- Profiles are isolated server-side — each browser session only sees its own data, and API keys are never shared between users.
+- But TornScope itself ships **no access control for who may reach the instance**. If you self-host privately, restrict access with an external layer in front of the `web` container:
+  - reverse-proxy authentication (e.g. Nginx basic auth / Authelia / Authentik),
+  - a VPN or overlay network (Tailscale, WireGuard),
+  - Cloudflare Access,
+  - or simply keeping the instance bound to localhost/LAN behind your firewall.
+
+TornScope does not provide these controls itself — it stays intentionally
+domain-neutral and out of your network path.
+
+
 
 ## Environment variables
 
@@ -264,6 +348,7 @@ Dev URL: http://localhost:5173 (web) — `/api/*` is proxied to the Fastify serv
 
 - `docker compose up -d --build` runs postgres, redis, migrate, api, worker and web.
 - **Non-local access requires configuration** — see [Running TornScope outside localhost](#running-tornscope-outside-localhost) before exposing TornScope on a LAN address, reverse proxy or public domain.
+- **Open access model** — TornScope has no instance-owner login or invite-only mode; anyone who can reach the instance can create a browser profile and connect an API key. See [Instance access model](#instance-access-model--read-before-exposing-tornscope) before exposing TornScope publicly.
 - Because the compose images keep the same `tornscope-*:latest` tags, every rebuild leaves the superseded image dangling. Run `docker image prune -f` after deploying — it only removes untagged (unused) images, never active containers, volumes or database data.
 - API/web containers run as a non-root user; database and ports bind to localhost only — put your preferred reverse proxy (Caddy/Nginx/Traefik) with TLS in front for remote access.
 - Set `NODE_ENV=production` (the compose file does this) and a strong `API_KEY_ENCRYPTION_KEY`.
