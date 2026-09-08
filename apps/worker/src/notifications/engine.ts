@@ -1,6 +1,7 @@
 import webpush from "web-push";
 import { getPrismaClient, EncryptionService, encryptionFromEnv } from "@tornscope/database";
 import {
+  checkPushEndpoint,
   classifyAttentionEvent,
   CATEGORY_IMPORTANCE,
   DEFAULT_CATEGORY_STATE,
@@ -113,6 +114,14 @@ async function deliver(
       continue; // already delivered to this device
     }
     try {
+      // SSRF guard (defense in depth — endpoints are validated at subscribe
+      // time): a stored endpoint pointing at loopback/private space is never
+      // legitimate, so revoke it instead of POSTing into the network.
+      if (!checkPushEndpoint(sub.endpoint).allowed) {
+        await db.pushSubscription.update({ where: { id: sub.id }, data: { revokedAt: new Date() } }).catch(() => undefined);
+        revoked += 1;
+        continue;
+      }
       const wp = webpushClient();
       await wp.sendNotification({ endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } }, payload);
       sent += 1;

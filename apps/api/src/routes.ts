@@ -432,12 +432,20 @@ export function registerRoutes(app: FastifyInstance): void {
     return getNotificationsStatus(user, q.success ? q.data.endpoint ?? null : null);
   });
 
-  app.post("/api/notifications/subscribe", async (req) => {
+  app.post("/api/notifications/subscribe", async (req, reply) => {
     const user = currentUser(req);
+    // Dedicated subscribe limiter: endpoint registration is the one push
+    // action that writes to the subscription table — never let it be
+    // spammed from one address.
+    const limit = checkRateLimit("push-subscribe", clientIp(req), 20, 10 * 60_000);
+    if (!limit.ok) {
+      reply.header("Retry-After", limit.retryAfterSeconds);
+      throw errors.validation({ formErrors: ["Too many notification attempts — try again later."], fieldErrors: {} });
+    }
     const body = z
       .object({
         endpoint: z.string().url().max(1000),
-        keys: z.object({ p256dh: z.string().min(10), auth: z.string().min(10) }),
+        keys: z.object({ p256dh: z.string().min(10).max(255), auth: z.string().min(10).max(255) }),
       })
       .safeParse(req.body);
     if (!body.success) throw errors.validation(body.error.flatten());

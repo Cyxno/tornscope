@@ -61,7 +61,15 @@ services:
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
       VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+      # Browser-facing origin (localhost default keeps local dev easy; a
+      # non-local deployment MUST configure the real origin — see README
+      # "Running TornScope outside localhost").
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:5173}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+      # Trust X-Forwarded-* headers behind a reverse proxy (false only for
+      # direct unproxied exposure).
+      TRUST_PROXY: ${TRUST_PROXY:-true}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     ports:
       - "127.0.0.1:3000:3000"
@@ -109,7 +117,15 @@ services:
       NODE_ENV: production
       PORT: 5173
       API_BASE_URL: http://api:3000
-      ORIGIN: ${APP_BASE_URL:-http://localhost:5173}
+      # Browser-facing origin; MUST match what users open in their browser.
+      # Falls back to APP_BASE_URL for older single-variable .env files.
+      ORIGIN: ${ORIGIN:-${APP_BASE_URL:-http://localhost:5173}}
+      # Real client-IP resolution for the API's per-IP rate limits. Unset =
+      # socket address (localhost/direct access). Behind a reverse proxy set
+      # CLIENT_IP_HEADER=x-forwarded-for (+ CLIENT_IP_DEPTH) or
+      # cf-connecting-ip — see README.
+      CLIENT_IP_HEADER: ${CLIENT_IP_HEADER:-}
+      CLIENT_IP_DEPTH: ${CLIENT_IP_DEPTH:-1}
     ports:
       - "127.0.0.1:5173:5173"
     depends_on:

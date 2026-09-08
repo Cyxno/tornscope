@@ -108,8 +108,92 @@ See [.env.example](.env.example). Highlights:
 | `TORN_SYNC_INITIAL_HISTORY_DAYS` | Initial history window on first sync (default 180 days of available Torn history — retention varies by Torn log type) |
 | `SYNC_INTERVAL_*` | Per-resource schedule overrides (seconds) |
 | `APP_BASE_URL` / `API_BASE_URL` | Web origin for CORS / API target for the web proxy |
+| `ORIGIN` | Browser-facing origin of the web app (SvelteKit). MUST match what users actually open |
+| `PUBLIC_BASE_URL` | Public origin users browse (informational + push-settings hint) |
+| `ALLOWED_ORIGINS` | Extra origins accepted for cookie-authenticated mutations |
+| `TRUST_PROXY` | Proxy trust for the API: `true` / `false` / proxy-addr subnet list |
+| `CLIENT_IP_HEADER` / `CLIENT_IP_DEPTH` | Real client-IP resolution behind a reverse proxy (web → API) |
 
 Never commit real secrets.
+
+## Running TornScope outside localhost
+
+TornScope defaults to a **local development setup** and works on
+`http://localhost:5173` with zero extra configuration. The moment TornScope is
+reached any other way — a LAN hostname/IP, a reverse proxy (Nginx Proxy
+Manager, Caddy, Traefik, …) or a public domain — the environment MUST match
+the address users actually open in their browser. Otherwise, in the best case,
+pages render but sessions and push break silently; in the worst case, session
+cookies lose their `Secure` flag, CSRF/origin protection rejects every
+mutation, Web Push / service workers stop working (browsers only expose them
+in secure contexts), and rate limiting buckets every visitor onto one shared
+IP.
+
+**Local development** (works out of the box, shown for reference):
+
+```bash
+APP_BASE_URL=http://localhost:5173
+PUBLIC_BASE_URL=
+ALLOWED_ORIGINS=http://localhost:5173
+ORIGIN=http://localhost:5173
+```
+
+**Public deployment** on `https://torn.example.com` (replace with YOUR domain —
+TornScope never assumes one):
+
+```bash
+APP_BASE_URL=https://torn.example.com
+PUBLIC_BASE_URL=https://torn.example.com
+ALLOWED_ORIGINS=https://torn.example.com
+ORIGIN=https://torn.example.com
+```
+
+> **Warning**
+> Do not leave a public production deployment configured for localhost —
+> session-cookie security, origin checks and push all depend on the origin
+> configuration matching reality.
+
+### Reverse proxies, protocol and client IP
+
+An HTTPS deployment behind a reverse proxy must correctly forward:
+
+- **host** — `X-Forwarded-Host` (the web container already trusts it via
+  `HOST_HEADER=x-forwarded-host`, set by both compose files);
+- **protocol** — `X-Forwarded-Proto: https` (trusted via
+  `PROTOCOL_HEADER=x-forwarded-proto`), so the session cookie gets its
+  `Secure` flag;
+- **client IP / proxy chain** — the web app forwards one resolved client
+  address to the API as `X-Forwarded-For`, where it drives per-IP rate
+  limits and the anonymous-profile creation limiter. Configure how the web
+  app resolves it:
+  - direct access / localhost: nothing to set (the socket address is used);
+  - a single reverse proxy (e.g. Nginx Proxy Manager):
+    `CLIENT_IP_HEADER=x-forwarded-for` (depth `1` is the default — the
+    address your proxy appended wins, a client-spoofed `X-Forwarded-For`
+    value is ignored);
+  - an additional upstream proxy such as Cloudflare: either
+    `CLIENT_IP_HEADER=cf-connecting-ip`, or
+    `CLIENT_IP_HEADER=x-forwarded-for` with `CLIENT_IP_DEPTH` equal to the
+    number of proxies that append to the chain (e.g. `2` for
+    Cloudflare → Nginx Proxy Manager).
+
+  Getting this wrong does not just mislabel logs: with no header configured
+  every visitor shares the proxy's rate-limit bucket; with the depth guessed
+  too high an attacker can spoof a fresh IP per request. The trusted
+  proxy depth/chain must reflect the actual deployment — never guess it.
+
+- **`TRUST_PROXY`** (API) — controls whether Fastify honors `X-Forwarded-*`
+  at all. `true` (default) trusts the web app's own proxy hop, `false` is
+  only for direct unproxied exposure, and a proxy-addr subnet list (e.g.
+  `10.0.0.0/8,192.168.0.0/16` or the `loopback` preset) pins the exact
+  proxy IPs. Behind Cloudflare or any multi-proxy setup, configure the value
+  to match the actual chain rather than leaving the default guessed —
+  Cloudflare is NOT mandatory; without it a single proxy is enough.
+
+Incorrect deployment-origin configuration can break: **Secure session
+cookies**, **CSRF/origin protection**, **Web Push / Service Workers**
+(browsers require a secure context), **browser secure-context behavior**, and
+**client-IP rate limiting**.
 
 ## Torn API usage
 
@@ -165,10 +249,11 @@ docker compose up -d postgres redis
 pnpm db:migrate && pnpm db:generate
 
 pnpm dev        # tsc watch + api + worker + web (vite) concurrently
-pnpm test       # vitest (128 tests: analytics, money, travel, drugs, rehab,
+pnpm test        # vitest (analytics, money, travel, drugs, rehab,
                 #  networth, timeline, today live-state logic, encryption,
                 #  log normalization, Torn client retry/pagination/error
-                #  taxonomy, cursors, Today selection fixtures)
+                #  taxonomy, cursors, Today selection fixtures, auth/push
+                #  security regressions)
 pnpm typecheck  # strict TypeScript across all packages
 pnpm --filter @tornscope/web check   # svelte-check
 ```
@@ -178,10 +263,11 @@ Dev URL: http://localhost:5173 (web) — `/api/*` is proxied to the Fastify serv
 ## Production deployment
 
 - `docker compose up -d --build` runs postgres, redis, migrate, api, worker and web.
+- **Non-local access requires configuration** — see [Running TornScope outside localhost](#running-tornscope-outside-localhost) before exposing TornScope on a LAN address, reverse proxy or public domain.
 - Because the compose images keep the same `tornscope-*:latest` tags, every rebuild leaves the superseded image dangling. Run `docker image prune -f` after deploying — it only removes untagged (unused) images, never active containers, volumes or database data.
 - API/web containers run as a non-root user; database and ports bind to localhost only — put your preferred reverse proxy (Caddy/Nginx/Traefik) with TLS in front for remote access.
 - Set `NODE_ENV=production` (the compose file does this) and a strong `API_KEY_ENCRYPTION_KEY`.
-- Security posture: Helmet headers, CORS restricted to `APP_BASE_URL`, global rate limiting, Zod validation on every input, keyset pagination (no unbounded queries), parameterized SQL only (Prisma + tagged templates), no secrets in logs.
+- Security posture: Helmet headers, CORS restricted to the configured origins, global rate limiting keyed on the real client IP, Zod validation on every input, push-endpoint validation (no private/internal push targets), keyset pagination (no unbounded queries), parameterized SQL only (Prisma + tagged templates), no secrets in logs.
 
 ## Backup recommendations
 

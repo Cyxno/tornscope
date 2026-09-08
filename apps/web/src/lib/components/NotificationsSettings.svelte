@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { env as publicEnv } from "$env/dynamic/public";
   import type { NotificationsStatusResponse } from "@tornscope/shared";
   import { NOTIFICATION_CATEGORIES } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
@@ -28,6 +29,13 @@
 
   const caps = $derived(me.data?.capabilities ?? null);
   const canToggle = $derived(me.data?.isDemo !== true);
+  // Operator-configured browser-facing origin (PUBLIC_BASE_URL), offered on
+  // insecure contexts ONLY when it is a valid HTTPS address — the product
+  // never assumes a domain. Empty when unset (e.g. pure localhost setups).
+  const configuredPublicAddress = $derived.by(() => {
+    const value = typeof publicEnv.PUBLIC_BASE_URL === "string" ? publicEnv.PUBLIC_BASE_URL.trim() : "";
+    return /^https:\/\/[^\s/$.?#].[^\s]*$/i.test(value) ? value : "";
+  });
 
   function detectSupport(): void {
     if (typeof window === "undefined") return;
@@ -214,7 +222,14 @@
           Push notifications are not supported in this browser.
         {:else if support.kind === "insecure"}
           <span class="font-medium text-warning">Push notifications require HTTPS.</span>
-          Open TornScope through its secure public address (https://torn.familievalk.com) to enable notifications.
+          Open TornScope through an HTTPS address to enable notifications — browsers only
+          expose push in secure contexts. (localhost is a valid development exception.)
+          {#if configuredPublicAddress}
+            <span class="mt-1 block">
+              This server's configured public address is
+              <a class="underline decoration-border underline-offset-2 hover:text-fg" href={configuredPublicAddress}>{configuredPublicAddress}</a>.
+            </span>
+          {/if}
         {:else if support.kind === "sw-failed"}
           <span class="font-medium text-warning">The notification service worker could not be registered.</span>
           {support.reason}

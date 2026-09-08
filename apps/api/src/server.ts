@@ -16,7 +16,12 @@ export async function buildServer(): Promise<FastifyInstance> {
         censor: "[REDACTED]",
       },
     },
-    trustProxy: true,
+    // Honors TRUST_PROXY (true / false / proxy-addr subnet list — env.ts).
+    // With trust enabled, Fastify resolves req.ip/req.protocol from the
+    // X-Forwarded-* chain the web app's proxy forwards; raw forwarded
+    // headers from an untrusted socket are ignored, so a direct client can
+    // never spoof its way into a different rate-limit bucket.
+    trustProxy: env.trustProxy,
     bodyLimit: 256 * 1024,
   });
 

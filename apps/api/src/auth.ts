@@ -48,10 +48,17 @@ function parseCookies(header: string | undefined): Record<string, string> {
   return out;
 }
 
+/**
+ * Whether the BROWSER-facing request is HTTPS — the session cookie's Secure
+ * flag is derived from this. Fastify resolves req.protocol itself from the
+ * X-Forwarded-Proto chain, honoring TRUST_PROXY: the header is only trusted
+ * when the immediate peer passes the configured proxy trust (env.trustProxy),
+ * otherwise the socket protocol is used. Keeping this on req.protocol (not a
+ * hand-rolled header read) makes cookie security, rate-limit identities and
+ * Fastify's own URL handling all follow the SAME proxy trust decision.
+ */
 export function requestIsSecure(req: FastifyRequest): boolean {
-  if (!env.trustProxy) return req.protocol === "https";
-  const proto = (req.headers["x-forwarded-proto"] ?? req.protocol ?? "").toString().toLowerCase();
-  return proto.split(",")[0]!.trim() === "https";
+  return req.protocol === "https";
 }
 
 function serializeSessionCookie(token: string, secure: boolean, maxAge: number): string {
@@ -95,13 +102,15 @@ async function userForSession(
   const user = session.user;
   if (!user) return null;
 
-  // Per-profile demo view: applies only while the profile has no active API
-  // credential, so a connected key always wins over the demo toggle.
+  // Per-profile demo view: applies only while the profile has NO ACTIVE API
+  // credential (no credential, or a revoked one), so a connected key always
+  // wins over the demo toggle.
   const [flag, credential] = await Promise.all([
     db.appSetting.findUnique({ where: { userId_key: { userId: user.id, key: DEMO_VIEW_KEY } } }),
     db.apiCredential.findUnique({ where: { userId: user.id }, select: { revokedAt: true } }),
   ]);
-  if (flag && !credential?.revokedAt) {
+  const hasActiveCredential = credential !== null && credential.revokedAt === null;
+  if (flag && !hasActiveCredential) {
     // Remember which REAL profile owns the session so leaving demo mode can
     // clear ITS flag (the resolved user is now the demo profile).
     if (req) (req as unknown as { sessionProfileId?: string }).sessionProfileId = user.id;

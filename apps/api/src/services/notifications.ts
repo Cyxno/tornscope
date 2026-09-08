@@ -1,6 +1,6 @@
 import webpush from "web-push";
 import { getPrismaClient } from "@tornscope/database";
-import { DEFAULT_CATEGORY_STATE } from "@tornscope/shared";
+import { DEFAULT_CATEGORY_STATE, checkPushEndpoint } from "@tornscope/shared";
 import { env } from "../env.js";
 import { errors } from "../errors.js";
 import type { SessionUser } from "../auth.js";
@@ -11,8 +11,13 @@ import type { SessionUser } from "../auth.js";
  * Privacy: payloads carry NO amounts/senders unless the profile's
  * sensitiveDetails preference is ON, and never any credential material.
  * Tenant isolation: a subscription is bound to the session's profile;
- * every query is userId-scoped.
+ * every query is userId-scoped. Endpoints are validated structurally at
+ * subscribe time (push-endpoint.ts) so a user can never turn push sends
+ * into server-side requests at internal addresses.
  */
+
+/** Maximum concurrently-active push devices per profile (device-farm guard). */
+export const MAX_ACTIVE_SUBSCRIPTIONS = 10;
 
 export function pushConfigured(): boolean {
   return env.vapidPublicKey !== "" && env.vapidPrivateKey !== "";
@@ -97,7 +102,21 @@ export async function subscribePush(
   if (!subscription?.endpoint || !subscription.keys?.p256dh || !subscription.keys?.auth) {
     throw errors.validation({ formErrors: ["Invalid subscription."], fieldErrors: {} });
   }
+  // SSRF guard: the endpoint is later POSTed to by the worker — never allow
+  // registrations pointing at loopback/private/internal addresses.
+  const guard = checkPushEndpoint(subscription.endpoint);
+  if (!guard.allowed) throw errors.validation({ formErrors: [guard.reason ?? "Invalid push endpoint."], fieldErrors: {} });
   const db = getPrismaClient();
+  // Device cap: an active registration for THIS endpoint re-binds (no count
+  // change); a genuinely new device is refused once the profile is full, so
+  // one profile cannot accumulate unbounded push targets.
+  const existing = await db.pushSubscription.findUnique({ where: { endpoint: subscription.endpoint }, select: { id: true, revokedAt: true } });
+  if (!existing || existing.revokedAt !== null) {
+    const activeCount = await db.pushSubscription.count({ where: { userId: user.id, revokedAt: null } });
+    if (activeCount >= MAX_ACTIVE_SUBSCRIPTIONS) {
+      throw errors.conflict(`Push notification limit reached (${MAX_ACTIVE_SUBSCRIPTIONS} devices). Remove an old device in Settings before enabling a new one.`);
+    }
+  }
   await db.pushSubscription.upsert({
     where: { endpoint: subscription.endpoint },
     // Re-subscribing re-binds the endpoint to the CURRENT profile: the
@@ -190,12 +209,16 @@ export interface PushPayload {
 
 /**
  * Send a payload to one subscription. Returns "gone" for 404/410 so callers
- * can revoke dead registrations instead of retrying forever.
+ * can revoke dead registrations instead of retrying forever. Endpoints that
+ * fail the structural guard (e.g. legacy rows stored before endpoint
+ * validation) are also reported "gone": they are never legitimate browser
+ * registrations and must not be sent to.
  */
 export async function sendToSubscription(
   sub: { endpoint: string; p256dh: string; auth: string },
   payload: PushPayload
 ): Promise<"sent" | "gone" | "error"> {
+  if (!checkPushEndpoint(sub.endpoint).allowed) return "gone";
   try {
     const wp = configuredWebPush();
     await wp.sendNotification(

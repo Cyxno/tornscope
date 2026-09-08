@@ -8,6 +8,38 @@ export const logger = pino({
   },
 });
 
+/**
+ * TRUST_PROXY → Fastify `trustProxy`.
+ *
+ * The API's only legitimate peer is the web app's same-origin proxy; when
+ * proxy trust is on, Fastify resolves req.ip and req.protocol from the
+ * X-Forwarded-* chain that proxy forwards, so rate limits key on real
+ * visitors instead of the proxy IP.
+ *
+ * Accepted values:
+ * - unset / "true"  → trust the proxy hop (default deployment behind the
+ *   web app's own proxy);
+ * - "false"         → ignore X-Forwarded-* entirely (direct exposure);
+ * - anything else   → a comma-separated proxy-addr subnet list or preset,
+ *   e.g. "loopback" or "10.0.0.0/8,192.168.0.0/16" (must match the ACTUAL
+ *   proxy chain — never guess it). Hop counts are NOT accepted: Fastify
+ *   fails closed on numbers, so we refuse them at boot instead of silently
+ *   weakening proxy trust.
+ */
+function parseTrustProxy(raw: string | undefined): boolean | string {
+  const value = (raw ?? "true").trim();
+  if (value === "" || /^true$/i.test(value)) return true;
+  if (/^false$/i.test(value)) return false;
+  if (/^\d+$/.test(value)) {
+    throw new Error(
+      "TRUST_PROXY does not accept hop counts (Fastify fails closed on numbers). " +
+        "Use true, false, or a comma-separated subnet list matching the actual proxy chain, " +
+        'e.g. TRUST_PROXY=10.0.0.0/8,192.168.0.0/16'
+    );
+  }
+  return value;
+}
+
 export const env = {
   port: Number(process.env.API_PORT ?? 3000),
   host: process.env.API_HOST ?? "0.0.0.0",
@@ -23,9 +55,10 @@ export const env = {
   allowedOrigins: process.env.ALLOWED_ORIGINS ?? "",
   /**
    * Trust X-Forwarded-* headers when the API sits behind the reverse proxy.
-   * Set TRUST_PROXY=false only for direct unproxied exposure.
+   * Parsed from TRUST_PROXY (see parseTrustProxy). Set TRUST_PROXY=false
+   * only for direct unproxied exposure.
    */
-  trustProxy: process.env.TRUST_PROXY !== "false",
+  trustProxy: parseTrustProxy(process.env.TRUST_PROXY),
   /** Web Push VAPID keys. Private key NEVER leaves the server; the public
    *  key is served to browsers (required for push subscription). */
   vapidPublicKey: process.env.VAPID_PUBLIC_KEY ?? "",

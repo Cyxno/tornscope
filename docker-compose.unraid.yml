@@ -73,7 +73,15 @@ services:
       VAPID_SUBJECT: ${VAPID_SUBJECT:-}
       # Extra origins accepted for cookie-authenticated mutations (comma separated).
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
-      APP_BASE_URL: ${APP_BASE_URL:-http://192.168.1.2:5173}
+      # Browser-facing origins. localhost defaults keep local testing easy;
+      # any non-local deployment MUST set these to the real origin (README:
+      # "Running TornScope outside localhost").
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:5173}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
+      # Trust X-Forwarded-* headers behind the reverse proxy. Must reflect the
+      # actual deployment (true / false / subnet list like 10.0.0.0/8);
+      # false only for direct unproxied exposure.
+      TRUST_PROXY: ${TRUST_PROXY:-true}
       TORN_SYNC_INITIAL_HISTORY_DAYS: ${TORN_SYNC_INITIAL_HISTORY_DAYS:-180}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     ports:
@@ -127,12 +135,26 @@ services:
       NODE_ENV: production
       PORT: 5173
       API_BASE_URL: http://api:3000
-      ORIGIN: ${ORIGIN:-http://192.168.1.2:5173}
+      # Browser-facing origin: MUST match the address users actually open.
+      # localhost default keeps local testing easy; behind a reverse proxy or
+      # public domain set ORIGIN (and APP_BASE_URL/PUBLIC_BASE_URL for the
+      # API) to the real origin — see README "Running TornScope outside
+      # localhost". Falls back to APP_BASE_URL for older single-variable
+      # .env files.
+      ORIGIN: ${ORIGIN:-${APP_BASE_URL:-http://localhost:5173}}
       # adapter-node trusts these forwarded headers so SvelteKit's url reflects
       # the public scheme/host — required for the API to mark the session
       # cookie Secure once the site is served over HTTPS.
       PROTOCOL_HEADER: x-forwarded-proto
       HOST_HEADER: x-forwarded-host
+      # Real client-IP resolution for the API's per-IP rate limits (the web
+      # proxy forwards it as x-forwarded-for). Unset = socket address, correct
+      # for localhost/direct LAN access. Behind a reverse proxy set e.g.
+      # CLIENT_IP_HEADER=x-forwarded-for (CLIENT_IP_DEPTH = number of proxies
+      # that append to the chain) or CLIENT_IP_HEADER=cf-connecting-ip for
+      # Cloudflare. See README.
+      CLIENT_IP_HEADER: ${CLIENT_IP_HEADER:-}
+      CLIENT_IP_DEPTH: ${CLIENT_IP_DEPTH:-1}
     ports:
       - "5173:5173"
     healthcheck:
