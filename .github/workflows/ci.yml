@@ -67,6 +67,9 @@ jobs:
         run: pnpm lint
       - name: Typecheck
         run: pnpm typecheck
+      - name: SvelteKit sync (generates .svelte-kit/tsconfig.json)
+        run: pnpm --filter @tornscope/web exec svelte-kit sync
+
       - name: Svelte check
         run: pnpm --filter @tornscope/web exec svelte-check --tsconfig ./tsconfig.json
       - name: Test (with DB-backed suites)
