@@ -86,11 +86,19 @@ const handler: RequestHandler = async ({ request, params, url, getClientAddress 
   headers["x-forwarded-for"] = clientAddressForApi(request.headers, getClientAddress);
   // Let the API see how the browser reached us (https or not). Prefer the
   // proto from the trusted reverse proxy (NPM sends X-Forwarded-Proto:
-  // https) over the SvelteKit-resolved URL — the session cookie's Secure
-  // flag depends on this distinction.
+  // https) over anything derived from url — the session cookie's Secure
+  // flag depends on this distinction. A MISSING header means the browser
+  // connected directly to this server, and adapter-node only ever serves
+  // plain HTTP (TLS terminates at the proxy): never fall back to
+  // url.protocol, which reflects the configured ORIGIN and would claim
+  // https for direct plain-HTTP requests (browsers then reject the Secure
+  // cookie and LAN sessions break).
   const forwardedProto = request.headers.get("x-forwarded-proto");
-  headers["x-forwarded-proto"] = forwardedProto ?? url.protocol.replace(":", "");
-  if (url.host) headers["x-forwarded-host"] = url.host;
+  headers["x-forwarded-proto"] = forwardedProto ?? "http";
+  // Forward the browser's actual Host (proxies keep it). url.host can be
+  // the configured ORIGIN instead of the address the visitor really used
+  // (e.g. LAN IP access), which would break the API's origin allow-list.
+  headers["x-forwarded-host"] = request.headers.get("host") ?? url.host ?? "";
   const origin = request.headers.get("origin");
   if (origin) headers.origin = origin;
 
