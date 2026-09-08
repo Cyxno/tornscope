@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeAll, afterAll } from "vitest";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { getPrismaClient } from "@tornscope/database";
 import { getMe, saveApiKey, validateApiKey } from "../src/services/me.js";
 import { getSyncHealth } from "../src/services/syncStatus.js";
@@ -312,5 +312,90 @@ suite("xanax item mapping and price freshness", () => {
     const ageDays = (Date.now() / 1000) - (drugs.xanaxFunding.values.priceUpdatedAt ?? 0);
     expect(ageDays).toBeGreaterThanOrEqual(0);
     expect(ageDays).toBeLessThan(400);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Session expiration (server-side absolute + idle)                            */
+/* -------------------------------------------------------------------------- */
+import { resolveSessionUser } from "../src/auth.js";
+
+suite("server-side session expiration", () => {
+  function fakeReply() {
+    return { header() {}, headers: {} as Record<string, string> };
+  }
+  let sessionTestCounter = 0;
+  function fakeReq(token: string) {
+    return { headers: { cookie: `ts_session=${token}` }, ip: `sess-test-${sessionTestCounter++}` };
+  }
+  const sha = (t: string) => createHash("sha256").update(t).digest("hex");
+  const DAY = 86_400_000;
+
+  it("active recent session is accepted", async () => {
+    const token = `active-${randomBytes(8).toString("hex")}`;
+    const u = await db.user.create({ data: { displayName: "SessTest", role: "user" } });
+    cleanupIds.push(u.id);
+    await db.userSession.create({
+      data: { userId: u.id, tokenHash: sha(token), createdAt: new Date(), lastSeenAt: new Date() },
+    });
+    const resolved = await resolveSessionUser(fakeReq(token) as never, fakeReply() as never);
+    expect(resolved).not.toBeNull();
+    expect(resolved!.id).toBe(u.id);
+  });
+
+  it("idle-expired session (lastSeenAt > 90d ago) is rejected", async () => {
+    const token = `idle-${randomBytes(8).toString("hex")}`;
+    const u = await db.user.create({ data: { displayName: "SessIdle", role: "user" } });
+    cleanupIds.push(u.id);
+    await db.userSession.create({
+      data: {
+        userId: u.id, tokenHash: sha(token),
+        createdAt: new Date(Date.now() - 91 * DAY),
+        lastSeenAt: new Date(Date.now() - 91 * DAY),
+      },
+    });
+    // resolveSessionUser falls back to anonymous (never null); verify the
+    // expired session was revoked so the original user cannot be reached.
+    const resolved = await resolveSessionUser(fakeReq(token) as never, fakeReply() as never);
+    const oldSession = await db.userSession.findUnique({ where: { tokenHash: sha(token) } });
+    expect(oldSession?.revokedAt).not.toBeNull();
+    if (resolved) expect(resolved.id).not.toBe(u.id);
+  });
+
+  it("absolute-expired session (createdAt > 365d ago) is rejected", async () => {
+    const token = `abs-${randomBytes(8).toString("hex")}`;
+    const u = await db.user.create({ data: { displayName: "SessAbs", role: "user" } });
+    cleanupIds.push(u.id);
+    await db.userSession.create({
+      data: {
+        userId: u.id, tokenHash: sha(token),
+        createdAt: new Date(Date.now() - 366 * DAY),
+        lastSeenAt: new Date(), // recent activity but too old overall
+      },
+    });
+    // resolveSessionUser falls back to anonymous (never null); verify the
+    // expired session was revoked so the original user cannot be reached.
+    const resolved = await resolveSessionUser(fakeReq(token) as never, fakeReply() as never);
+    const oldSession = await db.userSession.findUnique({ where: { tokenHash: sha(token) } });
+    expect(oldSession?.revokedAt).not.toBeNull();
+    if (resolved) expect(resolved.id).not.toBe(u.id);
+  });
+
+  it("revoked session is rejected", async () => {
+    const token = `rev-${randomBytes(8).toString("hex")}`;
+    const u = await db.user.create({ data: { displayName: "SessRev", role: "user" } });
+    cleanupIds.push(u.id);
+    await db.userSession.create({
+      data: {
+        userId: u.id, tokenHash: sha(token),
+        createdAt: new Date(), lastSeenAt: new Date(),
+        revokedAt: new Date(),
+      },
+    });
+    // A revoked session is rejected at the lookup level (before expiry check):
+    // resolveSessionUser falls through to a fresh anonymous session — verify
+    // the returned user is NOT the one the revoked session belonged to.
+    const resolved = await resolveSessionUser(fakeReq(token) as never, fakeReply() as never);
+    if (resolved) expect(resolved.id).not.toBe(u.id);
   });
 });

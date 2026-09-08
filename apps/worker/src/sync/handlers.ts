@@ -415,7 +415,7 @@ async function syncLogsByCategories(args: SyncHandlerArgs, resource: SyncResourc
   const stopReasons: BackwardStopReason[] = [];
   let sourceEarliest: number | null = null;
   let failedCategories = 0;
-  let totalCategories = categoryIds.length;
+  const totalCategories = categoryIds.length;
   let categoriesProcessed = 0;
 
   for (const { category, state: existingState } of dueCategories) {

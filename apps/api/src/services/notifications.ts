@@ -2,6 +2,7 @@ import webpush from "web-push";
 import { getPrismaClient } from "@tornscope/database";
 import { DEFAULT_CATEGORY_STATE, checkPushEndpoint } from "@tornscope/shared";
 import { env } from "../env.js";
+import { assertPublicEndpoint } from "./push-ssrf.js";
 import { errors } from "../errors.js";
 import type { SessionUser } from "../auth.js";
 

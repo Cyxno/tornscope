@@ -116,6 +116,9 @@ const handler: RequestHandler = async ({ request, params, url, getClientAddress 
   const cacheControl = proxied.headers.get("cache-control");
   if (cacheControl) responseHeaders.set("cache-control", cacheControl);
   else responseHeaders.set("cache-control", "no-store");
+  // Forward Retry-After from 429/cooldown responses so clients can honour it.
+  const retryAfter = proxied.headers.get("retry-after");
+  if (retryAfter) responseHeaders.set("retry-after", retryAfter);
   responseHeaders.set("x-tornscope-build", proxied.headers.get("x-tornscope-build") ?? "");
 
   const text = await proxied.text();

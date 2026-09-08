@@ -30,6 +30,7 @@ import { getToday } from "./services/today.js";
 import { getMe, getApiKeyStatus, saveApiKey, validateApiKey, linkProfile, deleteApiKey, setDemoView, deleteProfile, signOutOtherSessions } from "./services/me.js";
 import { deleteEmptyProfile } from "@tornscope/database";
 import { getSyncStatus, getSyncHealth, requestManualSync, retryFailedSyncs, restartBackfill } from "./services/syncStatus.js";
+import { getApiContext } from "./context.js";
 import { getNotificationsStatus, subscribePush, unsubscribePush, disableDevice, updatePreferences, sendTestNotification } from "./services/notifications.js";
 import { getPrismaClient } from "@tornscope/database";
 
@@ -65,7 +66,7 @@ export function registerRoutes(app: FastifyInstance): void {
   app.addHook("preHandler", async (req, reply) => {
     // Health checks (bots/monitors) never create profiles or need identity.
     const url = (req.raw.url ?? "").split("?")[0]!;
-    if (url === "/api/health" || url === "/") {
+    if (url === "/api/health" || url === "/" || url === "/api/ready") {
       assertSameOrigin(req);
       return;
     }
@@ -82,6 +83,49 @@ export function registerRoutes(app: FastifyInstance): void {
   });
 
   app.get("/api/health", async () => ({ status: "ok" }));
+
+  // Readiness: can the hosted application actually serve users? Checks
+  // PostgreSQL, Redis and worker heartbeat — never Torn API. Returns 503
+  // when any dependency is unreachable. Response carries no credentials,
+  // connection strings or topology details.
+  app.get("/api/ready", async (_req, reply) => {
+    const db = getPrismaClient();
+    const checks: Record<string, string> = {};
+    let allOk = true;
+    try {
+      await db.$queryRaw`SELECT 1`;
+      checks.database = "ok";
+    } catch {
+      checks.database = "unreachable";
+      allOk = false;
+    }
+    try {
+      const ctx = getApiContext();
+      const { queueRedis } = await import("./redis.js");
+      const redis = await queueRedis(ctx.syncQueue);
+      const pong = await Promise.race([
+        redis.ping(),
+        new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 3000)),
+      ]) as string;
+      checks.redis = pong === "PONG" ? "ok" : "unreachable";
+      const beat = await Promise.race([
+        redis.get("tornscope:worker:heartbeat"),
+        new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 2000)),
+      ]) as string | null;
+      const recent = beat !== null && Date.now() - Number(beat) < 180_000;
+      checks.worker = recent ? "ok" : "stale";
+      if (!recent) allOk = false;
+    } catch {
+      checks.redis = "unreachable";
+      checks.worker = "unreachable";
+      allOk = false;
+    }
+    if (!allOk) {
+      reply.status(503);
+      return { status: "not_ready", ...checks };
+    }
+    return { status: "ready", ...checks };
+  });
 
   app.get("/api/me", async (req) => {
     const user = currentUser(req);

@@ -77,3 +77,44 @@ See README "Running TornScope outside localhost" for background.
       ```bash
       docker compose -f docker-compose.unraid.yml exec postgres pg_dump -U tornscope tornscope | gzip > tornscope-backup.sql.gz
       ```
+
+## Updating TornScope
+
+1. **Backup the database** (see Backups section above).
+2. `git pull origin main` (or checkout the intended tag/commit).
+3. Update `.env` only if release notes require it.
+4. `docker compose -f docker-compose.unraid.yml build`
+5. `docker compose -f docker-compose.unraid.yml up -d`
+6. Migrations run automatically via the `migrate` service.
+7. Verify `/api/ready` returns 200 with `"status":"ready"`.
+8. Verify the running GIT_SHA matches `git rev-parse HEAD`.
+
+## Rollback
+
+**App rollback and database rollback are separate concerns.** Prisma
+migrations are forward-only — downgrading the Docker image does NOT
+automatically reverse the database schema.
+
+- **Safe rollback (no incompatible migration):** `git checkout <previous-tag>`
+  then rebuild and redeploy. The old app runs against the new schema (which
+  is a superset due to additive-only migrations).
+- **Incompatible migration rollback:** restore the database backup taken
+  before the upgrade (`gunzip < tornscope-backup.sql.gz | docker compose
+  -f docker-compose.unraid.yml exec -T postgres psql -U tornscope tornscope`),
+  then run the previous application version.
+
+### Non-Unraid (standard docker-compose)
+
+```bash
+git pull origin main
+docker compose build
+docker compose up -d
+```
+
+### Unraid
+
+```bash
+git pull origin main
+docker compose -f docker-compose.unraid.yml build
+docker compose -f docker-compose.unraid.yml up -d
+```

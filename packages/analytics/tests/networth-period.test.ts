@@ -13,7 +13,7 @@ import { resolveDateRange } from "@tornscope/shared";
 const DAY = 86_400;
 const NOW = Date.UTC(2026, 8, 5, 12, 0, 0) / 1000; // 2026-09-05 12:00 UTC
 
-let nextTs = 1_700_000_000;
+const nextTs = 1_700_000_000;
 function snap(daysAgo: number, total: number, overrides: Partial<NetworthSnapshotFields> = {}): NetworthSnapshotFields {
   return {
     capturedAt: Math.floor(NOW - daysAgo * DAY),

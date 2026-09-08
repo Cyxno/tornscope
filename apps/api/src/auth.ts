@@ -99,6 +99,24 @@ async function userForSession(
     include: { user: true },
   });
   if (!session || session.revokedAt) return null;
+
+  // Server-side session expiration: absolute (365d from creation) + idle
+  // (90d since last activity). Expired sessions are revoked and rejected —
+  // the browser transparently receives a fresh guest session when needed.
+  {
+    const now = Date.now();
+    const ABSOLUTE_LIFETIME_MS = 365 * 86_400_000;
+    const IDLE_LIFETIME_MS = 90 * 86_400_000;
+    const created = session.createdAt.getTime();
+    const lastSeen = session.lastSeenAt.getTime();
+    if (now - created > ABSOLUTE_LIFETIME_MS || now - lastSeen > IDLE_LIFETIME_MS) {
+      await db.userSession
+        .update({ where: { id: session.id }, data: { revokedAt: new Date() } })
+        .catch(() => undefined);
+      return null;
+    }
+  }
+
   const user = session.user;
   if (!user) return null;
 
