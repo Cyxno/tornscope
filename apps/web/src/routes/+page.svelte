@@ -148,6 +148,9 @@ import LiveNow from "$lib/components/LiveNow.svelte";
   {:else if error}
     <StateMessage state="error" title="Could not load your dashboard" hint={error} action={{ label: "Retry", run: () => (reloadToken += 1) }} />
   {:else if data}
+    <!-- Right now: live state chips (same Today source — one calculation) -->
+    <LiveNow today={today} ocs={myOcs} onOpenToday={() => (window.location.href = "/today")} />
+
     <!-- Hero: net worth + quiet stat strip -->
     <section class="overflow-hidden rounded-2xl border border-border bg-surface shadow-panel">
       <div class="px-7 pb-7 pt-8">
@@ -230,9 +233,6 @@ import LiveNow from "$lib/components/LiveNow.svelte";
         />
       </div>
     </section>
-
-    <!-- Right now: live state chips (same Today source — one calculation) -->
-    <LiveNow today={today} ocs={myOcs} onOpenToday={() => (window.location.href = "/today")} />
 
     <!-- Net worth over time -->
     <Panel

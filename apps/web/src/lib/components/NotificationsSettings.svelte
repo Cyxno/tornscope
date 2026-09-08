@@ -35,13 +35,16 @@
     // localhost as a development exception. A LAN IP over plain HTTP is NOT
     // secure — Firefox/Chrome will not expose PushManager there. Collapsing
     // that into "unsupported" used to mislead Firefox users.
-    if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
-      support = { kind: "unsupported" };
-      return;
-    }
+    // Secure-context FIRST: on an insecure origin (LAN HTTP) Firefox does
+    // not expose PushManager/Notification at all, so capability checks
+    // would misreport a working browser as "unsupported".
     if (!window.isSecureContext) {
       support = { kind: "insecure" };
-      permission = Notification.permission;
+      permission = "default";
+      return;
+    }
+    if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
+      support = { kind: "unsupported" };
       return;
     }
     support = { kind: "ok", permission: Notification.permission };

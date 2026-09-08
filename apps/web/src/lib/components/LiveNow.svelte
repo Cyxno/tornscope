@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { TodayResponse } from "@tornscope/shared";
-  import { formatCountdownCompact } from "@tornscope/shared";
+  import { formatCountdownCompact, remainingSeconds } from "@tornscope/shared";
   import { cooldownDisplay, barFullDisplay } from "$lib/live";
   import { onMount } from "svelte";
 
@@ -76,11 +76,12 @@
     const bar = kind === "energy" ? today?.bars.energy : today?.bars.nerve;
     const d = barFullDisplay(bar, serverNowMs);
     if (!bar || !d) return null;
-    const left = d.remainingSeconds;
     return {
       key: kind,
       label: kind === "energy" ? "Energy" : "Nerve",
-      value: d.full ? `${bar.current} / ${bar.max}` : `${bar.current} / ${bar.max} · Full in ${formatCountdownCompact(left)}`,
+      // Use the shared text as-is: covers "Full in …" AND the paused/
+      // indeterminate "—" without inventing a timer here.
+      value: d.full ? `${bar.current} / ${bar.max}` : `${bar.current} / ${bar.max} · ${d.text}`,
       tone: d.full ? ("positive" as const) : ("accent" as const),
       live: !d.full,
     };
@@ -93,13 +94,21 @@
     const t = today;
     const out: Chip[] = [];
     if (!t) return out;
-    const status = t.player.status;
     const nowSec = Math.floor(serverNowMs / 1000);
 
-    if (status.state === "Hospital" && status.until !== null && status.until > nowSec) {
-      out.push({ key: "hospital", label: "Hospital", value: `out in ${formatCountdownCompact(status.until - nowSec)}`, tone: "negative", live: true, href: "/today" });
-    } else if (status.state === "Jail" && status.until !== null && status.until > nowSec) {
-      out.push({ key: "jail", label: "Jail", value: `out in ${formatCountdownCompact(status.until - nowSec)}`, tone: "negative", live: true, href: "/today" });
+    // Same normalized notices Today uses — Federal (and any other jail
+    // variant) is classified server-side, so Overview inherits that.
+    for (const [key, notice] of [["hospital", t.hospital], ["jail", t.jail]] as const) {
+      if (!notice) continue;
+      const left = notice.releasedAt !== null ? remainingSeconds(serverNowMs, notice.releasedAt) : null;
+      out.push({
+        key,
+        label: notice.kind === "hospital" ? "Hospital" : "Jail",
+        value: left !== null && left > 0 ? `out in ${formatCountdownCompact(left)}` : "Held indefinitely",
+        tone: notice.kind === "hospital" ? "negative" : "warning",
+        live: left !== null && left > 0,
+        href: "/today",
+      });
     }
 
     if (t.travel.state === "traveling" && t.travel.landsAt !== null && t.travel.landsAt > nowSec) {
@@ -147,30 +156,30 @@
     <!-- Bars (energy/nerve) + cooldowns: the daily-use glanceables -->
     <div class="grid grid-cols-2 gap-3 md:grid-cols-5">
       {#if energyChip}
-        <div class="rounded-xl border border-border bg-surface px-4 py-3">
+        <a href="https://www.torn.com/" target="_blank" rel="noopener noreferrer" class="rounded-xl border border-border bg-surface px-4 py-3 transition-colors hover:border-accent/50" title="Open Torn">
           <p class="text-[10px] uppercase tracking-[0.14em] text-fg-faint">{energyChip.label}</p>
           <p class="tnum mt-1 text-sm font-semibold text-fg">{energyChip.value}</p>
           <div class="mt-1.5 h-1 overflow-hidden rounded-full bg-surface-2">
             <div class="h-full rounded-full bg-accent" style="width: {today.bars.energy?.percent ?? 0}%"></div>
           </div>
-        </div>
+        </a>
       {/if}
       {#if nerveChip}
-        <div class="rounded-xl border border-border bg-surface px-4 py-3">
+        <a href="https://www.torn.com/" target="_blank" rel="noopener noreferrer" class="rounded-xl border border-border bg-surface px-4 py-3 transition-colors hover:border-warning/60" title="Open Torn">
           <p class="text-[10px] uppercase tracking-[0.14em] text-fg-faint">{nerveChip.label}</p>
           <p class="tnum mt-1 text-sm font-semibold text-fg">{nerveChip.value}</p>
           <div class="mt-1.5 h-1 overflow-hidden rounded-full bg-surface-2">
             <div class="h-full rounded-full bg-warning" style="width: {today.bars.nerve?.percent ?? 0}%"></div>
           </div>
-        </div>
+        </a>
       {/if}
       {#each cooldownChips as chip (chip.key)}
-        <div class="rounded-xl border bg-surface px-4 py-3" style={chip.tone === "positive" ? "border-color: rgba(63,214,143,0.4)" : ""}>
+        <a href="https://www.torn.com/" target="_blank" rel="noopener noreferrer" class="cursor-pointer rounded-xl border bg-surface px-4 py-3 transition-colors {chip.tone === 'positive' ? 'hover:border-positive/60' : 'hover:border-accent/50'}" style={chip.tone === "positive" ? "border-color: rgba(63,214,143,0.4)" : ""} title="Open Torn">
           <p class="text-[10px] uppercase tracking-[0.14em] text-fg-faint">{chip.label}</p>
           <p class="tnum mt-1 text-sm font-semibold {chip.tone === 'positive' ? 'text-positive' : 'text-fg'}">
             {chip.value}{#if chip.live}<span class="ml-1 text-[10px] font-normal text-fg-faint">left</span>{/if}
           </p>
-        </div>
+        </a>
       {/each}
     </div>
 
