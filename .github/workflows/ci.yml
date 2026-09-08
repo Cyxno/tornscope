@@ -9,27 +9,23 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:16
         env:
           POSTGRES_USER: tornscope
           POSTGRES_PASSWORD: ci-test-password
           POSTGRES_DB: tornscope_test
-        ports:
-          - 5432:5432
         options: >-
           --health-cmd pg_isready
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 5
+          --health-interval 10s
+          --health-timeout 10s
+          --health-retries 10
       redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
+        image: redis:7
         options: >-
           --health-cmd redis-cli ping
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 5
+          --health-interval 10s
+          --health-timeout 10s
+          --health-retries 10
     env:
       TEST_DATABASE_URL: postgresql://tornscope:ci-test-password@localhost:5432/tornscope_test
       DATABASE_URL: postgresql://tornscope:ci-test-password@localhost:5432/tornscope_test
