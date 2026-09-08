@@ -53,14 +53,14 @@
     const t = today;
     if (!t) return [];
     const defs = [
-      { cd: t.cooldowns.drug, icon: "drug", label: "Drug" },
-      { cd: t.cooldowns.booster, icon: "booster", label: "Booster" },
-      { cd: t.cooldowns.medical, icon: "medical", label: "Medical" },
+      { cd: t.cooldowns.drug, icon: "drug", label: "Drug", href: "https://www.torn.com/items.php#/drugs" },
+      { cd: t.cooldowns.booster, icon: "booster", label: "Booster", href: "https://www.torn.com/items.php#/alcohol" },
+      { cd: t.cooldowns.medical, icon: "medical", label: "Medical", href: "https://www.torn.com/items.php#/medical" },
     ] as const;
-    return defs.map(({ cd, icon, label }) => {
+    return defs.map(({ cd, icon, label, href }) => {
       const display = cooldownDisplay(cd, serverNowMs);
       if (display === null) {
-        return { key: `cd-${icon}`, label: `${label} cooldown`, value: "—", tone: "neutral" as const, live: false };
+        return { key: `cd-${icon}`, label: `${label} cooldown`, value: "—", tone: "neutral" as const, live: false, href };
       }
       return {
         key: `cd-${icon}`,
@@ -68,6 +68,7 @@
         value: display.text,
         tone: display.active ? ("neutral" as const) : ("positive" as const),
         live: display.active,
+        href,
       };
     });
   });
@@ -156,7 +157,7 @@
     <!-- Bars (energy/nerve) + cooldowns: the daily-use glanceables -->
     <div class="grid grid-cols-2 gap-3 md:grid-cols-5">
       {#if energyChip}
-        <a href="https://www.torn.com/" target="_blank" rel="noopener noreferrer" class="rounded-xl border border-border bg-surface px-4 py-3 transition-colors hover:border-accent/50" title="Open Torn">
+        <a href="https://www.torn.com/gym.php" target="_blank" rel="noopener noreferrer" class="rounded-xl border border-border bg-surface px-4 py-3 transition-colors hover:border-accent/50" title="Open in Torn">
           <p class="text-[10px] uppercase tracking-[0.14em] text-fg-faint">{energyChip.label}</p>
           <p class="tnum mt-1 text-sm font-semibold text-fg">{energyChip.value}</p>
           <div class="mt-1.5 h-1 overflow-hidden rounded-full bg-surface-2">
@@ -165,7 +166,7 @@
         </a>
       {/if}
       {#if nerveChip}
-        <a href="https://www.torn.com/" target="_blank" rel="noopener noreferrer" class="rounded-xl border border-border bg-surface px-4 py-3 transition-colors hover:border-warning/60" title="Open Torn">
+        <a href="https://www.torn.com/crimes.php" target="_blank" rel="noopener noreferrer" class="rounded-xl border border-border bg-surface px-4 py-3 transition-colors hover:border-warning/60" title="Open in Torn">
           <p class="text-[10px] uppercase tracking-[0.14em] text-fg-faint">{nerveChip.label}</p>
           <p class="tnum mt-1 text-sm font-semibold text-fg">{nerveChip.value}</p>
           <div class="mt-1.5 h-1 overflow-hidden rounded-full bg-surface-2">
@@ -174,7 +175,7 @@
         </a>
       {/if}
       {#each cooldownChips as chip (chip.key)}
-        <a href="https://www.torn.com/" target="_blank" rel="noopener noreferrer" class="cursor-pointer rounded-xl border bg-surface px-4 py-3 transition-colors {chip.tone === 'positive' ? 'hover:border-positive/60' : 'hover:border-accent/50'}" style={chip.tone === "positive" ? "border-color: rgba(63,214,143,0.4)" : ""} title="Open Torn">
+        <a href={chip.href} target="_blank" rel="noopener noreferrer" class="cursor-pointer rounded-xl border bg-surface px-4 py-3 transition-colors {chip.tone === 'positive' ? 'hover:border-positive/60' : 'hover:border-accent/50'}" style={chip.tone === "positive" ? "border-color: rgba(63,214,143,0.4)" : ""} title="Open in Torn">
           <p class="text-[10px] uppercase tracking-[0.14em] text-fg-faint">{chip.label}</p>
           <p class="tnum mt-1 text-sm font-semibold {chip.tone === 'positive' ? 'text-positive' : 'text-fg'}">
             {chip.value}{#if chip.live}<span class="ml-1 text-[10px] font-normal text-fg-faint">left</span>{/if}
