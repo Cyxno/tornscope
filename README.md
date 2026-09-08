@@ -178,6 +178,7 @@ Dev URL: http://localhost:5173 (web) — `/api/*` is proxied to the Fastify serv
 ## Production deployment
 
 - `docker compose up -d --build` runs postgres, redis, migrate, api, worker and web.
+- Because the compose images keep the same `tornscope-*:latest` tags, every rebuild leaves the superseded image dangling. Run `docker image prune -f` after deploying — it only removes untagged (unused) images, never active containers, volumes or database data.
 - API/web containers run as a non-root user; database and ports bind to localhost only — put your preferred reverse proxy (Caddy/Nginx/Traefik) with TLS in front for remote access.
 - Set `NODE_ENV=production` (the compose file does this) and a strong `API_KEY_ENCRYPTION_KEY`.
 - Security posture: Helmet headers, CORS restricted to `APP_BASE_URL`, global rate limiting, Zod validation on every input, keyset pagination (no unbounded queries), parameterized SQL only (Prisma + tagged templates), no secrets in logs.
