@@ -338,10 +338,11 @@
                   <!-- Operational health (is the sync loop working?) … -->
                   <span class="text-[11px] font-medium {style.text}" title={operationalTitle(op)}>{style.label}</span>
                   <span class="text-[11px] text-fg-faint">{frequencyHint[row.resource] ?? ""}</span>
-                  <!-- … vs data confidence (how trustworthy is the data?) — never merged. -->
+                  <!-- … vs data confidence (how trustworthy is the data?) — never merged.
+                       Healthy ("complete") renders nothing: quiet when nothing is wrong,
+                       visible the moment a dataset degrades. -->
                   <ConfidenceBadge
                     meta={row.confidence}
-                    showComplete
                     tooltip={confidenceTitle(row.confidence, row.lastSuccessAt ? `last refreshed ${formatRelative(row.lastSuccessAt)}` : undefined)}
                   />
                 </div>
@@ -529,12 +530,20 @@
       </p>
     </Panel>
 
-    <p class="max-w-2xl text-xs leading-relaxed text-fg-faint">
-      The worker enqueues due resources every minute, runs one job at a time and spaces Torn API requests at roughly
-      85 per minute (Torn allows 100). Overlapping runs are prevented by a resource lock with progress heartbeats;
-      a run without progress for 15 minutes is recovered automatically. "Retry now" re-queues a troubled resource
-      within safe rate limits — it never resets cursors or deletes history. "Restart backfill" re-fetches the full
-      window; existing records are kept and deduplicated.
-    </p>
+    <!-- Operator-level detail: available for those who want it, out of the
+         way for everyone else -->
+    <details class="group max-w-2xl">
+      <summary class="cursor-pointer list-none text-xs font-medium text-fg-faint transition-colors hover:text-fg-muted">
+        <span class="mr-1.5 inline-block transition-transform group-open:rotate-90" aria-hidden="true">▸</span>
+        How syncing works — queues, rate limits &amp; recovery
+      </summary>
+      <p class="mt-2 text-xs leading-relaxed text-fg-faint">
+        The worker enqueues due resources every minute, runs one job at a time and spaces Torn API requests at roughly
+        85 per minute (Torn allows 100). Overlapping runs are prevented by a resource lock with progress heartbeats;
+        a run without progress for 15 minutes is recovered automatically. "Retry now" re-queues a troubled resource
+        within safe rate limits — it never resets cursors or deletes history. "Restart backfill" re-fetches the full
+        window; existing records are kept and deduplicated.
+      </p>
+    </details>
   {/if}
 </div>
