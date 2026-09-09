@@ -52,11 +52,11 @@
     </a>
 
     <!-- Primary navigation: horizontal, pill segmented -->
-    <nav class="hidden items-center gap-1 lg:flex" aria-label="Primary">
+    <nav class="hidden min-w-0 items-center gap-1 overflow-x-auto lg:flex" aria-label="Primary">
       {#each nav as item (item.href)}
         <a
           href={item.href}
-          class="rounded-full px-3.5 py-1.5 text-[13px] font-medium transition-colors {isActive(item.href)
+          class="whitespace-nowrap rounded-full px-3.5 py-1.5 text-[13px] font-medium transition-colors {isActive(item.href)
             ? 'bg-surface-2 text-fg'
             : 'text-fg-muted hover:text-fg'}"
           aria-current={isActive(item.href) ? "page" : undefined}
@@ -66,8 +66,8 @@
       {/each}
     </nav>
 
-    <!-- Right cluster: sync pulse + identity -->
-    <div class="flex items-center gap-2">
+    <!-- Right cluster: sync pulse + identity (never pushed off-row) -->
+    <div class="flex shrink-0 items-center gap-2">
       <a
         href="/sync"
         class="hidden items-center gap-2 rounded-full border border-border bg-surface px-3 py-1.5 text-xs text-fg-muted transition-colors hover:border-border-strong hover:text-fg sm:flex"
@@ -83,7 +83,7 @@
       >
         {#if me.data?.torn}
           <span class="flex h-6 w-6 items-center justify-center rounded-full bg-surface-2 text-[10px] font-semibold text-fg">{me.data.torn.name.slice(0, 2).toUpperCase()}</span>
-          <span class="tnum hidden sm:inline">{me.data.torn.name}</span>
+          <span class="tnum hidden md:inline">{me.data.torn.name}</span>
         {:else}
           <span class="flex h-6 w-6 items-center justify-center rounded-full bg-surface-2 text-[11px]">⚙</span>
           <span class="hidden sm:inline">Settings</span>

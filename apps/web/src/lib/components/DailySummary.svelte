@@ -21,6 +21,7 @@
   let loading = $state(true);
   let error = $state<string | null>(null);
   let reloadToken = $state(0);
+  let loadSeq = 0;
 
   const timeZone = $derived(me.data?.timezone || "UTC");
   const todayKey = $derived.by(() => {
@@ -31,15 +32,21 @@
   });
 
   async function load() {
+    const seq = ++loadSeq;
     loading = true;
     error = null;
     try {
-      summary = await endpoints.dailySummary(date || undefined);
+      const res = await endpoints.dailySummary(date || undefined);
+      // A newer load (the date changed again mid-flight) supersedes this
+      // one — a stale response must never overwrite the selected day.
+      if (seq !== loadSeq) return;
+      summary = res;
     } catch (err) {
+      if (seq !== loadSeq) return;
       error = err instanceof ApiClientError ? err.message : (err as Error).message;
       summary = null;
     } finally {
-      loading = false;
+      if (seq === loadSeq) loading = false;
     }
   }
 
