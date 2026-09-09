@@ -58,6 +58,8 @@ export const CONFIDENCE_REASONS = [
   "range_before_coverage",
   /** The source answered but holds no data for this context. */
   "source_unavailable",
+  /** The day has not ended yet — the summary cannot claim end-of-day completeness. */
+  "day_in_progress",
 ] as const;
 
 export type ConfidenceReason = (typeof CONFIDENCE_REASONS)[number];

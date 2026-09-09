@@ -175,6 +175,7 @@ export const ConfidenceReasonSchema = z.enum([
   "sync_error",
   "range_before_coverage",
   "source_unavailable",
+  "day_in_progress",
 ]);
 export type ConfidenceReasonDto = z.infer<typeof ConfidenceReasonSchema>;
 
@@ -651,6 +652,152 @@ export const EconomySummaryResponseSchema = z.object({
   }),
 });
 export type EconomySummaryResponse = z.infer<typeof EconomySummaryResponseSchema>;
+
+/* -------------------------------------------------------------------------- */
+/* Daily Summary (v0.2 item #2)                                                */
+/* -------------------------------------------------------------------------- */
+
+/** A canonical-labeled category contribution (compact, top-N only). */
+export const SummaryCategoryRowSchema = z.object({
+  category: z.string(),
+  /** Canonical human label from the shared label maps (never raw slugs). */
+  label: z.string(),
+  total: z.number(),
+});
+export type SummaryCategoryRow = z.infer<typeof SummaryCategoryRowSchema>;
+
+/**
+ * Deterministic highlight kinds. The UI maps kind + canonical label to
+ * localized sentences; the server never ships long prose, and hedged causal
+ * wording ("contributed", "recorded movement") lives ONLY on the frontend.
+ */
+export const DailyHighlightKindSchema = z.enum([
+  "large_cash_in",
+  "large_cash_out",
+  "asset_conversion",
+  "networth_move",
+  "travel_profit",
+  "drug_use",
+  "rehab",
+  "bank_transfer",
+  "combat",
+  "crime",
+  "account_event",
+  "quiet_day",
+]);
+export type DailyHighlightKind = z.infer<typeof DailyHighlightKindSchema>;
+
+export const DailyHighlightSchema = z.object({
+  kind: DailyHighlightKindSchema,
+  /** Short canonical noun phrase (e.g. "Bazaar", "City Bank", "Rehab"). */
+  label: z.string(),
+  /** Signed magnitude when known; null never renders as 0. */
+  amount: z.number().nullable(),
+  occurredAt: z.number().nullable(),
+  tone: z.enum(["neutral", "positive", "negative", "accent"]),
+});
+export type DailyHighlight = z.infer<typeof DailyHighlightSchema>;
+
+/**
+ * "Why did net worth move?" — a lightweight, deterministic contributor list.
+ * This is NOT a reconciliation: magnitudes are recorded movements or catalog
+ * estimates, and the frontend must present them as likely contributors, never
+ * causes. `residual` with certainty "unexplained" reports what recorded
+ * activity does not explain.
+ */
+export const NetworthDriverSchema = z.object({
+  kind: z.enum(["cash_flow", "inventory_move", "bank_move", "consumption", "travel_profit", "residual"]),
+  label: z.string(),
+  /** Signed estimated contribution where derivable; null when unknown. */
+  magnitude: z.number().nullable(),
+  certainty: z.enum(["recorded", "estimated", "unexplained"]),
+});
+export type NetworthDriver = z.infer<typeof NetworthDriverSchema>;
+
+/**
+ * One day's account summary, in the user's timezone. Every section carries
+ * its own DataConfidenceMeta from the central derivation; overallConfidence
+ * is the worst of the critical sections (money_logs, networth, drugs, travel),
+ * capped at partial while the day is still ongoing.
+ */
+export const DailySummaryResponseSchema = z.object({
+  /** "YYYY-MM-DD" — the calendar day in the user's timezone. */
+  date: z.string(),
+  timezone: z.string(),
+  range: z.object({ from: z.number(), to: z.number() }),
+  generatedAt: z.number(),
+  /** True while the requested day has not ended in the timezone. */
+  ongoingDay: z.boolean(),
+
+  netWorth: z.object({
+    start: z.number().nullable(),
+    startAt: z.number().nullable(),
+    end: z.number().nullable(),
+    endAt: z.number().nullable(),
+    /** Official Torn snapshot delta — never labeled profit. */
+    delta: z.number().nullable(),
+    changePct: z.number().nullable(),
+    coverage: NetworthCoverageSchema,
+    drivers: z.array(NetworthDriverSchema).nullable(),
+    confidence: DataConfidenceMetaSchema,
+  }),
+  cashFlow: z.object({
+    received: KpiValueSchema,
+    spent: KpiValueSchema,
+    net: KpiValueSchema,
+    topInflow: z.array(SummaryCategoryRowSchema),
+    topOutflow: z.array(SummaryCategoryRowSchema),
+    confidence: DataConfidenceMetaSchema,
+  }),
+  economicEffect: z.object({
+    trueIncome: KpiValueSchema,
+    trueExpense: KpiValueSchema,
+    net: KpiValueSchema,
+    confidence: DataConfidenceMetaSchema,
+  }),
+  assetConversions: z.object({
+    /** Assets → cash (sales). Not income. */
+    convertedIn: KpiValueSchema,
+    /** Cash → assets (purchases, bank deposits, point buys). Not spending. */
+    convertedOut: KpiValueSchema,
+    /** Internal movements between owned accounts (bank invest/withdraw). */
+    bankTransfers: z.number(),
+    rows: z.array(SummaryCategoryRowSchema),
+    confidence: DataConfidenceMetaSchema,
+  }),
+  travel: z.object({
+    trips: z.number(),
+    estimatedProfit: KpiValueSchema,
+    confidence: DataConfidenceMetaSchema,
+  }),
+  drugs: z.object({
+    uses: z.number(),
+    estimatedConsumptionValue: KpiValueSchema,
+    valueUnknownCount: z.number(),
+    xanax: z.object({
+      consumed: z.number(),
+      confirmedPersonal: z.number(),
+      confirmedFaction: z.number(),
+      confirmedOther: z.number(),
+      openingInventoryUnknown: z.number(),
+      unknown: z.number(),
+      /** Catalog-estimated value of the day's Xanax (null without prices). */
+      estimatedValue: z.number().nullable(),
+    }),
+    confidence: DataConfidenceMetaSchema,
+  }),
+  rehab: z.object({
+    /** One raw rehab row = one visit. */
+    visits: z.number(),
+    /** Known cost sum; incomplete availability when any visit cost is unknown. */
+    cost: KpiValueSchema,
+    sessionsUnavailable: z.number(),
+    confidence: DataConfidenceMetaSchema,
+  }),
+  highlights: z.array(DailyHighlightSchema),
+  overallConfidence: DataConfidenceMetaSchema,
+});
+export type DailySummaryResponse = z.infer<typeof DailySummaryResponseSchema>;
 
 /* -------------------------------------------------------------------------- */
 /* Crimes & Combat                                                             */
