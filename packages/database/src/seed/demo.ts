@@ -141,6 +141,10 @@ async function main(): Promise<void> {
   });
 
   await ensureSyncStates(db, user.id);
+  // History-walk resources get internally consistent fabricated coverage:
+  // their backward walks count as finished (source exhausted), which the
+  // data-confidence derivation reads as a complete synthetic dataset.
+  const walkResources = new Set(["drugs", "rehab", "money_logs", "travel", "events", "attacks"]);
   for (const state of await db.syncState.findMany({ where: { userId: user.id } })) {
     await db.syncState.update({
       where: { id: state.id },
@@ -150,6 +154,7 @@ async function main(): Promise<void> {
         lastAttemptAt: new Date(now * 1000),
         lastCompletedAt: new Date(now * 1000),
         recordsCollected: between(500, 5000),
+        ...(walkResources.has(state.resource) ? { stopReason: "source_exhausted" as const, lastTimestamp: BigInt(now) } : {}),
         nextRunAt: new Date((now + state.frequencySeconds) * 1000),
       },
     });

@@ -7,7 +7,7 @@ import {
   type SyncResource,
   type TornScopeFeature,
 } from "@tornscope/shared";
-import { getPrismaClient } from "@tornscope/database";
+import { getPrismaClient, type SyncStateRow } from "@tornscope/database";
 
 /**
  * Permission-aware availability blocks for module responses.
@@ -16,17 +16,15 @@ import { getPrismaClient } from "@tornscope/database";
  * These helpers combine the profile's detected key capabilities with the
  * per-resource sync state so a feature that lost its backing permission is
  * reported as stale/unavailable instead of silently rendering zeros.
+ *
+ * The loaded context (caps + full sync-state rows + demo flag) is also the
+ * input of the data-confidence derivation (services/confidence.ts) — one
+ * batched read serves both, so endpoints never query per card.
  */
-
-interface SyncStateLite {
-  lastSuccessAt: Date | null;
-  recordsCollected: number;
-  status: string;
-}
 
 export interface AvailabilityContext {
   caps: KeyCapabilities | null;
-  states: Map<string, SyncStateLite>;
+  states: Map<string, SyncStateRow>;
   /**
    * Demo profiles present synthetic seed data with no API credential. Their
    * availability must read as "demo data", never as permission/stale states
@@ -39,7 +37,7 @@ export async function loadAvailabilityContext(userId: string): Promise<Availabil
   const db = getPrismaClient();
   const [credential, states, user] = await Promise.all([
     db.apiCredential.findUnique({ where: { userId }, select: { capabilities: true, accessLevel: true, revokedAt: true } }),
-    db.syncState.findMany({ where: { userId }, select: { resource: true, lastSuccessAt: true, recordsCollected: true, status: true } }),
+    db.syncState.findMany({ where: { userId } }),
     db.user.findUnique({ where: { id: userId }, select: { isDemo: true } }),
   ]);
   const caps = credential && !credential.revokedAt

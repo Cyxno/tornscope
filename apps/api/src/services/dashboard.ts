@@ -1,9 +1,12 @@
 import {
   autoInterval,
+  kpiAvailabilityFromConfidence,
   resolveDateRange,
+  worstKpiAvailability,
   type DashboardResponse,
   type DateRangeInput,
   type KpiAvailability,
+  type SyncResource,
 } from "@tornscope/shared";
 import {
   aggregateCombatStats,
@@ -19,6 +22,8 @@ import {
 } from "@tornscope/analytics";
 import { bigintToNumber, getPrismaClient, loadMarketPrices } from "@tornscope/database";
 import { getLatestNetworth, getNetworthPeriodForRange } from "./networth.js";
+import { loadAvailabilityContext } from "./availability.js";
+import { resourceConfidence } from "./confidence.js";
 
 /**
  * Overview dashboard: KPIs + widget series in one query pass.
@@ -38,7 +43,7 @@ export async function getDashboard(userId: string, rangeInput: DateRangeInput): 
   const from = new Date(range.from * 1000);
   const to = new Date(range.to * 1000);
 
-  const [latestNw, moneyRows, unknownMoneyRows, travelEvents, travelItems, travelTransitions, drugRows, consumptionRows, crimeRows, combatRows, rehabRows, rehabCandidates, timelineCount, timelineRows, marketPrices, syncStates] = await Promise.all([
+  const [latestNw, moneyRows, unknownMoneyRows, travelEvents, travelItems, travelTransitions, drugRows, consumptionRows, crimeRows, combatRows, rehabRows, rehabCandidates, timelineCount, timelineRows, marketPrices, confidenceCtx] = await Promise.all([
     getLatestNetworth(userId),
     db.moneyEvent.findMany({
       where: { userId, occurredAt: { gte: from, lte: to } },
@@ -92,14 +97,19 @@ export async function getDashboard(userId: string, rangeInput: DateRangeInput): 
       select: { id: true, occurredAt: true, type: true, title: true, description: true, amount: true },
     }),
     loadMarketPrices(db),
-    db.syncState.findMany({ where: { userId }, select: { resource: true, status: true, lastSuccessAt: true } }),
+    loadAvailabilityContext(userId),
   ]);
 
-  // Backfill in progress for the log-derived domains → values may still change.
-  const importing = syncStates.some(
-    (s) => ["money_logs", "travel", "rehab", "drugs", "events"].includes(s.resource) && s.status === "running"
-  );
-  const lastSync = syncStates.reduce<number | null>((acc, s) => {
+  // Dataset confidence per Overview card — derived centrally from capabilities
+  // + sync state + coverage, never re-invented per card.
+  const rangeForConfidence = { from: range.from, to: range.to };
+  const cashFlowConfidence = resourceConfidence(confidenceCtx, "money_logs", { range: rangeForConfidence });
+  const drugsConfidence = resourceConfidence(confidenceCtx, "drugs", { range: rangeForConfidence });
+  const travelConfidence = resourceConfidence(confidenceCtx, "travel", { range: rangeForConfidence });
+  const rehabConfidence = resourceConfidence(confidenceCtx, "rehab", { range: rangeForConfidence });
+  const networthConfidence = resourceConfidence(confidenceCtx, "networth");
+
+  const lastSync = Array.from(confidenceCtx.states.values()).reduce<number | null>((acc, s) => {
     const t = s.lastSuccessAt ? Math.floor(s.lastSuccessAt.getTime() / 1000) : null;
     return t !== null && (acc === null || t > acc) ? t : acc;
   }, null);
@@ -202,24 +212,47 @@ export async function getDashboard(userId: string, rangeInput: DateRangeInput): 
     factionBalanceCredits
   );
 
-  // --- availability per KPI (importing wins; then data evidence) ---
-  const moneyAvailability: KpiAvailability =
-    unknownMoneyRows > 0 ? "incomplete" : moneyRows.length === 0 && timelineCount === 0 ? "unavailable" : importing ? "importing" : "ok";
-  const rehabAvailability: KpiAvailability =
-    rehabRows.length > 0 || rehabCandidates === 0 ? (importing ? "importing" : "ok") : "incomplete";
-  const drugsAvailability: KpiAvailability =
-    drugRows.length > 0 ? (importing ? "importing" : "ok") : timelineCount === 0 ? "unavailable" : "incomplete";
-  const travelAvailability: KpiAvailability =
+  // --- availability per KPI = dataset confidence ⊕ value-level evidence ---
+  // Dataset layer (confidence): can this range be trusted at all? Central
+  // derivation — replaces the old per-endpoint "importing" heuristics that
+  // used to diverge between Overview and Economy.
+  // Value layer: unparseable rows / absent source evidence make a specific
+  // figure provisional even when the dataset itself is healthy.
+  const moneyAvailability: KpiAvailability = (() => {
+    let availability = kpiAvailabilityFromConfidence(cashFlowConfidence);
+    if (unknownMoneyRows > 0) availability = worstKpiAvailability(availability, "incomplete");
+    // With PROVEN coverage an empty money set is a confirmed zero. Without
+    // that proof, an empty set and a missing dataset are indistinguishable —
+    // keep the log-activity evidence check for exactly that residual case.
+    if (moneyRows.length === 0 && availability === "ok" && cashFlowConfidence.confidence !== "complete" && timelineCount === 0) {
+      availability = "unavailable";
+    }
+    return availability;
+  })();
+  const rehabAvailability: KpiAvailability = worstKpiAvailability(
+    kpiAvailabilityFromConfidence(rehabConfidence),
+    rehabRows.length > 0 || rehabCandidates === 0 ? "ok" : "incomplete"
+  );
+  const drugsAvailability: KpiAvailability = worstKpiAvailability(
+    kpiAvailabilityFromConfidence(drugsConfidence),
+    drugRows.length > 0 ? "ok" : timelineCount === 0 ? "unavailable" : "incomplete"
+  );
+  const travelAvailability: KpiAvailability = worstKpiAvailability(
+    kpiAvailabilityFromConfidence(travelConfidence),
     travelInRange.length > 0
-      ? importing
-        ? "importing"
-        : "ok"
+      ? "ok"
       : travelTransitions === 0 && timelineCount === 0
         ? "unavailable"
-        : "incomplete";
-  const networthChangeAvailability: KpiAvailability = nwPeriod.coverage === "none" ? "unavailable" : "ok";
-  const consumptionAvailability: KpiAvailability =
-    consumptionRows.length > 0 ? (consumedUnknown > 0 ? "incomplete" : "ok") : drugsAvailability === "ok" ? "ok" : drugsAvailability;
+        : "incomplete"
+  );
+  const networthChangeAvailability: KpiAvailability = worstKpiAvailability(
+    kpiAvailabilityFromConfidence(networthConfidence),
+    nwPeriod.coverage === "none" ? "unavailable" : "ok"
+  );
+  const consumptionAvailability: KpiAvailability = worstKpiAvailability(
+    kpiAvailabilityFromConfidence(drugsConfidence),
+    consumptionRows.length > 0 ? (consumedUnknown > 0 ? "incomplete" : "ok") : drugsAvailability === "ok" ? "ok" : drugsAvailability
+  );
 
   // Faction summary: latest completed/ongoing ranked war + personal payouts.
   const accountRow = await db.tornAccount.findUnique({ where: { userId }, select: { factionId: true, tornId: true } });
@@ -414,6 +447,13 @@ export async function getDashboard(userId: string, rangeInput: DateRangeInput): 
       amount: bigintToNumber(r.amount),
     })),
     lastSyncAt: lastSync,
+    confidence: {
+      cashFlow: cashFlowConfidence,
+      drugs: drugsConfidence,
+      travelProfit: travelConfidence,
+      rehab: rehabConfidence,
+      networth: networthConfidence,
+    },
   };
 }
 

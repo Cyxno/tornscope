@@ -191,7 +191,9 @@ suite("Limited-key initialization is capability-aware", () => {
     await swapSyncQueue(async () => {
       const queue = fakeQueue();
       await enqueueDueSyncs(queue as never);
-      const resources = queue.added.map((a) => a.resource);
+      // User-scoped: concurrent test profiles legitimately enqueue their own
+      // allowed resources — this suite only asserts THIS profile's queue.
+      const resources = queue.added.filter((a) => a.userId === freshUser.id).map((a) => a.resource);
       expect(resources).not.toContain("drugs");
       expect(resources).not.toContain("money_logs");
     });

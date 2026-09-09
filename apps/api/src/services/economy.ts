@@ -1,8 +1,9 @@
-import { autoInterval, resolveDateRange, type DateRangeInput, type EconomySummaryResponse, type KpiAvailability, type MoneyCategory } from "@tornscope/shared";
+import { autoInterval, kpiAvailabilityFromConfidence, resolveDateRange, worstKpiAvailability, type DateRangeInput, type EconomySummaryResponse, type KpiAvailability, type MoneyCategory, type SyncResource } from "@tornscope/shared";
 import { aggregateMoneyEvents, aggregateMoneySemantics, aggregateConsumption, calculateTravelProfit, type ConsumptionEventLike } from "@tornscope/analytics";
 import { bigintToNumber, getPrismaClient, loadMarketPrices } from "@tornscope/database";
 import { getNetworthPeriodForRange } from "./networth.js";
 import { loadAvailabilityContext, sectionAvailability } from "./availability.js";
+import { resourceConfidence } from "./confidence.js";
 
 /** Sale categories whose proceeds are asset conversions, not earnings. */
 const SALE_CATEGORIES = new Set(["bazaar", "items", "trading", "auction"]);
@@ -102,7 +103,7 @@ export async function getEconomySummary(userId: string, rangeInput: DateRangeInp
   const from = new Date(range.from * 1000);
   const to = new Date(range.to * 1000);
 
-  const [moneyRows, unknownCount, consumptionRows, travelEvents, travelItems, marketPrices, nwPeriod, syncStates] = await Promise.all([
+  const [moneyRows, unknownCount, consumptionRows, travelEvents, travelItems, marketPrices, nwPeriod] = await Promise.all([
     db.moneyEvent.findMany({
       where: { userId, occurredAt: { gte: from, lte: to } },
       // No metadata here: the raw payload is only needed for valuing SOLD
@@ -125,10 +126,15 @@ export async function getEconomySummary(userId: string, rangeInput: DateRangeInp
     }),
     loadMarketPrices(db),
     getNetworthPeriodForRange(userId, range.from, range.to),
-    db.syncState.findMany({ where: { userId }, select: { resource: true, status: true } }),
   ]);
 
-  const importing = syncStates.some((s) => ["money_logs", "drugs", "travel"].includes(s.resource) && s.status === "running");
+  // Dataset confidence — the same central derivation Overview uses, so the
+  // two endpoints can no longer disagree about the same underlying state.
+  const rangeForConfidence = { from: range.from, to: range.to };
+  const cashFlowConfidence = resourceConfidence(availCtx, "money_logs" as SyncResource, { range: rangeForConfidence });
+  const consumptionConfidence = resourceConfidence(availCtx, "drugs" as SyncResource, { range: rangeForConfidence });
+  const networthConfidence = resourceConfidence(availCtx, "networth" as SyncResource);
+  const travelConfidence = resourceConfidence(availCtx, "travel" as SyncResource, { range: rangeForConfidence });
 
   const moneyEvents = moneyRows.map((r) => ({
     id: r.id,
@@ -149,8 +155,16 @@ export async function getEconomySummary(userId: string, rangeInput: DateRangeInp
   const sold = valueSoldInventory(saleRows, marketPrices);
   const salesEconomicResult = sold.inventoryValueRemoved !== null ? sold.cashReceived - sold.inventoryValueRemoved : null;
   const nonCash = await nonCashWealthGains(db, userId, from, to, marketPrices);
-  const cashAvailability: KpiAvailability =
-    unknownCount > 0 ? "incomplete" : moneyRows.length === 0 ? "unavailable" : importing ? "importing" : "ok";
+  const cashAvailability: KpiAvailability = (() => {
+    let availability = kpiAvailabilityFromConfidence(cashFlowConfidence);
+    if (unknownCount > 0) availability = worstKpiAvailability(availability, "incomplete");
+    // Proven coverage + zero rows = a confirmed zero; anything less keeps
+    // empty money sets from masquerading as $0.
+    if (moneyRows.length === 0 && availability === "ok" && cashFlowConfidence.confidence !== "complete") {
+      availability = "unavailable";
+    }
+    return availability;
+  })();
 
   const consumptionEvents: ConsumptionEventLike[] = consumptionRows.map((r) => ({
     occurredAt: Math.floor(r.occurredAt.getTime() / 1000),
@@ -160,13 +174,20 @@ export async function getEconomySummary(userId: string, rangeInput: DateRangeInp
     valuationMethod: r.valuationMethod,
   }));
   const consumption = aggregateConsumption(consumptionEvents, range.from, range.to);
-  const consumptionAvailability: KpiAvailability =
-    consumption.uses === 0 ? (importing ? "importing" : "unavailable") : consumption.valueUnknownCount > 0 ? "incomplete" : "ok";
+  const consumptionAvailability: KpiAvailability = worstKpiAvailability(
+    kpiAvailabilityFromConfidence(consumptionConfidence),
+    consumption.uses === 0 ? "unavailable" : consumption.valueUnknownCount > 0 ? "incomplete" : "ok"
+  );
   const drugValue = consumption.byCategory.find((c) => c.category === "drug")?.totalValue ?? null;
 
   const trips = buildTrips(travelEvents, travelItems, marketPrices);
   const travel = calculateTravelProfit(trips, range.from, range.to);
-  const travelAvailability: KpiAvailability = travel.trips > 0 ? "ok" : "unavailable";
+  // Value-level truth on top of dataset confidence: a null estimated profit
+  // (unknown item valuations) is incomplete, never a confirmed figure.
+  const travelAvailability: KpiAvailability = worstKpiAvailability(
+    kpiAvailabilityFromConfidence(travelConfidence),
+    travel.trips === 0 ? "unavailable" : travel.estimatedProfit === null ? "incomplete" : "ok"
+  );
 
   return {
     range: { from: range.from, to: range.to, interval: autoInterval(range) },
@@ -214,7 +235,11 @@ export async function getEconomySummary(userId: string, rangeInput: DateRangeInp
       current: { value: nwPeriod.current?.total ?? null, provenance: "exact", availability: nwPeriod.current ? "ok" : "unavailable" },
       currentAt: nwPeriod.current?.capturedAt ?? null,
       baseline: nwPeriod.baseline?.total ?? null,
-      change: { value: nwPeriod.change, provenance: "exact", availability: nwPeriod.coverage === "none" ? "unavailable" : "ok" },
+      change: {
+        value: nwPeriod.change,
+        provenance: "exact",
+        availability: worstKpiAvailability(kpiAvailabilityFromConfidence(networthConfidence), nwPeriod.coverage === "none" ? "unavailable" : "ok"),
+      },
       changePct: nwPeriod.changePct,
       coverage: nwPeriod.coverage,
       baselineAt: nwPeriod.baseline?.capturedAt ?? null,
@@ -230,6 +255,12 @@ export async function getEconomySummary(userId: string, rangeInput: DateRangeInp
         availability: travel.trips > 0 ? (travel.averageProfitPerHour === null ? "incomplete" : "ok") : "unavailable",
       },
       trips: travel.trips,
+    },
+    confidence: {
+      cashFlow: cashFlowConfidence,
+      consumption: consumptionConfidence,
+      networth: networthConfidence,
+      travel: travelConfidence,
     },
   };
 }

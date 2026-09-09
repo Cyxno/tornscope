@@ -234,6 +234,32 @@ export async function runResourceSync(
     );
     return { ok: true, records: result.records };
   } catch (err) {
+    // Torn rejected the request because the key's access level is too low:
+    // the stored capability blob is stale relative to reality. Record the
+    // resource as capability_denied (NOT failed) — previously collected
+    // history stays intact, confidence reads stale_permission, and the next
+    // check happens at the shared re-check interval instead of hot-retrying.
+    if (err instanceof TornApiError && err.kind === "access_denied") {
+      const requirement = resourceRequirementLabel(resource);
+      const message = `Permission denied by Torn during sync: the key no longer includes ${requirement}. History is retained; grant the selection in Torn to resume.`;
+      await completeResource(ctx.db, userId, resource, {
+        success: false,
+        status: "capability_denied",
+        errorMessage: message,
+        lastTimestamp: claim.state.lastTimestamp,
+        nextRunAt: new Date(Date.now() + CAPABILITY_RECHECK_SECONDS * 1000),
+        now: new Date(),
+      });
+      await recordSyncRun(ctx.db, userId, resource, {
+        startedAt,
+        finishedAt: new Date(),
+        status: "skipped",
+        recordsCollected: 0,
+        errorMessage: message,
+      });
+      logger.warn({ userId, resource, stage: "job_denied" }, "sync skipped: runtime capability denied by Torn");
+      return { ok: false, skipped: true, error: message };
+    }
     const message =
       err instanceof TornApiError
         ? `torn api error (kind=${err.kind}${err.tornCode !== null ? `, code=${err.tornCode}` : ""}): ${err.message}`

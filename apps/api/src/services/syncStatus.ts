@@ -2,6 +2,7 @@ import { getSyncStates, getSyncCategoryStates, getPrismaClient, type SyncStateRo
 import { deriveSetupPhase, normalizeCapabilitiesWithFallback, resourceAllowed, resourceRequirementLabel, SYNC_JOB_NAME, buildSyncJobId, SYNC_RESOURCES, type SyncResource } from "@tornscope/shared";
 import { AppError } from "../errors.js";
 import { getApiContext } from "../context.js";
+import { resourceConfidence } from "./confidence.js";
 
 const BACKFILL_FLAG = "backfill_restart_at";
 
@@ -38,7 +39,18 @@ async function buildSyncHealth(userId: string) {
   const db = getPrismaClient();
   const states: SyncStateRow[] = await getSyncStates(db, userId);
 
-  const credential = await db.apiCredential.findUnique({ where: { userId }, select: { revokedAt: true } });
+  const [credential, user] = await Promise.all([
+    db.apiCredential.findUnique({ where: { userId }, select: { revokedAt: true, capabilities: true, accessLevel: true } }),
+    db.user.findUnique({ where: { id: userId }, select: { isDemo: true } }),
+  ]);
+  const caps = credential && !credential.revokedAt
+    ? normalizeCapabilitiesWithFallback(credential.capabilities, credential.accessLevel)
+    : null;
+  const confidenceCtx = {
+    caps,
+    states: new Map(states.map((s) => [s.resource, s])),
+    isDemo: Boolean(user?.isDemo),
+  };
 
   // Earliest/latest STRUCTURED row per resource — the real stored coverage,
   // shown next to what Torn still exposes (sourceEarliestAt) so it is obvious
@@ -68,6 +80,8 @@ async function buildSyncHealth(userId: string) {
   for (const resource of WALK_RESOURCES) {
     categoryStates.set(resource, await getSyncCategoryStates(db, userId, resource));
   }
+  const hasCategoryProblems = (resource: string): boolean =>
+    (categoryStates.get(resource) ?? []).some((c) => c.status === "failed" || c.status === "access_denied");
 
   return {
     running: states.some((s) => s.status === "running"),
@@ -96,6 +110,11 @@ async function buildSyncHealth(userId: string) {
       lastWalkPages: s.lastWalkPages,
       storedEarliestAt: sec(storedWindows[s.resource]?.earliest ?? null),
       storedLatestAt: sec(storedWindows[s.resource]?.latest ?? null),
+      // Data confidence — deliberately separate from the operational phase.
+      confidence: resourceConfidence(confidenceCtx, s.resource as SyncResource, {
+        coverageTo: sec(storedWindows[s.resource]?.latest ?? null),
+        hasCategoryProblems: hasCategoryProblems(s.resource),
+      }),
       categories: (categoryStates.get(s.resource) ?? []).map((c) => ({
         categoryId: c.categoryId,
         title: c.categoryTitle,
