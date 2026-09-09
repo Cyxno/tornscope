@@ -351,7 +351,7 @@
 
       <div class="mt-4 space-y-2 border-t border-border pt-3 text-[13px]">
         <p class="text-fg-muted">Quiet hours <span class="text-xs text-fg-faint">(non-critical alerts are held)</span></p>
-        <div class="flex items-center gap-2">
+        <div class="flex flex-wrap items-center gap-2">
           <input
             type="time"
             class="rounded-lg border border-border bg-bg-raise px-2 py-1 text-xs text-fg"

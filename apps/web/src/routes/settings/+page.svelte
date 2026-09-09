@@ -266,14 +266,14 @@ import NotificationsSettings from "$lib/components/NotificationsSettings.svelte"
       </label>
 
       {#if !replacePreview}
-        <div class="flex max-w-xl gap-2.5">
+        <div class="flex max-w-xl flex-wrap gap-2.5">
           <input
             id="new-key"
             type="password"
             bind:value={newKey}
             placeholder="Paste your Torn API key"
             autocomplete="off"
-            class="flex-1 rounded-xl border border-border bg-bg-raise px-4 py-2.5 font-mono text-sm text-fg placeholder:font-sans placeholder:text-fg-faint focus:border-accent"
+            class="min-w-0 flex-1 rounded-xl border border-border bg-bg-raise px-4 py-2.5 font-mono text-sm text-fg placeholder:font-sans placeholder:text-fg-faint focus:border-accent"
           />
           <button class="rounded-xl bg-accent-strong px-5 text-sm font-semibold text-bg transition-colors hover:bg-accent disabled:opacity-40" disabled={validatingReplace || saving || newKey.trim().length < 10} onclick={() => void previewSave()}>
             {validatingReplace ? "Validating…" : "Validate"}
