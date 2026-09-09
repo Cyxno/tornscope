@@ -46,9 +46,8 @@ Acceptance criteria:
 
 ### 2. Daily Summary — *issue: `feat(v0.2): daily summary page`* · labels: `v0.2` `analytics` `enhancement`
 
-**Status: In Progress (implemented on `develop`, deployed to the dev stack —
-see [DAILY-SUMMARY.md](DAILY-SUMMARY.md)).** Status is flipped to Complete
-after dev verification passes.
+**Status: Complete.** Implemented on `develop`, deployed to the dev stack —
+see [DAILY-SUMMARY.md](DAILY-SUMMARY.md).
 
 One page answering "how did today go": daily earned, daily spent, asset
 conversions, net worth delta, estimated travel profit, drug consumption and
@@ -56,10 +55,10 @@ value, major account events — with an explanation of important net-worth
 changes where possible. Depends on the confidence layer (1) for labeling.
 
 Acceptance criteria:
-- [ ] All listed metrics render for a day (with correct empty states).
-- [ ] Net-worth deltas explain major drivers where the data allows.
-- [ ] Estimated components (travel profit) are labeled estimated; conversions are not double-counted as income/expense.
-- [ ] Works for Limited-capability profiles with graceful degradation (see 4).
+- [x] All listed metrics render for a day (with correct empty states).
+- [x] Net-worth deltas explain major drivers where the data allows.
+- [x] Estimated components (travel profit) are labeled estimated; conversions are not double-counted as income/expense.
+- [x] Works for Limited-capability profiles with graceful degradation (see 4).
 
 ### 3. Sync reliability — *issue: `feat(v0.2): sync reliability, recovery & incident visibility`* · labels: `v0.2` `reliability`
 

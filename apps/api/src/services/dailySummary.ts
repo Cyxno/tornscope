@@ -460,7 +460,7 @@ function buildHighlights(input: {
   if (input.travel.trips > 0) {
     collected.push({
       kind: "travel_profit",
-      label: input.travel.trips === 1 ? "Travel" : `${input.travel.trips} trips`,
+      label: input.travel.trips === 1 ? "1 trip" : `${input.travel.trips} trips`,
       amount: input.travel.estimatedProfit,
       occurredAt: null,
       tone: "accent",

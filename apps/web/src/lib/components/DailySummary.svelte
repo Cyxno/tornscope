@@ -105,7 +105,7 @@
       case "networth_move":
         return { text: "Net worth moved", hint: amount ?? undefined };
       case "travel_profit":
-        return { text: `Travel — ${h.label}`, hint: amount !== null ? `${amount} estimated` : "estimated" };
+        return { text: `Travel — ${h.label}`, hint: amount !== null ? `${amount} estimated` : "estimated profit" };
       case "drug_use":
         return { text: `Consumption — ${h.label}`, hint: amount !== null ? `${amount} estimated value` : undefined };
       case "rehab":
