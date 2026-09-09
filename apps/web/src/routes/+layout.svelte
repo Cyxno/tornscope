@@ -9,6 +9,12 @@
   import Header from "$lib/components/Header.svelte";
   import { me, refreshMe } from "$lib/state.svelte";
   import { endpoints } from "$lib/api";
+  import { env as publicEnv } from "$env/dynamic/public";
+
+  // Footer status label mirrors the header chip: production shows "Public
+  // Beta"; non-production deployments set PUBLIC_ENV_LABEL (e.g. "Development")
+  // and the footer reports that environment instead.
+  const statusLabel = publicEnv.PUBLIC_ENV_LABEL?.trim() || "Public Beta";
 
   let { children } = $props();
 
@@ -76,7 +82,7 @@
     <div class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-5 py-5 text-xs text-fg-faint sm:px-6">
       <p>
         TornScope — a private record of your Torn life.
-        <span class="text-fg-muted">Public Beta</span> · maintained by
+        <span class="text-fg-muted">{statusLabel}</span> · maintained by
         <a
           href="https://www.torn.com/profiles.php?XID=1816206"
           target="_blank"
