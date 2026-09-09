@@ -309,6 +309,8 @@ pnpm db:migrate           # prisma migrate deploy (against DATABASE_URL)
 
 With Docker Compose, the `migrate` service applies migrations automatically before the API/worker start.
 
+Migration rules, the expand/migrate/contract strategy and the required pre-release upgrade rehearsal: [docs/DATABASE-MIGRATIONS.md](docs/DATABASE-MIGRATIONS.md).
+
 ## API key security
 
 - Keys are validated against `/key/info`, then encrypted with **AES-256-GCM** (env-supplied master key, unique IV per save, auth-tag verified on decrypt).
@@ -353,6 +355,9 @@ Dev URL: http://localhost:5173 (web) — `/api/*` is proxied to the Fastify serv
 - API/web containers run as a non-root user; database and ports bind to localhost only — put your preferred reverse proxy (Caddy/Nginx/Traefik) with TLS in front for remote access.
 - Set `NODE_ENV=production` (the compose file does this) and a strong `API_KEY_ENCRYPTION_KEY`.
 - Security posture: Helmet headers, CORS restricted to the configured origins, global rate limiting keyed on the real client IP, Zod validation on every input, push-endpoint validation (no private/internal push targets), keyset pagination (no unbounded queries), parameterized SQL only (Prisma + tagged templates), no secrets in logs.
+
+- TornScope runs **production** (`main`) and **development/staging** (`develop`) as two fully isolated stacks — separate branches, domains, ports, containers, volumes, databases and secrets. Branching, deploys, hotfixes and releases are documented in [docs/ENVIRONMENTS.md](docs/ENVIRONMENTS.md); migration rules and the required pre-release upgrade rehearsal in [docs/DATABASE-MIGRATIONS.md](docs/DATABASE-MIGRATIONS.md).
+
 
 ## Backup recommendations
 

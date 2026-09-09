@@ -1,7 +1,7 @@
 name: CI
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
 
 jobs:
@@ -92,6 +92,8 @@ jobs:
         run: pnpm build
       - name: Docker compose config
         run: docker compose config --quiet
+      - name: Docker compose config (dev stack)
+        run: docker compose -f docker-compose.dev.yml config --quiet
 
   # Docker is the recommended deployment path, so CI must prove the real
   # production images build and the full stack boots and becomes ready.
