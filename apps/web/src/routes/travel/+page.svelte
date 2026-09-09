@@ -177,7 +177,7 @@
       </p>
     {/if}
 
-    <section class="grid gap-6 lg:grid-cols-5">
+    <section class="grid grid-cols-1 gap-6 lg:grid-cols-5">
       <div class="lg:col-span-3">
         <Panel title="Profit by destination" caption="Estimated profit, best routes first" flush>
           {#if !destOption}

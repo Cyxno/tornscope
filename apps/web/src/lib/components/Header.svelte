@@ -45,7 +45,7 @@
     </a>
 
     <!-- Primary navigation: horizontal, pill segmented -->
-    <nav class="hidden items-center gap-1 md:flex" aria-label="Primary">
+    <nav class="hidden items-center gap-1 lg:flex" aria-label="Primary">
       {#each nav as item (item.href)}
         <a
           href={item.href}
@@ -86,7 +86,7 @@
   </div>
 
   <!-- Mobile nav: horizontal scroll -->
-  <nav class="flex gap-1 overflow-x-auto px-4 pb-2.5 md:hidden" aria-label="Primary mobile">
+  <nav class="flex gap-1 overflow-x-auto px-4 pb-2.5 lg:hidden" aria-label="Primary mobile">
     {#each nav as item (item.href)}
       <a
         href={item.href}

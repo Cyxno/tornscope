@@ -33,13 +33,13 @@
 </script>
 
 <div class="bg-surface p-5">
-  <div class="flex items-center justify-between gap-2">
-    <span class="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint">{label}</span>
+  <div class="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+    <span class="min-w-0 text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint">{label}</span>
     {#if provenance}
       <ProvenanceBadge level={provenance} />
     {/if}
   </div>
-  <div class="mt-2.5 flex items-baseline gap-2.5">
+  <div class="mt-2.5 flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
     <span class="tnum text-2xl font-semibold {toneClass[tone]}" title={title ?? undefined}>{value}</span>
     {#if delta}
       <span class="text-xs font-medium {delta.startsWith('-') ? 'text-negative' : 'text-positive'}">{delta}</span>

@@ -158,7 +158,7 @@ import LiveNow from "$lib/components/LiveNow.svelte";
           <span class="text-[11px] font-semibold uppercase tracking-[0.2em] text-fg-faint">Net worth</span>
           <span class="text-[10px] font-medium uppercase tracking-[0.12em] text-fg-faint">exact · official Torn figure</span>
         </div>
-        <div class="mt-3 flex items-baseline gap-1">
+        <div class="mt-3 flex flex-wrap items-baseline gap-x-1 gap-y-2">
           {#if nw}
             <span class="text-2xl font-medium text-fg-muted">{nw.symbol}</span>
             <span class="tnum text-6xl font-semibold tracking-tight text-fg">{nw.magnitude}</span>
@@ -306,8 +306,8 @@ import LiveNow from "$lib/components/LiveNow.svelte";
     </section>
 
     <!-- Flow + activity -->
-    <section class="grid gap-6 lg:grid-cols-6">
-      <div class="lg:col-span-2">
+    <section class="grid grid-cols-1 gap-6 lg:grid-cols-6">
+      <div class="min-w-0 lg:col-span-2">
         <Panel title="Cash received" caption="Where incoming cash came from — earnings and asset sales are different things">
       {#snippet actions()}
         <a href="/economy" class="pr-4 text-xs font-medium text-accent transition-opacity hover:opacity-80">Explore →</a>
@@ -410,7 +410,7 @@ import LiveNow from "$lib/components/LiveNow.svelte";
           {/if}
         </Panel>
       </div>
-      <div class="lg:col-span-2">
+      <div class="min-w-0 lg:col-span-2">
         <Panel title="Cash spent" caption="Where cash went — true expenses and asset purchases are different things">
       {#snippet actions()}
         <a href="/economy" class="pr-4 text-xs font-medium text-accent transition-opacity hover:opacity-80">Explore →</a>
@@ -450,7 +450,7 @@ import LiveNow from "$lib/components/LiveNow.svelte";
           {/if}
         </Panel>
       </div>
-      <div class="lg:col-span-2">
+      <div class="min-w-0 lg:col-span-2">
         <Panel title="Recent activity" caption="Latest entries from your timeline">
           {#snippet actions()}
             <a href="/timeline" class="text-xs font-medium text-accent transition-opacity hover:opacity-80">All →</a>
@@ -481,7 +481,7 @@ import LiveNow from "$lib/components/LiveNow.svelte";
     </section>
 
     <!-- Habit + movement -->
-    <section class="grid gap-6 lg:grid-cols-2">
+    <section class="grid grid-cols-1 gap-6 lg:grid-cols-2">
       <Panel title="Drug use" caption="Good uses vs overdoses per day" flush>
         {#snippet actions()}
           <a href="/drugs" class="pr-4 text-xs font-medium text-accent transition-opacity hover:opacity-80">Explore →</a>

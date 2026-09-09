@@ -305,7 +305,7 @@
     </section>
 
     <!-- Travel + cooldowns -->
-    <section class="grid gap-6 lg:grid-cols-5">
+    <section class="grid grid-cols-1 gap-6 lg:grid-cols-5">
       <div class="lg:col-span-3">
         <Panel title="Travel" caption="Where you are, and what is in the air">
           {#snippet actions()}

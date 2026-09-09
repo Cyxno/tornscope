@@ -262,7 +262,7 @@
                   <p class="mt-1 pl-[18px] text-xs text-negative" title={row.errorMessage}>{row.errorMessage.slice(0, 140)}</p>
                 {/if}
               </div>
-              <div class="flex items-center gap-8 text-xs">
+              <div class="flex flex-wrap items-center gap-x-8 gap-y-3 text-xs">
                 <div>
                   <p class="text-[10px] uppercase tracking-[0.12em] text-fg-faint">Last attempt</p>
                   <p class="mt-0.5 text-fg-muted">{formatRelative(row.lastAttemptAt)}</p>
