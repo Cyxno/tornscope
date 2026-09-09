@@ -382,6 +382,8 @@ Keep off-site copies. Test restores.
 
 ## Roadmap
 
+The active plan for **v0.2.0 — Public Beta 2** (Data Confidence + Daily Summary) lives in [docs/ROADMAP.md](docs/ROADMAP.md), including the release blockers. The longer-term backlog:
+
 1. Faction analytics (members, armory, chain/war history) on the existing faction foundation
 2. Ranked war analytics using the `ranked_war*` tables (payouts vs consumable costs)
 3. Crimes / combat / stocks / progression pages (schema ready, sync jobs next)
