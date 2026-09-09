@@ -184,6 +184,12 @@ model SyncState {
   recordsCollected Int       @default(0)
   errorCount       Int       @default(0)
   errorMessage     String?
+  /// Machine reason code of the last failure (NEVER raw prose): torn error
+  /// kinds (rate_limited | transient | network | access_denied | key_invalid
+  /// | key_paused | permanent) or operational reasons (worker_interrupted |
+  /// category_failure). Cleared on success. Drives retry/degraded wording —
+  /// raw errorMessage stays server-side and is never shipped as a code.
+  lastErrorKind    String?
   /// Why the historical (backward) pagination last stopped:
   /// history_boundary_reached | source_exhausted | max_pages | cursor_stalled
   /// | api_error | null (never ran a backward walk).

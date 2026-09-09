@@ -1,5 +1,5 @@
 import { getSyncStates, getSyncCategoryStates, getPrismaClient, type SyncStateRow } from "@tornscope/database";
-import { deriveSetupPhase, normalizeCapabilitiesWithFallback, resourceAllowed, resourceRequirementLabel, SYNC_JOB_NAME, buildSyncJobId, SYNC_RESOURCES, type SyncResource } from "@tornscope/shared";
+import { deriveSetupPhase, normalizeCapabilitiesWithFallback, resourceAllowed, resourceRequirementLabel, SYNC_JOB_NAME, buildSyncJobId, SYNC_RESOURCES, deriveSyncOperationalState, deriveResourceIncidents, summarizeSyncMetrics, type SyncIncident, type SyncOperationalMeta, type SyncResource, type SyncRunFact, type SyncRunMetrics } from "@tornscope/shared";
 import { AppError } from "../errors.js";
 import { getApiContext } from "../context.js";
 import { resourceConfidence } from "./confidence.js";
@@ -74,14 +74,58 @@ async function buildSyncHealth(userId: string) {
   const sec = (d: Date | null): number | null => (d ? Math.floor(d.getTime() / 1000) : null);
 
   // Per-category cursor detail for walk resources (money, drugs, ...).
+  // Batched in one parallel pass — never one query per row.
   const WALK_RESOURCES = ["drugs", "rehab", "money_logs", "travel"];
-  const nowSec = Math.floor(Date.now() / 1000);
   const categoryStates = new Map<string, Awaited<ReturnType<typeof getSyncCategoryStates>>>();
-  for (const resource of WALK_RESOURCES) {
-    categoryStates.set(resource, await getSyncCategoryStates(db, userId, resource));
-  }
+  await Promise.all(
+    WALK_RESOURCES.map(async (resource) => {
+      categoryStates.set(resource, await getSyncCategoryStates(db, userId, resource));
+    })
+  );
   const hasCategoryProblems = (resource: string): boolean =>
     (categoryStates.get(resource) ?? []).some((c) => c.status === "failed" || c.status === "access_denied");
+
+  // Recent run history for incident/degraded/metric derivation: ONE query for
+  // all resources (48h fetch so streaks spanning the 24h incident window stay
+  // one episode), then grouped in memory — no BullMQ reads, no per-row queries.
+  const nowMs = Date.now();
+  const runs = await db.syncRun.findMany({
+    where: { userId, startedAt: { gte: new Date(nowMs - 48 * 3600_000) } },
+    orderBy: { startedAt: "asc" },
+  });
+  const runsByResource = new Map<string, SyncRunFact[]>();
+  for (const run of runs) {
+    const list = runsByResource.get(run.resource) ?? [];
+    list.push({
+      status: run.status,
+      startedAt: Math.floor(run.startedAt.getTime() / 1000),
+      finishedAt: run.finishedAt ? Math.floor(run.finishedAt.getTime() / 1000) : null,
+      errorKind: typeof (run.stats as { errorKind?: unknown } | null)?.errorKind === "string" ? ((run.stats as { errorKind: string }).errorKind) : null,
+    });
+    runsByResource.set(run.resource, list);
+  }
+  const nowSec = Math.floor(nowMs / 1000);
+  const operationalFor = (s: SyncStateRow): SyncOperationalMeta =>
+    deriveSyncOperationalState(
+      {
+        status: s.status,
+        lastAttemptAt: s.lastAttemptAt ? Math.floor(s.lastAttemptAt.getTime() / 1000) : null,
+        lastStartedAt: s.lastStartedAt ? Math.floor(s.lastStartedAt.getTime() / 1000) : null,
+        lastHeartbeatAt: s.lastHeartbeatAt ? Math.floor(s.lastHeartbeatAt.getTime() / 1000) : null,
+        lastSuccessAt: s.lastSuccessAt ? Math.floor(s.lastSuccessAt.getTime() / 1000) : null,
+        nextRunAt: s.nextRunAt ? Math.floor(s.nextRunAt.getTime() / 1000) : null,
+        frequencySeconds: s.frequencySeconds,
+        errorCount: s.errorCount,
+        lastErrorKind: s.lastErrorKind,
+        hasCategoryProblems: hasCategoryProblems(s.resource),
+      },
+      nowSec
+    );
+  const incidentsFor = (resource: string): SyncIncident[] => deriveResourceIncidents(runsByResource.get(resource) ?? [], nowSec);
+  const metricsFor = (resource: string): SyncRunMetrics | null => {
+    const resourceRuns = runsByResource.get(resource) ?? [];
+    return resourceRuns.length > 0 ? summarizeSyncMetrics(resourceRuns, nowSec) : null;
+  };
 
   return {
     running: states.some((s) => s.status === "running"),
@@ -115,6 +159,11 @@ async function buildSyncHealth(userId: string) {
         coverageTo: sec(storedWindows[s.resource]?.latest ?? null),
         hasCategoryProblems: hasCategoryProblems(s.resource),
       }),
+      // Operational sync health — separate vocabulary, central derivation.
+      operational: operationalFor(s),
+      lastErrorKind: s.lastErrorKind,
+      recentIncidents: incidentsFor(s.resource),
+      metrics: metricsFor(s.resource),
       categories: (categoryStates.get(s.resource) ?? []).map((c) => ({
         categoryId: c.categoryId,
         title: c.categoryTitle,
@@ -243,9 +292,56 @@ export async function requestManualSync(
   return { queued: true };
 }
 
-/** Retry every failed resource in one go (still guarded by the claim lock). */
-export async function retryFailedSyncs(userId: string): Promise<{ queued: string[] }> {
+/**
+ * Safe per-resource "Retry now" (Sync Status action): user-scoped, refuses a
+ * healthy-running resource (the claim lock alone would swallow the job),
+ * never touches cursors/history, and keeps a short cooldown even on the
+ * force path so a broken resource cannot be hammered. Overlap safety stays
+ * with the worker's claim lock; no duplicate history is written here.
+ */
+const RETRY_COOLDOWN_MS = 30_000;
+
+export async function retrySyncNow(
+  userId: string,
+  resource: string
+): Promise<{ queued: boolean; refused?: "running" | "parked" | "no_key" | "cooldown"; retryAfterSeconds?: number }> {
   const db = getPrismaClient();
+  if (!SYNC_RESOURCES.includes(resource as SyncResource)) {
+    return { queued: false, refused: "no_key" };
+  }
+  const credential = await db.apiCredential.findUnique({ where: { userId } });
+  if (!credential || credential.revokedAt) {
+    return { queued: false, refused: "no_key" };
+  }
+  // A parked resource needs a permission change, not a retry — retrying
+  // without the selection would only burn the re-check cycle.
+  if (!resourceAllowed(normalizeCapabilitiesWithFallback(credential.capabilities, credential.accessLevel), resource as SyncResource)) {
+    return { queued: false, refused: "parked" };
+  }
+  const state = await db.syncState.findUnique({ where: { userId_resource: { userId, resource } } });
+  if (state?.status === "running") {
+    return { queued: false, refused: "running" };
+  }
+  if (state?.status === "capability_denied") {
+    return { queued: false, refused: "parked" };
+  }
+  const lastAttempt = state?.lastAttemptAt?.getTime() ?? 0;
+  const elapsed = Date.now() - lastAttempt;
+  if (lastAttempt > 0 && elapsed < RETRY_COOLDOWN_MS) {
+    return { queued: false, refused: "cooldown", retryAfterSeconds: Math.ceil((RETRY_COOLDOWN_MS - elapsed) / 1000) };
+  }
+
+  const ctx = getApiContext();
+  await ctx.syncQueue.add(
+    SYNC_JOB_NAME,
+    { userId, resource, manual: true },
+    { jobId: buildSyncJobId(userId, resource, `retrynow${Date.now()}`) }
+  );
+  return { queued: true };
+}
+
+/** Retry every failed resource in one go (still guarded by the claim lock). */
+export async function retryFailedSyncs(userId: string): Promise<{ queued: string[] }> {  const db = getPrismaClient();
   const credential = await db.apiCredential.findUnique({ where: { userId } });
   if (!credential || credential.revokedAt) {
     return { queued: [] };

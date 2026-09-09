@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { MONEY_CATEGORIES, MONEY_DIRECTIONS, SYNC_RESOURCES } from "./torn.js";
 import type { Provenance } from "./provenance.js";
+import { SYNC_OPERATIONAL_STATES, SYNC_OPERATION_REASONS } from "./sync-health.js";
 
 /* -------------------------------------------------------------------------- */
 /* Date range                                                                 */
@@ -1534,6 +1535,41 @@ export const SyncStatusResponseSchema = z.object({
 });
 export type SyncStatusResponse = z.infer<typeof SyncStatusResponseSchema>;
 
+/** Operational sync health per resource — SEPARATE from data confidence.
+ * Derived server-side by the shared sync-health module; the frontend only
+ * maps codes to copy. */
+export const SyncOperationalMetaSchema = z.object({
+  state: z.enum(SYNC_OPERATIONAL_STATES),
+  reason: z.enum(SYNC_OPERATION_REASONS),
+  since: z.number().nullable(),
+  overdueBySeconds: z.number().nullable(),
+  retryAt: z.number().nullable(),
+  recoverable: z.boolean(),
+  severity: z.enum(["info", "warning", "error"]),
+});
+export type SyncOperationalMetaDto = z.infer<typeof SyncOperationalMetaSchema>;
+export type SyncOperationReasonDto = SyncOperationalMetaDto["reason"];
+export type SyncSeverityDto = SyncOperationalMetaDto["severity"];
+
+export const SyncIncidentSchema = z.object({
+  kind: z.enum(["sync_failures", "stale_recovered", "capability_denied"]),
+  severity: z.enum(["info", "warning", "error"]),
+  reason: z.enum(SYNC_OPERATION_REASONS),
+  startedAt: z.number(),
+  endedAt: z.number().nullable(),
+  autoRecovered: z.boolean(),
+  failureCount: z.number(),
+});
+export type SyncIncidentDto = z.infer<typeof SyncIncidentSchema>;
+
+export const SyncRunMetricsSchema = z.object({
+  successRate24h: z.number().nullable(),
+  failures24h: z.number(),
+  avgDurationMs24h: z.number().nullable(),
+  recoveries24h: z.number(),
+});
+export type SyncRunMetricsDto = z.infer<typeof SyncRunMetricsSchema>;
+
 /** Full sync + system health for the Sync Status page. */
 export const SyncHealthResponseSchema = z.object({
   running: z.boolean(),
@@ -1568,6 +1604,17 @@ export const SyncHealthResponseSchema = z.object({
       storedLatestAt: z.number().nullable(),
       /** Dataset-level confidence — distinct from the operational phase above. */
       confidence: DataConfidenceMetaSchema,
+      /**
+       * Operational sync health (is the refresh loop working?) — separate
+       * vocabulary from confidence; never merged into one enum.
+       */
+      operational: SyncOperationalMetaSchema,
+      /** Machine reason code of the last failure (null after a success). */
+      lastErrorKind: z.string().nullable(),
+      /** Recent incident episodes (max 5, derived from SyncRun history). */
+      recentIncidents: z.array(SyncIncidentSchema),
+      /** Lightweight 24h run metrics (null when the resource never ran). */
+      metrics: SyncRunMetricsSchema.nullable(),
       /** Per-category cursor detail (walk resources; empty otherwise). */
       categories: z.array(
         z.object({

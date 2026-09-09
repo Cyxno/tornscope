@@ -1,6 +1,6 @@
 import type { PrismaClientType } from "../client.js";
 import type { SyncResource } from "@tornscope/shared";
-import { DEFAULT_SYNC_FREQUENCIES_SECONDS } from "@tornscope/shared";
+import { DEFAULT_SYNC_FREQUENCIES_SECONDS, SYNC_HEALTH_POLICY } from "@tornscope/shared";
 
 /**
  * Sync state repository. The worker claims resources through this table to
@@ -22,6 +22,8 @@ export type SyncStateRow = {
   recordsCollected: number;
   errorCount: number;
   errorMessage: string | null;
+  /** Machine reason code of the last failure (null when last run succeeded). */
+  lastErrorKind: string | null;
   /** Why the last backward (history) walk stopped; null = never walked. */
   stopReason: string | null;
   /** Oldest source timestamp observed during the last backward walk. */
@@ -48,7 +50,7 @@ export async function ensureSyncStates(db: PrismaClientType, userId: string, fre
 }
 
 /** Read stale "running" states: no progress for this long = crashed worker. */
-export const RUNNING_STALE_AFTER_MS = 15 * 60_000;
+export const RUNNING_STALE_AFTER_MS = SYNC_HEALTH_POLICY.RUNNING_STALE_AFTER_SECONDS * 1000;
 
 export interface ClaimResult {
   claimed: boolean;
@@ -82,10 +84,12 @@ export async function claimResource(db: PrismaClientType, userId: string, resour
       if (now.getTime() - runLivenessMs(state) < RUNNING_STALE_AFTER_MS) {
         return { claimed: false, state };
       }
-      // Stale run from a crashed worker - recover.
+      // Stale run from a crashed worker - recover. The interruption is
+      // recorded as the machine reason of record (surface in Sync Status as
+      // "worker interrupted", never as raw internals).
       await tx.syncState.update({
         where: { id: state.id },
-        data: { status: "failed", errorMessage: "previous run timed out (recovered)" },
+        data: { status: "failed", errorMessage: "previous run timed out (recovered)", lastErrorKind: "worker_interrupted" },
       });
     }
 
@@ -98,15 +102,20 @@ export async function claimResource(db: PrismaClientType, userId: string, resour
 }
 
 /**
- * Live progress heartbeat for a running sync: records records processed so
- * far and refreshes `lastHeartbeatAt` so the run is not considered stale.
- * Safe batches — the cursor never advances past stored data here.
+ * Live progress heartbeat for a running sync: refreshes `lastHeartbeatAt` so
+ * the run is not considered stale, and records records processed so far.
+ * Called on EVERY progress report (even zero-record pages) — liveness is
+ * time-based: a long quiet walk (everything deduplicated) must not read as a
+ * dead worker. Safe batches — the cursor never advances past stored data.
  */
 export async function progressResource(db: PrismaClientType, userId: string, resource: SyncResource, recordsDelta: number): Promise<void> {
-  if (recordsDelta <= 0) return;
+  if (recordsDelta < 0) return;
   await db.syncState.updateMany({
     where: { userId, resource, status: "running" },
-    data: { recordsCollected: { increment: recordsDelta }, lastHeartbeatAt: new Date() },
+    data: {
+      recordsCollected: recordsDelta > 0 ? { increment: recordsDelta } : undefined,
+      lastHeartbeatAt: new Date(),
+    },
   });
 }
 
@@ -126,6 +135,9 @@ export interface CompletionUpdate {
   /** Override the terminal status (defaults: success ? "idle" : "failed").
    * "capability_denied" marks resources the key cannot access at all. */
   status?: string;
+  /** Machine reason code of the failure (torn kind or operational reason).
+   * Cleared automatically on success; ignored on success paths. */
+  errorKind?: string | null;
   now?: Date;
 }
 
@@ -154,6 +166,7 @@ export async function completeResource(db: PrismaClientType, userId: string, res
       recordsCollected: update.recordsCollected ? { increment: update.recordsCollected } : undefined,
       errorMessage: update.success ? null : (update.errorMessage ?? "unknown error"),
       errorCount: update.success ? 0 : { increment: 1 },
+      lastErrorKind: update.success ? null : (update.errorKind ?? undefined),
       lastTimestamp: update.lastTimestamp ?? undefined,
       cursor: update.cursor ?? undefined,
       stopReason: update.stopReason !== undefined ? update.stopReason : undefined,
@@ -200,6 +213,7 @@ export async function getSyncStates(db: PrismaClientType, userId: string): Promi
     recordsCollected: r.recordsCollected,
     errorCount: r.errorCount,
     errorMessage: r.errorMessage,
+    lastErrorKind: r.lastErrorKind,
     stopReason: r.stopReason,
     sourceEarliestAt: r.sourceEarliestAt,
     lastWalkPages: r.lastWalkPages,

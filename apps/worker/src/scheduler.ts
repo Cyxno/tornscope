@@ -1,7 +1,7 @@
 import type { Queue } from "bullmq";
 import type { SyncJobData } from "./queues.js";
-import { ensureSyncStates, getSyncStates, setSetting, getSetting } from "@tornscope/database";
-import { CAPABILITY_RECHECK_SECONDS, hasCompleteCapabilityShape, normalizeCapabilitiesWithFallback, resourceAllowed, SYNC_RESOURCES, SYNC_JOB_NAME, buildSyncJobId, type SyncResource } from "@tornscope/shared";
+import { ensureSyncStates, getSyncStates, setSetting, getSetting, recordSyncRun } from "@tornscope/database";
+import { CAPABILITY_RECHECK_SECONDS, hasCompleteCapabilityShape, normalizeCapabilitiesWithFallback, resourceAllowed, SYNC_HEALTH_POLICY, SYNC_RESOURCES, SYNC_JOB_NAME, buildSyncJobId, type SyncResource } from "@tornscope/shared";
 import { getPrismaClient } from "@tornscope/database";
 import { logger } from "./env.js";
 
@@ -67,8 +67,22 @@ export async function enqueueDueSyncs(syncQueue: Queue<SyncJobData>): Promise<vo
           // reset the staleness window of a dead run.
           if (state.status === "running") {
             const lastTouch = state.lastHeartbeatAt?.getTime() ?? state.lastStartedAt?.getTime() ?? 0;
-            if (now - lastTouch < 15 * 60_000) continue;
-            logger.warn({ userId, resource }, "re-enqueuing stale running sync (orphan recovered)");
+            if (now - lastTouch < SYNC_HEALTH_POLICY.RUNNING_STALE_AFTER_SECONDS * 1000) continue;
+            logger.warn(
+              { userId, resource, orphanedForSeconds: Math.round((now - lastTouch) / 1000), orphanStartedAt: state.lastStartedAt?.getTime() ?? null },
+              "re-enqueuing stale running sync (orphan recovered)"
+            );
+            // Incident record: the orphaned run becomes a "recovered" row in
+            // the existing SyncRun history, so Sync Status can show
+            // "recovered stale worker run" without any new schema.
+            await recordSyncRun(db, userId, resource, {
+              startedAt: state.lastStartedAt ?? new Date(now - SYNC_HEALTH_POLICY.RUNNING_STALE_AFTER_SECONDS * 1000),
+              finishedAt: new Date(now),
+              status: "recovered",
+              recordsCollected: 0,
+              errorMessage: "previous run interrupted (worker restart/crash); re-enqueued automatically",
+              stats: { recovered: true, reason: "worker_interrupted", orphanHeartbeatAt: state.lastHeartbeatAt?.getTime() ?? null },
+            });
           }
 
           const dueAt = state.nextRunAt?.getTime() ?? 0;

@@ -62,6 +62,12 @@ Acceptance criteria:
 
 ### 3. Sync reliability — *issue: `feat(v0.2): sync reliability, recovery & incident visibility`* · labels: `v0.2` `reliability`
 
+**Status: In Progress** — implemented on `develop` (central operational
+health model, heartbeat-based stale detection, retry/backoff visibility,
+incident history, safe per-resource retry — see
+[SYNC-RELIABILITY.md](SYNC-RELIABILITY.md)); acceptance verification on the
+dev stack under way.
+
 No resource may remain silently "Syncing". Stale job recovery across all
 resources, visible retry/backoff state, degraded/delayed/stale sync states,
 and per-resource incident/history visibility.

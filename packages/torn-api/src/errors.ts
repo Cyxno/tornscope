@@ -44,9 +44,12 @@ export class TornApiError extends Error {
 }
 
 export class TornNetworkError extends TornApiError {
-  constructor(message: string, cause?: unknown) {
+  /** True when the request aborted on the client timeout (vs connection failure). */
+  readonly timedOut: boolean;
+  constructor(message: string, cause?: unknown, opts: { timedOut?: boolean } = {}) {
     super(message, { kind: "network", retryable: true });
     this.name = "TornNetworkError";
+    this.timedOut = opts.timedOut ?? false;
     this.cause = cause;
   }
 }

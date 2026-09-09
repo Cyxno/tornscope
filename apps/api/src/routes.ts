@@ -30,7 +30,7 @@ import { getToday } from "./services/today.js";
 import { getDailySummary } from "./services/dailySummary.js";
 import { getMe, getApiKeyStatus, saveApiKey, validateApiKey, linkProfile, deleteApiKey, setDemoView, deleteProfile, signOutOtherSessions } from "./services/me.js";
 import { deleteEmptyProfile } from "@tornscope/database";
-import { getSyncStatus, getSyncHealth, requestManualSync, retryFailedSyncs, restartBackfill } from "./services/syncStatus.js";
+import { getSyncStatus, getSyncHealth, requestManualSync, retryFailedSyncs, retrySyncNow, restartBackfill } from "./services/syncStatus.js";
 import { getApiContext } from "./context.js";
 import { checkReadiness } from "./services/readiness.js";
 import { getNotificationsStatus, subscribePush, unsubscribePush, disableDevice, updatePreferences, sendTestNotification } from "./services/notifications.js";
@@ -345,6 +345,20 @@ export function registerRoutes(app: FastifyInstance): void {
   app.post("/api/sync/retry-failed", async (req) => {
     const user = currentUser(req);
     return retryFailedSyncs(user.id);
+  });
+
+  // Safe "Retry now" for a single resource (Sync Status action). Returns a
+  // machine-refusal reason instead of a generic error so the UI can disable
+  // the button state-appropriately next time.
+  app.post("/api/sync/retry", async (req) => {
+    const user = currentUser(req);
+    const body = z.object({ resource: z.string().min(1).max(64) }).safeParse(req.body);
+    if (!body.success) throw errors.validation(body.error.flatten());
+    const result = await retrySyncNow(user.id, body.data.resource);
+    if (!result.queued && result.refused === "cooldown" && (result.retryAfterSeconds ?? 0) > 0) {
+      throw errors.cooldown(`A retry was requested recently. Try again in ${result.retryAfterSeconds}s.`);
+    }
+    return result;
   });
 
   app.post("/api/sync/backfill", async (req) => {

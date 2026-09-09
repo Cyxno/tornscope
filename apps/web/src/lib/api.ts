@@ -189,6 +189,7 @@ export const endpoints = {
   syncStatus: () => api.get<{ running: boolean; resources: Array<{ resource: string; status: string; lastAttemptAt: number | null; lastSuccessAt: number | null; nextRunAt: number | null; recordsCollected: number; errorMessage: string | null }> }>("/sync/status"),
   syncHealth: () => api.get<SyncHealthResponse>("/sync/health"),
   syncRun: (resource: string, force = false) => api.post<{ queued: boolean }>("/sync/run", { resource, force }),
+  syncRetry: (resource: string) => api.post<{ queued: boolean; refused?: "running" | "parked" | "no_key" | "cooldown"; retryAfterSeconds?: number }>("/sync/retry", { resource }),
   syncRetryFailed: () => api.post<{ queued: string[] }>("/sync/retry-failed", {}),
   syncBackfill: () => api.post<{ queued: number }>("/sync/backfill", {}),
   setDemoView: (enabled: boolean) => api.post<MeResponse>("/demo-view", { enabled }),

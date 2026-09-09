@@ -4,6 +4,7 @@
   import { endpoints, ApiClientError } from "$lib/api";
   import { formatRelative } from "$lib/reltime";
   import { confidenceTitle, coverageTitle } from "$lib/confidence";
+  import { OPERATIONAL_LABELS, operationalTitle, OPERATION_REASON_COPY, INCIDENT_KIND_COPY, INCIDENT_REASON_COPY, SEVERITY_STYLES } from "$lib/syncHealth";
   import { me } from "$lib/state.svelte";
   import PageHeader from "$lib/components/PageHeader.svelte";
   import Panel from "$lib/components/Panel.svelte";
@@ -11,17 +12,33 @@
   import ConfidenceBadge from "$lib/components/ConfidenceBadge.svelte";
 
   /**
-   * Sync health: per-resource progress, cursors, coverage and safe recovery
-   * actions. Infrastructure monitoring lives in server logs / Docker.
+   * Sync health: per-resource operational state (derived server-side by the
+   * shared sync-health module — this page only maps codes to copy), data
+   * confidence, recent incidents and safe recovery actions.
    */
 
   type Health = SyncHealthResponse;
+  type ResourceRow = Health["resources"][number];
 
     let health = $state<Health | null>(null);
   let error = $state<string | null>(null);
   let loading = $state(true);
   let syncing = $state<Record<string, boolean>>({});
   let expandedCategories = $state<Set<string>>(new Set());
+  let expandedIssues = $state<Set<string>>(new Set());
+  let notice = $state<string | null>(null);
+  let retrying = $state(false);
+  let restarting = $state(false);
+
+  /** Operational states where the safe "Retry now" action makes sense. */
+  const RETRYABLE_STATES = new Set(["retrying", "failed", "degraded", "delayed"]);
+
+  function toggleSet(set: Set<string>, key: string): Set<string> {
+    const next = new Set(set);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    return next;
+  }
 
   function scheduleSummaryText(sum: {
     total: number; due: number; hot: number; warm: number; cold: number; veryCold: number; retry: number; accessDenied: number;
@@ -32,63 +49,70 @@
     return text;
   }
 
-  function toggleCategories(resource: string) {
-    const next = new Set(expandedCategories);
-    if (next.has(resource)) next.delete(resource);
-    else next.add(resource);
-    expandedCategories = next;
+  /** Friendly labels for per-category cursor statuses (never raw codes). */
+  const CATEGORY_STATUS_LABELS: Record<string, string> = {
+    active: "Active",
+    source_exhausted: "No older rows",
+    access_denied: "Access denied",
+    failed: "Retrying",
+  };
+
+  function categoryStatusLabel(status: string): string {
+    return CATEGORY_STATUS_LABELS[status] ?? status;
   }
-  let notice = $state<string | null>(null);
-  let retrying = $state(false);
-  let restarting = $state(false);
 
-  const frequencyHint: Record<string, string> = {
-    profile: "every 5 min",
-    personal_stats: "hourly",
-    networth: "hourly",
-    drugs: "every 10 min",
-    travel: "every 10 min",
-    rehab: "hourly",
-    money_logs: "every 10 min",
-    events: "every 5 min",
-    faction_basic: "hourly",
-    faction: "hourly",
-    ranked_wars: "6 h",
-    chains: "6 h",
-    organized_crimes: "hourly",
-    attacks: "30 min",
-    torn_catalog: "daily",
-  };
+  function categoryStatusStyle(status: string): string {
+    if (status === "active") return "border-positive/30 bg-positive/10 text-positive";
+    if (status === "source_exhausted") return "border-border bg-surface-2 text-fg-faint";
+    return "border-warning/40 bg-warning/10 text-warning";
+  }
 
-  const resourceCopy: Record<string, string> = {
-    profile: "Player identity, level & faction",
-    personal_stats: "Long-term personal statistics",
-    networth: "Wealth snapshot with breakdown",
-    drugs: "Substance use from your logs",
-    travel: "Flights and items bought abroad",
-    rehab: "Rehabilitation visits",
-    money_logs: "Income & expense ledger entries",
-    events: "Torn events for your timeline",
-    faction_basic: "Legacy faction snapshots",
-    faction: "Faction profile, members & bank balance",
-    ranked_wars: "Ranked war history (permanent)",
-    chains: "Faction chain history",
-    organized_crimes: "Organized crime 2.0 records",
-    attacks: "Your attack record",
-    torn_catalog: "Item names & market prices",
-  };
+  /** "7m" / "1h 05m" style compact duration for overdue/retry wording. */
+  function formatDuration(seconds: number | null | undefined): string {
+    if (seconds === null || seconds === undefined || seconds < 0) return "—";
+    if (seconds < 60) return `${Math.max(1, Math.round(seconds))}s`;
+    const minutes = Math.round(seconds / 60);
+    if (minutes < 60) return `${minutes}m`;
+    return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, "0")}m`;
+  }
 
-  const phaseCopy: Record<string, { label: string; dot: string; text: string }> = {
-    queued: { label: "Queued", dot: "bg-fg-faint", text: "text-fg-faint" },
-    running: { label: "Syncing", dot: "live-dot bg-accent", text: "text-accent" },
-    backfilling: { label: "Importing history", dot: "live-dot bg-accent", text: "text-accent" },
-    caught_up: { label: "Caught up", dot: "bg-positive", text: "text-fg-muted" },
-    partial: { label: "Partial — category failed", dot: "bg-warning", text: "text-warning" },
-    failed: { label: "Failed", dot: "bg-negative", text: "text-negative" },
-    // Permission-blocked: the key cannot access this source at all — a
-    // permission state, never a generic sync failure.
-    permission_required: { label: "Permission required", dot: "bg-warning", text: "text-warning" },
-  };
+  /** Per-state timing cell: what happens next, and when. */
+  function timing(row: ResourceRow): { label: string; value: string; countdown?: string } {
+    const op = row.operational;
+    switch (op.state) {
+      case "running":
+        return { label: "Started", value: op.since ? formatRelative(op.since) : "just now" };
+      case "backfilling":
+        return { label: "Importing", value: "in progress" };
+      case "retrying":
+        return {
+          label: "Retry",
+          value: op.retryAt ? formatDateTime(op.retryAt).slice(11) : "pending",
+          countdown: op.retryAt ? `in ${formatDuration(op.retryAt - Date.now() / 1000)}` : undefined,
+        };
+      case "delayed":
+      case "failed":
+        return { label: "Overdue by", value: formatDuration(op.overdueBySeconds) };
+      case "parked":
+        return { label: "Re-check", value: row.nextRunAt ? formatRelative(row.nextRunAt) : "—" };
+      case "never_run":
+        return { label: "Next run", value: "—" };
+      default:
+        return { label: "Next run", value: row.nextRunAt ? formatDateTime(row.nextRunAt).slice(11) : "—" };
+    }
+  }
+
+  /** Compact 24h health line for the issues expander. */
+  function metricsText(row: ResourceRow): string | null {
+    const m = row.metrics;
+    if (!m) return null;
+    const parts: string[] = [];
+    if (m.successRate24h !== null) parts.push(`${Math.round(m.successRate24h * 100)}% runs succeeded`);
+    if (m.avgDurationMs24h !== null) parts.push(`avg run ${(m.avgDurationMs24h / 1000).toFixed(1)}s`);
+    if (m.failures24h > 0) parts.push(`${m.failures24h} failure${m.failures24h === 1 ? "" : "s"}`);
+    if (m.recoveries24h > 0) parts.push(`${m.recoveries24h} auto-recover${m.recoveries24h === 1 ? "y" : "ies"}`);
+    return parts.length > 0 ? parts.join(" · ") : null;
+  }
 
   async function load() {
     error = null;
@@ -115,6 +139,27 @@
     try {
       await endpoints.syncRun(resource, force);
       notice = `Sync for ${resource} queued — the worker picks it up within a minute.`;
+      setTimeout(() => void load(), 1500);
+    } catch (err) {
+      notice = err instanceof ApiClientError ? err.message : (err as Error).message;
+    } finally {
+      syncing[resource] = false;
+    }
+  }
+
+  /** Safe "Retry now": server refuses running/parked resources explicitly. */
+  async function retryNow(resource: string) {
+    syncing[resource] = true;
+    notice = null;
+    try {
+      const r = await endpoints.syncRetry(resource);
+      notice = r.queued
+        ? `Retry for ${resource} queued — the worker picks it up within a minute.`
+        : r.refused === "running"
+          ? `${resource} is already syncing.`
+          : r.refused === "parked"
+            ? `${resource} needs a permission change in Torn — retrying cannot help until then.`
+            : `${resource} cannot be retried right now.`;
       setTimeout(() => void load(), 1500);
     } catch (err) {
       notice = err instanceof ApiClientError ? err.message : (err as Error).message;
@@ -152,9 +197,45 @@
     }
   }
 
-  function phaseOf(row: Health["resources"][number]) {
-    return phaseCopy[row.phase] ?? phaseCopy.queued!;
+  function operationalOf(row: ResourceRow) {
+    return OPERATIONAL_LABELS[row.operational.state] ?? OPERATIONAL_LABELS.never_run!;
   }
+
+  const frequencyHint: Record<string, string> = {
+    profile: "every 5 min",
+    personal_stats: "hourly",
+    networth: "hourly",
+    drugs: "every 10 min",
+    travel: "every 10 min",
+    rehab: "hourly",
+    money_logs: "every 10 min",
+    events: "every 5 min",
+    faction_basic: "hourly",
+    faction: "hourly",
+    ranked_wars: "6 h",
+    chains: "6 h",
+    organized_crimes: "hourly",
+    attacks: "30 min",
+    torn_catalog: "daily",
+  };
+
+  const resourceCopy: Record<string, string> = {
+    profile: "Player identity, level & faction",
+    personal_stats: "Long-term personal statistics",
+    networth: "Wealth snapshot with breakdown",
+    drugs: "Substance use from your logs",
+    travel: "Flights and items bought abroad",
+    rehab: "Rehabilitation visits",
+    money_logs: "Income & expense ledger entries",
+    events: "Torn events for your timeline",
+    faction_basic: "Legacy faction snapshots",
+    faction: "Faction profile, members & bank balance",
+    ranked_wars: "Ranked war history (permanent)",
+    chains: "Faction chain history",
+    organized_crimes: "Organized crime 2.0 records",
+    attacks: "Your attack record",
+    torn_catalog: "Item names & market prices",
+  };
 
   const COVERAGE_RESOURCES = ["drugs", "rehab", "money_logs", "travel", "events", "networth"] as const;
 
@@ -253,13 +334,16 @@
       {:else}
         <ul class="divide-y divide-border">
           {#each health.resources as row (row.resource)}
+            {@const op = row.operational}
+            {@const style = operationalOf(row)}
+            {@const time = timing(row)}
             <li class="flex flex-wrap items-center gap-x-6 gap-y-2 py-4 first:pt-0 last:pb-0">
               <div class="min-w-[220px] flex-1">
-                <div class="flex items-center gap-2.5">
-                  <span class="h-2 w-2 rounded-full {phaseOf(row).dot}"></span>
+                <div class="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                  <span class="h-2 w-2 rounded-full {style.dot}"></span>
                   <span class="text-[13px] font-semibold capitalize text-fg">{RESOURCE_LABELS[row.resource] ?? humanLabel(row.resource)}</span>
-                  <!-- Operational health (is the worker functioning?) … -->
-                  <span class="text-[11px] {phaseOf(row).text}">{phaseOf(row).label}</span>
+                  <!-- Operational health (is the sync loop working?) … -->
+                  <span class="text-[11px] {style.text}" title={operationalTitle(op)}>{style.label}</span>
                   <span class="text-[11px] text-fg-faint">{frequencyHint[row.resource] ?? ""}</span>
                   <!-- … vs data confidence (how trustworthy is the data?) — never merged. -->
                   <ConfidenceBadge
@@ -269,7 +353,12 @@
                   />
                 </div>
                 <p class="mt-0.5 pl-[18px] text-xs text-fg-muted">{resourceCopy[row.resource] ?? ""}</p>
-                {#if row.errorMessage}
+                {#if op.reason !== "none"}
+                  <p class="mt-0.5 pl-[18px] text-xs {style.text}">
+                    {INCIDENT_REASON_COPY[op.reason]}{#if op.state === "retrying" && op.retryAt}&nbsp;· retry in {formatDuration(Math.max(0, op.retryAt - Date.now() / 1000))}{/if}
+                  </p>
+                {/if}
+                {#if row.errorMessage && (op.state === "failed" || op.state === "degraded" || op.state === "retrying")}
                   <p class="mt-1 pl-[18px] text-xs text-negative" title={row.errorMessage}>{row.errorMessage.slice(0, 140)}</p>
                 {/if}
               </div>
@@ -283,8 +372,10 @@
                   <p class="mt-0.5 text-fg-muted">{formatRelative(row.lastSuccessAt)}</p>
                 </div>
                 <div>
-                  <p class="text-[10px] uppercase tracking-[0.12em] text-fg-faint">Next run</p>
-                  <p class="tnum mt-0.5 text-fg-muted">{row.nextRunAt ? formatDateTime(row.nextRunAt).slice(11) : "—"}</p>
+                  <p class="text-[10px] uppercase tracking-[0.12em] text-fg-faint">{time.label}</p>
+                  <p class="tnum mt-0.5 text-fg-muted">
+                    {time.value}{#if time.countdown}&nbsp;<span class="text-fg-faint">{time.countdown}</span>{/if}
+                  </p>
                 </div>
                 <div>
                   <p class="text-[10px] uppercase tracking-[0.12em] text-fg-faint">Records</p>
@@ -294,24 +385,64 @@
                   <p class="text-[10px] uppercase tracking-[0.12em] text-fg-faint">API pages</p>
                   <p class="tnum mt-0.5 text-fg-muted">{row.lastWalkPages ?? "—"}</p>
                 </div>
+                {#if row.recentIncidents.length > 0}
+                  <button
+                    class="rounded-full border border-warning/40 bg-warning/10 px-3 py-1.5 text-[11px] font-medium text-warning transition-colors hover:border-warning"
+                    onclick={() => (expandedIssues = toggleSet(expandedIssues, row.resource))}
+                  >
+                    {row.recentIncidents.length} issue{row.recentIncidents.length === 1 ? "" : "s"} · 24h
+                  </button>
+                {/if}
                 {#if row.categories.length > 0}
                   <button
                     class="rounded-full border border-border-strong px-3.5 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:border-accent hover:text-accent"
-                    onclick={() => toggleCategories(row.resource)}
+                    onclick={() => (expandedCategories = toggleSet(expandedCategories, row.resource))}
                   >
                     {expandedCategories.has(row.resource) ? "Hide" : "Show"} categories ({row.categories.length})
                   </button>
                 {/if}
-                {#if !me.data?.isDemo}
-                <button
-                  class="rounded-full border border-border-strong px-3.5 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:border-accent hover:text-accent disabled:opacity-40"
-                  disabled={syncing[row.resource] || row.status === "running"}
-                  onclick={() => void syncNow(row.resource)}
-                >
-                  {row.status === "running" ? "Running…" : "Sync now"}
-                </button>
+                {#if !me.data?.isDemo && op.state !== "parked"}
+                  {#if RETRYABLE_STATES.has(op.state)}
+                    <button
+                      class="rounded-full border border-accent/40 bg-accent/10 px-3.5 py-1.5 text-xs font-medium text-accent transition-colors hover:border-accent disabled:opacity-40"
+                      disabled={syncing[row.resource]}
+                      onclick={() => void retryNow(row.resource)}
+                    >
+                      {syncing[row.resource] ? "Retrying…" : "Retry now"}
+                    </button>
+                  {:else}
+                    <button
+                      class="rounded-full border border-border-strong px-3.5 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:border-accent hover:text-accent disabled:opacity-40"
+                      disabled={syncing[row.resource] || op.state === "running" || op.state === "backfilling" || op.state === "stale_running"}
+                      title={op.state === "stale_running" ? "Automatic recovery is already in progress" : op.state === "running" || op.state === "backfilling" ? "This resource is syncing right now" : undefined}
+                      onclick={() => void syncNow(row.resource)}
+                    >
+                      {op.state === "running" || op.state === "backfilling" ? "Running…" : "Sync now"}
+                    </button>
+                  {/if}
                 {/if}
               </div>
+              {#if expandedIssues.has(row.resource) && row.recentIncidents.length > 0}
+                <div class="w-full rounded-lg border border-warning/25 bg-warning/5 px-4 py-3">
+                  <p class="mb-2 text-[11px] font-medium uppercase tracking-[0.12em] text-warning">Recent issues</p>
+                  <ul class="space-y-1.5">
+                    {#each row.recentIncidents as incident (incident.startedAt)}
+                      <li class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-fg-muted">
+                        <span class={`rounded-full border px-2 py-0.5 text-[10px] ${SEVERITY_STYLES[incident.severity]}`}>{INCIDENT_KIND_COPY[incident.kind]}</span>
+                        <span>{INCIDENT_REASON_COPY[incident.reason]}</span>
+                        <span class="text-fg-faint">{formatRelative(incident.startedAt)}</span>
+                        {#if incident.failureCount > 1}<span class="text-fg-faint">×{incident.failureCount}</span>{/if}
+                        {#if incident.autoRecovered}
+                          <span class="rounded-full border border-positive/30 bg-positive/10 px-2 py-0.5 text-[10px] text-positive">auto-recovered</span>
+                        {/if}
+                      </li>
+                    {/each}
+                  </ul>
+                  {#if metricsText(row)}
+                    <p class="mt-2 text-[11px] text-fg-faint">24h: {metricsText(row)}</p>
+                  {/if}
+                </div>
+              {/if}
             </li>
             {#if expandedCategories.has(row.resource) && row.categories.length > 0}
               <li class="border-b border-border/50 bg-bg-raise/40 px-4 py-3">
@@ -342,7 +473,7 @@
                           <td class="tnum py-1.5 pr-3 text-fg-muted">{cat.frequencySeconds ? Math.round(cat.frequencySeconds / 60) + "m" : "—"}</td>
                           <td class="tnum py-1.5 pr-3 text-fg-muted">{cat.nextRunAt ? formatRelative(cat.nextRunAt) : "—"}</td>
                           <td class="py-1.5 pr-3">
-                            <span class={`rounded-full border px-2 py-0.5 text-[10px] ${cat.status === "active" ? "border-positive/30 bg-positive/10 text-positive" : cat.status === "source_exhausted" ? "border-border bg-surface-2 text-fg-faint" : "border-warning/40 bg-warning/10 text-warning"}`}>{cat.status}</span>
+                            <span class={`rounded-full border px-2 py-0.5 text-[10px] ${categoryStatusStyle(cat.status)}`}>{categoryStatusLabel(cat.status)}</span>
                           </td>
                           <td class="max-w-[220px] truncate py-1.5 text-negative" title={cat.errorMessage ?? ""}>{cat.errorMessage ?? ""}</td>
                         </tr>
@@ -405,8 +536,9 @@
     <p class="max-w-2xl text-xs leading-relaxed text-fg-faint">
       The worker enqueues due resources every minute, runs one job at a time and spaces Torn API requests at roughly
       85 per minute (Torn allows 100). Overlapping runs are prevented by a resource lock with progress heartbeats;
-      a run without progress for 15 minutes is recovered automatically. "Restart backfill" re-fetches the full window —
-      existing records are kept and deduplicated.
+      a run without progress for 15 minutes is recovered automatically. "Retry now" re-queues a troubled resource
+      within safe rate limits — it never resets cursors or deletes history. "Restart backfill" re-fetches the full
+      window; existing records are kept and deduplicated.
     </p>
   {/if}
 </div>

@@ -1,6 +1,7 @@
 export * from "./branding.js";
 export * from "./provenance.js";
 export * from "./confidence.js";
+export * from "./sync-health.js";
 export * from "./day.js";
 export * from "./torn.js";
 export * from "./capabilities.js";

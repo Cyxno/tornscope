@@ -301,10 +301,14 @@ export class TornApiClient {
       });
     } catch (err) {
       this.metrics.totalDurationMs += Date.now() - startedAt;
-      if ((err as { name?: string }).name === "TimeoutError" || (err as { cause?: { name?: string } }).cause?.name === "TimeoutError") {
+      const timedOut =
+        (err as { name?: string }).name === "TimeoutError" || (err as { cause?: { name?: string } }).cause?.name === "TimeoutError";
+      if (timedOut) {
         this.metrics.timeouts += 1;
       }
-      throw new TornNetworkError(`torn api request failed: ${sanitizePath(path)}`, err);
+      // The timeout flag survives on the error so failure handling can tell
+      // "Torn too slow" apart from "no route/network down".
+      throw new TornNetworkError(`torn api request failed: ${sanitizePath(path)}`, err, { timedOut });
     }
 
     const durationMs = Date.now() - startedAt;

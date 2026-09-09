@@ -1,6 +1,6 @@
-import { TornApiError } from "@tornscope/torn-api";
+import { TornApiError, TornNetworkError } from "@tornscope/torn-api";
 import { claimResource, completeResource, progressResource, recordSyncRun, ensureSyncStates } from "@tornscope/database";
-import { CAPABILITY_RECHECK_SECONDS, deriveKeyCapabilities, hasCompleteCapabilityShape, normalizeCapabilitiesWithFallback, resourceAllowed, resourceRequirementLabel, type KeyCapabilities, type SyncResource } from "@tornscope/shared";
+import { CAPABILITY_RECHECK_SECONDS, deriveKeyCapabilities, hasCompleteCapabilityShape, normalizeCapabilitiesWithFallback, resourceAllowed, resourceRequirementLabel, tornKindToReason, type KeyCapabilities, type SyncResource } from "@tornscope/shared";
 import { SYNC_HANDLERS } from "./handlers.js";
 import { getWorkerContext } from "../context.js";
 import { logger } from "../env.js";
@@ -21,6 +21,22 @@ export interface SyncOutcome {
 const CAPABILITY_DETECTION_TTL_MS = 10 * 60_000;
 
 const capabilityDetectionCache = new Map<string, { caps: KeyCapabilities; expiresAt: number }>();
+
+/**
+ * Time-based liveness heartbeat for the CURRENT run: refreshes
+ * lastHeartbeatAt even when a walk inserts nothing (full re-fetch of quiet
+ * history must not read as a dead worker). The run-scoped interval is always
+ * cleared in the runner's finally paths; writes are guarded by
+ * status="running" so a late tick can never touch a finished resource.
+ */
+const RUN_HEARTBEAT_INTERVAL_MS = 60_000;
+
+/** Classify a failure into the machine reason code stored on sync_state. */
+function failureReason(err: unknown): string {
+  if (err instanceof TornNetworkError) return tornKindToReason("network", err.timedOut);
+  if (err instanceof TornApiError) return tornKindToReason(err.kind);
+  return "unknown_error";
+}
 
 /**
  * Resolve the credential's capabilities. Credentials stored before capability
@@ -108,9 +124,16 @@ export async function runResourceSync(
   }
   logger.info({ userId, resource, stage: "job_started" }, "sync job started");
 
+  // Time-based liveness for the whole run (cleared on every exit path below).
+  const runHeartbeat = setInterval(() => {
+    void progressResource(ctx.db, userId, resource, 0).catch(() => undefined);
+  }, RUN_HEARTBEAT_INTERVAL_MS);
+  const stopRunHeartbeat = (): void => clearInterval(runHeartbeat);
+
   const handler = SYNC_HANDLERS[resource];
   if (!handler) {
-    await completeResource(ctx.db, userId, resource, { success: false, errorMessage: `no handler for ${resource}` });
+    stopRunHeartbeat();
+    await completeResource(ctx.db, userId, resource, { success: false, errorMessage: `no handler for ${resource}`, errorKind: "unknown_error" });
     return { ok: false, error: `no handler for ${resource}` };
   }
 
@@ -118,8 +141,9 @@ export async function runResourceSync(
   try {
     apiKey = await ctx.decryptCredential(credential);
   } catch (err) {
+    stopRunHeartbeat();
     const message = `failed to decrypt api key: ${(err as Error).message}`;
-    await completeResource(ctx.db, userId, resource, { success: false, errorMessage: message });
+    await completeResource(ctx.db, userId, resource, { success: false, errorMessage: message, errorKind: "unknown_error" });
     await recordSyncRun(ctx.db, userId, resource, { startedAt, finishedAt: new Date(), status: "failed", recordsCollected: 0, errorMessage: message });
     logger.error({ userId, resource, err: message }, "sync failed: credential decryption");
     return { ok: false, error: message };
@@ -132,12 +156,14 @@ export async function runResourceSync(
   // replacing the key re-enables the resource immediately.
   const caps = await resolveCapabilities(ctx, userId, credential, apiKey);
   if (!resourceAllowed(caps, resource)) {
+    stopRunHeartbeat();
     const requirement = resourceRequirementLabel(resource);
     const message = `Permission required: this key does not include ${requirement}. Grant it in Torn to sync this resource.`;
     await completeResource(ctx.db, userId, resource, {
       success: false,
       status: "capability_denied",
       errorMessage: message,
+      errorKind: "capability_denied",
       lastTimestamp: claim.state.lastTimestamp,
       nextRunAt: new Date(Date.now() + CAPABILITY_RECHECK_SECONDS * 1000),
       now: new Date(),
@@ -187,6 +213,7 @@ export async function runResourceSync(
     if (tail > 0) await progressResource(ctx.db, userId, resource, tail);
 
     const frequency = claim.state.frequencySeconds;
+    stopRunHeartbeat();
     await completeResource(ctx.db, userId, resource, {
       success: true,
       recordsCollected: 0, // already committed through progress heartbeats
@@ -216,6 +243,7 @@ export async function runResourceSync(
         deniedRequests: metrics.denied,
         timeouts: metrics.timeouts,
         retries: metrics.retries,
+        errorKind: null,
       },
     });
     logger.info(
@@ -234,6 +262,8 @@ export async function runResourceSync(
     );
     return { ok: true, records: result.records };
   } catch (err) {
+    stopRunHeartbeat();
+    const reason = failureReason(err);
     // Torn rejected the request because the key's access level is too low:
     // the stored capability blob is stale relative to reality. Record the
     // resource as capability_denied (NOT failed) — previously collected
@@ -246,6 +276,7 @@ export async function runResourceSync(
         success: false,
         status: "capability_denied",
         errorMessage: message,
+        errorKind: "capability_denied",
         lastTimestamp: claim.state.lastTimestamp,
         nextRunAt: new Date(Date.now() + CAPABILITY_RECHECK_SECONDS * 1000),
         now: new Date(),
@@ -267,6 +298,7 @@ export async function runResourceSync(
     await completeResource(ctx.db, userId, resource, {
       success: false,
       errorMessage: message,
+      errorKind: reason,
       lastTimestamp: claim.state.lastTimestamp,
       // A failed run also failed its historical walk — record it so the
       // coverage view never mistakes an error for a complete history.
@@ -280,11 +312,11 @@ export async function runResourceSync(
       status: "failed",
       recordsCollected: 0,
       errorMessage: message,
-      stats: { durationMs: Date.now() - startedAt.getTime() },
+      stats: { durationMs: Date.now() - startedAt.getTime(), errorKind: reason },
     });
 
     const level = err instanceof TornApiError && err.kind === "key_invalid" ? "error" : "warn";
-    logger[level]({ userId, resource, err: message, kind: err instanceof TornApiError ? err.kind : "unknown", stage: "job_failed" }, "sync failed");
+    logger[level]({ userId, resource, err: message, kind: err instanceof TornApiError ? err.kind : "unknown", reason, stage: "job_failed" }, "sync failed");
     return { ok: false, error: message };
   }
 }
