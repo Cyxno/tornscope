@@ -28,6 +28,10 @@ export const TOOLTIP = {
   borderColor: C.tooltipBorder,
   borderRadius: 12,
   padding: [10, 14],
+  // Keep the tooltip inside the chart box: the chart container clips its
+  // overflow (mobile page-width safety), so an unconfined tooltip would
+  // be cut off at the panel edge on narrow screens.
+  confine: true,
   textStyle: { color: C.tooltipText, fontSize: 11.5, fontFamily: "Inter Variable" },
   extraCssText: "box-shadow: 0 12px 32px -12px rgba(0,0,0,.6);",
 };
