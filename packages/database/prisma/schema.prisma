@@ -172,6 +172,10 @@ model SyncState {
   status           String    @default("idle")
   lastAttemptAt    DateTime?
   lastStartedAt    DateTime?
+  /// Liveness heartbeat for the current run, written ONLY by claim and the
+  /// progress heartbeat — never by generic bookkeeping updates. Stale-run
+  /// recovery keys off this so schedule updates cannot mask a dead worker.
+  lastHeartbeatAt  DateTime?
   lastCompletedAt  DateTime?
   lastSuccessAt    DateTime?
   nextRunAt        DateTime?

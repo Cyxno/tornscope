@@ -205,6 +205,6 @@ describe("public beta presentation", () => {
     const brandingSrc = read("../../../packages/shared/src/branding.ts");
     expect(brandingSrc).toContain("https://github.com/Cyxno/tornscope");
     expect(brandingSrc).not.toContain("your-org");
-    expect(brandingSrc).toContain('publicVersion: "v0.1.0-beta.1"');
+    expect(brandingSrc).toContain('publicVersion: "v0.1.3 — Public Beta"');
   });
 });

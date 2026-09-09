@@ -12,6 +12,8 @@ export type SyncStateRow = {
   status: string;
   lastAttemptAt: Date | null;
   lastStartedAt: Date | null;
+  /** Liveness heartbeat for the current run (claim + progress writes only). */
+  lastHeartbeatAt: Date | null;
   lastCompletedAt: Date | null;
   lastSuccessAt: Date | null;
   nextRunAt: Date | null;
@@ -57,10 +59,18 @@ export interface ClaimResult {
  * Atomically claim a resource for syncing (guards against overlapping jobs
  * and recovers after crashes by treating stale runs as failed).
  *
- * Staleness is measured against `updatedAt`, which every progress heartbeat
- * refreshes — long initial backfills keep touching the row, so only a truly
- * dead worker (no progress for 15 minutes) is recovered.
+ * Staleness is measured against `lastHeartbeatAt`, which ONLY the claim and
+ * the progress heartbeat write. Generic bookkeeping updates (e.g. the
+ * scheduler advancing `nextRunAt`, which auto-touches `updatedAt`) can never
+ * make a dead run look alive again — previously a scheduler update landing
+ * between the enqueue and the claim reset the staleness window on every
+ * recovery attempt, leaving crashed runs stuck in "running" forever. The
+ * `lastStartedAt`/`updatedAt` fallbacks keep pre-migration rows recoverable.
  */
+function runLivenessMs(state: { lastHeartbeatAt: Date | null; lastStartedAt: Date | null; updatedAt: Date | null }): number {
+  return state.lastHeartbeatAt?.getTime() ?? state.lastStartedAt?.getTime() ?? state.updatedAt?.getTime() ?? 0;
+}
+
 export async function claimResource(db: PrismaClientType, userId: string, resource: SyncResource, now = new Date()): Promise<ClaimResult> {
   return db.$transaction(async (tx) => {
     const state = await tx.syncState.findUnique({
@@ -69,8 +79,7 @@ export async function claimResource(db: PrismaClientType, userId: string, resour
     if (!state) return { claimed: false, state: null };
 
     if (state.status === "running") {
-      const lastTouch = state.updatedAt?.getTime() ?? state.lastStartedAt?.getTime() ?? 0;
-      if (now.getTime() - lastTouch < RUNNING_STALE_AFTER_MS) {
+      if (now.getTime() - runLivenessMs(state) < RUNNING_STALE_AFTER_MS) {
         return { claimed: false, state };
       }
       // Stale run from a crashed worker - recover.
@@ -82,7 +91,7 @@ export async function claimResource(db: PrismaClientType, userId: string, resour
 
     const updated = await tx.syncState.update({
       where: { id: state.id },
-      data: { status: "running", lastStartedAt: now, lastAttemptAt: now, errorMessage: null },
+      data: { status: "running", lastStartedAt: now, lastAttemptAt: now, lastHeartbeatAt: now, errorMessage: null },
     });
     return { claimed: true, state: updated };
   });
@@ -90,14 +99,14 @@ export async function claimResource(db: PrismaClientType, userId: string, resour
 
 /**
  * Live progress heartbeat for a running sync: records records processed so
- * far (delta) and refreshes updatedAt so the run is not considered stale.
+ * far and refreshes `lastHeartbeatAt` so the run is not considered stale.
  * Safe batches — the cursor never advances past stored data here.
  */
 export async function progressResource(db: PrismaClientType, userId: string, resource: SyncResource, recordsDelta: number): Promise<void> {
   if (recordsDelta <= 0) return;
   await db.syncState.updateMany({
     where: { userId, resource, status: "running" },
-    data: { recordsCollected: { increment: recordsDelta } },
+    data: { recordsCollected: { increment: recordsDelta }, lastHeartbeatAt: new Date() },
   });
 }
 
@@ -182,6 +191,7 @@ export async function getSyncStates(db: PrismaClientType, userId: string): Promi
     status: r.status,
     lastAttemptAt: r.lastAttemptAt,
     lastStartedAt: r.lastStartedAt,
+    lastHeartbeatAt: r.lastHeartbeatAt,
     lastCompletedAt: r.lastCompletedAt,
     lastSuccessAt: r.lastSuccessAt,
     nextRunAt: r.nextRunAt,

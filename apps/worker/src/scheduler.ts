@@ -62,8 +62,11 @@ export async function enqueueDueSyncs(syncQueue: Queue<SyncJobData>): Promise<vo
           // Running resources are skipped only while they are alive: a run
           // without a progress heartbeat for 15 minutes is an orphan (worker
           // crash/restart) and must be re-enqueued so backfills resume.
+          // Liveness is `lastHeartbeatAt` (claim/progress writes only) — the
+          // nextRunAt update below auto-touches `updatedAt`, which must never
+          // reset the staleness window of a dead run.
           if (state.status === "running") {
-            const lastTouch = state.updatedAt?.getTime() ?? state.lastStartedAt?.getTime() ?? 0;
+            const lastTouch = state.lastHeartbeatAt?.getTime() ?? state.lastStartedAt?.getTime() ?? 0;
             if (now - lastTouch < 15 * 60_000) continue;
             logger.warn({ userId, resource }, "re-enqueuing stale running sync (orphan recovered)");
           }
