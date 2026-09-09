@@ -62,21 +62,23 @@ Acceptance criteria:
 
 ### 3. Sync reliability — *issue: `feat(v0.2): sync reliability, recovery & incident visibility`* · labels: `v0.2` `reliability`
 
-**Status: In Progress** — implemented on `develop` (central operational
-health model, heartbeat-based stale detection, retry/backoff visibility,
-incident history, safe per-resource retry — see
-[SYNC-RELIABILITY.md](SYNC-RELIABILITY.md)); acceptance verification on the
-dev stack under way.
+**Status: Complete.** Implemented on `develop`, deployed to the dev stack —
+see [SYNC-RELIABILITY.md](SYNC-RELIABILITY.md). Central operational health
+model (caught_up/running/backfilling/delayed/retrying/degraded/failed/parked/
+stale_running/never_run), heartbeat-based stale detection with automatic
+orphan recovery, visible retry/backoff reasons, derived incident history and
+a safe per-resource "Retry now" — all deliberately separate from data
+confidence.
 
 No resource may remain silently "Syncing". Stale job recovery across all
 resources, visible retry/backoff state, degraded/delayed/stale sync states,
 and per-resource incident/history visibility.
 
 Acceptance criteria:
-- [ ] A stuck resource is detected (heartbeat-based) and recovered or surfaced as failed — never stuck in "running" forever.
-- [ ] Retry/backoff state is visible in the sync UI.
-- [ ] Sync states include degraded/delayed/stale, not just running/ok/failed.
-- [ ] Per-resource incident history is viewable without server access.
+- [x] A stuck resource is detected (heartbeat-based) and recovered or surfaced as failed — never stuck in "running" forever. *(proven by a dev-stack chaos test: worker killed mid-run → `stale_running` surfaced → scheduler recovered it, cursor/history intact)*
+- [x] Retry/backoff state is visible in the sync UI. *(retrying/failed states with machine reason + retry time/overdue, e.g. "timed out · retry in 1m")*
+- [x] Sync states include degraded/delayed/stale, not just running/ok/failed.
+- [x] Per-resource incident history is viewable without server access. *(recent-issues expander on Sync Status: "Recovered stale worker run · worker interrupted · auto-recovered" + 24h metrics)*
 
 ### 4. Onboarding / capabilities improvements — *issue: `feat(v0.2): onboarding & key capability clarity`* · labels: `v0.2` `enhancement` `ux`
 
