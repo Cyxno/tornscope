@@ -7,6 +7,7 @@
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import Header from "$lib/components/Header.svelte";
+  import MobileNav from "$lib/components/MobileNav.svelte";
   import { me, refreshMe } from "$lib/state.svelte";
   import { endpoints } from "$lib/api";
   import { env as publicEnv } from "$env/dynamic/public";
@@ -54,32 +55,28 @@
 
   {#if me.data?.isDemo}
     <div class="border-b border-border bg-bg-raise">
-      <div class="mx-auto flex max-w-6xl items-center justify-between gap-4 px-5 py-2 text-xs">
-        <p class="text-fg-muted">
-          <span class="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-warning"></span>
-          Demo mode — synthetic seed data, kept separate from any real player account.
+      <div class="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-2 text-xs sm:px-6">
+        <p class="flex min-w-0 items-center gap-2 text-fg-muted">
+          <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-warning"></span>
+          <span class="truncate">Demo mode — synthetic seed data, kept separate from any real player account.</span>
         </p>
-        <button class="rounded-full border border-border-strong px-3 py-1 text-xs text-fg-muted transition-colors hover:border-accent hover:text-accent" onclick={() => void exitDemo()}>
-          Exit demo
-        </button>
+        <button class="btn btn-sm shrink-0" onclick={() => void exitDemo()}>Exit demo</button>
       </div>
     </div>
   {/if}
 
-  <main class="mx-auto w-full max-w-6xl flex-1 px-5 py-10 sm:px-6 sm:py-12">
+  <main class="page-shell w-full flex-1">
     {#if me.loaded && me.error}
-      <div class="mb-8 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-negative/25 bg-negative/5 px-5 py-3">
+      <div class="mb-8 flex flex-wrap items-center justify-between gap-3 rounded-tile border border-negative/25 bg-negative/5 px-5 py-3">
         <p class="text-[13px] text-negative">Could not reach the TornScope API: {me.error}</p>
-        <button class="rounded-full border border-border px-4 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:border-accent hover:text-accent" onclick={() => void refreshMe()}>
-          Retry
-        </button>
+        <button class="btn btn-sm" onclick={() => void refreshMe()}>Retry</button>
       </div>
     {/if}
     {@render children()}
   </main>
 
-  <footer class="border-t border-border">
-    <div class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-5 py-5 text-xs text-fg-faint sm:px-6">
+  <footer class="border-t border-border pb-16 md:pb-0">
+    <div class="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 px-4 py-5 text-xs text-fg-faint sm:px-6">
       <p>
         TornScope — a private record of your Torn life.
         <span class="text-fg-muted">{statusLabel}</span> · maintained by
@@ -104,4 +101,6 @@
       </p>
     </div>
   </footer>
+
+  <MobileNav />
 </div>

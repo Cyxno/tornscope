@@ -6,10 +6,10 @@
    * Subtle dataset-confidence indicator (v0.2).
    *
    * - complete: renders nothing by default (trust needs no badge)
-   * - partial / stale_permission: small pill + native tooltip explanation
-   * - unavailable: muted pill — pairs with "—" value rendering, never $0
+   * - partial / stale_permission: small warning chip + native tooltip
+   * - unavailable: muted chip — pairs with "—" value rendering, never $0
    *
-   * Deliberately tiny: it sits next to card labels without overwhelming the
+   * Deliberately tiny: it sits next to KPI labels without overwhelming the
    * analytics pages, wraps safely on mobile and is reachable via focus.
    */
   let {
@@ -25,10 +25,10 @@
   } = $props();
 
   const styles: Record<string, string> = {
-    complete: "border-border text-fg-faint",
-    partial: "border-warning/40 text-warning",
-    stale_permission: "border-warning/40 text-warning",
-    unavailable: "border-border text-fg-faint",
+    complete: "",
+    partial: "chip-warning",
+    stale_permission: "chip-warning",
+    unavailable: "",
   };
 </script>
 
@@ -36,7 +36,7 @@
   <!-- The visible label ("Partial"/"Stale"/…) is the accessible text; the
        title tooltip is supplemental, matching ProvenanceBadge's convention. -->
   <span
-    class="inline-flex max-w-full items-center gap-1 rounded-full border bg-surface-2 px-1.5 py-px text-[9px] font-medium uppercase tracking-wide {styles[meta.confidence]}"
+    class="chip {meta.confidence === 'unavailable' ? 'border-border bg-transparent !text-fg-faint' : styles[meta.confidence]} !px-1.5 !text-[9px] !font-semibold !uppercase !tracking-wide"
     title={tooltip ?? confidenceTitle(meta)}
   >
     {#if meta.confidence === "unavailable"}<span aria-hidden="true">—</span>{/if}

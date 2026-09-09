@@ -33,7 +33,7 @@
 
       if (disposed || !container) return;
       chart = echarts.init(container);
-      chart.setOption(option);
+      chart.setOption(withMotion(option));
 
       observer = new ResizeObserver(() => chart?.resize());
       observer.observe(container);
@@ -49,9 +49,15 @@
     };
   });
 
+  // Honor prefers-reduced-motion: charts render instantly, no transitions.
+  function withMotion(opt: Record<string, unknown>): Record<string, unknown> {
+    if (typeof window === "undefined" || !window.matchMedia("(prefers-reduced-motion: reduce)").matches) return opt;
+    return { ...opt, animation: false, animationDurationUpdate: 0 };
+  }
+
   $effect(() => {
     const current = $state.snapshot(option);
-    if (chart) chart.setOption(current, { notMerge: false });
+    if (chart) chart.setOption(withMotion(current), { notMerge: false });
   });
 </script>
 

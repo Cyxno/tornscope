@@ -148,17 +148,17 @@
 {#if today}
   <section aria-label="Right now" class="space-y-3">
     <div class="flex items-center justify-between">
-      <h2 class="text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-faint">Right now</h2>
-      <button class="text-xs font-medium text-accent transition-opacity hover:opacity-80" onclick={onOpenToday}>
+      <h2 class="section-label">Right now</h2>
+      <button class="text-link text-xs font-medium" onclick={onOpenToday}>
         Today →
       </button>
     </div>
 
     <!-- Bars (energy/nerve) + cooldowns: the daily-use glanceables -->
-    <div class="grid grid-cols-2 gap-3 md:grid-cols-5">
+    <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5">
       {#if energyChip}
-        <a href="https://www.torn.com/gym.php" target="_blank" rel="noopener noreferrer" class="rounded-xl border border-border bg-surface px-4 py-3 transition-colors hover:border-accent/50" title="Open in Torn">
-          <p class="text-[10px] uppercase tracking-[0.14em] text-fg-faint">{energyChip.label}</p>
+        <a href="https://www.torn.com/gym.php" target="_blank" rel="noopener noreferrer" class="rounded-tile border border-border bg-surface px-4 py-3 transition-colors hover:border-accent/50" title="Open in Torn">
+          <p class="text-[10px] font-medium uppercase tracking-[0.13em] text-fg-faint">{energyChip.label}</p>
           <p class="tnum mt-1 text-sm font-semibold text-fg">{energyChip.value}</p>
           <div class="mt-1.5 h-1 overflow-hidden rounded-full bg-surface-2">
             <div class="h-full rounded-full bg-accent" style="width: {today.bars.energy?.percent ?? 0}%"></div>
@@ -166,8 +166,8 @@
         </a>
       {/if}
       {#if nerveChip}
-        <a href="https://www.torn.com/crimes.php" target="_blank" rel="noopener noreferrer" class="rounded-xl border border-border bg-surface px-4 py-3 transition-colors hover:border-warning/60" title="Open in Torn">
-          <p class="text-[10px] uppercase tracking-[0.14em] text-fg-faint">{nerveChip.label}</p>
+        <a href="https://www.torn.com/crimes.php" target="_blank" rel="noopener noreferrer" class="rounded-tile border border-border bg-surface px-4 py-3 transition-colors hover:border-warning/60" title="Open in Torn">
+          <p class="text-[10px] font-medium uppercase tracking-[0.13em] text-fg-faint">{nerveChip.label}</p>
           <p class="tnum mt-1 text-sm font-semibold text-fg">{nerveChip.value}</p>
           <div class="mt-1.5 h-1 overflow-hidden rounded-full bg-surface-2">
             <div class="h-full rounded-full bg-warning" style="width: {today.bars.nerve?.percent ?? 0}%"></div>
@@ -175,8 +175,8 @@
         </a>
       {/if}
       {#each cooldownChips as chip (chip.key)}
-        <a href={chip.href} target="_blank" rel="noopener noreferrer" class="cursor-pointer rounded-xl border bg-surface px-4 py-3 transition-colors {chip.tone === 'positive' ? 'hover:border-positive/60' : 'hover:border-accent/50'}" style={chip.tone === "positive" ? "border-color: rgba(63,214,143,0.4)" : ""} title="Open in Torn">
-          <p class="text-[10px] uppercase tracking-[0.14em] text-fg-faint">{chip.label}</p>
+        <a href={chip.href} target="_blank" rel="noopener noreferrer" class="cursor-pointer rounded-tile border bg-surface px-4 py-3 transition-colors {chip.tone === 'positive' ? 'border-positive/30 hover:border-positive/60' : 'border-border hover:border-accent/50'}" title="Open in Torn">
+          <p class="text-[10px] font-medium uppercase tracking-[0.13em] text-fg-faint">{chip.label}</p>
           <p class="tnum mt-1 text-sm font-semibold {chip.tone === 'positive' ? 'text-positive' : 'text-fg'}">
             {chip.value}{#if chip.live}<span class="ml-1 text-[10px] font-normal text-fg-faint">left</span>{/if}
           </p>
@@ -188,15 +188,15 @@
     {#if attentionChips.length > 0 || ocChip}
       <div class="flex flex-wrap gap-2">
         {#if ocChip}
-          <a href={ocChip.href} class="inline-flex items-center gap-2 rounded-full border border-accent/30 bg-accent/5 px-3.5 py-1.5 text-xs transition-colors hover:border-accent/60">
-            <span class="font-medium text-accent">{ocChip.label}</span>
+          <a href={ocChip.href} class="chip chip-accent !h-auto !py-1.5 !text-xs">
+            <span class="font-semibold">{ocChip.label}</span>
             <span class="tnum text-fg-muted">{ocChip.value}</span>
           </a>
         {/if}
         {#each attentionChips as chip (chip.key)}
-          <a href={chip.href ?? "/today"} class="inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs transition-colors {chip.tone === 'negative' ? 'border-negative/30 bg-negative/5' : chip.tone === 'accent' ? 'border-accent/30 bg-accent/5' : chip.tone === 'warning' ? 'border-warning/30 bg-warning/5' : 'border-border bg-surface'}">
-            <span class="font-medium {chip.tone === 'negative' ? 'text-negative' : chip.tone === 'accent' ? 'text-accent' : chip.tone === 'warning' ? 'text-warning' : 'text-fg-muted'}">{chip.label}</span>
-            <span class="tnum text-fg-muted">{chip.value}</span>
+          <a href={chip.href ?? "/today"} class="chip !h-auto !py-1.5 !text-xs {chip.tone === 'negative' ? 'chip-negative' : chip.tone === 'accent' ? 'chip-accent' : chip.tone === 'warning' ? 'chip-warning' : ''}">
+            <span class="font-semibold">{chip.label}</span>
+            <span class="tnum {chip.tone === 'neutral' ? 'text-fg-muted' : ''}">{chip.value}</span>
           </a>
         {/each}
       </div>

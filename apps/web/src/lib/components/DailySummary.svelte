@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { DailySummaryResponse, DailyHighlight } from "@tornscope/shared";
-  import { formatDate, formatKpiValue, formatMoneyCompact, formatSignedMoney } from "@tornscope/shared";
+  import { formatDate, formatKpiValue, formatMoneyCompact, formatSignedMoney, formatSignedMoneyCompact } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
   import { me } from "$lib/state.svelte";
   import { confidenceTitle } from "$lib/confidence";
@@ -94,7 +94,7 @@
   const displayDate = $derived(summary ? formatDate(summary.range.from) : "");
 
   function highlightCopy(h: DailyHighlight): { text: string; hint?: string } {
-    const amount = h.amount !== null ? (h.amount >= 0 ? `+${formatMoneyCompact(h.amount)}` : `-${formatMoneyCompact(-h.amount)}`) : null;
+    const amount = h.amount !== null ? formatSignedMoneyCompact(h.amount) : null;
     switch (h.kind) {
       case "large_cash_in":
         return { text: `Large cash inflow — ${h.label}`, hint: amount ?? undefined };
@@ -130,10 +130,10 @@
   }
 </script>
 
-<section aria-label="Daily summary" class="space-y-6">
+<section aria-label="Daily summary" class="space-y-5">
   <div class="flex flex-wrap items-center justify-between gap-3">
     <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-      <h2 class="font-display text-2xl font-medium text-fg">{dayLabel}</h2>
+      <h2 class="font-display text-[22px] font-medium text-fg">{dayLabel}</h2>
       <span class="text-xs text-fg-faint">{displayDate}{summary?.ongoingDay ? " · day in progress" : ""}</span>
       {#if summary}
         <ConfidenceBadge meta={summary.overallConfidence} tooltip={confidenceTitle(summary.overallConfidence, summary.overallConfidence.lastRefreshedAt ? `last refreshed ${formatRelative(summary.overallConfidence.lastRefreshedAt)}` : undefined)} />
@@ -141,13 +141,13 @@
     </div>
     <div class="flex items-center gap-1.5">
       <button
-        class="rounded-full border border-border px-3 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:border-accent hover:text-accent disabled:opacity-30"
+        class="btn btn-sm !px-2.5"
         onclick={() => shiftDay(-1)}
         aria-label="Previous day"
       >←</button>
       <input
         type="date"
-        class="rounded-full border border-border bg-surface px-3 py-1.5 text-xs text-fg-muted [color-scheme:dark]"
+        class="input !h-[30px] w-36 [color-scheme:dark]"
         max={todayKey}
         value={date}
         onchange={(e) => {
@@ -157,14 +157,14 @@
         aria-label="Pick a day"
       />
       <button
-        class="rounded-full border border-border px-3 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:border-accent hover:text-accent disabled:opacity-30"
+        class="btn btn-sm !px-2.5"
         onclick={() => shiftDay(1)}
         disabled={!date || date >= todayKey}
         aria-label="Next day"
       >→</button>
       {#if date && date !== todayKey}
         <button
-          class="rounded-full border border-border px-3 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:border-accent hover:text-accent"
+          class="btn btn-sm"
           onclick={() => setDay("")}
         >Today</button>
       {/if}
@@ -172,26 +172,36 @@
   </div>
 
   {#if loading && !summary}
-    <div class="animate-pulse rounded-2xl border border-border bg-surface p-8 text-sm text-fg-faint">Loading the day…</div>
+    <div class="space-y-4" data-testid="skeleton" aria-busy="true">
+      <div class="rounded-card border border-border bg-surface p-6">
+        <div class="skeleton h-3 w-40"></div>
+        <div class="skeleton mt-4 h-10 w-52"></div>
+      </div>
+      <div class="grid grid-cols-1 gap-px overflow-hidden rounded-card border border-border bg-border md:grid-cols-3">
+        {#each Array(3) as _, i (i)}
+          <div class="bg-surface p-5"><div class="skeleton h-3 w-20"></div><div class="skeleton mt-3 h-5 w-24"></div><div class="skeleton mt-2 h-5 w-16"></div></div>
+        {/each}
+      </div>
+    </div>
   {:else if error}
-    <div class="rounded-2xl border border-negative/30 bg-negative/5 p-5 text-sm text-negative">
+    <div class="rounded-tile border border-negative/30 bg-negative/5 p-5 text-sm text-negative">
       {error}
       <button class="ml-3 underline" onclick={() => (reloadToken += 1)}>Retry</button>
     </div>
   {:else if summary}
     <!-- Hero: the official snapshot delta — a wealth movement, never profit -->
-    <div class="rounded-2xl border border-border bg-surface px-6 py-6 shadow-panel sm:px-8">
+    <div class="rounded-card border border-border bg-surface px-6 py-6 shadow-panel sm:px-8">
       <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <p class="text-[11px] font-semibold uppercase tracking-[0.2em] text-fg-faint">{netWorthWord(summary.netWorth.coverage)}</p>
+        <p class="section-label">{netWorthWord(summary.netWorth.coverage)}</p>
         <span class="text-[10px] font-medium uppercase tracking-[0.12em] text-fg-faint">exact · official Torn snapshots</span>
         <ConfidenceBadge meta={summary.netWorth.confidence} tooltip={confidenceTitle(summary.netWorth.confidence)} />
       </div>
       <p class="mt-2 flex flex-wrap items-baseline gap-x-3">
         <span class="tnum font-display text-4xl font-semibold {summary.netWorth.delta === null ? 'text-fg-faint' : summary.netWorth.delta >= 0 ? 'text-positive' : 'text-negative'}">
-          {summary.netWorth.delta === null ? "Insufficient history" : formatSignedMoney(summary.netWorth.delta)}
+          {summary.netWorth.delta === null ? "Insufficient history" : formatSignedMoneyCompact(summary.netWorth.delta)}
         </span>
         {#if summary.netWorth.changePct !== null}
-          <span class="text-sm text-fg-muted">{summary.netWorth.changePct >= 0 ? "+" : ""}{summary.netWorth.changePct.toFixed(2)}%</span>
+          <span class="tnum text-sm text-fg-muted">{summary.netWorth.changePct >= 0 ? "+" : ""}{summary.netWorth.changePct.toFixed(2)}%</span>
         {/if}
       </p>
       {#if summary.netWorth.startAt !== null || summary.netWorth.endAt !== null}
@@ -203,7 +213,7 @@
       {/if}
       {#if summary.netWorth.drivers && summary.netWorth.drivers.length > 0}
         <div class="mt-4 space-y-1.5 border-t border-border pt-3">
-          <p class="text-[10px] font-medium uppercase tracking-[0.14em] text-fg-faint">Likely contributors — recorded movements, not causes</p>
+          <p class="section-label">Likely contributors — recorded movements, not causes</p>
           <ul class="space-y-1 text-[13px]">
             {#each summary.netWorth.drivers as driver (driver.kind + driver.label)}
               <li class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5">
@@ -213,7 +223,7 @@
                   {#if driver.certainty === "unexplained"}<span class="ml-1 text-[10px] uppercase tracking-wide text-warning">unexplained</span>{/if}
                 </span>
                 <span class="tnum {driver.magnitude === null ? 'text-fg-faint' : driver.magnitude >= 0 ? 'text-positive' : 'text-negative'}">
-                  {driver.magnitude === null ? "—" : formatSignedMoney(driver.magnitude)}
+                  {driver.magnitude === null ? "—" : formatSignedMoneyCompact(driver.magnitude)}
                 </span>
               </li>
             {/each}
@@ -223,10 +233,10 @@
     </div>
 
     <!-- Three lenses: cash movement | economic effect | conversions -->
-    <div class="grid grid-cols-1 gap-px overflow-hidden rounded-2xl border border-border bg-border shadow-panel md:grid-cols-3">
+    <div class="grid grid-cols-1 gap-px overflow-hidden rounded-card border border-border bg-border shadow-panel md:grid-cols-3">
       <div class="bg-surface p-5">
         <div class="flex items-center justify-between gap-2">
-          <p class="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint">Cash flow</p>
+          <p class="section-label !tracking-[0.1em]">Cash flow</p>
           <ConfidenceBadge meta={summary.cashFlow.confidence} tooltip={confidenceTitle(summary.cashFlow.confidence)} />
         </div>
         <div class="mt-3 space-y-1.5 text-sm">
@@ -244,7 +254,7 @@
       </div>
       <div class="bg-surface p-5">
         <div class="flex items-center justify-between gap-2">
-          <p class="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint">Economic effect</p>
+          <p class="section-label !tracking-[0.1em]">Economic effect</p>
           <ConfidenceBadge meta={summary.economicEffect.confidence} tooltip={confidenceTitle(summary.economicEffect.confidence)} />
         </div>
         <div class="mt-3 space-y-1.5 text-sm">
@@ -256,7 +266,7 @@
       </div>
       <div class="bg-surface p-5">
         <div class="flex items-center justify-between gap-2">
-          <p class="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint">Conversions</p>
+          <p class="section-label !tracking-[0.1em]">Conversions</p>
           <ConfidenceBadge meta={summary.assetConversions.confidence} tooltip={confidenceTitle(summary.assetConversions.confidence)} />
         </div>
         <div class="mt-3 space-y-1.5 text-sm">
@@ -271,10 +281,10 @@
     </div>
 
     <!-- Travel | Drugs & rehab -->
-    <div class="grid grid-cols-1 gap-px overflow-hidden rounded-2xl border border-border bg-border shadow-panel md:grid-cols-2">
+    <div class="grid grid-cols-1 gap-px overflow-hidden rounded-card border border-border bg-border shadow-panel md:grid-cols-2">
       <div class="bg-surface p-5">
         <div class="flex items-center justify-between gap-2">
-          <p class="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint">Travel</p>
+          <p class="section-label !tracking-[0.1em]">Travel</p>
           <div class="flex items-center gap-2">
             <ConfidenceBadge meta={summary.travel.confidence} tooltip={confidenceTitle(summary.travel.confidence)} />
             <span class="text-[10px] font-medium uppercase tracking-[0.12em] text-warning" title="Estimated value — based on current item market prices, not historical values">estimated</span>
@@ -287,7 +297,7 @@
       </div>
       <div class="bg-surface p-5">
         <div class="flex items-center justify-between gap-2">
-          <p class="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint">Drugs &amp; rehab</p>
+          <p class="section-label !tracking-[0.1em]">Drugs &amp; rehab</p>
           <ConfidenceBadge meta={summary.drugs.confidence} tooltip={confidenceTitle(summary.drugs.confidence)} />
         </div>
         <div class="mt-3 space-y-1.5 text-sm">

@@ -2,8 +2,8 @@
   import { DATE_PRESETS, setPreset, setCustomRange, dateRange } from "$lib/state.svelte";
 
   /**
-   * Segmented control for the global date range.
-   * Active segment is inverted (light on dark) for a crisp premium feel.
+   * Segmented control for the global date range. Active segment is inverted
+   * (light on dark); Custom unfolds an inline two-date form.
    */
   let showCustom = $state(false);
   let customFrom = $state("");
@@ -15,7 +15,6 @@
     if (!from && !to) return;
     // A one-sided entry means "from the beginning of recorded time" or
     // "up to that day" — 0 is the honest epoch bound, never a fake date.
-    // Both-sided is the normal path; single-sided keeps the other end open.
     if (from && to) {
       setCustomRange(from, to);
     } else if (from) {
@@ -26,42 +25,43 @@
   }
 </script>
 
-<div class="inline-flex max-w-full flex-wrap items-center gap-0.5 rounded-full border border-border bg-surface p-1">
-  {#each DATE_PRESETS as preset (preset.value)}
+<div class="inline-flex max-w-full flex-wrap items-center gap-1">
+  <div class="inline-flex max-w-full items-center gap-0.5 rounded-full border border-border bg-surface p-1">
+    {#each DATE_PRESETS as preset (preset.value)}
+      <button
+        class="rounded-full px-3 py-1 text-xs font-medium transition-all {dateRange.preset === preset.value && !showCustom
+          ? 'bg-fg font-semibold text-bg'
+          : 'text-fg-muted hover:text-fg'}"
+        onclick={() => {
+          showCustom = false;
+          setPreset(preset.value);
+        }}
+      >
+        {preset.label}
+      </button>
+    {/each}
     <button
-      class="rounded-full px-3 py-1.5 text-xs font-medium transition-all {dateRange.preset === preset.value && !showCustom
+      class="rounded-full px-3 py-1 text-xs font-medium transition-all {dateRange.preset === 'custom' || showCustom
         ? 'bg-fg font-semibold text-bg'
         : 'text-fg-muted hover:text-fg'}"
-      onclick={() => {
-        showCustom = false;
-        setPreset(preset.value);
-      }}
+      onclick={() => (showCustom = !showCustom)}
+      aria-expanded={showCustom}
     >
-      {preset.label}
+      Custom
     </button>
-  {/each}
-  <button
-    class="rounded-full px-3 py-1.5 text-xs font-medium transition-all {dateRange.preset === 'custom'
-      ? 'bg-fg font-semibold text-bg'
-      : 'text-fg-muted hover:text-fg'}"
-    onclick={() => (showCustom = !showCustom)}
-  >
-    Custom
-  </button>
+  </div>
 </div>
 
 {#if showCustom}
-  <div class="mt-3 flex flex-wrap items-center gap-2.5 rounded-xl border border-border bg-bg-raise p-3">
-    <label class="text-xs text-fg-muted">
+  <div class="rise-in mt-3 flex flex-wrap items-center gap-2.5 rounded-tile border border-border bg-bg-raise p-3">
+    <label class="flex items-center gap-1.5 text-xs text-fg-muted">
       From
-      <input type="date" bind:value={customFrom} class="ml-1.5 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-fg" />
+      <input type="date" bind:value={customFrom} class="input !h-8 w-36 [color-scheme:dark]" />
     </label>
-    <label class="text-xs text-fg-muted">
+    <label class="flex items-center gap-1.5 text-xs text-fg-muted">
       To
-      <input type="date" bind:value={customTo} class="ml-1.5 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-fg" />
+      <input type="date" bind:value={customTo} class="input !h-8 w-36 [color-scheme:dark]" />
     </label>
-    <button class="rounded-lg bg-accent-strong px-3.5 py-1.5 text-xs font-semibold text-bg transition-colors hover:bg-accent" onclick={applyCustom}>
-      Apply range
-    </button>
+    <button class="btn btn-primary btn-sm" onclick={applyCustom}>Apply range</button>
   </div>
 {/if}

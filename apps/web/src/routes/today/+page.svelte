@@ -16,6 +16,7 @@
   import Panel from "$lib/components/Panel.svelte";
   import StateMessage from "$lib/components/StateMessage.svelte";
   import Countdown from "$lib/components/Countdown.svelte";
+  import Icon from "$lib/components/Icon.svelte";
   import DailySummary from "$lib/components/DailySummary.svelte";
 
   /**
@@ -198,12 +199,12 @@
 
 <svelte:head><title>Today · TornScope</title></svelte:head>
 
-<div class="space-y-10">
-  <PageHeader eyebrow="Live status" title="Today" description="Everything that matters right now.">
+<div class="space-y-8 lg:space-y-10">
+  <PageHeader eyebrow="Today · live status" title="{greeting}{data?.player.name ? `, ${data.player.name}` : ""}." description={statusLine || "Everything that matters right now."}>
     {#snippet actions()}
       <div class="flex items-center gap-3">
         {#if data?.demo}
-          <span class="inline-flex items-center gap-1.5 rounded-full border border-warning/40 bg-warning/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-warning">
+          <span class="chip chip-warning !py-1 uppercase tracking-wide">
             <span class="h-1.5 w-1.5 rounded-full bg-warning"></span>
             Demo — simulated
           </span>
@@ -211,11 +212,7 @@
         {#if data}
           <span class="hidden text-xs text-fg-faint sm:inline">Updated {updatedAgo}</span>
         {/if}
-        <button
-          class="rounded-full border border-border bg-surface px-4 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:border-accent hover:text-accent disabled:opacity-50"
-          onclick={() => void load()}
-          disabled={refreshing}
-        >
+        <button class="btn btn-sm" onclick={() => void load()} disabled={refreshing}>
           {refreshing ? "Refreshing…" : "Refresh"}
         </button>
       </div>
@@ -237,7 +234,7 @@
       <div class="space-y-3">
         {#each [data.hospital, data.jail] as notice, i (i)}
           {#if notice}
-            <div class="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-2xl border px-5 py-4 {notice.kind === 'hospital' ? 'border-negative/30 bg-negative/5' : 'border-warning/30 bg-warning/5'}">
+            <div class="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-tile border px-5 py-4 {notice.kind === 'hospital' ? 'border-negative/30 bg-negative/5' : 'border-warning/30 bg-warning/5'}">
               <span class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] {notice.kind === 'hospital' ? 'text-negative' : 'text-warning'}">
                 <span class="h-1.5 w-1.5 rounded-full {notice.kind === 'hospital' ? 'bg-negative' : 'bg-warning'} live-dot"></span>
                 {notice.kind}
@@ -261,27 +258,19 @@
       </div>
     {/if}
 
-    <!-- Greeting / current account state -->
-    <div class="space-y-1.5">
-      <p class="font-display text-3xl font-medium leading-tight text-fg">
-        {greeting}{data.player.name ? `, ${data.player.name}` : ""}.
-      </p>
-      <p class="text-sm text-fg-muted">{statusLine}</p>
-    </div>
-
     <!-- Daily Summary: what actually happened today (or any picked day) -->
     <DailySummary />
 
     <!-- LIVE STATE: the four bars -->
-    <section aria-label="Live bars" class="rounded-2xl border border-border bg-surface px-5 py-2 shadow-panel sm:px-7">
-      <p class="pt-4 text-[11px] font-semibold uppercase tracking-[0.2em] text-fg-faint">Live state</p>
+    <section aria-label="Live bars" class="rounded-card border border-border bg-surface px-5 py-2 shadow-panel sm:px-7">
+      <p class="section-label pt-4">Live state</p>
       <div>
         {#each bars as bar, i (i)}
           {@const barLink = bar ? BAR_LINKS[bar.key] : undefined}
           <div class="flex flex-col gap-2 border-b border-border/60 py-4 last:border-0 md:flex-row md:items-center md:gap-6">
             {#if barLink}
-              <a href={barLink} target="_blank" rel="noopener noreferrer" class="w-20 shrink-0 text-[13px] font-medium text-fg transition-colors hover:text-accent">
-                {bar?.label ?? "—"} <span class="text-[10px] uppercase tracking-wide text-fg-faint">↗</span>
+              <a href={barLink} target="_blank" rel="noopener noreferrer" class="flex w-20 shrink-0 items-center gap-1 text-[13px] font-medium text-fg transition-colors hover:text-accent">
+                {bar?.label ?? "—"} <Icon name="external" size={11} class="text-fg-faint" />
               </a>
             {:else}
               <span class="w-20 shrink-0 text-[13px] font-medium text-fg">{bar?.label ?? "—"}</span>
@@ -311,9 +300,9 @@
     <!-- Travel + cooldowns -->
     <section class="grid grid-cols-1 gap-6 lg:grid-cols-5">
       <div class="lg:col-span-3">
-        <Panel title="Travel" caption="Where you are, and what is in the air">
+        <Panel title="Travel" caption="Where you are, and what is in the air" class="h-full">
           {#snippet actions()}
-            <a class="text-xs text-fg-faint transition-colors hover:text-accent" href={TORN_TRAVEL_LINK} target="_blank" rel="noopener noreferrer">Torn ↗</a>
+            <a class="flex items-center gap-1 pr-2 text-xs text-fg-faint transition-colors hover:text-accent" href={TORN_TRAVEL_LINK} target="_blank" rel="noopener noreferrer">Torn <Icon name="external" size={11} /></a>
           {/snippet}
           <div class="space-y-3">
             <p class="font-display text-3xl font-medium text-fg">{travelHeadline}</p>
@@ -349,7 +338,7 @@
       </div>
 
       <div class="lg:col-span-2">
-        <Panel title="Cooldowns" caption="Ready when the clock hits zero — tap a row to open Torn" flush>
+        <Panel title="Cooldowns" caption="Ready when the clock hits zero — tap a row to open Torn" flush class="h-full">
           <div class="px-6 pb-6 pt-3">
             {#each cooldowns as cd, i (i)}
               {@const state = cooldownState(cd)}
@@ -360,14 +349,12 @@
                 rel="noopener noreferrer"
                 tabindex={cd ? 0 : -1}
               >
-                <span class="text-[13px] font-medium text-fg">{cd?.label ?? "—"}
-                  {#if cd}<span class="ml-1 text-[10px] uppercase tracking-wide text-fg-faint">items ↗</span>{/if}
+                <span class="flex items-center gap-1.5 text-[13px] font-medium text-fg">{cd?.label ?? "—"}
+                  {#if cd}<Icon name="external" size={11} class="text-fg-faint" />{/if}
                 </span>
                 {#if cd && state}
                   {#if !state.active}
-                    <span class="inline-flex items-center gap-1.5 rounded-full border border-positive/30 bg-positive/10 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-positive">
-                      Ready
-                    </span>
+                    <span class="chip chip-positive">Ready</span>
                   {:else}
                     <span class="tnum text-[15px] font-semibold text-fg">
                       <Countdown seconds={remainingSeconds(serverNowMs, cd.endsAt)} style="clock" />
@@ -385,14 +372,14 @@
 
     <!-- Longer-term: bank + education -->
     <section class="grid gap-6 lg:grid-cols-2">
-      <Panel title="Bank investment" caption="City bank position">
+      <Panel title="Bank investment" caption="City bank position" class="h-full">
         {#snippet actions()}
-          <a class="text-xs text-fg-faint transition-colors hover:text-accent" href={TORN_URLS.bank} target="_blank" rel="noopener noreferrer">Torn ↗</a>
+          <a class="flex items-center gap-1 pr-2 text-xs text-fg-faint transition-colors hover:text-accent" href={TORN_URLS.bank} target="_blank" rel="noopener noreferrer">Torn <Icon name="external" size={11} /></a>
         {/snippet}
         {#if bank?.state === "active" || bank?.state === "mature"}
           <div class="space-y-2">
             <div>
-              <p class="text-[10px] uppercase tracking-[0.14em] text-fg-faint">Expected payout</p>
+              <p class="text-[11px] font-medium text-fg-faint">Expected payout</p>
               <p class="tnum font-display text-3xl font-medium text-fg">{formatMoneyFull(bank.amount)}</p>
             </div>
             {#if bank.state === "mature"}
@@ -436,15 +423,15 @@
         {/if}
       </Panel>
 
-      <Panel title="Education" caption="Current course">
+      <Panel title="Education" caption="Current course" class="h-full">
         {#snippet actions()}
-          <a class="text-xs text-fg-faint transition-colors hover:text-accent" href={TORN_URLS.education} target="_blank" rel="noopener noreferrer">Torn ↗</a>
+          <a class="flex items-center gap-1 pr-2 text-xs text-fg-faint transition-colors hover:text-accent" href={TORN_URLS.education} target="_blank" rel="noopener noreferrer">Torn <Icon name="external" size={11} /></a>
         {/snippet}
         {#if education?.state === "active" || education?.state === "complete"}
           <div class="space-y-2">
             <p class="font-display text-2xl font-medium text-fg">{education.courseName ?? "Course in progress"}</p>
             {#if education.categoryName}
-              <p class="text-xs uppercase tracking-[0.14em] text-fg-faint">{education.categoryName}</p>
+              <p class="section-label !tracking-[0.12em]">{education.categoryName}</p>
             {/if}
             {#if education.state === "complete"}
               <p class="text-sm font-semibold text-positive">Course complete</p>

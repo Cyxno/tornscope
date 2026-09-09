@@ -2,103 +2,98 @@
   import { page } from "$app/state";
   import { env as publicEnv } from "$env/dynamic/public";
   import { me } from "$lib/state.svelte";
+  import { NAV_GROUPS, isActivePath } from "$lib/nav";
+  import Icon from "./Icon.svelte";
 
-  // Environment chip label. Unset (production) shows "Beta"; non-production
-  // deployments set PUBLIC_ENV_LABEL (e.g. "Development") so a staging
-  // instance can never be mistaken for the public beta.
+  /**
+   * Desktop/tablet app bar. Mobile gets the dedicated tab bar + sheet
+   * (MobileNav) — this header intentionally collapses to brand + live
+   * status + identity below md instead of squeezing the full nav.
+   */
   const envLabel = publicEnv.PUBLIC_ENV_LABEL?.trim() || "Beta";
-
-  const nav = [
-    { href: "/", label: "Overview" },
-    { href: "/today", label: "Today" },
-    { href: "/drugs", label: "Drugs" },
-    { href: "/money", label: "Economy" },
-    { href: "/travel", label: "Travel" },
-    { href: "/crimes", label: "Crimes" },
-    { href: "/combat", label: "Combat" },
-    { href: "/faction", label: "Faction" },
-    { href: "/timeline", label: "Timeline" },
-  ];
-
-  function isActive(href: string): boolean {
-    if (href === "/") return page.url.pathname === "/";
-    return page.url.pathname === href || page.url.pathname.startsWith(`${href}/`);
-  }
 
   const syncLabel = $derived(
     !me.loaded ? "…" : me.data?.syncHealth.running ? "Syncing" : me.data?.syncHealth.lastSuccessAt ? "Synced" : "Not synced"
   );
+  const syncTone = $derived(
+    me.data?.syncHealth.running ? "bg-accent live-dot" : me.data?.syncHealth.lastSuccessAt ? "bg-positive" : "bg-fg-faint"
+  );
+
+  const primaryGroups = $derived(NAV_GROUPS.filter((g) => g.id !== "system"));
 </script>
 
 <header class="sticky top-0 z-40 border-b border-border bg-bg/85 backdrop-blur-md">
-  <div class="mx-auto flex h-16 max-w-6xl items-center justify-between gap-6 px-5">
-    <!-- Brand: scope/radar mark + wordmark text (the full wide logo would
-         compress navigation; the mark preserves the supplied identity) -->
-    <a href="/" class="group flex items-center gap-2.5" title="TornScope">
+  <div class="mx-auto flex h-14 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
+    <!-- Brand -->
+    <a href="/" class="group flex min-w-0 items-center gap-2.5" title="TornScope">
       <img
         src="/icons/tornscope-96.png"
         alt=""
         aria-hidden="true"
-        class="h-8 w-8 rounded-lg transition-transform group-hover:scale-105"
+        class="h-7 w-7 rounded-lg transition-transform group-hover:scale-105"
       />
-      <span class="text-[15px] font-semibold tracking-tight text-fg">TornScope</span>
-      <!-- Environment chip: subtle, in the design system's chip language.
-           Production shows "Beta" (the release status should never read as
-           stable/GA); dev/staging shows its PUBLIC_ENV_LABEL instead. -->
+      <span class="text-[14px] font-semibold tracking-tight text-fg">TornScope</span>
       <span
-        class="rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.16em] text-accent"
+        class="chip chip-accent hidden !text-[9px] !font-semibold uppercase tracking-[0.14em] sm:inline-flex"
         title={envLabel === "Beta" ? "TornScope is in public beta" : "Development environment — not the public beta"}
       >{envLabel}</span>
     </a>
 
-    <!-- Primary navigation: horizontal, pill segmented -->
-    <nav class="hidden min-w-0 items-center gap-1 overflow-x-auto lg:flex" aria-label="Primary">
-      {#each nav as item (item.href)}
-        <a
-          href={item.href}
-          class="whitespace-nowrap rounded-full px-3.5 py-1.5 text-[13px] font-medium transition-colors {isActive(item.href)
-            ? 'bg-surface-2 text-fg'
-            : 'text-fg-muted hover:text-fg'}"
-          aria-current={isActive(item.href) ? "page" : undefined}
-        >
-          {item.label}
-        </a>
+    <!-- Primary navigation (lg+): grouped, hairline-separated -->
+    <nav class="hidden min-w-0 items-center gap-0.5 lg:flex" aria-label="Primary">
+      {#each primaryGroups as group, gi (group.id)}
+        {#if gi > 0}<span class="mx-2.5 h-4 w-px bg-border" aria-hidden="true"></span>{/if}
+        {#each group.items as item (item.href)}
+          {@const active = isActivePath(page.url.pathname, item.href)}
+          <a
+            href={item.href}
+            class="whitespace-nowrap rounded-full px-3 py-1.5 text-[13px] font-medium transition-colors {active
+              ? 'bg-surface-2 text-fg'
+              : 'text-fg-muted hover:text-fg'}"
+            aria-current={active ? "page" : undefined}
+          >
+            {item.label}
+          </a>
+        {/each}
       {/each}
     </nav>
 
-    <!-- Right cluster: sync pulse + identity (never pushed off-row) -->
+    <!-- Right cluster: sync + identity -->
     <div class="flex shrink-0 items-center gap-2">
       <a
         href="/sync"
         class="hidden items-center gap-2 rounded-full border border-border bg-surface px-3 py-1.5 text-xs text-fg-muted transition-colors hover:border-border-strong hover:text-fg sm:flex"
         title="Sync status"
       >
-        <span class="h-1.5 w-1.5 rounded-full {me.data?.syncHealth.running ? 'live-dot bg-accent' : me.data?.syncHealth.lastSuccessAt ? 'bg-positive' : 'bg-fg-faint'}"></span>
+        <span class="h-1.5 w-1.5 rounded-full {syncTone}"></span>
         {syncLabel}
       </a>
       <a
         href="/settings"
-        class="flex items-center gap-2 rounded-full border border-border bg-surface py-1 pl-1 pr-3 text-xs text-fg-muted transition-colors hover:border-border-strong hover:text-fg"
+        class="flex items-center gap-2 rounded-full border border-border bg-surface py-1 pl-1 pr-2.5 text-xs text-fg-muted transition-colors hover:border-border-strong hover:text-fg"
         title="Settings"
+        aria-label="Settings"
       >
         {#if me.data?.torn}
           <span class="flex h-6 w-6 items-center justify-center rounded-full bg-surface-2 text-[10px] font-semibold text-fg">{me.data.torn.name.slice(0, 2).toUpperCase()}</span>
           <span class="tnum hidden md:inline">{me.data.torn.name}</span>
         {:else}
-          <span class="flex h-6 w-6 items-center justify-center rounded-full bg-surface-2 text-[11px]">⚙</span>
-          <span class="hidden sm:inline">Settings</span>
+          <span class="flex h-6 w-6 items-center justify-center rounded-full bg-surface-2"><Icon name="settings" size={12} /></span>
         {/if}
       </a>
     </div>
   </div>
 
-  <!-- Mobile nav: horizontal scroll -->
-  <nav class="flex gap-1 overflow-x-auto px-4 pb-2.5 lg:hidden" aria-label="Primary mobile">
-    {#each nav as item (item.href)}
+  <!-- Tablet scroll row (md–lg): primary pages, quiet scroll affordance -->
+  <nav class="flex gap-1 overflow-x-auto px-4 pb-2 lg:hidden md:flex [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="Primary tablet">
+    {#each NAV_GROUPS.filter((g) => g.id !== "system").flatMap((g) => g.items) as item (item.href)}
+      {@const active = isActivePath(page.url.pathname, item.href)}
       <a
         href={item.href}
-        class="whitespace-nowrap rounded-full px-3.5 py-1.5 text-[13px] font-medium transition-colors {isActive(item.href) ? 'bg-surface-2 text-fg' : 'text-fg-muted'}"
-        aria-current={isActive(item.href) ? "page" : undefined}
+        class="whitespace-nowrap rounded-full px-3 py-1.5 text-[12.5px] font-medium transition-colors {active
+          ? 'bg-surface-2 text-fg'
+          : 'text-fg-muted'}"
+        aria-current={active ? "page" : undefined}
       >
         {item.label}
       </a>

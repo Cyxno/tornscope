@@ -1,47 +1,87 @@
 @import "tailwindcss";
 
 /*
- * TornScope design system — "personal intelligence".
+ * TornScope design system — v0.2 "precision calm".
  *
- * Identity goals (deliberately NOT a tactical/ops dashboard):
+ * Identity (kept from v0.1, refined):
  * - warm graphite base, never navy/blue-on-blue
  * - editorial typography: Newsreader (serif) display + Inter (sans) UI
- * - generous whitespace, few but meaningful surfaces
- * - soft layering: hairline borders + ambient shadows instead of hard frames
- * - teal accent used sparingly; semantic green/red/amber for values only
- * - light-mode-ready token structure (swap the :root values)
+ * - layered surfaces with tonal (not shadowy) depth; hairline borders
+ * - restrained teal accent; semantic green/red/amber for values only
+ * - numbers lead: tabular numerals, compact formatting, quiet labels
+ *
+ * Rules for v0.2 work:
+ * - never hardcode colors/sizes in pages — consume the tokens below
+ * - radii come from --radius-*; control heights from --control-*
+ * - panels use .card (or the Panel component), chips use .chip, buttons use .btn-*
+ * - tables use .tsv-table; inputs use .input
  */
 @theme {
-  /* Surfaces — neutral graphite, zero blue cast */
-  --color-bg: #0b0b0d;
-  --color-bg-raise: #101013;
-  --color-surface: #151518;
-  --color-surface-2: #1b1b1f;
-  --color-border: #232327;
-  --color-border-strong: #333339;
+  /* Surfaces — neutral graphite, zero blue cast, four elevation steps */
+  --color-bg: #0a0a0c;
+  --color-bg-raise: #0f0f12;
+  --color-surface: #141417;
+  --color-surface-2: #1a1a1f;
+  --color-surface-3: #212128;
+  --color-border: #232329;
+  --color-border-strong: #34343c;
 
   /* Text — warm off-white hierarchy */
-  --color-fg: #f5f5f2;
-  --color-fg-muted: #a6a6ae;
-  --color-fg-faint: #70707a;
+  --color-fg: #f4f4f1;
+  --color-fg-muted: #a2a2ab;
+  --color-fg-faint: #6e6e78;
 
   /* Accent — restrained teal */
   --color-accent: #2dd4bf;
   --color-accent-strong: #14b8a6;
+  --color-accent-deep: #0d9488;
 
   /* Semantic values */
   --color-positive: #3fd68f;
   --color-negative: #f87171;
   --color-warning: #f0b24a;
+  --color-info: #a78bfa;
 
   /* Typography */
   --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-display: "Newsreader Variable", ui-serif, Georgia, "Times New Roman", serif;
 
-  /* Elevation — ambient, not tactical */
-  --shadow-panel: 0 1px 2px rgb(0 0 0 / 0.24), 0 16px 40px -20px rgb(0 0 0 / 0.5);
+  /* Radius scale — moderate, tokenized; chips stay full */
+  --radius-card: 16px;
+  --radius-tile: 12px;
+  --radius-control: 8px;
+
+  /* Controls & rhythm */
+  --control-height-sm: 30px;
+  --control-height: 34px;
+  --shadow-panel: 0 1px 2px rgb(0 0 0 / 0.2), 0 12px 32px -20px rgb(0 0 0 / 0.45);
   --shadow-pop: 0 24px 64px -24px rgb(0 0 0 / 0.65);
-  --shadow-glow: 0 0 0 1px rgb(45 212 191 / 0.16), 0 8px 32px -12px rgb(45 212 191 / 0.18);
+}
+
+/* Content column: dense on desktop, comfortable on mobile */
+.page-shell {
+  margin-inline: auto;
+  width: 100%;
+  max-width: 80rem; /* 1280 — analytics density without stretching */
+  padding-inline: 1rem;
+  padding-block: 1.5rem 4rem;
+}
+@media (min-width: 640px) {
+  .page-shell {
+    padding-inline: 1.5rem;
+    padding-block: 2.5rem 4rem;
+  }
+}
+@media (min-width: 1024px) {
+  .page-shell {
+    padding-block: 2.75rem 5rem;
+  }
+}
+/* Room for the fixed mobile tab bar (rendered below md only). */
+@media (max-width: 767px) {
+  .page-shell {
+    padding-bottom: 5.75rem;
+  }
 }
 
 html {
@@ -92,10 +132,10 @@ body {
 .app-backdrop {
   background:
     radial-gradient(1100px 480px at 18% -12%, rgb(45 212 191 / 0.045), transparent 62%),
-    radial-gradient(900px 420px at 88% -8%, rgb(160 160 255 / 0.025), transparent 55%);
+    radial-gradient(900px 420px at 88% -8%, rgb(160 160 255 / 0.02), transparent 55%);
 }
 
-/* Focus visibility */
+/* Focus visibility — one tokenized ring everywhere */
 :focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
@@ -104,6 +144,203 @@ body {
 
 ::selection {
   background: rgb(45 212 191 / 0.22);
+}
+
+@layer components {
+  /* ---- Buttons ---- */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    height: var(--control-height);
+    padding-inline: 0.9rem;
+    border-radius: var(--radius-control);
+    border: 1px solid var(--color-border-strong);
+    background: transparent;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--color-fg-muted);
+    white-space: nowrap;
+    transition: color 120ms ease, border-color 120ms ease, background-color 120ms ease;
+    cursor: pointer;
+  }
+  .btn:hover {
+    color: var(--color-fg);
+    border-color: var(--color-fg-faint);
+  }
+  .btn:disabled {
+    opacity: 0.45;
+    cursor: default;
+    pointer-events: none;
+  }
+  .btn-primary {
+    background: var(--color-accent-strong);
+    border-color: transparent;
+    color: var(--color-bg);
+    font-weight: 600;
+  }
+  .btn-primary:hover {
+    background: var(--color-accent);
+    color: var(--color-bg);
+  }
+  .btn-accent {
+    border-color: rgb(45 212 191 / 0.35);
+    background: rgb(45 212 191 / 0.08);
+    color: var(--color-accent);
+  }
+  .btn-accent:hover {
+    border-color: rgb(45 212 191 / 0.6);
+    color: var(--color-accent);
+  }
+  .btn-danger {
+    border-color: rgb(248 113 113 / 0.3);
+    color: var(--color-negative);
+  }
+  .btn-danger:hover {
+    background: rgb(248 113 113 / 0.08);
+    border-color: rgb(248 113 113 / 0.5);
+    color: var(--color-negative);
+  }
+  .btn-sm {
+    height: var(--control-height-sm);
+    padding-inline: 0.7rem;
+    font-size: 0.75rem;
+  }
+
+  /* ---- Chips (badges, tags, status pills) ---- */
+  .chip {
+    display: inline-flex;
+    max-width: 100%;
+    align-items: center;
+    gap: 0.3rem;
+    border-radius: 999px;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface-2);
+    padding: 0.1rem 0.55rem;
+    font-size: 0.6875rem;
+    line-height: 1.45rem;
+    font-weight: 500;
+    color: var(--color-fg-muted);
+    white-space: nowrap;
+  }
+  .chip-quiet {
+    border-color: transparent;
+    background: transparent;
+  }
+  .chip-positive {
+    border-color: rgb(63 214 143 / 0.3);
+    background: rgb(63 214 143 / 0.08);
+    color: var(--color-positive);
+  }
+  .chip-negative {
+    border-color: rgb(248 113 113 / 0.3);
+    background: rgb(248 113 113 / 0.08);
+    color: var(--color-negative);
+  }
+  .chip-warning {
+    border-color: rgb(240 178 74 / 0.35);
+    background: rgb(240 178 74 / 0.08);
+    color: var(--color-warning);
+  }
+  .chip-accent {
+    border-color: rgb(45 212 191 / 0.3);
+    background: rgb(45 212 191 / 0.08);
+    color: var(--color-accent);
+  }
+  .chip-info {
+    border-color: rgb(167 139 250 / 0.3);
+    background: rgb(167 139 250 / 0.08);
+    color: var(--color-info);
+  }
+
+  /* ---- Quiet micro section label ---- */
+  .section-label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--color-fg-faint);
+  }
+
+  /* ---- Inputs ---- */
+  .input {
+    height: var(--control-height);
+    border-radius: var(--radius-control);
+    border: 1px solid var(--color-border);
+    background: var(--color-bg-raise);
+    padding-inline: 0.7rem;
+    font-size: 0.8125rem;
+    color: var(--color-fg);
+    transition: border-color 120ms ease;
+  }
+  .input::placeholder {
+    color: var(--color-fg-faint);
+  }
+  .input:hover {
+    border-color: var(--color-border-strong);
+  }
+  .input:focus-visible {
+    outline: none;
+    border-color: var(--color-accent);
+  }
+
+  select.input {
+    appearance: none;
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236e6e78' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.6rem center;
+    padding-right: 1.8rem;
+  }
+
+  /* ---- Data tables ---- */
+  .tsv-table {
+    width: 100%;
+    text-align: left;
+    font-size: 0.8125rem;
+    border-collapse: collapse;
+  }
+  .tsv-table thead th {
+    padding: 0.5rem 1rem 0.5rem 0;
+    font-size: 0.6563rem;
+    font-weight: 500;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--color-fg-faint);
+    border-bottom: 1px solid var(--color-border);
+    white-space: nowrap;
+  }
+  .tsv-table thead th:first-child,
+  .tsv-table tbody td:first-child {
+    padding-left: 1.25rem;
+  }
+  .tsv-table thead th:last-child,
+  .tsv-table tbody td:last-child {
+    padding-right: 1.25rem;
+  }
+  .tsv-table tbody td {
+    padding: 0.625rem 1rem 0.625rem 0;
+    border-bottom: 1px solid rgb(35 35 41 / 0.55);
+    vertical-align: top;
+  }
+  .tsv-table tbody tr:last-child td {
+    border-bottom: 0;
+  }
+  .tsv-table tbody tr {
+    transition: background-color 100ms ease;
+  }
+  .tsv-table tbody tr:hover {
+    background: rgb(26 26 31 / 0.5);
+  }
+
+  /* ---- Link with quiet affordance ---- */
+  .text-link {
+    color: var(--color-accent);
+    transition: opacity 120ms ease;
+  }
+  .text-link:hover {
+    opacity: 0.8;
+  }
 }
 
 /* Skeleton shimmer */
@@ -136,4 +373,34 @@ body {
 }
 .live-dot {
   animation: pulse-dot 1.6s ease-in-out infinite;
+}
+
+/* Gentle rise-in for page content (subtle; disabled under reduced motion) */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .rise-in {
+    animation: rise-in 240ms ease both;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
+  .live-dot {
+    animation: none;
+  }
+  * {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
 }

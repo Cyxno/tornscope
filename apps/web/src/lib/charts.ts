@@ -1,6 +1,10 @@
 /**
- * Shared ECharts theme + option fragments for the graphite/teal design system.
+ * Shared ECharts theme + option fragments — the one chart language.
+ * Pages compose these; they never restate axis/tooltip/legend styling.
  */
+
+/** Keep in sync with --color-surface in app.css (donut hole / tooltip). */
+export const CHART_SURFACE = "#141417";
 
 export const C = {
   accent: "#2dd4bf",
@@ -11,12 +15,12 @@ export const C = {
   violet: "#a78bfa",
   pink: "#f472b6",
   label: "#8f8f99",
-  labelFaint: "#70707a",
-  axisLine: "#232327",
-  splitLine: "#1c1c21",
-  tooltipBg: "#161619",
-  tooltipBorder: "#333339",
-  tooltipText: "#f5f5f2",
+  labelFaint: "#6e6e78",
+  axisLine: "#232329",
+  splitLine: "#1b1b20",
+  tooltipBg: "#141417",
+  tooltipBorder: "#34343c",
+  tooltipText: "#f4f4f1",
 };
 
 export const AXIS_LABEL = { color: C.label, fontSize: 10.5, fontFamily: "Inter Variable" };
@@ -26,8 +30,8 @@ export const SPLIT_LINE = { lineStyle: { color: C.splitLine } };
 export const TOOLTIP = {
   backgroundColor: C.tooltipBg,
   borderColor: C.tooltipBorder,
-  borderRadius: 12,
-  padding: [10, 14],
+  borderRadius: 10,
+  padding: [8, 12],
   // Keep the tooltip inside the chart box: the chart container clips its
   // overflow (mobile page-width safety), so an unconfined tooltip would
   // be cut off at the panel edge on narrow screens.
@@ -45,6 +49,10 @@ export const LEGEND = {
 
 export const GRID = { left: 10, right: 16, top: 32, bottom: 10, containLabel: true };
 
+/** Calm default motion: short, once. The Chart wrapper disables it entirely
+ * under prefers-reduced-motion. */
+export const MOTION = { animation: true, animationDuration: 320, animationDurationUpdate: 200 };
+
 /** Teal gradient area fill for hero line charts. */
 export function tealArea(): Record<string, unknown> {
   return {
@@ -55,17 +63,18 @@ export function tealArea(): Record<string, unknown> {
       x2: 0,
       y2: 1,
       colorStops: [
-        { offset: 0, color: "rgba(45,212,191,0.22)" },
+        { offset: 0, color: "rgba(45,212,191,0.2)" },
         { offset: 1, color: "rgba(45,212,191,0)" },
       ],
     },
   };
 }
 
-export function timeAxis(data: (number | string)[]): Record<string, unknown> {
+export function timeAxis(data: (number | string)[], opts: { boundaryGap?: boolean } = {}): Record<string, unknown> {
   return {
     type: "category",
     data,
+    boundaryGap: opts.boundaryGap,
     axisLabel: AXIS_LABEL,
     axisLine: AXIS_LINE,
     axisTick: { show: false },
@@ -80,6 +89,17 @@ export function valueAxis(): Record<string, unknown> {
     // drifting a few $m across a $849m base) render as a flat line.
     scale: true,
     axisLabel: { ...AXIS_LABEL, formatter: (v: number) => compact(v) },
+    splitLine: SPLIT_LINE,
+    axisLine: { show: false },
+  };
+}
+
+/** Integer-valued count axis (drug uses, attacks, attempts). */
+export function countAxis(): Record<string, unknown> {
+  return {
+    type: "value",
+    minInterval: 1,
+    axisLabel: AXIS_LABEL,
     splitLine: SPLIT_LINE,
     axisLine: { show: false },
   };

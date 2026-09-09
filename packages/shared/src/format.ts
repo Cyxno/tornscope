@@ -23,6 +23,13 @@ export function formatSignedMoney(value: number | null | undefined): string {
   return `${prefix}${formatMoneyFull(value)}`;
 }
 
+/** Signed compact money, e.g. +$12.4m / -$532.1k — for KPI hero cells. */
+export function formatSignedMoneyCompact(value: number | null | undefined): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  const prefix = value > 0 ? "+" : "";
+  return `${prefix}${formatMoneyCompact(value)}`;
+}
+
 /**
  * European/Dutch date formatting for ALL user-facing dates. Internal
  * timestamps stay unix seconds / ISO; only rendering is formatted here so
