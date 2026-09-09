@@ -1,0 +1,170 @@
+# TornScope development / staging stack.
+#
+# This is the COMPLETE SEPARATE environment for work toward the next minor
+# release (the `develop` branch). It shares NOTHING with the production stack
+# in docker-compose.unraid.yml:
+#
+#   - compose project name  tornscope-dev   (prod: tornscope)
+#   - container names       tornscope-dev-*-1
+#   - postgres data         /mnt/user/appdata/tornscope-dev/postgres
+#   - database name         tornscope_dev
+#   - redis                 own container, internal only, no persistence
+#   - host ports            web 5273, api 127.0.0.1:3101 (prod: 5173 / 3100)
+#   - secrets               dev-only values in .env.dev (never the prod .env)
+#
+# Deploy from a dedicated checkout that is on `develop` (see
+# scripts/deploy-dev.sh and docs/ENVIRONMENTS.md). Never point this file at
+# production volumes, network names, or credentials.
+#
+# web is published on the LAN so Nginx Proxy Manager can route
+# https://torn.familievalk.com -> 192.168.1.2:5273. Access control (NPM
+# access list) lives at the proxy; this is the same exposure model as the
+# production web port.
+#
+# PUBLIC_ENV_LABEL defaults to "Development" so the UI clearly marks this
+# environment instead of presenting it as the public beta.
+
+name: tornscope-dev
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-tornscope_dev}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.dev}
+      POSTGRES_DB: ${POSTGRES_DB:-tornscope_dev}
+    volumes:
+      - /mnt/user/appdata/tornscope-dev/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tornscope_dev} -d ${POSTGRES_DB:-tornscope_dev}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    # Intentionally not published. Reach it with:
+    #   docker exec -it tornscope-dev-postgres-1 psql -U tornscope_dev -d tornscope_dev
+    labels:
+      - "net.unraid.docker.icon=https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/postgresql.png"
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    labels:
+      - "net.unraid.docker.icon=https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/redis.png"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-dev}
+      target: migrator
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-tornscope_dev}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-tornscope_dev}?schema=public
+    command: ["npx", "prisma", "migrate", "deploy"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-dev}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-tornscope_dev}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-tornscope_dev}?schema=public
+      REDIS_URL: redis://redis:6379
+      TORN_API_BASE_URL: ${TORN_API_BASE_URL:-https://api.torn.com/v2}
+      # Dev is polite to the Torn API: a wider spacing than prod by default.
+      TORN_API_MIN_REQUEST_INTERVAL_MS: ${TORN_API_MIN_REQUEST_INTERVAL_MS:-1500}
+      API_KEY_ENCRYPTION_KEY: ${API_KEY_ENCRYPTION_KEY:?set API_KEY_ENCRYPTION_KEY in .env.dev}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:5273}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
+      TRUST_PROXY: ${TRUST_PROXY:-true}
+      TORN_SYNC_INITIAL_HISTORY_DAYS: ${TORN_SYNC_INITIAL_HISTORY_DAYS:-180}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    labels:
+      - "net.unraid.docker.icon=https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/docker.png"
+    ports:
+      - "127.0.0.1:3101:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/worker.Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-dev}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-tornscope_dev}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-tornscope_dev}?schema=public
+      REDIS_URL: redis://redis:6379
+      TORN_API_BASE_URL: ${TORN_API_BASE_URL:-https://api.torn.com/v2}
+      TORN_API_MIN_REQUEST_INTERVAL_MS: ${TORN_API_MIN_REQUEST_INTERVAL_MS:-1500}
+      API_KEY_ENCRYPTION_KEY: ${API_KEY_ENCRYPTION_KEY:?set API_KEY_ENCRYPTION_KEY in .env.dev}
+      TORN_SYNC_INITIAL_HISTORY_DAYS: ${TORN_SYNC_INITIAL_HISTORY_DAYS:-180}
+      GUEST_PROFILE_RETENTION_DAYS: ${GUEST_PROFILE_RETENTION_DAYS:-60}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    labels:
+      - "net.unraid.docker.icon=https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/docker.png"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+      args:
+        API_BASE_URL: http://api:3000
+        GIT_SHA: ${GIT_SHA:-dev}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 5173
+      API_BASE_URL: http://api:3000
+      ORIGIN: ${ORIGIN:-${APP_BASE_URL:-http://localhost:5273}}
+      PROTOCOL_HEADER: x-forwarded-proto
+      HOST_HEADER: x-forwarded-host
+      CLIENT_IP_HEADER: ${CLIENT_IP_HEADER:-}
+      CLIENT_IP_DEPTH: ${CLIENT_IP_DEPTH:-1}
+      # Visible environment marker in the UI header ("Development" chip).
+      # Production leaves this unset and keeps showing "Beta".
+      PUBLIC_ENV_LABEL: ${PUBLIC_ENV_LABEL:-Development}
+    labels:
+      - "net.unraid.docker.icon=https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/docker.png"
+      - "net.unraid.docker.webui=http://[IP]:[PORT:5273]"
+    ports:
+      - "5273:5173"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:5173/').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      - api

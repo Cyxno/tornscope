@@ -13,6 +13,8 @@ generated/
 .env
 .env.local
 .env.*.local
+.env.dev
+.env.development
 *.pem
 
 # Prisma
