@@ -160,6 +160,51 @@ export const KpiAvailabilitySchema = z.enum(["ok", "unavailable", "importing", "
 export type KpiAvailability = z.infer<typeof KpiAvailabilitySchema>;
 
 /* -------------------------------------------------------------------------- */
+/* Data confidence (v0.2) — dataset-level trustworthiness                      */
+/* -------------------------------------------------------------------------- */
+
+export const DataConfidenceSchema = z.enum(["complete", "partial", "stale_permission", "unavailable"]);
+export type DataConfidenceDto = z.infer<typeof DataConfidenceSchema>;
+
+export const ConfidenceReasonSchema = z.enum([
+  "missing_permission",
+  "historical_permission_lost",
+  "never_synced",
+  "backfill_in_progress",
+  "sync_incomplete",
+  "sync_error",
+  "range_before_coverage",
+  "source_unavailable",
+]);
+export type ConfidenceReasonDto = z.infer<typeof ConfidenceReasonSchema>;
+
+/**
+ * Known coverage window (unix seconds). Boundaries are exposed only when the
+ * system truly knows them; hasKnownGaps is true only for provable gaps.
+ */
+export const ConfidenceCoverageSchema = z.object({
+  from: z.number().nullable(),
+  to: z.number().nullable(),
+  hasKnownGaps: z.boolean(),
+});
+export type ConfidenceCoverageDto = z.infer<typeof ConfidenceCoverageSchema>;
+
+/**
+ * Dataset-level confidence metadata, derived centrally from real system
+ * state (capabilities + sync state + coverage). Compact by design: one block
+ * per dataset, never per numeric field. See docs/DATA-CONFIDENCE.md.
+ */
+export const DataConfidenceMetaSchema = z.object({
+  confidence: DataConfidenceSchema,
+  /** Machine-readable why-code; the UI maps it to localized copy. */
+  reason: ConfidenceReasonSchema.nullable(),
+  /** Backing resource's last successful refresh (unix seconds). */
+  lastRefreshedAt: z.number().nullable(),
+  coverage: ConfidenceCoverageSchema,
+});
+export type DataConfidenceMetaDto = z.infer<typeof DataConfidenceMetaSchema>;
+
+/* -------------------------------------------------------------------------- */
 /* API response contracts                                                     */
 /* -------------------------------------------------------------------------- */
 
@@ -489,6 +534,17 @@ export const DashboardResponseSchema = z.object({
     })
   ),
   lastSyncAt: z.number().nullable(),
+  /**
+   * Dataset-level confidence for the Overview cards where unavailable-vs-zero
+   * matters (v0.2). Derived centrally; the UI renders badges/tooltips from it.
+   */
+  confidence: z.object({
+    cashFlow: DataConfidenceMetaSchema,
+    drugs: DataConfidenceMetaSchema,
+    travelProfit: DataConfidenceMetaSchema,
+    rehab: DataConfidenceMetaSchema,
+    networth: DataConfidenceMetaSchema,
+  }),
 });
 export type DashboardResponse = z.infer<typeof DashboardResponseSchema>;
 
@@ -585,6 +641,13 @@ export const EconomySummaryResponseSchema = z.object({
     estimatedProfit: KpiValueSchema,
     profitPerHour: KpiValueSchema,
     trips: z.number(),
+  }),
+  /** Dataset-level confidence for the Economy cards (v0.2, see DATA-CONFIDENCE.md). */
+  confidence: z.object({
+    cashFlow: DataConfidenceMetaSchema,
+    consumption: DataConfidenceMetaSchema,
+    networth: DataConfidenceMetaSchema,
+    travel: DataConfidenceMetaSchema,
   }),
 });
 export type EconomySummaryResponse = z.infer<typeof EconomySummaryResponseSchema>;
@@ -1356,6 +1419,8 @@ export const SyncHealthResponseSchema = z.object({
       /** Earliest/latest stored structured row for this resource's domain. */
       storedEarliestAt: z.number().nullable(),
       storedLatestAt: z.number().nullable(),
+      /** Dataset-level confidence — distinct from the operational phase above. */
+      confidence: DataConfidenceMetaSchema,
       /** Per-category cursor detail (walk resources; empty otherwise). */
       categories: z.array(
         z.object({
