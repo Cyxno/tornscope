@@ -25,16 +25,23 @@ migration safety).
 
 ### 1. Data confidence / coverage layer — *issue: `feat(v0.2): data confidence & coverage layer`* · labels: `v0.2` `analytics` `enhancement`
 
+**Status: In Progress (foundation implemented on `develop`, deployed to the dev
+stack — see [DATA-CONFIDENCE.md](DATA-CONFIDENCE.md)).** Shared confidence
+states, provenance, central derivation, coverage + last-refreshed metadata,
+capability-loss retention, Overview/Sync/Economy integration and the
+zero-vs-unavailable frontend contract are in; remaining pages adopt the model
+incrementally.
+
 Per resource and per page, always show how complete and how fresh the data is:
 `complete` / `partial` / `stale_permission` / `unavailable`, a last-refreshed
 timestamp, visible historical gaps, and a clear distinction between confirmed,
 estimated and unavailable values. **Unavailable data must never render as zero.**
 
 Acceptance criteria:
-- [ ] Every analytics page and resource carries a status + last-refreshed indicator.
+- [ ] Every analytics page and resource carries a status + last-refreshed indicator. *(Sync Status + Overview + Economy done; remaining pages follow)*
 - [ ] Historical gaps are visibly marked, not silently interpolated.
-- [ ] Estimated values are labeled as estimated; unavailable values are labeled, never shown as 0.
-- [ ] `stale_permission` is distinguishable from a sync failure (e.g. key lost access vs job broke).
+- [x] Estimated values are labeled as estimated; unavailable values are labeled, never shown as 0.
+- [x] `stale_permission` is distinguishable from a sync failure (e.g. key lost access vs job broke).
 
 ### 2. Daily Summary — *issue: `feat(v0.2): daily summary page`* · labels: `v0.2` `analytics` `enhancement`
 
