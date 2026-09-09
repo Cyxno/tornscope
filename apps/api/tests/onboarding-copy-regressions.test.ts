@@ -163,8 +163,12 @@ describe("public beta presentation", () => {
   const layout = read("../../web/src/routes/+layout.svelte");
 
   it("header shows a subtle persistent Beta badge beside the wordmark", () => {
-    expect(header).toContain(">Beta</span>");
+    // Default (PUBLIC_ENV_LABEL unset — production) is the Beta chip.
+    expect(header).toContain('|| "Beta"');
     expect(header).toContain("TornScope is in public beta");
+    // Dev/staging deployments override the chip via PUBLIC_ENV_LABEL so a
+    // staging instance can never pose as the public beta.
+    expect(header).toContain("PUBLIC_ENV_LABEL");
   });
 
   it("footer marks Public Beta and links the maintainer safely", () => {

@@ -126,6 +126,9 @@ services:
       # cf-connecting-ip — see README.
       CLIENT_IP_HEADER: ${CLIENT_IP_HEADER:-}
       CLIENT_IP_DEPTH: ${CLIENT_IP_DEPTH:-1}
+      # Visible UI environment chip. Keep empty in production (shows "Beta");
+      # dev/staging set e.g. "Development" so staging cannot pose as public beta.
+      PUBLIC_ENV_LABEL: ${PUBLIC_ENV_LABEL:-}
     ports:
       - "127.0.0.1:5173:5173"
     depends_on:

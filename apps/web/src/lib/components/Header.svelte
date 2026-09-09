@@ -1,6 +1,12 @@
 <script lang="ts">
   import { page } from "$app/state";
+  import { env as publicEnv } from "$env/dynamic/public";
   import { me } from "$lib/state.svelte";
+
+  // Environment chip label. Unset (production) shows "Beta"; non-production
+  // deployments set PUBLIC_ENV_LABEL (e.g. "Development") so a staging
+  // instance can never be mistaken for the public beta.
+  const envLabel = publicEnv.PUBLIC_ENV_LABEL?.trim() || "Beta";
 
   const nav = [
     { href: "/", label: "Overview" },
@@ -36,12 +42,13 @@
         class="h-8 w-8 rounded-lg transition-transform group-hover:scale-105"
       />
       <span class="text-[15px] font-semibold tracking-tight text-fg">TornScope</span>
-      <!-- Persistent Public Beta marker: subtle, in the design system's chip
-           language; the release status should never read as stable/GA. -->
+      <!-- Environment chip: subtle, in the design system's chip language.
+           Production shows "Beta" (the release status should never read as
+           stable/GA); dev/staging shows its PUBLIC_ENV_LABEL instead. -->
       <span
         class="rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.16em] text-accent"
-        title="TornScope is in public beta"
-      >Beta</span>
+        title={envLabel === "Beta" ? "TornScope is in public beta" : "Development environment — not the public beta"}
+      >{envLabel}</span>
     </a>
 
     <!-- Primary navigation: horizontal, pill segmented -->
