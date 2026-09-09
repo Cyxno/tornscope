@@ -16,6 +16,7 @@
   import Panel from "$lib/components/Panel.svelte";
   import StateMessage from "$lib/components/StateMessage.svelte";
   import Countdown from "$lib/components/Countdown.svelte";
+  import DailySummary from "$lib/components/DailySummary.svelte";
 
   /**
    * Today — live account status.
@@ -267,6 +268,9 @@
       </p>
       <p class="text-sm text-fg-muted">{statusLine}</p>
     </div>
+
+    <!-- Daily Summary: what actually happened today (or any picked day) -->
+    <DailySummary />
 
     <!-- LIVE STATE: the four bars -->
     <section aria-label="Live bars" class="rounded-2xl border border-border bg-surface px-5 py-2 shadow-panel sm:px-7">

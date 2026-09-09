@@ -1,5 +1,6 @@
 import type {
   ApiKeyStatusResponse,
+  DailySummaryResponse,
   ApiKeyValidationResponse,
   DashboardResponse,
   DrugsSummaryResponse,
@@ -136,6 +137,7 @@ export function rangeQuery(range: QueryRange, extra: Record<string, string> = {}
 export const endpoints = {
   me: () => api.get<MeResponse>("/me"),
   today: () => api.get<TodayResponse>("/today"),
+  dailySummary: (date?: string) => api.get<DailySummaryResponse>(`/daily-summary${date ? `?date=${encodeURIComponent(date)}` : ""}`),
   dashboard: (range: QueryRange) => api.get<DashboardResponse>(`/dashboard?${rangeQuery(range)}`),
   networth: (range: QueryRange) => api.get<NetworthResponse>(`/networth?${rangeQuery(range)}`),
   economy: (range: QueryRange) => api.get<EconomySummaryResponse>(`/economy?${rangeQuery(range)}`),

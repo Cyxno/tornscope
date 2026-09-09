@@ -23,6 +23,7 @@ export const CONFIDENCE_REASON_COPY: Record<ConfidenceReasonDto, string> = {
   sync_error: "The last sync attempt failed. Existing history is still shown.",
   range_before_coverage: "TornScope was not collecting history for the start of this period yet.",
   source_unavailable: "The Torn API returned no data for this resource.",
+  day_in_progress: "This day has not ended yet, so the summary cannot claim end-of-day completeness.",
 };
 
 const COVERAGE_COPY = {
