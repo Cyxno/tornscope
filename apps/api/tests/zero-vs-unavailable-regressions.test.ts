@@ -71,6 +71,53 @@ describe("confidence UI wiring", () => {
   });
 });
 
+describe("daily summary UI (v0.2 item #2)", () => {
+  const daily = read("../../web/src/lib/components/DailySummary.svelte");
+
+  it("renders through the shared confidence model — no duplicated badge system", () => {
+    expect(daily).toContain("ConfidenceBadge");
+    expect(daily).toContain("confidenceTitle");
+    expect(daily).toContain("formatKpiValue");
+    // Unavailable values render through KpiValue/—, never numeric coercion.
+    expect(daily).not.toMatch(/\?\? 0/);
+  });
+
+  it("keeps the financial concepts explicitly separate", () => {
+    expect(daily).toContain("Cash flow");
+    expect(daily).toContain("Economic effect");
+    expect(daily).toContain("Conversions");
+    expect(daily).toContain("not a profit figure");
+  });
+
+  it("words net-worth drivers as contributors, never causes", () => {
+    expect(daily).toContain("Likely contributors — recorded movements, not causes");
+    expect(daily).toMatch(/contributor/i);
+    expect(daily).not.toMatch(/\bcaused\b/i);
+  });
+
+  it("labels travel profit as estimated and xanax value as consumption", () => {
+    expect(daily).toContain(">estimated<");
+    expect(daily).toContain("Estimated consumption value");
+    expect(daily).toContain("estimated value");
+  });
+
+  it("supports date navigation without future dates and URL state", () => {
+    expect(daily).toContain("no future days");
+    expect(daily).toContain("history.replaceState");
+    expect(daily).toContain('type="date"');
+  });
+
+  it("shows a calm empty state on quiet days", () => {
+    expect(daily).toContain("A quiet day — nothing notable recorded.");
+  });
+
+  it("the new day_in_progress reason ships with localized copy", () => {
+    const lib = read("../../web/src/lib/confidence.ts");
+    expect(lib).toContain("day_in_progress");
+    expect(daily).toContain("day in progress");
+  });
+});
+
 describe("localization completeness", () => {
   it("every machine reason code has localized copy — no raw codes in the UI", () => {
     for (const reason of CONFIDENCE_REASONS) {

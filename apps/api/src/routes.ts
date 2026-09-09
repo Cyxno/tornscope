@@ -27,6 +27,7 @@ import { getFactionOverview, getFactionRankedWars, getFactionMembers, getFaction
 import { getTimeline } from "./services/timeline.js";
 import { getDashboard } from "./services/dashboard.js";
 import { getToday } from "./services/today.js";
+import { getDailySummary } from "./services/dailySummary.js";
 import { getMe, getApiKeyStatus, saveApiKey, validateApiKey, linkProfile, deleteApiKey, setDemoView, deleteProfile, signOutOtherSessions } from "./services/me.js";
 import { deleteEmptyProfile } from "@tornscope/database";
 import { getSyncStatus, getSyncHealth, requestManualSync, retryFailedSyncs, restartBackfill } from "./services/syncStatus.js";
@@ -132,6 +133,14 @@ export function registerRoutes(app: FastifyInstance): void {
   app.get("/api/today", async (req) => {
     const user = currentUser(req);
     return getToday(user);
+  });
+
+  // Daily Summary: one calendar day (user timezone) — GET /api/daily-summary?date=YYYY-MM-DD
+  app.get("/api/daily-summary", async (req) => {
+    const user = currentUser(req);
+    const q = req.query as Record<string, unknown>;
+    const date = typeof q.date === "string" && q.date.trim() !== "" ? q.date.trim() : undefined;
+    return getDailySummary(user, date);
   });
 
   app.get("/api/networth", async (req) => {

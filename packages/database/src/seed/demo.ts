@@ -461,6 +461,113 @@ async function main(): Promise<void> {
     update: {},
   });
 
+  /* ------------------------- signature day (yesterday) -------------------- */
+  // A deterministic, coherent "yesterday" (UTC calendar day) so the Daily
+  // Summary always has a day worth explaining: earned income, a true expense,
+  // an asset conversion, an internal bank movement, a profitable abroad trip,
+  // faction-sponsored Xanax, a rehab visit and notable account events. Fixed
+  // hours keep it reproducible; every row stays user-scoped demo data and the
+  // global item catalog is never touched.
+  const sigStart = Math.floor(now / DAY) * DAY - DAY; // UTC midnight, yesterday
+  const sig = (h: number, m = 0): Date => new Date((sigStart + h * HOUR + m * 60) * 1000);
+  const xanaxItem = DRUGS.find((d) => d.name === "Xanax")!;
+  const xanaxPriceNow = realPrices.get(xanaxItem.itemId) ?? BigInt(xanaxItem.price);
+
+  await db.moneyEvent.createMany({
+    data: [
+      { userId: user.id, occurredAt: sig(2, 15), category: "salary", direction: "income", amount: 365_000n, source: "demo", sourceRef: "demo:sig:salary", description: "Salary money receive" },
+      // Bazaar sale: big cash inflow, but an asset conversion — never profit.
+      { userId: user.id, occurredAt: sig(9, 40), category: "bazaar", direction: "income", amount: 2_400_000n, source: "demo", sourceRef: "demo:sig:bazaarsale", description: "Bazaar sale money receive" },
+      // Stock purchase: cash → asset (conversion, not an expense).
+      { userId: user.id, occurredAt: sig(11, 5), category: "stock", direction: "expense", amount: -1_500_000n, source: "demo", sourceRef: "demo:sig:stockbuy", description: "Stock buy money sent" },
+      // Bank deposit: internal movement between owned accounts (neutral).
+      { userId: user.id, occurredAt: sig(11, 20), category: "city_bank", direction: "neutral", amount: 500_000n, source: "demo", sourceRef: "demo:sig:bankdep", description: "Bank investment" },
+      // Gym upgrade: a true expense where existing semantics say so.
+      { userId: user.id, occurredAt: sig(18, 30), category: "gym", direction: "expense", amount: -75_000n, source: "demo", sourceRef: "demo:sig:gym", description: "Gym paid" },
+      // Rehab cost mirrored to the ledger (same as the real normalizer).
+      { userId: user.id, occurredAt: sig(14, 10), category: "rehab", direction: "expense", amount: -250_000n, source: "demo", sourceRef: "demo:sig:rehab", description: "Drug rehabilitation paid" },
+    ],
+    skipDuplicates: true,
+  });
+
+  // Two Xanax uses; the first is faction-sponsored (armory "used" evidence
+  // within the matching tolerance), the second draws the armory batch below —
+  // both land in confirmed_faction with a personal cost of exactly $0.
+  await db.drugEvent.createMany({
+    data: [
+      { userId: user.id, occurredAt: sig(10, 0), drugItemId: xanaxItem.itemId, drugName: "Xanax", outcome: "success", source: "demo", sourceRef: "demo:sig:xanax1" },
+      { userId: user.id, occurredAt: sig(22, 30), drugItemId: xanaxItem.itemId, drugName: "Xanax", outcome: "success", source: "demo", sourceRef: "demo:sig:xanax2" },
+    ],
+    skipDuplicates: true,
+  });
+  await db.consumptionEvent.createMany({
+    data: [
+      { userId: user.id, occurredAt: sig(10, 0), itemId: xanaxItem.itemId, itemName: "Xanax", category: "drug", quantity: 1, unitValue: xanaxPriceNow, totalValue: xanaxPriceNow, valuationMethod: "catalog_market_price", provenance: "estimated", source: "derived_drug_event", sourceRef: "demo:sig:xanax1" },
+      { userId: user.id, occurredAt: sig(22, 30), itemId: xanaxItem.itemId, itemName: "Xanax", category: "drug", quantity: 1, unitValue: xanaxPriceNow, totalValue: xanaxPriceNow, valuationMethod: "catalog_market_price", provenance: "estimated", source: "derived_drug_event", sourceRef: "demo:sig:xanax2" },
+    ],
+    skipDuplicates: true,
+  });
+  await db.factionArmoryEvent.createMany({
+    data: [
+      { userId: user.id, factionId: DEMO_FACTION_ID, memberId: DEMO_TORN_ID, memberName: "DEMO_Player", itemId: xanaxItem.itemId, itemName: "Xanax", action: "used", quantity: 1, value: xanaxPriceNow, source: "demo", sourceRef: "demo:sig:armory-used", occurredAt: sig(10, 0) },
+      { userId: user.id, factionId: DEMO_FACTION_ID, memberId: DEMO_TORN_ID, memberName: "DEMO_Player", itemId: xanaxItem.itemId, itemName: "Xanax", action: "lent", quantity: 2, value: xanaxPriceNow * 2n, source: "demo", sourceRef: "demo:sig:armory-lent", occurredAt: sig(-48) },
+    ],
+    skipDuplicates: true,
+  });
+
+  await db.rehabEvent.create({
+    data: { userId: user.id, occurredAt: sig(14, 10), rehabPercent: 60, cost: 250_000n, sessions: 2, addictionPointsRemoved: 95, source: "demo", sourceRef: "demo:sig:rehab" },
+  });
+
+  // A completed abroad trip with purchases (catalog-estimated profit inputs).
+  const sigDest = DESTINATIONS[0]!;
+  const sigDeparted = sig(3);
+  const sigArrived = sig(3 + sigDest.flightHours);
+  const sigReturned = sig(12);
+  const sigTrip = await db.travelEvent.create({
+    data: {
+      userId: user.id,
+      destination: sigDest.name,
+      departedAt: sigDeparted,
+      arrivedAt: sigArrived,
+      returnedAt: sigReturned,
+      durationSeconds: Math.floor(sigReturned.getTime() / 1000) - Math.floor(sigDeparted.getTime() / 1000),
+      status: "returned",
+      source: "demo",
+      sourceRef: "demo:sig:travel",
+    },
+  });
+  const sigItem = PLUSHIES[0]!;
+  const sigQty = 25;
+  const sigUnitCost = Math.round(sigItem.market * 0.65);
+  await db.travelItemEvent.create({
+    data: {
+      userId: user.id,
+      travelEventId: sigTrip.id,
+      occurredAt: sig(6),
+      destination: sigDest.name,
+      category: "plushie",
+      itemId: sigItem.itemId,
+      itemName: sigItem.name,
+      quantity: sigQty,
+      unitCost: BigInt(sigUnitCost),
+      totalCost: BigInt(sigUnitCost * sigQty),
+      estimatedUnitValue: BigInt(sigItem.market),
+      estimatedTotalValue: BigInt(sigItem.market * sigQty),
+      source: "demo",
+      sourceRef: "demo:sig:travelitem",
+    },
+  });
+
+  // Notable account events for the highlights list.
+  await db.timelineEvent.createMany({
+    data: [
+      { userId: user.id, occurredAt: sig(9, 41), type: "torn_event", title: "You sold 25 items in your bazaar", description: "A significant bazaar sale completed.", source: "demo", sourceRef: "demo:sig:event-bazaar" },
+      { userId: user.id, occurredAt: sig(19, 5), type: "torn_event", title: "You were admitted to hospital", description: "You were hospitalized for a short while.", source: "demo", sourceRef: "demo:sig:event-hospital" },
+    ],
+    skipDuplicates: true,
+  });
+
   const warRows = [
     { id: 9001, opponent: "DEMO Rivals", started: now - 90 * DAY, days: 5, win: true, our: 12_000, their: 8_500, payout: 8_000_000 },
     { id: 9002, opponent: "DEMO Warriors", started: now - 60 * DAY, days: 4, win: true, our: 15_200, their: 9_100, payout: 12_500_000 },
