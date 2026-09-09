@@ -316,13 +316,17 @@
               {#each data.rehab.visitTrend.slice(-16) as visit, i (visit.startedAt)}
                 {@const maxCost = Math.max(...data.rehab.visitTrend.slice(-16).map((t) => t.cost ?? 0), 1)}
                 <div class="group relative flex-1" title="{formatDateTime(visit.startedAt)} · {visit.sessions !== null ? `${visit.sessions} session${visit.sessions === 1 ? '' : 's'}` : 'sessions unavailable'} · total {visit.cost !== null ? `-${formatMoneyCompact(visit.cost)}` : 'cost unknown'}{visit.costPerSession !== null ? ` · ${formatMoneyCompact(visit.costPerSession)}/session` : ''}">
-                  <div class="w-full rounded-t bg-negative/60 transition-colors group-hover:bg-negative" style="height: {Math.max(4, Math.round(((visit.cost ?? 0) / maxCost) * 64))}px"></div>
+                  {#if visit.cost !== null}
+                    <div class="w-full rounded-t bg-negative/60 transition-colors group-hover:bg-negative" style="height: {Math.max(4, Math.round((visit.cost / maxCost) * 64))}px"></div>
+                  {:else}
+                    <div class="w-full rounded-t border border-dashed border-border-strong bg-surface-2" style="height: 4px" title="Cost unknown"></div>
+                  {/if}
                 </div>
               {/each}
             </div>
             <p class="mt-1 text-[11px] text-fg-faint">
               Each bar = one visit's TOTAL cost (all its sessions included — Torn reports the visit total directly).
-              Hover a bar for its session count and cost per session.
+              Hover a bar for its session count and cost per session. A hollow bar means the log carried no cost.
             </p>
           </div>
         {/if}

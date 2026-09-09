@@ -128,8 +128,8 @@
                   {/if}
                 </div>
                 {#if event.amount !== null && event.amount !== undefined}
-                  <span class="tnum mt-0.5 shrink-0 text-sm font-medium {(event.amount ?? 0) >= 0 ? 'text-positive' : 'text-negative'}">
-                    {(event.amount ?? 0) >= 0 ? '+' : ''}{formatMoneyCompact(event.amount)}
+                  <span class="tnum mt-0.5 shrink-0 text-sm font-medium {event.amount >= 0 ? 'text-positive' : 'text-negative'}">
+                    {event.amount >= 0 ? '+' : ''}{formatMoneyCompact(event.amount)}
                   </span>
                 {/if}
               </li>

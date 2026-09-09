@@ -3,10 +3,12 @@
   import { formatDateTime, formatDate, RESOURCE_LABELS, humanLabel, type SyncHealthResponse } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
   import { formatRelative } from "$lib/reltime";
+  import { confidenceTitle, coverageTitle } from "$lib/confidence";
   import { me } from "$lib/state.svelte";
   import PageHeader from "$lib/components/PageHeader.svelte";
   import Panel from "$lib/components/Panel.svelte";
   import StateMessage from "$lib/components/StateMessage.svelte";
+  import ConfidenceBadge from "$lib/components/ConfidenceBadge.svelte";
 
   /**
    * Sync health: per-resource progress, cursors, coverage and safe recovery
@@ -170,6 +172,8 @@
         storedSince: day(row?.storedEarliestAt),
         storedUntil: day(row?.storedLatestAt),
         stopReason: row?.stopReason ?? null,
+        confidence: row?.confidence ?? null,
+        coverageTooltip: coverageTitle(row?.confidence?.coverage, (ts) => (ts ? formatDate(ts) : "—")),
       };
     });
   });
@@ -254,8 +258,15 @@
                 <div class="flex items-center gap-2.5">
                   <span class="h-2 w-2 rounded-full {phaseOf(row).dot}"></span>
                   <span class="text-[13px] font-semibold capitalize text-fg">{RESOURCE_LABELS[row.resource] ?? humanLabel(row.resource)}</span>
+                  <!-- Operational health (is the worker functioning?) … -->
                   <span class="text-[11px] {phaseOf(row).text}">{phaseOf(row).label}</span>
                   <span class="text-[11px] text-fg-faint">{frequencyHint[row.resource] ?? ""}</span>
+                  <!-- … vs data confidence (how trustworthy is the data?) — never merged. -->
+                  <ConfidenceBadge
+                    meta={row.confidence}
+                    showComplete
+                    tooltip={confidenceTitle(row.confidence, row.lastSuccessAt ? `last refreshed ${formatRelative(row.lastSuccessAt)}` : undefined)}
+                  />
                 </div>
                 <p class="mt-0.5 pl-[18px] text-xs text-fg-muted">{resourceCopy[row.resource] ?? ""}</p>
                 {#if row.errorMessage}
@@ -357,6 +368,7 @@
               <th class="py-2.5 pr-4 font-medium">Available from Torn</th>
               <th class="py-2.5 pr-4 font-medium">Stored since</th>
               <th class="py-2.5 pr-4 font-medium">Stored until</th>
+              <th class="py-2.5 pr-4 font-medium">Confidence</th>
               <th class="py-2.5 font-medium">Stop reason</th>
             </tr>
           </thead>
@@ -368,6 +380,9 @@
                 <td class="tnum py-2.5 pr-4 text-fg-muted">{row.availableFrom}</td>
                 <td class="tnum py-2.5 pr-4 text-fg-muted">{row.storedSince}</td>
                 <td class="tnum py-2.5 pr-4 text-fg-muted">{row.storedUntil}</td>
+                <td class="py-2.5 pr-4">
+                  <ConfidenceBadge meta={row.confidence} showComplete tooltip={confidenceTitle(row.confidence, row.coverageTooltip)} />
+                </td>
                 <td class="py-2.5">
                   <span class={`rounded-full border px-2 py-0.5 text-[11px] ${stopReasonStyle(row.stopReason)}`}>{stopReasonLabel(row.stopReason)}</span>
                 </td>
@@ -379,6 +394,11 @@
       <p class="mt-4 text-[11px] leading-relaxed text-fg-faint">
         TornScope imports up to 180 days of available Torn history. Retention varies by Torn log type — when Torn no longer returns older
         rows the walk stops with "Torn has no older rows"; nothing is fabricated to fill the gap.
+      </p>
+      <p class="mt-2 text-[11px] leading-relaxed text-fg-faint">
+        <span class="font-medium text-fg-muted">Operational status</span> (Queued / Syncing / Failed) answers whether the worker is
+        functioning. <span class="font-medium text-fg-muted">Confidence</span> (Complete / Partial / Stale / Unavailable) answers how
+        complete and trustworthy the collected data is — the two are tracked separately.
       </p>
     </Panel>
 

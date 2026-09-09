@@ -252,9 +252,15 @@
         </p>
       {/if}
       <div class="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border shadow-panel md:grid-cols-4">
-        <Stat label="{period} Cash received" value={formatKpiValue(economy.cashFlow.income)} provenance="exact" tone="positive" sub={`earned ${formatMoneyCompact(economy.cashFlow.trueIncome)} · asset sales ${formatMoneyCompact(economy.cashFlow.assetInflow)}`} />
-        <Stat label="{period} Cash spent" value={formatKpiValue(economy.cashFlow.expenses)} provenance="exact" tone="negative" sub={`true expenses ${formatMoneyCompact(economy.cashFlow.trueExpense)} · asset purchases ${formatMoneyCompact(economy.cashFlow.assetOutflow)}`} />
-        <Stat label="{period} Net Cash Flow" value={formatKpiValue(economy.cashFlow.netCashFlow)} provenance="exact" tone={(economy.cashFlow.netCashFlow.value ?? 0) >= 0 ? "positive" : "negative"} />
+        <Stat label="{period} Cash received" value={formatKpiValue(economy.cashFlow.income)} provenance="exact" tone="positive" confidence={economy.confidence?.cashFlow} sub={`earned ${formatMoneyCompact(economy.cashFlow.trueIncome)} · asset sales ${formatMoneyCompact(economy.cashFlow.assetInflow)}`} />
+        <Stat label="{period} Cash spent" value={formatKpiValue(economy.cashFlow.expenses)} provenance="exact" tone="negative" confidence={economy.confidence?.cashFlow} sub={`true expenses ${formatMoneyCompact(economy.cashFlow.trueExpense)} · asset purchases ${formatMoneyCompact(economy.cashFlow.assetOutflow)}`} />
+        <Stat
+          label="{period} Net Cash Flow"
+          value={formatKpiValue(economy.cashFlow.netCashFlow)}
+          provenance="exact"
+          confidence={economy.confidence?.cashFlow}
+          tone={economy.cashFlow.netCashFlow.value === null ? "neutral" : economy.cashFlow.netCashFlow.value >= 0 ? "positive" : "negative"}
+        />
         <Stat
           label="Top cash outflow"
           value={summary.largestExpenseCategory.category ? expenseLabel(String(summary.largestExpenseCategory.category)) : "—"}
@@ -286,7 +292,7 @@
           </div>
           <div class="bg-surface p-5 text-center">
             <p class="text-[10px] uppercase tracking-[0.14em] text-fg-faint" title="Sale proceeds minus estimated catalog value of the sold items. Not called profit: acquisition cost is not reliably known.">Estimated value difference</p>
-            <p class="tnum mt-1 text-xl font-semibold {((economy.sales.economicResult ?? 0) >= 0 ? 'text-positive' : 'text-negative')}">
+            <p class="tnum mt-1 text-xl font-semibold {economy.sales.economicResult === null ? 'text-fg-faint' : economy.sales.economicResult >= 0 ? 'text-positive' : 'text-negative'}">
               {economy.sales.economicResult !== null ? formatSignedMoney(economy.sales.economicResult) : "Partial"}
             </p>
           </div>
@@ -329,7 +335,7 @@
                 {/each}
                 <tr class="font-semibold">
                   <td class="py-2.5 pr-4 text-fg" colspan="2">Total cash spent</td>
-                  <td class="tnum py-2.5 pr-4 text-right text-negative">{formatMoneyCompact(economy.cashFlow.expenses.value ?? 0)}</td>
+                  <td class="tnum py-2.5 pr-4 text-right text-negative">{economy.cashFlow.expenses.value !== null ? formatMoneyCompact(economy.cashFlow.expenses.value) : "—"}</td>
                   <td class="tnum py-2.5 text-right text-fg-faint">100%</td>
                 </tr>
               </tbody>
@@ -355,9 +361,9 @@
         <span><span class="font-medium text-fg">Unknown inventory outflow:</span> {economy.consumption.valueUnknownCount} use{economy.consumption.valueUnknownCount === 1 ? "" : "s"} without a price</span>
       </div>
       <div class="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border shadow-panel md:grid-cols-4">
-        <Stat label="Consumed value (est.)" value={formatKpiValue(economy.consumption.totalValue)} provenance="estimated" tone="negative" sub={economy.consumption.valueUnknownCount > 0 ? `${economy.consumption.valueUnknownCount} uses without a price` : null} />
-        <Stat label="Drugs consumed" value={economy.consumption.drugValue !== null ? formatMoneyCompact(economy.consumption.drugValue) : formatKpiValue({ value: null, availability: economy.consumption.uses === 0 ? "unavailable" : "incomplete" })} provenance="estimated" tone="negative" />
-        <Stat label="Inventory sold (est.)" value={economy.sales.inventoryValueRemoved !== null ? formatMoneyCompact(economy.sales.inventoryValueRemoved) : "Unavailable"} provenance="estimated" sub={`sales received ${formatMoneyCompact(economy.sales.cashReceived)}`} />
+        <Stat label="Consumed value (est.)" value={formatKpiValue(economy.consumption.totalValue)} provenance="estimated" tone="negative" confidence={economy.confidence?.consumption} sub={economy.consumption.valueUnknownCount > 0 ? `${economy.consumption.valueUnknownCount} uses without a price` : null} />
+        <Stat label="Drugs consumed" value={economy.consumption.drugValue !== null ? formatMoneyCompact(economy.consumption.drugValue) : formatKpiValue({ value: null, availability: economy.consumption.uses === 0 ? "unavailable" : "incomplete" })} provenance="estimated" tone="negative" confidence={economy.confidence?.consumption} />
+        <Stat label="Inventory sold (est.)" value={economy.sales.inventoryValueRemoved !== null ? formatMoneyCompact(economy.sales.inventoryValueRemoved) : "Unavailable"} provenance="estimated" confidence={economy.confidence?.cashFlow} sub={`sales received ${formatMoneyCompact(economy.sales.cashReceived)}`} />
         <Stat label="Non-cash wealth gained (est.)" value={economy.nonCashGains.value !== null ? formatMoneyCompact(economy.nonCashGains.value) : "—"} provenance={economy.nonCashGains.provenance === "estimated" ? "estimated" : "exact"} sub="crime & OC item rewards only" />
       </div>
 
@@ -407,16 +413,23 @@
         <p class="text-xs text-fg-faint">Tracking since {formatDate(economy.networth.trackingSince)} — net worth history before that point does not exist and is never fabricated.</p>
       {/if}
       <div class="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border shadow-panel md:grid-cols-4">
-        <Stat label="Current net worth" value={formatKpiValue(economy.networth.current)} provenance="exact" tone="accent" />
+        <Stat label="Current net worth" value={formatKpiValue(economy.networth.current)} provenance="exact" tone="accent" confidence={economy.confidence?.networth} />
         <Stat
           label="Net Worth Change{economy.networth.coverage === 'partial' ? ' (partial)' : ''}"
           value={economy.networth.coverage === "none" ? "Insufficient history" : formatSignedMoney(economy.networth.change.value)}
           provenance="exact"
-          tone={(economy.networth.change.value ?? 0) >= 0 ? "positive" : "negative"}
+          confidence={economy.confidence?.networth}
+          tone={economy.networth.change.value === null || economy.networth.coverage === "none" ? "neutral" : economy.networth.change.value >= 0 ? "positive" : "negative"}
           sub={economy.networth.coverage === "partial" && economy.networth.baselineAt !== null ? `snapshots ${formatDate(economy.networth.baselineAt)} → ${economy.networth.currentAt !== null ? formatDate(economy.networth.currentAt) : "now"} — partial coverage of range` : economy.networth.changePct !== null ? `${economy.networth.changePct >= 0 ? "+" : ""}${economy.networth.changePct.toFixed(2)}%` : null}
         />
-        <Stat label="Estimated Travel Profit" value={formatKpiValue(economy.travel.estimatedProfit)} provenance="estimated" tone={(economy.travel.estimatedProfit.value ?? 0) >= 0 ? "positive" : "negative"} />
-        <Stat label="Travel profit / hour" value={formatKpiValue(economy.travel.profitPerHour)} provenance="estimated" sub={economy.travel.trips > 0 ? `${economy.travel.trips} trip${economy.travel.trips === 1 ? "" : "s"}` : null} />
+        <Stat
+          label="Estimated Travel Profit"
+          value={formatKpiValue(economy.travel.estimatedProfit)}
+          provenance="estimated"
+          confidence={economy.confidence?.travel}
+          tone={economy.travel.estimatedProfit.value === null ? "neutral" : economy.travel.estimatedProfit.value >= 0 ? "positive" : "negative"}
+        />
+        <Stat label="Travel profit / hour" value={formatKpiValue(economy.travel.profitPerHour)} provenance="estimated" confidence={economy.confidence?.travel} sub={economy.travel.trips > 0 ? `${economy.travel.trips} trip${economy.travel.trips === 1 ? "" : "s"}` : null} />
       </div>
       <p class="text-xs text-fg-faint">
         Net Worth Change is the snapshot delta from official Torn net worth — it includes item/stock/property price moves as well as
@@ -447,9 +460,9 @@
                 {/each}
                 <tr class="font-semibold">
                   <td class="py-2.5 pr-4 text-fg">Total</td>
-                  <td class="tnum py-2.5 pr-4 text-right text-fg">{formatMoneyCompact(economy.networth.baseline ?? 0)}</td>
-                  <td class="tnum py-2.5 pr-4 text-right text-fg">{formatMoneyCompact(economy.networth.current.value ?? 0)}</td>
-                  <td class="tnum py-2.5 text-right {economy.networth.change.value !== null && economy.networth.change.value < 0 ? 'text-negative' : 'text-positive'}">
+                  <td class="tnum py-2.5 pr-4 text-right text-fg">{economy.networth.baseline !== null ? formatMoneyCompact(economy.networth.baseline) : "—"}</td>
+                  <td class="tnum py-2.5 pr-4 text-right text-fg">{economy.networth.current.value !== null ? formatMoneyCompact(economy.networth.current.value) : "—"}</td>
+                  <td class="tnum py-2.5 text-right {economy.networth.change.value !== null && economy.networth.change.value < 0 ? 'text-negative' : economy.networth.change.value === null ? 'text-fg' : 'text-positive'}">
                     {economy.networth.coverage === "none" ? "Insufficient history" : formatSignedMoney(economy.networth.change.value)}
                   </td>
                 </tr>

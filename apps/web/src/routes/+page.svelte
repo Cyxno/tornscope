@@ -6,10 +6,12 @@ import LiveNow from "$lib/components/LiveNow.svelte";
   import { incomeLabel, expenseLabel } from "$lib/labels";
   import { dateRange, me } from "$lib/state.svelte";
   import { clientPermissionMessage } from "$lib/capabilities";
+  import { confidenceTitle } from "$lib/confidence";
   import { formatRelative } from "$lib/reltime";
   import PageHeader from "$lib/components/PageHeader.svelte";
   import Panel from "$lib/components/Panel.svelte";
   import Stat from "$lib/components/Stat.svelte";
+  import ConfidenceBadge from "$lib/components/ConfidenceBadge.svelte";
   import Chart from "$lib/components/Chart.svelte";
   import SegmentedDateRange from "$lib/components/SegmentedDateRange.svelte";
   import StateMessage from "$lib/components/StateMessage.svelte";
@@ -157,6 +159,7 @@ import LiveNow from "$lib/components/LiveNow.svelte";
         <div class="flex items-center gap-3">
           <span class="text-[11px] font-semibold uppercase tracking-[0.2em] text-fg-faint">Net worth</span>
           <span class="text-[10px] font-medium uppercase tracking-[0.12em] text-fg-faint">exact · official Torn figure</span>
+          <ConfidenceBadge meta={data.confidence?.networth} tooltip={confidenceTitle(data.confidence?.networth, data.lastSyncAt !== null ? `last sync ${formatRelative(data.lastSyncAt)}` : undefined)} />
         </div>
         <div class="mt-3 flex flex-wrap items-baseline gap-x-1 gap-y-2">
           {#if nw}
@@ -167,12 +170,16 @@ import LiveNow from "$lib/components/LiveNow.svelte";
           {/if}
         </div>
         <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-[13px]">
-          <span class="flex items-baseline gap-1.5" class:text-positive={(data.networthChange.value ?? 0) >= 0} class:text-negative={(data.networthChange.value ?? 0) < 0}>
-            <span class="tnum font-semibold">
+          <span class="flex items-baseline gap-1.5">
+            <span
+              class="tnum font-semibold"
+              class:text-positive={data.networthChange.value !== null && data.networthChange.value >= 0}
+              class:text-negative={data.networthChange.value !== null && data.networthChange.value < 0}
+            >
               {#if data.networthCoverage === "none"}
                 Insufficient history
               {:else}
-                {data.networthChange.value === null ? "—" : `${(data.networthChange.value ?? 0) >= 0 ? "+" : ""}${formatMoneyCompact(data.networthChange.value)}`}
+                {data.networthChange.value === null ? "—" : `${data.networthChange.value >= 0 ? "+" : ""}${formatMoneyCompact(data.networthChange.value)}`}
               {/if}
             </span>
             <span class="text-fg-faint" title="Snapshot delta from official Torn net worth: includes item/stock/property price moves, cash and asset movement. Not a profit figure.">
@@ -188,6 +195,7 @@ import LiveNow from "$lib/components/LiveNow.svelte";
           <span class="flex items-baseline gap-1.5 text-fg-muted">
             <span class="tnum font-semibold text-fg">{formatKpiValue(data.travelProfit)}</span>
             <span class="text-fg-faint">Estimated Travel Profit</span>
+            <ConfidenceBadge meta={data?.confidence?.travelProfit} />
           </span>
           {#if data.extendedWealth.value !== null}
             <span class="flex items-baseline gap-1.5 text-fg-muted" title="Official Torn net worth plus wealth Torn does not count in that figure.">
@@ -206,12 +214,13 @@ import LiveNow from "$lib/components/LiveNow.svelte";
         </div>
       </div>
       <div class="grid grid-cols-2 gap-px border-t border-border bg-border md:grid-cols-4">
-        <Stat label="Cash" value={formatKpiValue(data.cash)} provenance="exact" />
+        <Stat label="Cash" value={formatKpiValue(data.cash)} provenance="exact" confidence={data.confidence?.networth} />
         <Stat
           label="{period} Cash received"
           value={formatKpiValue(data.financial.cashInflow)}
           provenance="derived"
           tone="positive"
+          confidence={data.confidence?.cashFlow}
           title="Cash that entered the wallet (technical label: cash inflow). Earnings and asset sales are broken out below — cash received is not profit."
           sub={`earned ${formatMoneyCompact(data.financial.cashReceived?.earned.total ?? data.financial.trueIncome)} · asset sales ${formatMoneyCompact(data.financial.cashReceived?.assetSales.total ?? data.financial.assetSales)}`}
         />
@@ -220,6 +229,7 @@ import LiveNow from "$lib/components/LiveNow.svelte";
           value={formatKpiValue(data.financial.cashOutflow)}
           provenance="derived"
           tone="negative"
+          confidence={data.confidence?.cashFlow}
           title="Cash that left the wallet (technical label: cash outflow). Most spending buys assets you still own."
           sub={`true expenses ${formatMoneyCompact(data.financial.trueExpense)} · asset purchases ${formatMoneyCompact(data.financial.assetPurchases)}`}
         />
@@ -228,8 +238,9 @@ import LiveNow from "$lib/components/LiveNow.svelte";
           value={logsBlocked ? "—" : formatMoneyCompact(data.financial.trueIncome)}
           provenance="derived"
           tone="positive"
+          confidence={data.confidence?.cashFlow}
           title="Money earned — raises total wealth (salary, crime, payouts). Asset sales are NOT income: the items left your inventory."
-          sub={`net worth change ${data.networthCoverage === "none" ? "—" : `${(data.networthChange.value ?? 0) >= 0 ? "+" : ""}${formatMoneyCompact(data.networthChange.value)}`}`}
+          sub={`net worth change ${data.networthChange.value === null || data.networthCoverage === "none" ? "—" : `${data.networthChange.value >= 0 ? "+" : ""}${formatMoneyCompact(data.networthChange.value)}`}`}
         />
       </div>
     </section>
@@ -278,9 +289,9 @@ import LiveNow from "$lib/components/LiveNow.svelte";
           starting {formatMoneyCompact(data.wallet.startingCash)}
           + received {formatMoneyCompact(data.wallet.walletInflow)}
           − spending &amp; bank deposits {formatMoneyCompact(data.wallet.walletOutflow)}
-          = expected {formatMoneyCompact(data.wallet.expectedEndingCash ?? 0)}
+          = expected {data.wallet.expectedEndingCash !== null ? formatMoneyCompact(data.wallet.expectedEndingCash) : "—"}
           <span class="mx-1.5 text-border-strong">·</span>
-          actual wallet now {formatMoneyCompact(data.wallet.actualEndingCash ?? 0)}
+          actual wallet now {data.wallet.actualEndingCash !== null ? formatMoneyCompact(data.wallet.actualEndingCash) : "—"}
           {#if data.wallet.factionBalanceCredits > 0}
             <span class="mx-1.5 text-border-strong">·</span>
             <span class="text-fg-faint">
@@ -468,8 +479,8 @@ import LiveNow from "$lib/components/LiveNow.svelte";
                     <p class="text-[11px] text-fg-faint">{formatRelative(event.occurredAt)}</p>
                   </div>
                   {#if event.amount !== null && event.amount !== undefined}
-                    <span class="tnum shrink-0 text-[13px] font-medium {(event.amount ?? 0) >= 0 ? 'text-positive' : 'text-negative'}">
-                      {(event.amount ?? 0) >= 0 ? '+' : ''}{formatMoneyCompact(event.amount)}
+                    <span class="tnum shrink-0 text-[13px] font-medium {event.amount >= 0 ? 'text-positive' : 'text-negative'}">
+                      {event.amount >= 0 ? '+' : ''}{formatMoneyCompact(event.amount)}
                     </span>
                   {/if}
                 </li>
@@ -484,6 +495,7 @@ import LiveNow from "$lib/components/LiveNow.svelte";
     <section class="grid grid-cols-1 gap-6 lg:grid-cols-2">
       <Panel title="Drug use" caption="Good uses vs overdoses per day" flush>
         {#snippet actions()}
+          <ConfidenceBadge meta={data?.confidence?.drugs} />
           <a href="/drugs" class="pr-4 text-xs font-medium text-accent transition-opacity hover:opacity-80">Explore →</a>
         {/snippet}
         {#if logsBlocked}
@@ -578,6 +590,7 @@ import LiveNow from "$lib/components/LiveNow.svelte";
       </Panel>
       <Panel title="Travel profit" caption="Estimated profit by departure day" flush>
         {#snippet actions()}
+          <ConfidenceBadge meta={data?.confidence?.travelProfit} />
           <a href="/travel" class="pr-4 text-xs font-medium text-accent transition-opacity hover:opacity-80">Explore →</a>
         {/snippet}
         {#if logsBlocked}

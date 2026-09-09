@@ -159,7 +159,7 @@
         label="Tracked trip profit"
         value={formatKpiValue(summary.estimatedProfit)}
         provenance="estimated"
-        tone={(summary.estimatedProfit.value ?? 0) >= 0 ? "positive" : "negative"}
+        tone={summary.estimatedProfit.value === null ? "neutral" : summary.estimatedProfit.value >= 0 ? "positive" : "negative"}
         sub={summary.estimatedProfit.availability === "incomplete" ? "purchases without a trip exist" : null}
       />
       <Stat label="Profit / hour" value={formatKpiValue(summary.profitPerHour)} provenance="estimated" />
@@ -280,7 +280,7 @@
                   <td class="tnum py-3 pr-4 text-right text-fg-muted">{formatDuration(trip.durationSeconds)}</td>
                   <td class="tnum py-3 pr-4 text-right text-fg-muted">{trip.itemsBought}</td>
                   <td class="tnum py-3 pr-4 text-right text-fg-muted">{formatMoneyCompact(-trip.spend)}</td>
-                  <td class="tnum py-3 pr-6 text-right font-semibold {(trip.estimatedProfit ?? 0) >= 0 ? 'text-positive' : 'text-negative'}">
+                  <td class="tnum py-3 pr-6 text-right font-semibold {trip.estimatedProfit === null ? 'text-fg-faint' : trip.estimatedProfit >= 0 ? 'text-positive' : 'text-negative'}">
                     {trip.estimatedProfit !== null ? formatMoneyCompact(trip.estimatedProfit) : "—"}
                   </td>
                 </tr>
@@ -307,7 +307,7 @@
                                 <td class="tnum py-1.5 pr-4 text-right text-fg-muted">{item.quantity}</td>
                                 <td class="tnum py-1.5 pr-4 text-right text-fg-muted">{formatMoneyCompact(item.unitCost)}</td>
                                 <td class="tnum py-1.5 pr-4 text-right text-fg-muted">{item.estimatedUnitValue !== null ? formatMoneyCompact(item.estimatedUnitValue) : "—"}</td>
-                                <td class="tnum py-1.5 text-right font-medium {(item.estimatedProfit ?? 0) >= 0 ? 'text-positive' : 'text-negative'}">
+                                <td class="tnum py-1.5 text-right font-medium {item.estimatedProfit === null ? 'text-fg-faint' : item.estimatedProfit >= 0 ? 'text-positive' : 'text-negative'}">
                                   {item.estimatedProfit !== null ? formatMoneyCompact(item.estimatedProfit) : "—"}
                                 </td>
                               </tr>

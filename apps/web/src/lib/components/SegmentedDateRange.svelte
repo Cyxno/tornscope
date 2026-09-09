@@ -12,7 +12,17 @@
   function applyCustom() {
     const from = customFrom ? Math.floor(new Date(`${customFrom}T00:00:00Z`).getTime() / 1000) : undefined;
     const to = customTo ? Math.floor(new Date(`${customTo}T23:59:59Z`).getTime() / 1000) : undefined;
-    if (from || to) setCustomRange(from ?? 0, to ?? Math.floor(Date.now() / 1000));
+    if (!from && !to) return;
+    // A one-sided entry means "from the beginning of recorded time" or
+    // "up to that day" — 0 is the honest epoch bound, never a fake date.
+    // Both-sided is the normal path; single-sided keeps the other end open.
+    if (from && to) {
+      setCustomRange(from, to);
+    } else if (from) {
+      setCustomRange(from, Math.floor(Date.now() / 1000));
+    } else if (to) {
+      setCustomRange(0, to);
+    }
   }
 </script>
 
