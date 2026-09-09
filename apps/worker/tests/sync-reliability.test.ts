@@ -162,6 +162,13 @@ suite("sync reliability & recovery", () => {
     expect(stats?.reason).toBe("worker_interrupted");
     const state = await db.syncState.findUnique({ where: { userId_resource: { userId, resource: "money_logs" } } });
     expect(state?.nextRunAt?.getTime()).toBeGreaterThan(Date.now());
+
+    // A later tick while the re-enqueued job is STILL waiting in a busy
+    // queue (state stays "running", heartbeat stays stale) must not write a
+    // duplicate incident row for the same orphan period.
+    await enqueueDueSyncs(stubQueue((uid, resource) => void added.push({ userId: uid, resource })));
+    const recoveredCount = await db.syncRun.count({ where: { userId, resource: "money_logs", status: "recovered" } });
+    expect(recoveredCount).toBe(1);
   });
 
   it("one broken resource does not block unrelated resources in the same tick", async () => {
