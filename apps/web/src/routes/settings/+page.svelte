@@ -195,7 +195,7 @@ import NotificationsSettings from "$lib/components/NotificationsSettings.svelte"
 
 <svelte:head><title>Settings · TornScope</title></svelte:head>
 
-<div class="space-y-10">
+<div class="space-y-8 lg:space-y-10">
   <PageHeader
     eyebrow="System"
     title="Settings"
@@ -203,7 +203,7 @@ import NotificationsSettings from "$lib/components/NotificationsSettings.svelte"
   />
 
   {#if message}
-    <div class="rounded-xl border px-4 py-2.5 text-[13px] {message.tone === 'ok' ? 'border-positive/25 bg-positive/5 text-positive' : message.tone === 'warn' ? 'border-warning/25 bg-warning/5 text-warning' : 'border-negative/25 bg-negative/5 text-negative'}">
+    <div class="rounded-tile border px-4 py-2.5 text-[13px] {message.tone === 'ok' ? 'border-positive/25 bg-positive/5 text-positive' : message.tone === 'warn' ? 'border-warning/25 bg-warning/5 text-warning' : 'border-negative/25 bg-negative/5 text-negative'}">
       {message.text}
     </div>
   {/if}
@@ -214,11 +214,11 @@ import NotificationsSettings from "$lib/components/NotificationsSettings.svelte"
     {:else if status?.hasKey}
       <dl class="grid grid-cols-2 gap-x-8 gap-y-5 md:grid-cols-3">
         <div>
-          <dt class="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint">Key</dt>
+          <dt class="text-[11px] font-medium text-fg-faint">Key</dt>
           <dd class="tnum mt-1 text-fg">{status.keyPreview}</dd>
         </div>
         <div>
-          <dt class="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint">API access</dt>
+          <dt class="text-[11px] font-medium text-fg-faint">API access</dt>
           <dd class="mt-1 text-fg">
             {status.accessType ?? "Unknown"}{status.accessLevel ? ` · level ${status.accessLevel}` : ""}
             {#if caps}
@@ -227,19 +227,19 @@ import NotificationsSettings from "$lib/components/NotificationsSettings.svelte"
           </dd>
         </div>
         <div>
-          <dt class="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint">Player</dt>
+          <dt class="text-[11px] font-medium text-fg-faint">Player</dt>
           <dd class="mt-1 text-fg">{status.tornName ? `${status.tornName} [${status.tornId}]` : "—"}</dd>
         </div>
         <div>
-          <dt class="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint">Validated</dt>
+          <dt class="text-[11px] font-medium text-fg-faint">Validated</dt>
           <dd class="mt-1 text-fg-muted">{formatRelative(status.validatedAt)}</dd>
         </div>
         <div>
-          <dt class="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint">Log access</dt>
+          <dt class="text-[11px] font-medium text-fg-faint">Log access</dt>
           <dd class="mt-1 text-fg-muted">{status.logAccessAvailable ? "Available" : "Unavailable"}</dd>
         </div>
         <div>
-          <dt class="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint">Active browser sessions</dt>
+          <dt class="text-[11px] font-medium text-fg-faint">Active browser sessions</dt>
           <dd class="mt-1 text-fg-muted">
             {me?.activeSessions ?? 1}
             {#if (me?.activeSessions ?? 1) > 1}
@@ -252,7 +252,7 @@ import NotificationsSettings from "$lib/components/NotificationsSettings.svelte"
       </dl>
       <div class="mt-6 flex items-center gap-3 border-t border-border pt-5">
         <span class="text-xs text-fg-faint">Stop syncing without losing collected history:</span>
-        <button class="rounded-full border border-negative/30 px-4 py-1.5 text-xs font-medium text-negative transition-colors hover:bg-negative/10" onclick={() => void remove()}>
+        <button class="btn btn-sm btn-danger" onclick={() => void remove()}>
           Disconnect API key
         </button>
       </div>
@@ -266,21 +266,21 @@ import NotificationsSettings from "$lib/components/NotificationsSettings.svelte"
       </label>
 
       {#if !replacePreview}
-        <div class="flex max-w-xl flex-wrap gap-2.5">
+        <div class="flex max-w-xl flex-wrap items-center gap-2.5">
           <input
             id="new-key"
             type="password"
             bind:value={newKey}
             placeholder="Paste your Torn API key"
             autocomplete="off"
-            class="min-w-0 flex-1 rounded-xl border border-border bg-bg-raise px-4 py-2.5 font-mono text-sm text-fg placeholder:font-sans placeholder:text-fg-faint focus:border-accent"
+            class="input min-w-0 flex-1 font-mono !h-10 placeholder:font-sans"
           />
-          <button class="rounded-xl bg-accent-strong px-5 text-sm font-semibold text-bg transition-colors hover:bg-accent disabled:opacity-40" disabled={validatingReplace || saving || newKey.trim().length < 10} onclick={() => void previewSave()}>
+          <button class="btn btn-primary" disabled={validatingReplace || saving || newKey.trim().length < 10} onclick={() => void previewSave()}>
             {validatingReplace ? "Validating…" : "Validate"}
           </button>
         </div>
         {#if identityConflict}
-          <div class="mt-4 rounded-xl border border-warning/30 bg-warning/5 p-4">
+          <div class="mt-4 rounded-tile border border-warning/30 bg-warning/5 p-4">
             <p class="text-[13px] font-medium text-warning">Different Torn account detected</p>
             <p class="mt-1 text-xs text-fg-muted">
               This profile is linked to <span class="font-medium text-fg">{identityConflict.existing.name ?? "player"} [{identityConflict.existing.tornId}]</span>.
@@ -288,10 +288,10 @@ import NotificationsSettings from "$lib/components/NotificationsSettings.svelte"
               The two histories are never merged.
             </p>
             <div class="mt-3 flex flex-wrap gap-2.5">
-              <button class="rounded-full border border-warning/40 px-4 py-1.5 text-xs font-medium text-warning transition-colors hover:bg-warning/10" onclick={() => void confirmSave(true)}>
+              <button class="btn btn-sm !border-warning/40 text-warning hover:bg-warning/10 hover:text-warning" onclick={() => void confirmSave(true)}>
                 Start new profile/data context
               </button>
-              <button class="rounded-full border border-border px-4 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:text-fg" onclick={() => (identityConflict = null)}>
+              <button class="btn btn-sm" onclick={() => (identityConflict = null)}>
                 Cancel
               </button>
             </div>
@@ -302,7 +302,7 @@ import NotificationsSettings from "$lib/components/NotificationsSettings.svelte"
         </p>
       {:else}
         <!-- Replace preview: explicit two-step flow, nothing stored yet -->
-        <div class="max-w-xl space-y-4 rounded-xl border border-border bg-bg-raise p-5">
+        <div class="max-w-xl space-y-4 rounded-tile border border-border bg-bg-raise p-5">
           <div class="flex items-center justify-between">
             <p class="text-[13px] font-semibold text-fg">Key validated — nothing stored yet</p>
             <span class="text-xs text-fg-muted">{replacePreview.accessType ?? "Unknown access"}{replacePreview.accessLevel !== null ? ` · level ${replacePreview.accessLevel}` : ""}</span>
@@ -324,12 +324,12 @@ import NotificationsSettings from "$lib/components/NotificationsSettings.svelte"
           {/if}
 
           {#if replacePreview.downgrade}
-            <p class="rounded-lg border border-warning/30 bg-warning/5 px-3 py-2 text-xs leading-relaxed text-warning">
+            <p class="rounded-tile border border-warning/30 bg-warning/5 px-3 py-2 text-xs leading-relaxed text-warning">
               Replacing this key reduces available permissions. Some TornScope analytics may stop refreshing.
               Previously collected history is never deleted — it stays available and is marked as no longer refreshing.
             </p>
           {:else if replacePreview.upgrade}
-            <p class="rounded-lg border border-positive/25 bg-positive/5 px-3 py-2 text-xs leading-relaxed text-positive">
+            <p class="rounded-tile border border-positive/25 bg-positive/5 px-3 py-2 text-xs leading-relaxed text-positive">
               The new key unlocks additional analytics. Existing history is preserved.
             </p>
           {/if}
@@ -342,10 +342,10 @@ import NotificationsSettings from "$lib/components/NotificationsSettings.svelte"
           {/if}
 
           <div class="flex flex-wrap gap-2.5">
-            <button class="rounded-xl bg-accent-strong px-5 py-2 text-sm font-semibold text-bg transition-colors hover:bg-accent disabled:opacity-40" disabled={saving} onclick={() => void confirmSave()}>
+            <button class="btn btn-primary" disabled={saving} onclick={() => void confirmSave()}>
               {saving ? "Storing…" : status?.hasKey ? "Replace stored key" : "Store key"}
             </button>
-            <button class="rounded-xl border border-border px-4 py-2 text-sm text-fg-muted transition-colors hover:text-fg" onclick={cancelPreview}>
+            <button class="rounded-tile border border-border px-4 py-2 text-sm text-fg-muted transition-colors hover:text-fg" onclick={cancelPreview}>
               Cancel
             </button>
           </div>
@@ -361,19 +361,19 @@ import NotificationsSettings from "$lib/components/NotificationsSettings.svelte"
       <StateMessage state="loading" />
     {:else if caps}
       <div class="overflow-x-auto">
-        <table class="w-full text-left text-[13px]">
+        <table class="tsv-table">
           <thead>
-            <tr class="border-b border-border text-[11px] uppercase tracking-[0.14em] text-fg-faint">
-              <th class="py-2 pr-4 font-medium">Feature</th>
-              <th class="py-2 pr-4 font-medium">Requires</th>
+            <tr>
+              <th class="font-medium">Feature</th>
+              <th class="font-medium">Requires</th>
               <th class="py-2 font-medium">Status</th>
             </tr>
           </thead>
           <tbody>
             {#each matrixRows as row (row.label)}
-              <tr class="border-b border-border/50 last:border-0">
-                <td class="py-2 pr-4 text-fg">{row.label}</td>
-                <td class="py-2 pr-4 text-fg-muted">{row.requirementLabel}</td>
+              <tr>
+                <td class="text-fg">{row.label}</td>
+                <td class="text-fg-muted">{row.requirementLabel}</td>
                 <td class="py-2">
                   <span class={row.available ? (row.partial ? "text-warning" : "text-positive") : "text-fg-faint"}>
                     {row.state}
@@ -433,15 +433,15 @@ import NotificationsSettings from "$lib/components/NotificationsSettings.svelte"
   <Panel title="Display defaults" caption="Timezone, currency and price basis used across TornScope">
     <dl class="grid grid-cols-1 gap-x-8 gap-y-5 md:grid-cols-3">
       <div>
-        <dt class="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint">Timezone</dt>
+        <dt class="text-[11px] font-medium text-fg-faint">Timezone</dt>
         <dd class="mt-1 text-fg">UTC</dd>
       </div>
       <div>
-        <dt class="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint">Currency</dt>
+        <dt class="text-[11px] font-medium text-fg-faint">Currency</dt>
         <dd class="mt-1 text-fg">Torn dollars ($)</dd>
       </div>
       <div>
-        <dt class="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint">Market prices</dt>
+        <dt class="text-[11px] font-medium text-fg-faint">Market prices</dt>
         <dd class="mt-1 text-fg">Torn item catalog (estimated)</dd>
       </div>
     </dl>
@@ -455,7 +455,7 @@ import NotificationsSettings from "$lib/components/NotificationsSettings.svelte"
     </p>
     <div class="mt-4 flex items-center gap-3">
       <button
-        class="rounded-full border px-4 py-1.5 text-xs font-medium transition-colors {deletingProfile ? 'border-negative bg-negative text-bg font-semibold' : 'border-negative/30 text-negative hover:bg-negative/10'}"
+        class="btn btn-sm {deletingProfile ? '!border-negative bg-negative font-semibold text-bg' : 'btn-danger'}"
         onclick={() => void deleteProfile()}
       >
         {deletingProfile ? "Click again to permanently delete" : "Delete this TornScope profile"}
@@ -476,20 +476,20 @@ import NotificationsSettings from "$lib/components/NotificationsSettings.svelte"
   <Panel title="About TornScope" caption="Release status, maintainer and independence">
     <dl class="grid grid-cols-1 gap-x-8 gap-y-5 md:grid-cols-3">
       <div>
-        <dt class="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint">Status</dt>
+        <dt class="text-[11px] font-medium text-fg-faint">Status</dt>
         <dd class="mt-1">
           <span class="inline-flex items-center gap-2 text-fg">
             Public Beta
-            <span class="rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.16em] text-accent">Beta</span>
+            <span class="chip chip-accent !text-[9px] font-semibold uppercase tracking-[0.14em]">Beta</span>
           </span>
         </dd>
       </div>
       <div>
-        <dt class="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint">Release</dt>
+        <dt class="text-[11px] font-medium text-fg-faint">Release</dt>
         <dd class="tnum mt-1 text-fg">{branding.publicVersion}</dd>
       </div>
       <div>
-        <dt class="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint">Maintainer</dt>
+        <dt class="text-[11px] font-medium text-fg-faint">Maintainer</dt>
         <dd class="mt-1 text-fg">
           <a
             href="https://www.torn.com/profiles.php?XID=1816206"

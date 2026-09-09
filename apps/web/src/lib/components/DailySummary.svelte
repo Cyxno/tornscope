@@ -242,7 +242,7 @@
         <div class="mt-3 space-y-1.5 text-sm">
           <p class="flex items-baseline justify-between gap-3"><span class="text-fg-muted">Received</span><span class="tnum font-medium text-positive">{formatKpiValue(summary.cashFlow.received)}</span></p>
           <p class="flex items-baseline justify-between gap-3"><span class="text-fg-muted">Spent</span><span class="tnum font-medium text-negative">{formatKpiValue(summary.cashFlow.spent)}</span></p>
-          <p class="flex items-baseline justify-between gap-3 border-t border-border pt-1.5"><span class="text-fg-muted">Net movement</span><span class="tnum font-semibold text-fg">{formatKpiValue(summary.cashFlow.net, formatSignedMoney)}</span></p>
+          <p class="flex items-baseline justify-between gap-3 border-t border-border pt-1.5"><span class="text-fg-muted">Net movement</span><span class="tnum font-semibold text-fg">{formatKpiValue(summary.cashFlow.net, formatSignedMoneyCompact)}</span></p>
         </div>
         {#if summary.cashFlow.topInflow.length > 0 || summary.cashFlow.topOutflow.length > 0}
           <p class="mt-3 text-[11px] leading-relaxed text-fg-faint">
@@ -260,7 +260,7 @@
         <div class="mt-3 space-y-1.5 text-sm">
           <p class="flex items-baseline justify-between gap-3"><span class="text-fg-muted">True income</span><span class="tnum font-medium text-positive">{formatKpiValue(summary.economicEffect.trueIncome)}</span></p>
           <p class="flex items-baseline justify-between gap-3"><span class="text-fg-muted">True expenses</span><span class="tnum font-medium text-negative">{formatKpiValue(summary.economicEffect.trueExpense)}</span></p>
-          <p class="flex items-baseline justify-between gap-3 border-t border-border pt-1.5"><span class="text-fg-muted">Economic net</span><span class="tnum font-semibold text-fg">{formatKpiValue(summary.economicEffect.net, formatSignedMoney)}</span></p>
+          <p class="flex items-baseline justify-between gap-3 border-t border-border pt-1.5"><span class="text-fg-muted">Economic net</span><span class="tnum font-semibold text-fg">{formatKpiValue(summary.economicEffect.net, formatSignedMoneyCompact)}</span></p>
         </div>
         <p class="mt-3 text-[11px] leading-relaxed text-fg-faint">Earned or lost value — conversions are excluded here.</p>
       </div>

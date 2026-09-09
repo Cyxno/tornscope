@@ -62,7 +62,7 @@
   ];
 
   const resultBadge = (r: string) =>
-    r === "win" ? "border-positive/30 bg-positive/10 text-positive" : r === "loss" ? "border-negative/30 bg-negative/10 text-negative" : "border-border bg-surface-2 text-fg-muted";
+    r === "win" ? "chip-positive" : r === "loss" ? "chip-negative" : "";
 
   function payoutKindLabel(kind: string, scenario: string | null): string {
     return kind === "oc" ? `OC payout${scenario ? ` · ${scenario}` : ""}` : "Unmatched faction payout";
@@ -89,7 +89,7 @@
 
 <svelte:head><title>Faction · TornScope</title></svelte:head>
 
-<div class="space-y-10">
+<div class="space-y-8 lg:space-y-10">
   <PageHeader
     eyebrow="Faction"
     title={overview?.faction.name ?? "Faction"}
@@ -133,7 +133,7 @@
     </div>
 
     {#if tab === "overview"}
-      <div class="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border shadow-panel md:grid-cols-4">
+      <div class="grid grid-cols-2 gap-px overflow-hidden rounded-card border border-border bg-border shadow-panel md:grid-cols-4">
         <Stat label="Respect" value={overview.faction.respect !== null ? overview.faction.respect.toLocaleString("en-US") : "—"} provenance="exact" tone="accent" sub={overview.faction.members !== null ? `${overview.faction.members} members` : null} />
         <Stat label="Best chain" value={overview.faction.bestChain !== null ? String(overview.faction.bestChain) : "—"} provenance="exact" sub={overview.currentChain ? `latest chain ${overview.currentChain.chain}` : null} />
         <Stat label="Wars in range" value={String(overview.wars.total)} provenance="exact" sub={`${overview.wars.wins}W · ${overview.wars.losses}L${overview.wars.ongoing > 0 ? ` · ${overview.wars.ongoing} ongoing` : ""}`} />
@@ -165,22 +165,22 @@
           <StateMessage state="empty" title="No ranked wars stored yet" hint="Wars are collected by the ranked_wars sync resource." />
         {:else}
         <div class="overflow-x-auto px-2 pb-4">
-          <table class="w-full text-left text-[13px]">
+          <table class="tsv-table">
             <thead>
-              <tr class="border-b border-border text-[11px] uppercase tracking-[0.12em] text-fg-faint">
-                <th class="py-2 pl-4 pr-4 font-medium">Started</th>
-                <th class="py-2 pr-4 font-medium">Opponent</th>
-                <th class="py-2 pr-4 font-medium">Result</th>
-                <th class="py-2 pr-4 text-right font-medium">Score</th>
+              <tr>
+                <th class="font-medium">Started</th>
+                <th class="font-medium">Opponent</th>
+                <th class="font-medium">Result</th>
+                <th class="text-right font-medium">Score</th>
               </tr>
             </thead>
             <tbody>
               {#each overview.recentWars as w (w.tornWarId)}
-                <tr class="border-b border-border/40 last:border-0">
-                  <td class="tnum whitespace-nowrap py-2 pl-4 pr-4 text-xs text-fg-faint">{formatDate(w.startedAt)}</td>
-                  <td class="py-2 pr-4 text-fg">{w.opponentName ?? "—"}</td>
-                  <td class="py-2 pr-4"><span class={`rounded-full border px-2 py-0.5 text-[11px] ${resultBadge(w.result)}`}>{w.result}</span></td>
-                  <td class="tnum py-2 pr-4 text-right text-fg-muted">{w.ourScore ?? "—"} : {w.opponentScore ?? "—"}</td>
+                <tr>
+                  <td class="tnum whitespace-nowrap text-xs text-fg-faint">{formatDate(w.startedAt)}</td>
+                  <td class="text-fg">{w.opponentName ?? "—"}</td>
+                  <td class="py-2 pr-4"><span class={`chip ${resultBadge(w.result)}`}>{w.result}</span></td>
+                  <td class="tnum text-right text-fg-muted">{w.ourScore ?? "—"} : {w.opponentScore ?? "—"}</td>
                 </tr>
               {/each}
             </tbody>
@@ -195,30 +195,30 @@
           <StateMessage state="empty" title="No ranked wars in this range" />
         {:else}
           <div class="overflow-x-auto">
-            <table class="w-full text-left text-[13px]">
+            <table class="tsv-table">
               <thead>
-                <tr class="border-b border-border text-[11px] uppercase tracking-[0.12em] text-fg-faint">
-                  <th class="py-2.5 pl-6 pr-4 font-medium">Started</th>
-                  <th class="py-2.5 pr-4 font-medium">Opponent</th>
-                  <th class="py-2.5 pr-4 font-medium">Result</th>
-                  <th class="py-2.5 pr-4 text-right font-medium">Score</th>
-                  <th class="py-2.5 pr-4 text-right font-medium">My attacks</th>
-                  <th class="py-2.5 pr-4 text-right font-medium">My respect</th>
-                  <th class="py-2.5 pr-4 text-right font-medium">War payouts (matched)</th>
-                  <th class="py-2.5 pr-6 text-right font-medium">My payout</th>
+                <tr>
+                  <th class="font-medium">Started</th>
+                  <th class="font-medium">Opponent</th>
+                  <th class="font-medium">Result</th>
+                  <th class="text-right font-medium">Score</th>
+                  <th class="text-right font-medium">My attacks</th>
+                  <th class="text-right font-medium">My respect</th>
+                  <th class="text-right font-medium">War payouts (matched)</th>
+                  <th class="text-right font-medium">My payout</th>
                 </tr>
               </thead>
               <tbody>
                 {#each wars.wars as w (w.tornWarId)}
-                  <tr class="border-b border-border/50 last:border-0 hover:bg-surface-2/50">
-                    <td class="tnum whitespace-nowrap py-2.5 pl-6 pr-4 text-xs text-fg-faint">{formatDateTime(w.startedAt)}</td>
-                    <td class="py-2.5 pr-4 text-fg">{w.opponentName ?? "—"}</td>
-                    <td class="py-2.5 pr-4"><span class={`rounded-full border px-2 py-0.5 text-[11px] ${resultBadge(w.result)}`}>{w.result}</span></td>
-                    <td class="tnum py-2.5 pr-4 text-right text-fg-muted">{w.ourScore ?? "—"} : {w.opponentScore ?? "—"}</td>
-                    <td class="tnum py-2.5 pr-4 text-right text-fg-muted">{w.myAttacks}</td>
-                    <td class="tnum py-2.5 pr-4 text-right text-fg-muted">{formatDecimal(w.myRespect)}</td>
-                    <td class="tnum py-2.5 pr-4 text-right text-fg-muted">{formatMoneyCompact(w.knownPayoutTotal)}</td>
-                    <td class="tnum py-2.5 pr-6 text-right font-medium {w.personalPayout !== null ? 'text-positive' : 'text-fg-faint'}">{w.personalPayout !== null ? formatMoneyCompact(w.personalPayout) : "unmatched"}</td>
+                  <tr>
+                    <td class="tnum whitespace-nowrap text-xs text-fg-faint">{formatDateTime(w.startedAt)}</td>
+                    <td class="text-fg">{w.opponentName ?? "—"}</td>
+                    <td class=""><span class={`chip ${resultBadge(w.result)}`}>{w.result}</span></td>
+                    <td class="tnum text-right text-fg-muted">{w.ourScore ?? "—"} : {w.opponentScore ?? "—"}</td>
+                    <td class="tnum text-right text-fg-muted">{w.myAttacks}</td>
+                    <td class="tnum text-right text-fg-muted">{formatDecimal(w.myRespect)}</td>
+                    <td class="tnum text-right text-fg-muted">{formatMoneyCompact(w.knownPayoutTotal)}</td>
+                    <td class="tnum text-right font-medium {w.personalPayout !== null ? 'text-positive' : 'text-fg-faint'}">{w.personalPayout !== null ? formatMoneyCompact(w.personalPayout) : "unmatched"}</td>
                   </tr>
                 {/each}
               </tbody>
@@ -232,37 +232,37 @@
           <StateMessage state="empty" title="No faction roster stored yet" hint="Members sync with the faction resource." />
         {:else}
           <div class="overflow-x-auto">
-            <table class="w-full text-left text-[13px]">
+            <table class="tsv-table">
               <thead>
-                <tr class="border-b border-border text-[11px] uppercase tracking-[0.12em] text-fg-faint">
-                  <th class="py-2.5 pl-6 pr-4 font-medium">Member</th>
-                  <th class="py-2.5 pr-4 font-medium">Position</th>
-                  <th class="py-2.5 pr-4 text-right font-medium">Level</th>
-                  <th class="py-2.5 pr-4 text-right font-medium">Days in faction</th>
-                  <th class="py-2.5 pr-4 font-medium">Last action</th>
-                  <th class="py-2.5 pr-4 text-right font-medium">My war attacks</th>
-                  <th class="py-2.5 pr-6 text-right font-medium">My war respect</th>
+                <tr>
+                  <th class="font-medium">Member</th>
+                  <th class="font-medium">Position</th>
+                  <th class="text-right font-medium">Level</th>
+                  <th class="text-right font-medium">Days in faction</th>
+                  <th class="font-medium">Last action</th>
+                  <th class="text-right font-medium">My war attacks</th>
+                  <th class="text-right font-medium">My war respect</th>
                 </tr>
               </thead>
               <tbody>
                 {#each members.members as m (m.memberId)}
-                  <tr class="border-b border-border/50 last:border-0 hover:bg-surface-2/50">
-                    <td class="py-2.5 pl-6 pr-4">
+                  <tr>
+                    <td class="">
                       <span class="font-medium text-fg">{m.name ?? `Member ${m.memberId}`}</span>
-                      {#if m.isCurrentUser}<span class="ml-2 rounded-full border border-accent/40 bg-accent/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-accent">you</span>{/if}
+                      {#if m.isCurrentUser}<span class="chip chip-accent ml-2 !text-[10px]">you</span>{/if}
                     </td>
-                    <td class="py-2.5 pr-4 text-fg-muted">{m.position ?? "—"}</td>
-                    <td class="tnum py-2.5 pr-4 text-right text-fg-muted">{m.level ?? "—"}</td>
-                    <td class="tnum py-2.5 pr-4 text-right text-fg-muted">{m.daysInFaction ?? "—"}</td>
-                    <td class="py-2.5 pr-4 text-xs text-fg-faint">
+                    <td class="text-fg-muted">{m.position ?? "—"}</td>
+                    <td class="tnum text-right text-fg-muted">{m.level ?? "—"}</td>
+                    <td class="tnum text-right text-fg-muted">{m.daysInFaction ?? "—"}</td>
+                    <td class="text-xs text-fg-faint">
                       {#if m.status || m.lastActionAt}
                         {m.status ?? "—"}{m.lastActionAt ? ` · ${formatDate(m.lastActionAt)}` : ""}
                       {:else}
                         —
                       {/if}
                     </td>
-                    <td class="tnum py-2.5 pr-4 text-right text-fg-muted">{m.warAttacks}</td>
-                    <td class="tnum py-2.5 pr-6 text-right text-fg-muted">{formatDecimal(m.warRespect)}</td>
+                    <td class="tnum text-right text-fg-muted">{m.warAttacks}</td>
+                    <td class="tnum text-right text-fg-muted">{formatDecimal(m.warRespect)}</td>
                   </tr>
                 {/each}
               </tbody>
@@ -283,7 +283,7 @@
         {@const state = ocParticipationState(oc, { userInAnyKnownOc: contextual ? inAnyOc : false })}
         {@const hint = OC_PARTICIPATION_HINTS[state]}
         {#if state === "participating"}
-          <span class="rounded-full border border-accent/40 bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent">{contextual ? OC_PARTICIPATION_LABELS.participating : "You participated"}</span>
+          <span class="chip chip-accent font-medium">{contextual ? OC_PARTICIPATION_LABELS.participating : "You participated"}</span>
         {:else if state === "assigned_elsewhere"}
           <span class="text-xs text-fg-muted" title={hint ?? undefined}>{OC_PARTICIPATION_LABELS.assigned_elsewhere}</span>
         {:else if state === "not_participating"}
@@ -310,12 +310,12 @@
                 <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5">
                   <span class="text-[15px] font-semibold text-fg">{oc.name}</span>
                   {#if oc.tier !== null}
-                    <span class="rounded-full border border-violet/40 bg-violet/10 px-2 py-0.5 text-[11px] font-medium text-[#a78bfa]" title="Torn difficulty rating — the tier number of this scenario">Tier {oc.tier}</span>
+                    <span class="chip chip-info" title="Torn difficulty rating — the tier number of this scenario">Tier {oc.tier}</span>
                   {/if}
-                  <span class="rounded-full border border-border bg-surface-2 px-2 py-0.5 text-[11px] text-fg-muted">{oc.status}</span>
+                  <span class="chip">{oc.status}</span>
                   <span class="tnum text-xs text-fg-muted" title="Slots with a listed participant out of total slots">{oc.slotsFilled} / {oc.slotsTotal} slots filled</span>
                   {#if oc.myPosition}
-                    <span class="rounded-full border border-accent/30 bg-accent/5 px-2 py-0.5 text-[11px] text-accent" title="Your slot in this crime">Your role: {oc.myPosition}</span>
+                    <span class="chip chip-accent" title="Your slot in this crime">Your role: {oc.myPosition}</span>
                   {/if}
                   {#if oc.readyAt}
                     <span class="text-xs text-fg-faint">Ready {formatDateTime(oc.readyAt)}</span>
@@ -336,37 +336,37 @@
           <div class="px-6 pb-6 pt-2"><StateMessage state="empty" title="No other active organized crimes" /></div>
         {:else}
           <div class="overflow-x-auto">
-            <table class="w-full text-left text-[13px]">
+            <table class="tsv-table">
               <thead>
-                <tr class="border-b border-border text-[11px] uppercase tracking-[0.12em] text-fg-faint">
-                  <th class="py-2.5 pl-6 pr-4 font-medium">Crime</th>
-                  <th class="py-2.5 pr-4 font-medium">Tier</th>
-                  <th class="py-2.5 pr-4 font-medium">Status</th>
-                  <th class="py-2.5 pr-4 font-medium">Slots</th>
-                  <th class="py-2.5 pr-4 font-medium">Ready / start</th>
-                  <th class="py-2.5 pr-6 font-medium">Your status</th>
+                <tr>
+                  <th class="font-medium">Crime</th>
+                  <th class="font-medium">Tier</th>
+                  <th class="font-medium">Status</th>
+                  <th class="font-medium">Slots</th>
+                  <th class="font-medium">Ready / start</th>
+                  <th class="font-medium">Your status</th>
                 </tr>
               </thead>
               <tbody>
                 {#each others.slice(0, 20) as oc (oc.ocId)}
-                  <tr class="border-b border-border/50 last:border-0 hover:bg-surface-2/50">
-                    <td class="py-2.5 pl-6 pr-4 font-medium text-fg">{oc.name}</td>
-                    <td class="py-2.5 pr-4">{#if oc.tier !== null}<span class="text-fg-muted">Tier {oc.tier}</span>{:else}<span class="text-xs text-fg-faint">Tier unavailable</span>{/if}</td>
-                    <td class="py-2.5 pr-4"><span class="rounded-full border border-border bg-surface-2 px-2 py-0.5 text-[11px] text-fg-muted">{oc.status}</span></td>
-                    <td class="py-2.5 pr-4">
+                  <tr>
+                    <td class="font-medium text-fg">{oc.name}</td>
+                    <td class="">{#if oc.tier !== null}<span class="text-fg-muted">Tier {oc.tier}</span>{:else}<span class="text-xs text-fg-faint">Tier unavailable</span>{/if}</td>
+                    <td class=""><span class="chip">{oc.status}</span></td>
+                    <td class="">
                       <span class="tnum text-fg-muted">{oc.slotsFilled}/{oc.slotsTotal}</span>
                       {#if oc.slotsFilled >= oc.slotsTotal && oc.slotsTotal > 0}
-                        <span class="ml-1.5 rounded-full border border-border bg-surface-2 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-fg-faint">Full</span>
+                        <span class="chip ml-1.5 !text-[10px]">Full</span>
                       {:else}
                         <span class="ml-1.5 text-[11px] text-fg-faint">{oc.slotsTotal - oc.slotsFilled} open</span>
                       {/if}
                     </td>
-                    <td class="py-2.5 pr-4 text-xs text-fg-faint">
+                    <td class="text-xs text-fg-faint">
                       {#if oc.readyAt}{formatDateTime(oc.readyAt)}
                       {:else if oc.planningAt}planning since {formatDateTime(oc.planningAt)}
                       {:else}—{/if}
                     </td>
-                    <td class="py-2.5 pr-6">{@render participationCell(oc)}</td>
+                    <td class="">{@render participationCell(oc)}</td>
                   </tr>
                 {/each}
               </tbody>
@@ -385,30 +385,30 @@
           <div class="px-6 pb-6 pt-2"><StateMessage state="empty" title="No completed organized crimes in the stored history" /></div>
         {:else}
           <div class="overflow-x-auto">
-            <table class="w-full text-left text-[13px]">
+            <table class="tsv-table">
               <thead>
-                <tr class="border-b border-border text-[11px] uppercase tracking-[0.12em] text-fg-faint">
-                  <th class="py-2.5 pl-6 pr-4 font-medium">Crime</th>
-                  <th class="py-2.5 pr-4 font-medium">Tier</th>
-                  <th class="py-2.5 pr-4 font-medium">Result</th>
-                  <th class="py-2.5 pr-4 font-medium">Executed</th>
-                  <th class="py-2.5 pr-4 font-medium">Actual rewards</th>
-                  <th class="py-2.5 pr-4 text-right font-medium">Respect</th>
-                  <th class="py-2.5 pr-4 text-right font-medium">Est. total value</th>
-                  <th class="py-2.5 pr-6 font-medium">Participation</th>
+                <tr>
+                  <th class="font-medium">Crime</th>
+                  <th class="font-medium">Tier</th>
+                  <th class="font-medium">Result</th>
+                  <th class="font-medium">Executed</th>
+                  <th class="font-medium">Actual rewards</th>
+                  <th class="text-right font-medium">Respect</th>
+                  <th class="text-right font-medium">Est. total value</th>
+                  <th class="font-medium">Participation</th>
                 </tr>
               </thead>
               <tbody>
                 {#each completed.slice(0, 30) as oc (oc.ocId)}
                   {@const hasItems = (oc.rewardItemsDetailed?.length ?? 0) > 0}
-                  <tr class="border-b border-border/50 last:border-0 hover:bg-surface-2/50">
-                    <td class="py-2.5 pl-6 pr-4 font-medium text-fg">{oc.name}</td>
-                    <td class="py-2.5 pr-4">{#if oc.tier !== null}<span class="text-fg-muted">Tier {oc.tier}</span>{:else}<span class="text-xs text-fg-faint">—</span>{/if}</td>
-                    <td class="py-2.5 pr-4">
-                      <span class={`rounded-full border px-2 py-0.5 text-[11px] ${oc.status === "Successful" ? "border-positive/30 bg-positive/10 text-positive" : "border-negative/30 bg-negative/10 text-negative"}`}>{oc.status}</span>
+                  <tr>
+                    <td class="font-medium text-fg">{oc.name}</td>
+                    <td class="">{#if oc.tier !== null}<span class="text-fg-muted">Tier {oc.tier}</span>{:else}<span class="text-xs text-fg-faint">—</span>{/if}</td>
+                    <td class="">
+                      <span class={`chip ${oc.status === "Successful" ? "chip-positive" : "chip-negative"}`}>{oc.status}</span>
                     </td>
-                    <td class="tnum whitespace-nowrap py-2.5 pr-4 text-xs text-fg-faint">{oc.executedAt ? formatDateTime(oc.executedAt) : "—"}</td>
-                    <td class="py-2.5 pr-4">
+                    <td class="tnum whitespace-nowrap text-xs text-fg-faint">{oc.executedAt ? formatDateTime(oc.executedAt) : "—"}</td>
+                    <td class="">
                       {#if oc.rewardMoney === null && !hasItems && oc.rewardRespect === null}
                         <span class="text-xs text-fg-faint">—</span>
                       {:else}
@@ -433,15 +433,15 @@
                         </div>
                       {/if}
                     </td>
-                    <td class="tnum py-2.5 pr-4 text-right text-fg-muted">{oc.rewardRespect !== null ? formatDecimal(oc.rewardRespect) : "—"}</td>
-                    <td class="tnum py-2.5 pr-4 text-right text-fg-muted">
+                    <td class="tnum text-right text-fg-muted">{oc.rewardRespect !== null ? formatDecimal(oc.rewardRespect) : "—"}</td>
+                    <td class="tnum text-right text-fg-muted">
                       {#if oc.rewardEstimatedTotal !== null}
                         {formatMoneyCompact(oc.rewardEstimatedTotal)}{#if !oc.rewardValueComplete}<span class="text-fg-faint" title="Some reward items have no catalog price — the total covers priced items only.">*</span>{/if}
                       {:else}
                         <span class="text-fg-faint" title="No priced reward items to estimate">—</span>
                       {/if}
                     </td>
-                    <td class="py-2.5 pr-6">{@render participationCell(oc, false)}</td>
+                    <td class="">{@render participationCell(oc, false)}</td>
                   </tr>
                 {/each}
               </tbody>
@@ -461,18 +461,18 @@
           <div class="px-6 pb-6 pt-2"><StateMessage state="empty" title="Nothing expired" /></div>
         {:else}
           <div class="overflow-x-auto">
-            <table class="w-full text-left text-[13px]">
+            <table class="tsv-table">
               <thead>
-                <tr class="border-b border-border text-[11px] uppercase tracking-[0.12em] text-fg-faint">
-                  <th class="py-2.5 pl-6 pr-4 font-medium">Crime</th>
-                  <th class="py-2.5 pr-6 font-medium">Status</th>
+                <tr>
+                  <th class="font-medium">Crime</th>
+                  <th class="font-medium">Status</th>
                 </tr>
               </thead>
               <tbody>
                 {#each expired.slice(0, 20) as oc (oc.ocId)}
-                  <tr class="border-b border-border/50 last:border-0">
-                    <td class="py-2.5 pl-6 pr-4 text-fg-muted">{oc.name}</td>
-                    <td class="py-2.5 pr-6 text-xs text-fg-faint">{oc.status}</td>
+                  <tr>
+                    <td class="text-fg-muted">{oc.name}</td>
+                    <td class="text-xs text-fg-faint">{oc.status}</td>
                   </tr>
                 {/each}
               </tbody>
@@ -493,28 +493,28 @@
           <StateMessage state="empty" title="No faction income in this range" />
         {:else}
           <div class="overflow-x-auto">
-            <table class="w-full text-left text-[13px]">
+            <table class="tsv-table">
               <thead>
-                <tr class="border-b border-border text-[11px] uppercase tracking-[0.12em] text-fg-faint">
-                  <th class="py-2.5 pl-6 pr-4 font-medium">When</th>
-                  <th class="py-2.5 pr-4 font-medium">Source</th>
-                  <th class="py-2.5 pr-4 font-medium">Description</th>
-                  <th class="py-2.5 pr-6 text-right font-medium">Amount</th>
+                <tr>
+                  <th class="font-medium">When</th>
+                  <th class="font-medium">Source</th>
+                  <th class="font-medium">Description</th>
+                  <th class="text-right font-medium">Amount</th>
                 </tr>
               </thead>
               <tbody>
                 {#each ledger.payouts.slice(0, 30) as p (p.sourceRef)}
-                  <tr class="border-b border-border/50 last:border-0">
-                    <td class="tnum whitespace-nowrap py-2.5 pl-6 pr-4 text-xs text-fg-faint">{formatDateTime(p.occurredAt)}</td>
-                    <td class="py-2.5 pr-4">
+                  <tr>
+                    <td class="tnum whitespace-nowrap text-xs text-fg-faint">{formatDateTime(p.occurredAt)}</td>
+                    <td class="">
                       {#if p.kind === "oc"}
-                        <span class="whitespace-nowrap rounded-full border border-violet-400/30 bg-violet-400/10 px-2 py-0.5 text-[11px] font-medium text-violet-300">OC payout{p.scenario ? ` · ${p.scenario}` : ""}</span>
+                        <span class="chip chip-info whitespace-nowrap">OC payout{p.scenario ? ` · ${p.scenario}` : ""}</span>
                       {:else}
-                        <span class="whitespace-nowrap rounded-full border border-border bg-surface-2 px-2 py-0.5 text-[11px] text-fg-muted">Unmatched faction payout</span>
+                        <span class="chip whitespace-nowrap">Unmatched faction payout</span>
                       {/if}
                     </td>
-                    <td class="max-w-[300px] truncate py-2.5 pr-4 text-fg" title={p.description ?? ""}>{p.description ?? "—"}</td>
-                    <td class="tnum py-2.5 pr-6 text-right font-medium {p.amount >= 0 ? 'text-positive' : 'text-negative'}">{formatSignedMoney(p.amount)}</td>
+                    <td class="max-w-[300px] truncate text-fg" title={p.description ?? ""}>{p.description ?? "—"}</td>
+                    <td class="tnum text-right font-medium {p.amount >= 0 ? 'text-positive' : 'text-negative'}">{formatSignedMoney(p.amount)}</td>
                   </tr>
                 {/each}
               </tbody>

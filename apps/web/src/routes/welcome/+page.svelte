@@ -257,14 +257,14 @@
 <svelte:head><title>TornScope — a private record of your Torn life</title></svelte:head>
 
 <div class="flex min-h-screen items-center justify-center px-5 py-14">
-  <div class="w-full max-w-xl space-y-10">
+  <div class="w-full max-w-xl space-y-8 lg:space-y-10">
     <div class="space-y-3 text-center">
       <div class="flex items-center justify-center gap-3">
         <a href="/" class="inline-flex items-center justify-center" title="TornScope">
           <img src="/brand/tornscope-logo.png" alt="TornScope" class="h-14 w-auto" />
         </a>
         <span
-          class="rounded-full border border-accent/30 bg-accent/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-accent"
+          class="chip chip-accent !text-[10px] font-semibold uppercase tracking-[0.14em]"
           title="TornScope is in public beta"
         >Public Beta</span>
       </div>
@@ -280,7 +280,7 @@
       </p>
     </div>
 
-    <div class="rounded-2xl border border-border bg-surface p-7 shadow-panel">
+    <div class="rounded-card border border-border bg-surface p-7 shadow-panel">
       {#if step === 1}
         <label class="mb-2.5 block text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-faint" for="api-key">Connect Torn API key</label>
         <input
@@ -288,14 +288,14 @@
           type="password"
           bind:value={apiKey}
           placeholder="Paste your Torn API key"
-          class="w-full rounded-xl border border-border bg-bg-raise px-4 py-3 font-mono text-sm text-fg placeholder:font-sans placeholder:text-fg-faint focus:border-accent"
+          class="w-full rounded-tile border border-border bg-bg-raise px-4 py-3 font-mono text-sm text-fg placeholder:font-sans placeholder:text-fg-faint focus:border-accent"
           autocomplete="off"
         />
         {#if error}
           <p class="mt-2.5 text-sm text-negative">{error}</p>
         {/if}
         <button
-          class="mt-5 w-full rounded-xl bg-accent-strong py-3 text-sm font-semibold text-bg transition-colors hover:bg-accent disabled:opacity-40"
+          class="mt-5 w-full rounded-tile bg-accent-strong py-3 text-sm font-semibold text-bg transition-colors hover:bg-accent disabled:opacity-40"
           disabled={validating}
           onclick={() => void validateKey()}
         >
@@ -313,7 +313,7 @@
         </div>
 
         <button
-          class="w-full rounded-xl border border-border-strong py-3 text-sm font-medium text-fg-muted transition-colors hover:border-accent hover:text-accent disabled:opacity-40"
+          class="w-full rounded-tile border border-border-strong py-3 text-sm font-medium text-fg-muted transition-colors hover:border-accent hover:text-accent disabled:opacity-40"
           disabled={loadingDemo}
           onclick={() => void exploreDemo()}
         >
@@ -324,7 +324,7 @@
         {/if}
 
         <!-- Privacy & key choice — shown BEFORE any key is entered or validated -->
-        <div class="mt-6 space-y-4 rounded-xl border border-border bg-bg-raise px-4 py-4 text-left text-[12px] leading-relaxed text-fg-muted">
+        <div class="mt-6 space-y-4 rounded-tile border border-border bg-bg-raise px-4 py-4 text-left text-[12px] leading-relaxed text-fg-muted">
           <p class="text-[11px] font-semibold uppercase tracking-[0.14em] text-fg-faint">Limited or Full — your choice, explained</p>
           <div class="grid gap-4 sm:grid-cols-2">
             <div>
@@ -412,7 +412,7 @@
             {/if}
           </p>
 
-          <div class="grid gap-1.5 rounded-xl border border-border bg-bg-raise px-4 py-4 text-[13px] sm:grid-cols-2">
+          <div class="grid gap-1.5 rounded-tile border border-border bg-bg-raise px-4 py-4 text-[13px] sm:grid-cols-2">
             <div>
               <p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-positive">Available with this key</p>
               <ul class="mt-1 space-y-0.5 text-fg-muted">
@@ -437,7 +437,7 @@
           </div>
 
           {#if detected.capabilities}
-            <details class="rounded-xl border border-border bg-bg-raise px-4 py-3">
+            <details class="rounded-tile border border-border bg-bg-raise px-4 py-3">
               <summary class="cursor-pointer select-none text-[11px] font-semibold uppercase tracking-[0.14em] text-fg-faint transition-colors hover:text-fg-muted">
                 See exactly what this key allows TornScope to read
               </summary>
@@ -468,7 +468,7 @@
           {/if}
 
           <button
-            class="w-full rounded-xl bg-accent-strong py-3 text-sm font-semibold text-bg transition-colors hover:bg-accent disabled:opacity-40"
+            class="w-full rounded-tile bg-accent-strong py-3 text-sm font-semibold text-bg transition-colors hover:bg-accent disabled:opacity-40"
             disabled={saving}
             onclick={() => void startTracking()}
           >
@@ -488,7 +488,7 @@
             </p>
           </div>
 
-          <dl class="grid grid-cols-2 gap-x-6 gap-y-3 rounded-xl border border-border bg-bg-raise px-4 py-4 text-[13px]">
+          <dl class="grid grid-cols-2 gap-x-6 gap-y-3 rounded-tile border border-border bg-bg-raise px-4 py-4 text-[13px]">
             <div>
               <dt class="text-[11px] uppercase tracking-[0.14em] text-fg-faint">Player</dt>
               <dd class="mt-0.5 text-fg">{existing.profile.name ?? "Player"} [{existing.profile.tornId}]</dd>
@@ -521,7 +521,7 @@
           </p>
 
           <button
-            class="w-full rounded-xl bg-accent-strong py-3 text-sm font-semibold text-bg transition-colors hover:bg-accent disabled:opacity-40"
+            class="w-full rounded-tile bg-accent-strong py-3 text-sm font-semibold text-bg transition-colors hover:bg-accent disabled:opacity-40"
             disabled={linking || replacing}
             onclick={() => void useExistingProfile()}
           >
@@ -530,7 +530,7 @@
 
           <div class="space-y-2">
             <button
-              class="w-full rounded-xl border border-warning/40 py-2.5 text-xs font-medium text-warning transition-colors hover:bg-warning/10 disabled:opacity-40"
+              class="w-full rounded-tile border border-warning/40 py-2.5 text-xs font-medium text-warning transition-colors hover:bg-warning/10 disabled:opacity-40"
               disabled={linking || replacing}
               onclick={() => void replaceStoredKey()}
             >
@@ -569,7 +569,7 @@
           </div>
 
           {#if me.data?.capabilities}
-            <div class="rounded-xl border border-border bg-bg-raise px-4 py-3">
+            <div class="rounded-tile border border-border bg-bg-raise px-4 py-3">
               <div class="flex items-center justify-between">
                 <span class="text-[11px] font-semibold uppercase tracking-[0.14em] text-fg-faint">Detected API access</span>
                 <span class="text-sm font-semibold text-fg">{me.data.accessType ?? "Detected"}{me.data.accessLevel ? ` · level ${me.data.accessLevel}` : ""}</span>
@@ -607,7 +607,7 @@
           <!-- Resource-level progress (no invented overall percentage).
                Capability-blocked resources show an explicit skip so the
                Limited-vs-Full behavior is understandable at a glance. -->
-          <div class="rounded-xl border border-border bg-bg-raise px-4 py-2">
+          <div class="rounded-tile border border-border bg-bg-raise px-4 py-2">
             {#each syncRows as row (row.resource)}
               <div class="flex items-center justify-between gap-3 border-b border-border/50 py-2 last:border-0">
                 <span class="text-[13px] {rowState(row).skipped ? 'text-fg-faint' : 'text-fg'}">{RESOURCE_LABELS[row.resource] ?? row.resource}</span>
@@ -620,7 +620,7 @@
             {/each}
           </div>
 
-          <button class="w-full rounded-xl bg-accent-strong py-3 text-sm font-semibold text-bg transition-colors hover:bg-accent" onclick={openApp}>
+          <button class="w-full rounded-tile bg-accent-strong py-3 text-sm font-semibold text-bg transition-colors hover:bg-accent" onclick={openApp}>
             Open Today
           </button>
           <div class="flex items-center justify-center gap-4 text-xs">

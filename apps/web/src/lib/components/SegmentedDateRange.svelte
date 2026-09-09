@@ -26,7 +26,7 @@
 </script>
 
 <div class="inline-flex max-w-full flex-wrap items-center gap-1">
-  <div class="inline-flex max-w-full items-center gap-0.5 rounded-full border border-border bg-surface p-1">
+  <div class="inline-flex max-w-full flex-wrap items-center gap-0.5 rounded-full border border-border bg-surface p-1">
     {#each DATE_PRESETS as preset (preset.value)}
       <button
         class="rounded-full px-3 py-1 text-xs font-medium transition-all {dateRange.preset === preset.value && !showCustom

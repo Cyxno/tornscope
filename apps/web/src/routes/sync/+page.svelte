@@ -62,9 +62,9 @@
   }
 
   function categoryStatusStyle(status: string): string {
-    if (status === "active") return "border-positive/30 bg-positive/10 text-positive";
-    if (status === "source_exhausted") return "border-border bg-surface-2 text-fg-faint";
-    return "border-warning/40 bg-warning/10 text-warning";
+    if (status === "active") return "chip-positive";
+    if (status === "source_exhausted") return "";
+    return "chip-warning";
   }
 
   /** "7m" / "1h 05m" style compact duration for overdue/retry wording. */
@@ -279,15 +279,15 @@
   }
 
   function stopReasonStyle(reason: string | null): string {
-    if (reason === "history_boundary_reached" || reason === "source_exhausted") return "border-positive/30 bg-positive/10 text-positive";
-    if (reason === null) return "border-border bg-surface-2 text-fg-faint";
-    return "border-warning/40 bg-warning/10 text-warning";
+    if (reason === "history_boundary_reached" || reason === "source_exhausted") return "chip-positive";
+    if (reason === null) return "";
+    return "chip-warning";
   }
 </script>
 
 <svelte:head><title>Sync · TornScope</title></svelte:head>
 
-<div class="space-y-10">
+<div class="space-y-8 lg:space-y-10">
   <PageHeader
     eyebrow="System"
     title="Sync status"
@@ -295,7 +295,7 @@
   />
 
   {#if notice}
-    <div class="rounded-xl border border-accent/25 bg-accent/5 px-4 py-2.5 text-[13px] text-accent">{notice}</div>
+    <div class="rounded-tile border border-accent/25 bg-accent/5 px-4 py-2.5 text-[13px] text-accent">{notice}</div>
   {/if}
 
   {#if loading && !health}
@@ -308,18 +308,10 @@
       {#snippet actions()}
         {#if !me.data?.isDemo}
         <div class="flex items-center gap-2">
-          <button
-            class="rounded-full border border-border-strong px-3 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:border-accent hover:text-accent disabled:opacity-40"
-            onclick={() => void retryFailed()}
-            disabled={retrying}
-          >
+          <button class="btn btn-sm" onclick={() => void retryFailed()} disabled={retrying}>
             {retrying ? "Retrying…" : "Retry failed"}
           </button>
-          <button
-            class="rounded-full border border-border-strong px-3 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:border-accent hover:text-accent disabled:opacity-40"
-            onclick={() => void restartBackfill()}
-            disabled={restarting}
-          >
+          <button class="btn btn-sm" onclick={() => void restartBackfill()} disabled={restarting}>
             {restarting ? "Restarting…" : "Restart backfill"}
           </button>
         </div>
@@ -332,18 +324,19 @@
           <StateMessage state="empty" title="No sync configuration yet" hint="Connect an API key in Settings to start collecting history." />
         {/if}
       {:else}
+        <!-- Desktop: an aligned 6-column row grid. Mobile: stacked resource cards. -->
         <ul class="divide-y divide-border">
           {#each health.resources as row (row.resource)}
             {@const op = row.operational}
             {@const style = operationalOf(row)}
             {@const time = timing(row)}
-            <li class="flex flex-wrap items-center gap-x-6 gap-y-2 py-4 first:pt-0 last:pb-0">
-              <div class="min-w-[220px] flex-1">
+            <li class="space-y-3 py-4 first:pt-0 last:pb-0 lg:grid lg:grid-cols-[minmax(230px,1.5fr)_repeat(4,minmax(70px,0.5fr))_auto] lg:items-center lg:gap-x-5 lg:space-y-0">
+              <div class="min-w-0">
                 <div class="flex flex-wrap items-center gap-x-2.5 gap-y-1">
                   <span class="h-2 w-2 rounded-full {style.dot}"></span>
-                  <span class="text-[13px] font-semibold capitalize text-fg">{RESOURCE_LABELS[row.resource] ?? humanLabel(row.resource)}</span>
+                  <span class="text-[13px] font-semibold text-fg">{RESOURCE_LABELS[row.resource] ?? humanLabel(row.resource)}</span>
                   <!-- Operational health (is the sync loop working?) … -->
-                  <span class="text-[11px] {style.text}" title={operationalTitle(op)}>{style.label}</span>
+                  <span class="text-[11px] font-medium {style.text}" title={operationalTitle(op)}>{style.label}</span>
                   <span class="text-[11px] text-fg-faint">{frequencyHint[row.resource] ?? ""}</span>
                   <!-- … vs data confidence (how trustworthy is the data?) — never merged. -->
                   <ConfidenceBadge
@@ -362,32 +355,35 @@
                   <p class="mt-1 pl-[18px] text-xs text-negative" title={row.errorMessage}>{row.errorMessage.slice(0, 140)}</p>
                 {/if}
               </div>
-              <div class="flex flex-wrap items-center gap-x-8 gap-y-3 text-xs">
+              <div class="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:contents">
                 <div>
-                  <p class="text-[10px] uppercase tracking-[0.12em] text-fg-faint">Last attempt</p>
-                  <p class="mt-0.5 text-fg-muted">{formatRelative(row.lastAttemptAt)}</p>
+                  <p class="text-[10px] font-medium uppercase tracking-[0.11em] text-fg-faint">Last attempt</p>
+                  <p class="tnum mt-0.5 text-fg-muted">{formatRelative(row.lastAttemptAt)}</p>
                 </div>
                 <div>
-                  <p class="text-[10px] uppercase tracking-[0.12em] text-fg-faint">Last success</p>
-                  <p class="mt-0.5 text-fg-muted">{formatRelative(row.lastSuccessAt)}</p>
+                  <p class="text-[10px] font-medium uppercase tracking-[0.11em] text-fg-faint">Last success</p>
+                  <p class="tnum mt-0.5 text-fg-muted">{formatRelative(row.lastSuccessAt)}</p>
                 </div>
                 <div>
-                  <p class="text-[10px] uppercase tracking-[0.12em] text-fg-faint">{time.label}</p>
+                  <p class="text-[10px] font-medium uppercase tracking-[0.11em] text-fg-faint">{time.label}</p>
                   <p class="tnum mt-0.5 text-fg-muted">
                     {time.value}{#if time.countdown}&nbsp;<span class="text-fg-faint">{time.countdown}</span>{/if}
                   </p>
                 </div>
                 <div>
-                  <p class="text-[10px] uppercase tracking-[0.12em] text-fg-faint">Records</p>
-                  <p class="tnum mt-0.5 text-fg-muted">{row.recordsCollected.toLocaleString("en-US")}</p>
+                  <p class="text-[10px] font-medium uppercase tracking-[0.11em] text-fg-faint">Records</p>
+                  <p class="tnum mt-0.5 text-fg-muted">
+                    {row.recordsCollected.toLocaleString("en-US")}
+                    {#if row.lastWalkPages !== null}
+                      <span class="text-fg-faint">· {row.lastWalkPages} pages</span>
+                    {/if}
+                  </p>
                 </div>
-                <div>
-                  <p class="text-[10px] uppercase tracking-[0.12em] text-fg-faint">API pages</p>
-                  <p class="tnum mt-0.5 text-fg-muted">{row.lastWalkPages ?? "—"}</p>
-                </div>
+              </div>
+              <div class="flex flex-wrap items-center gap-2 lg:justify-end">
                 {#if row.recentIncidents.length > 0}
                   <button
-                    class="rounded-full border border-warning/40 bg-warning/10 px-3 py-1.5 text-[11px] font-medium text-warning transition-colors hover:border-warning"
+                    class="chip chip-warning cursor-pointer !py-1.5 transition-colors hover:border-warning"
                     onclick={() => (expandedIssues = toggleSet(expandedIssues, row.resource))}
                   >
                     {row.recentIncidents.length} issue{row.recentIncidents.length === 1 ? "" : "s"} · 24h
@@ -395,16 +391,16 @@
                 {/if}
                 {#if row.categories.length > 0}
                   <button
-                    class="rounded-full border border-border-strong px-3.5 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:border-accent hover:text-accent"
+                    class="btn btn-sm"
                     onclick={() => (expandedCategories = toggleSet(expandedCategories, row.resource))}
                   >
-                    {expandedCategories.has(row.resource) ? "Hide" : "Show"} categories ({row.categories.length})
+                    {expandedCategories.has(row.resource) ? "Hide" : "Categories"} ({row.categories.length})
                   </button>
                 {/if}
                 {#if !me.data?.isDemo && op.state !== "parked"}
                   {#if RETRYABLE_STATES.has(op.state)}
                     <button
-                      class="rounded-full border border-accent/40 bg-accent/10 px-3.5 py-1.5 text-xs font-medium text-accent transition-colors hover:border-accent disabled:opacity-40"
+                      class="btn btn-sm btn-accent"
                       disabled={syncing[row.resource]}
                       onclick={() => void retryNow(row.resource)}
                     >
@@ -412,7 +408,7 @@
                     </button>
                   {:else}
                     <button
-                      class="rounded-full border border-border-strong px-3.5 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:border-accent hover:text-accent disabled:opacity-40"
+                      class="btn btn-sm"
                       disabled={syncing[row.resource] || op.state === "running" || op.state === "backfilling" || op.state === "stale_running"}
                       title={op.state === "stale_running" ? "Automatic recovery is already in progress" : op.state === "running" || op.state === "backfilling" ? "This resource is syncing right now" : undefined}
                       onclick={() => void syncNow(row.resource)}
@@ -423,17 +419,17 @@
                 {/if}
               </div>
               {#if expandedIssues.has(row.resource) && row.recentIncidents.length > 0}
-                <div class="w-full rounded-lg border border-warning/25 bg-warning/5 px-4 py-3">
+                <div class="w-full rounded-tile border border-warning/25 bg-warning/5 px-4 py-3 lg:col-span-6">
                   <p class="mb-2 text-[11px] font-medium uppercase tracking-[0.12em] text-warning">Recent issues</p>
                   <ul class="space-y-1.5">
                     {#each row.recentIncidents as incident (incident.startedAt)}
                       <li class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-fg-muted">
-                        <span class={`rounded-full border px-2 py-0.5 text-[10px] ${SEVERITY_STYLES[incident.severity]}`}>{INCIDENT_KIND_COPY[incident.kind]}</span>
+                        <span class={`chip ${SEVERITY_STYLES[incident.severity]}`}>{INCIDENT_KIND_COPY[incident.kind]}</span>
                         <span>{INCIDENT_REASON_COPY[incident.reason]}</span>
                         <span class="text-fg-faint">{formatRelative(incident.startedAt)}</span>
                         {#if incident.failureCount > 1}<span class="text-fg-faint">×{incident.failureCount}</span>{/if}
                         {#if incident.autoRecovered}
-                          <span class="rounded-full border border-positive/30 bg-positive/10 px-2 py-0.5 text-[10px] text-positive">auto-recovered</span>
+                          <span class="chip chip-positive !text-[10px]">auto-recovered</span>
                         {/if}
                       </li>
                     {/each}
@@ -445,37 +441,37 @@
               {/if}
             </li>
             {#if expandedCategories.has(row.resource) && row.categories.length > 0}
-              <li class="border-b border-border/50 bg-bg-raise/40 px-4 py-3">
+              <li class="border-b border-border/50 bg-bg-raise/40 px-4 py-3 lg:col-span-6">
                 <p class="mb-2 text-[11px] text-fg-muted">{scheduleSummaryText(row.scheduleSummary)}</p>
                 <div class="overflow-x-auto">
-                  <table class="w-full text-left text-xs">
+                  <table class="tsv-table !text-xs">
                     <thead>
                       <tr class="text-[10px] uppercase tracking-[0.12em] text-fg-faint">
-                        <th class="py-1.5 pr-3 font-medium">Category</th>
-                        <th class="py-1.5 pr-3 font-medium">Last success</th>
-                        <th class="py-1.5 pr-3 font-medium">Cursor</th>
-                        <th class="py-1.5 pr-3 text-right font-medium">Pages</th>
-                        <th class="py-1.5 pr-3 text-right font-medium">Inserted</th>
-                        <th class="py-1.5 pr-3 font-medium">Interval</th>
-                        <th class="py-1.5 pr-3 font-medium">Next run</th>
-                        <th class="py-1.5 pr-3 font-medium">Status</th>
-                        <th class="py-1.5 font-medium">Error</th>
+                        <th class="font-medium">Category</th>
+                        <th class="font-medium">Last success</th>
+                        <th class="font-medium">Cursor</th>
+                        <th class="text-right font-medium">Pages</th>
+                        <th class="text-right font-medium">Inserted</th>
+                        <th class="font-medium">Interval</th>
+                        <th class="font-medium">Next run</th>
+                        <th class="font-medium">Status</th>
+                        <th class="font-medium">Error</th>
                       </tr>
                     </thead>
                     <tbody>
                       {#each row.categories as cat (cat.categoryId)}
                         <tr class="border-t border-border/40">
-                          <td class="py-1.5 pr-3 text-fg">{cat.title ?? cat.categoryId}</td>
-                          <td class="py-1.5 pr-3 text-fg-muted">{cat.lastSuccessAt ? formatDateTime(cat.lastSuccessAt) : "—"}</td>
+                          <td class="text-fg">{cat.title ?? cat.categoryId}</td>
+                          <td class="text-fg-muted">{cat.lastSuccessAt ? formatDateTime(cat.lastSuccessAt) : "—"}</td>
                           <td class="tnum py-1.5 pr-3 text-fg-muted">{cat.lastTimestamp ? formatDateTime(cat.lastTimestamp) : "—"}</td>
                           <td class="tnum py-1.5 pr-3 text-right text-fg-muted">{cat.lastWalkPages ?? "—"}</td>
                           <td class="tnum py-1.5 pr-3 text-right text-fg-muted">{cat.lastRecordsInserted ?? "—"}</td>
                           <td class="tnum py-1.5 pr-3 text-fg-muted">{cat.frequencySeconds ? Math.round(cat.frequencySeconds / 60) + "m" : "—"}</td>
                           <td class="tnum py-1.5 pr-3 text-fg-muted">{cat.nextRunAt ? formatRelative(cat.nextRunAt) : "—"}</td>
-                          <td class="py-1.5 pr-3">
-                            <span class={`rounded-full border px-2 py-0.5 text-[10px] ${categoryStatusStyle(cat.status)}`}>{categoryStatusLabel(cat.status)}</span>
+                          <td class="pr-3">
+                            <span class={`chip ${categoryStatusStyle(cat.status)}`}>{categoryStatusLabel(cat.status)}</span>
                           </td>
-                          <td class="max-w-[220px] truncate py-1.5 text-negative" title={cat.errorMessage ?? ""}>{cat.errorMessage ?? ""}</td>
+                          <td class="max-w-[220px] truncate text-negative" title={cat.errorMessage ?? ""}>{cat.errorMessage ?? ""}</td>
                         </tr>
                       {/each}
                     </tbody>
@@ -491,31 +487,31 @@
     <!-- Historical coverage -->
     <Panel title="Historical coverage" caption={`Requested history: ${health.requestedHistoryDays} days — what Torn still exposes vs what is actually stored`}>
       <div class="overflow-x-auto">
-        <table class="w-full text-left text-[13px]">
+        <table class="tsv-table">
           <thead>
-            <tr class="border-b border-border text-[11px] uppercase tracking-[0.12em] text-fg-faint">
-              <th class="py-2.5 pr-4 font-medium">Resource</th>
-              <th class="py-2.5 pr-4 font-medium">Requested start</th>
-              <th class="py-2.5 pr-4 font-medium">Available from Torn</th>
-              <th class="py-2.5 pr-4 font-medium">Stored since</th>
-              <th class="py-2.5 pr-4 font-medium">Stored until</th>
-              <th class="py-2.5 pr-4 font-medium">Confidence</th>
-              <th class="py-2.5 font-medium">Stop reason</th>
+            <tr>
+              <th class="font-medium">Resource</th>
+              <th class="font-medium">Requested start</th>
+              <th class="font-medium">Available from Torn</th>
+              <th class="font-medium">Stored since</th>
+              <th class="font-medium">Stored until</th>
+              <th class="font-medium">Confidence</th>
+              <th>Stop reason</th>
             </tr>
           </thead>
           <tbody>
             {#each coverageRows as row (row.resource)}
-              <tr class="border-b border-border/50 last:border-0">
-                <td class="py-2.5 pr-4 font-medium capitalize text-fg">{row.resource.replace(/_/g, " ")}</td>
-                <td class="tnum py-2.5 pr-4 text-fg-muted">{row.requestedStart}</td>
-                <td class="tnum py-2.5 pr-4 text-fg-muted">{row.availableFrom}</td>
-                <td class="tnum py-2.5 pr-4 text-fg-muted">{row.storedSince}</td>
-                <td class="tnum py-2.5 pr-4 text-fg-muted">{row.storedUntil}</td>
-                <td class="py-2.5 pr-4">
+              <tr>
+                <td class="font-medium capitalize text-fg">{row.resource.replace(/_/g, " ")}</td>
+                <td class="tnum text-fg-muted">{row.requestedStart}</td>
+                <td class="tnum text-fg-muted">{row.availableFrom}</td>
+                <td class="tnum text-fg-muted">{row.storedSince}</td>
+                <td class="tnum text-fg-muted">{row.storedUntil}</td>
+                <td class="">
                   <ConfidenceBadge meta={row.confidence} showComplete tooltip={confidenceTitle(row.confidence, row.coverageTooltip)} />
                 </td>
-                <td class="py-2.5">
-                  <span class={`rounded-full border px-2 py-0.5 text-[11px] ${stopReasonStyle(row.stopReason)}`}>{stopReasonLabel(row.stopReason)}</span>
+                <td class="">
+                  <span class={`chip ${stopReasonStyle(row.stopReason)}`}>{stopReasonLabel(row.stopReason)}</span>
                 </td>
               </tr>
             {/each}

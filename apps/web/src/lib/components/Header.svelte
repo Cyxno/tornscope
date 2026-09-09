@@ -84,8 +84,9 @@
     </div>
   </div>
 
-  <!-- Tablet scroll row (md–lg): primary pages, quiet scroll affordance -->
-  <nav class="flex gap-1 overflow-x-auto px-4 pb-2 lg:hidden md:flex [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="Primary tablet">
+  <!-- Tablet scroll row (md–lg): primary pages. Hidden on phones — the
+       bottom tab bar owns mobile navigation. -->
+  <nav class="hidden gap-1 overflow-x-auto px-4 pb-2 md:flex lg:hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="Primary tablet">
     {#each NAV_GROUPS.filter((g) => g.id !== "system").flatMap((g) => g.items) as item (item.href)}
       {@const active = isActivePath(page.url.pathname, item.href)}
       <a

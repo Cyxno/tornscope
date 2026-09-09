@@ -266,7 +266,7 @@
           Disable on this device
         </button>
         <button
-          class="rounded-full border border-border-strong px-4 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:border-accent hover:text-accent disabled:opacity-40"
+          class="btn btn-sm"
           disabled={testing}
           onclick={() => void sendTest()}
         >

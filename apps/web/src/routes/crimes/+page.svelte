@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { CrimesSummaryResponse, CrimesTimelineResponse } from "@tornscope/shared";
-  import { formatMoneyCompact, formatDateTime, formatSignedMoney, periodLabel, formatDate } from "@tornscope/shared";
+  import { formatMoneyCompact, formatDateTime, formatSignedMoney, formatSignedMoneyCompact, periodLabel, formatDate } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
   import { dateRange } from "$lib/state.svelte";
   import PageHeader from "$lib/components/PageHeader.svelte";
@@ -84,7 +84,7 @@
 
 <svelte:head><title>Crimes · TornScope</title></svelte:head>
 
-<div class="space-y-10">
+<div class="space-y-8 lg:space-y-10">
   <PageHeader
     eyebrow="Crime"
     title="Crimes"
@@ -110,30 +110,30 @@
       />
     {:else}
     {#if summary.coverage.trackingSince !== null}
-      <p class="rounded-xl border border-border bg-surface px-5 py-3 text-xs text-fg-muted">
+      <p class="rounded-tile border border-border bg-surface px-5 py-3 text-xs text-fg-muted">
         <span class="font-medium text-fg">Tracking since {formatDate(summary.coverage.trackingSince)}</span>
         — crime attempts are normalized from your permanently stored raw logs; older history Torn no longer returns is never invented.
       </p>
     {/if}
 
     <!-- Hero: the three numbers that matter most -->
-    <div class="grid grid-cols-1 gap-px overflow-hidden rounded-2xl border border-border bg-border shadow-panel md:grid-cols-3">
+    <div class="grid grid-cols-1 gap-px overflow-hidden rounded-card border border-border bg-border shadow-panel md:grid-cols-3">
       <div class="bg-surface p-7 text-center">
         <p class="tnum text-4xl font-semibold text-fg">{summary.attempts}</p>
-        <p class="mt-1 text-[11px] uppercase tracking-[0.14em] text-fg-faint">attempts {summary.crimesPerDay ? `· ${summary.crimesPerDay.toFixed(1)}/day` : ""}</p>
+        <p class="mt-1 text-[11px] font-medium uppercase tracking-[0.13em] text-fg-faint">attempts {summary.crimesPerDay ? `· ${summary.crimesPerDay.toFixed(1)}/day` : ""}</p>
       </div>
       <div class="bg-surface p-7 text-center">
         <p class="tnum text-4xl font-semibold text-positive">{summary.successRate !== null ? `${Math.round(summary.successRate * 100)}%` : "—"}</p>
-        <p class="mt-1 text-[11px] uppercase tracking-[0.14em] text-fg-faint">success rate · {summary.successful} successful · {summary.failed} failed</p>
+        <p class="mt-1 text-[11px] font-medium uppercase tracking-[0.13em] text-fg-faint">success rate · {summary.successful} successful · {summary.failed} failed</p>
       </div>
       <div class="bg-surface p-7 text-center">
-        <p class="tnum text-4xl font-semibold {summary.netCrimeCash >= 0 ? "text-positive" : "text-negative"}">{formatSignedMoney(summary.netCrimeCash)}</p>
-        <p class="mt-1 text-[11px] uppercase tracking-[0.14em] text-fg-faint">net crime cash · exact</p>
+        <p class="tnum text-4xl font-semibold {summary.netCrimeCash >= 0 ? "text-positive" : "text-negative"}">{formatSignedMoneyCompact(summary.netCrimeCash)}</p>
+        <p class="mt-1 text-[11px] font-medium uppercase tracking-[0.13em] text-fg-faint">net crime cash · exact</p>
       </div>
     </div>
 
     <!-- Secondary strip: clearly-estimated + context values -->
-    <div class="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border md:grid-cols-4">
+    <div class="grid grid-cols-2 gap-px overflow-hidden rounded-card border border-border bg-border shadow-panel md:grid-cols-4">
       <Stat label="Item rewards (est.)" value={summary.estimatedItemsValue !== null ? formatMoneyCompact(summary.estimatedItemsValue) : "—"} provenance="estimated" sub="Torn catalog prices" />
       <Stat label="Nerve used" value={summary.nerveUsed !== null ? String(summary.nerveUsed) : "—"} provenance="exact" />
       <Stat label="Value per nerve (est.)" value={summary.valuePerNerve !== null ? formatMoneyCompact(summary.valuePerNerve) : "—"} provenance="estimated" />
@@ -163,7 +163,7 @@
     </section>
 
     {#if summary.jailedCount > 0}
-      <p class="rounded-xl border border-border bg-surface px-5 py-3 text-xs text-fg-muted">
+      <p class="rounded-tile border border-border bg-surface px-5 py-3 text-xs text-fg-muted">
         <span class="font-medium text-fg">Jailed from crimes:</span>
         {summary.jailedCount} time{summary.jailedCount === 1 ? "" : "s"} this range,
         {Math.round(summary.totalJailSeconds / 3600)}h total jail time (Torn-reported jail seconds).
@@ -175,30 +175,30 @@
         <StateMessage state="empty" title="No crime attempts in this range" />
       {:else}
         <div class="overflow-x-auto">
-          <table class="w-full text-left text-[13px]">
+          <table class="tsv-table">
             <thead>
-              <tr class="border-b border-border text-[11px] uppercase tracking-[0.12em] text-fg-faint">
-                <th class="py-2.5 pl-6 pr-4 font-medium">Crime</th>
-                <th class="py-2.5 pr-4 text-right font-medium">Att.</th>
-                <th class="py-2.5 pr-4 text-right font-medium">Rate</th>
-                <th class="py-2.5 pr-4 text-right font-medium">Cash in</th>
-                <th class="py-2.5 pr-4 text-right font-medium">Cash out</th>
-                <th class="py-2.5 pr-4 text-right font-medium">Items (est.)</th>
-                <th class="py-2.5 pr-4 text-right font-medium">Nerve</th>
-                <th class="py-2.5 pr-6 text-right font-medium">Per nerve</th>
+              <tr>
+                <th>Crime</th>
+                <th class="text-right">Att.</th>
+                <th class="text-right">Rate</th>
+                <th class="text-right">Cash in</th>
+                <th class="text-right">Cash out</th>
+                <th class="text-right">Items (est.)</th>
+                <th class="text-right">Nerve</th>
+                <th class="text-right">Per nerve</th>
               </tr>
             </thead>
             <tbody>
               {#each summary.byCrime.slice(0, 12) as row, i (row.crime)}
                 <tr class="border-b border-border/50 last:border-0 transition-colors hover:bg-surface-2/50 {i % 2 === 1 ? 'bg-surface-2/30' : ''}">
-                  <td class="max-w-[240px] truncate py-2.5 pl-6 pr-4 font-medium text-fg" title={row.crime}>{row.crime}</td>
-                  <td class="tnum py-2.5 pr-4 text-right font-semibold text-fg">{row.attempts}</td>
-                  <td class="tnum py-2.5 pr-4 text-right {row.successRate !== null && row.successRate >= 0.5 ? 'text-positive' : 'text-fg-muted'}">{row.successRate !== null ? `${Math.round(row.successRate * 100)}%` : "—"}</td>
-                  <td class="tnum py-2.5 pr-4 text-right text-positive">{row.cashGained > 0 ? formatMoneyCompact(row.cashGained) : "—"}</td>
-                  <td class="tnum py-2.5 pr-4 text-right text-negative">{row.cashLost > 0 ? formatMoneyCompact(row.cashLost) : "—"}</td>
-                  <td class="tnum py-2.5 pr-4 text-right text-warning">{row.estimatedItemsValue !== null ? formatMoneyCompact(row.estimatedItemsValue) : "—"}</td>
-                  <td class="tnum py-2.5 pr-4 text-right text-fg-muted">{row.nerveUsed ?? "—"}</td>
-                  <td class="tnum py-2.5 pr-6 text-right text-warning">{row.valuePerNerve !== null ? formatMoneyCompact(row.valuePerNerve) : "—"}</td>
+                  <td class="max-w-[240px] truncate font-medium text-fg" title={row.crime}>{row.crime}</td>
+                  <td class="tnum text-right font-semibold text-fg">{row.attempts}</td>
+                  <td class="tnum text-right {row.successRate !== null && row.successRate >= 0.5 ? 'text-positive' : 'text-fg-muted'}">{row.successRate !== null ? `${Math.round(row.successRate * 100)}%` : "—"}</td>
+                  <td class="tnum text-right text-positive">{row.cashGained > 0 ? formatMoneyCompact(row.cashGained) : "—"}</td>
+                  <td class="tnum text-right text-negative">{row.cashLost > 0 ? formatMoneyCompact(row.cashLost) : "—"}</td>
+                  <td class="tnum text-right text-warning">{row.estimatedItemsValue !== null ? formatMoneyCompact(row.estimatedItemsValue) : "—"}</td>
+                  <td class="tnum text-right text-fg-muted">{row.nerveUsed ?? "—"}</td>
+                  <td class="tnum text-right text-warning">{row.valuePerNerve !== null ? formatMoneyCompact(row.valuePerNerve) : "—"}</td>
                 </tr>
               {/each}
             </tbody>
@@ -212,32 +212,32 @@
         <div class="px-6 pb-6 pt-2"><StateMessage state="empty" title="No crime attempts in this range" /></div>
       {:else}
         <div class="overflow-x-auto">
-          <table class="w-full text-left text-[13px]">
+          <table class="tsv-table">
             <thead>
-              <tr class="border-b border-border text-[11px] uppercase tracking-[0.12em] text-fg-faint">
-                <th class="py-2.5 pl-6 pr-4 font-medium">When</th>
-                <th class="py-2.5 pr-4 font-medium">Crime</th>
-                <th class="py-2.5 pr-4 font-medium">Outcome</th>
-                <th class="py-2.5 pr-4 text-right font-medium">Nerve</th>
-                <th class="py-2.5 pr-4 text-right font-medium">Cash</th>
-                <th class="py-2.5 pr-6 text-right font-medium">Est. items</th>
+              <tr>
+                <th>When</th>
+                <th>Crime</th>
+                <th>Outcome</th>
+                <th class="text-right">Nerve</th>
+                <th class="text-right">Cash</th>
+                <th class="text-right">Est. items</th>
               </tr>
             </thead>
             <tbody>
               {#each timeline.items as ev (ev.id)}
-                <tr class="border-b border-border/50 last:border-0 hover:bg-surface-2/50">
-                  <td class="tnum whitespace-nowrap py-2.5 pl-6 pr-4 text-xs text-fg-faint">{formatDateTime(ev.occurredAt)}</td>
-                  <td class="max-w-[260px] truncate py-2.5 pr-4 text-fg" title={ev.crimeName ?? ""}>{ev.crimeName ?? "Unknown crime"}</td>
-                  <td class="py-2.5 pr-4">
-                    <span class={`rounded-full border px-2 py-0.5 text-[11px] ${ev.success ? "border-positive/30 bg-positive/10 text-positive" : "border-negative/30 bg-negative/10 text-negative"}`}>
+                <tr>
+                  <td class="tnum whitespace-nowrap text-xs text-fg-faint">{formatDateTime(ev.occurredAt)}</td>
+                  <td class="max-w-[260px] truncate text-fg" title={ev.crimeName ?? ""}>{ev.crimeName ?? "Unknown crime"}</td>
+                  <td class="">
+                    <span class={`chip ${ev.success ? "chip-positive" : "chip-negative"}`}>
                       {ev.success ? "Success" : "Failed"}
                     </span>
                   </td>
-                  <td class="tnum py-2.5 pr-4 text-right text-fg-muted">{ev.nerveUsed ?? "—"}</td>
-                  <td class="tnum py-2.5 pr-4 text-right {ev.moneyDelta !== null ? (ev.moneyDelta >= 0 ? 'text-positive' : 'text-negative') : 'text-fg-faint'}">
+                  <td class="tnum text-right text-fg-muted">{ev.nerveUsed ?? "—"}</td>
+                  <td class="tnum text-right {ev.moneyDelta !== null ? (ev.moneyDelta >= 0 ? 'text-positive' : 'text-negative') : 'text-fg-faint'}">
                     {ev.moneyDelta !== null ? formatSignedMoney(ev.moneyDelta) : "—"}
                   </td>
-                  <td class="tnum py-2.5 pr-6 text-right text-fg-muted">{ev.itemsValue !== null ? formatMoneyCompact(ev.itemsValue) : "—"}</td>
+                  <td class="tnum text-right text-fg-muted">{ev.itemsValue !== null ? formatMoneyCompact(ev.itemsValue) : "—"}</td>
                 </tr>
               {/each}
             </tbody>

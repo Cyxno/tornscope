@@ -86,7 +86,7 @@ export const INCIDENT_REASON_COPY: Record<SyncOperationReasonDto, string> = {
   unknown_error: "unknown error",
 };
 
-/** Severity chip copy. */
+/** Severity chip classes (pair with the .chip primitive). */
 export const SEVERITY_LABELS: Record<SyncSeverityDto, string> = {
   info: "info",
   warning: "warning",
@@ -94,7 +94,7 @@ export const SEVERITY_LABELS: Record<SyncSeverityDto, string> = {
 };
 
 export const SEVERITY_STYLES: Record<SyncSeverityDto, string> = {
-  info: "border-border bg-surface-2 text-fg-muted",
-  warning: "border-warning/40 bg-warning/10 text-warning",
-  error: "border-negative/40 bg-negative/10 text-negative",
+  info: "",
+  warning: "chip-warning",
+  error: "chip-negative",
 };

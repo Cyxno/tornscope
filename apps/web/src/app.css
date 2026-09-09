@@ -26,10 +26,10 @@
   --color-border: #232329;
   --color-border-strong: #34343c;
 
-  /* Text — warm off-white hierarchy */
+  /* Text — warm off-white hierarchy (fg-faint ≥ 4.5:1 on bg for small labels) */
   --color-fg: #f4f4f1;
   --color-fg-muted: #a2a2ab;
-  --color-fg-faint: #6e6e78;
+  --color-fg-faint: #7d7d87;
 
   /* Accent — restrained teal */
   --color-accent: #2dd4bf;
@@ -287,7 +287,7 @@ body {
 
   select.input {
     appearance: none;
-    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236e6e78' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237d7d87' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: right 0.6rem center;
     padding-right: 1.8rem;
@@ -301,7 +301,7 @@ body {
     border-collapse: collapse;
   }
   .tsv-table thead th {
-    padding: 0.5rem 1rem 0.5rem 0;
+    padding: 0.4rem 1rem 0.4rem 0;
     font-size: 0.6563rem;
     font-weight: 500;
     letter-spacing: 0.11em;
@@ -310,16 +310,12 @@ body {
     border-bottom: 1px solid var(--color-border);
     white-space: nowrap;
   }
-  .tsv-table thead th:first-child,
-  .tsv-table tbody td:first-child {
-    padding-left: 1.25rem;
-  }
   .tsv-table thead th:last-child,
   .tsv-table tbody td:last-child {
-    padding-right: 1.25rem;
+    padding-right: 0.25rem;
   }
   .tsv-table tbody td {
-    padding: 0.625rem 1rem 0.625rem 0;
+    padding: 0.55rem 1rem 0.55rem 0;
     border-bottom: 1px solid rgb(35 35 41 / 0.55);
     vertical-align: top;
   }

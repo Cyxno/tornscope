@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { TravelSummaryResponse, TravelTripDto, Paginated } from "@tornscope/shared";
-  import { formatMoneyCompact, formatDateTime, formatDuration, formatKpiValue, formatDate } from "@tornscope/shared";
+  import { formatMoneyCompact, formatDateTime, formatDuration, formatKpiValue, formatDate, formatSignedMoneyCompact } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
   import { dateRange } from "$lib/state.svelte";
   import PageHeader from "$lib/components/PageHeader.svelte";
@@ -10,7 +10,7 @@
   import SegmentedDateRange from "$lib/components/SegmentedDateRange.svelte";
   import StateMessage from "$lib/components/StateMessage.svelte";
   import { availabilityMessage, availabilityHasData } from "$lib/capabilities";
-  import { C, TOOLTIP, LEGEND, GRID, timeAxis, valueAxis, dayLabel } from "$lib/charts";
+  import { C, TOOLTIP, LEGEND, GRID, timeAxis, valueAxis, dayLabel, MOTION, CHART_SURFACE } from "$lib/charts";
 
   let summary = $state<TravelSummaryResponse | null>(null);
   let history = $state<Paginated<TravelTripDto> | null>(null);
@@ -52,6 +52,7 @@
     if (!summary || summary.profitByDestination.length === 0) return null;
     const rows = summary.profitByDestination.slice(0, 8);
     return {
+      ...MOTION,
       tooltip: { ...TOOLTIP, trigger: "axis", axisPointer: { type: "shadow" } },
       grid: GRID,
       xAxis: { type: "value", ...valueAxis() },
@@ -69,11 +70,12 @@
   const dayOption = $derived.by(() => {
     if (!summary || summary.profitSeries.length === 0) return null;
     return {
+      ...MOTION,
       tooltip: { ...TOOLTIP, trigger: "axis" },
       grid: GRID,
-      xAxis: timeAxis(summary.profitSeries.map((p) => dayLabel(p.t))),
+      xAxis: timeAxis(summary.profitSeries.map((p) => dayLabel(p.t)), { boundaryGap: true }),
       yAxis: valueAxis(),
-      series: [{ name: "Estimated profit", type: "bar", data: summary.profitSeries.map((p) => p.profit), barMaxWidth: 12, itemStyle: { color: C.accentStrong, borderRadius: [3, 3, 0, 0] } }],
+      series: [{ name: "Estimated profit", type: "bar", data: summary.profitSeries.map((p) => p.profit), barMaxWidth: 12, itemStyle: { color: C.accentStrong, borderRadius: 3 } }],
     };
   });
 
@@ -84,6 +86,7 @@
   const haulOption = $derived.by(() => {
     if (!summary || summary.itemsByCategory.length === 0) return null;
     return {
+      ...MOTION,
       tooltip: { ...TOOLTIP, trigger: "item", formatter: (p: { name: string; value: number; percent: number }) => `${p.name}: ${p.value.toLocaleString("en-US")} items (${p.percent}%)` },
       legend: { ...LEGEND, bottom: 0 },
       series: [
@@ -92,7 +95,7 @@
           radius: ["52%", "76%"],
           center: ["50%", "46%"],
           label: { show: false },
-          itemStyle: { borderRadius: 4, borderColor: "#151518", borderWidth: 2 },
+          itemStyle: { borderRadius: 4, borderColor: CHART_SURFACE, borderWidth: 2 },
           data: summary.itemsByCategory.map((r) => ({
             name: CATEGORY_LABELS[r.category] ?? r.category,
             value: r.quantity,
@@ -102,11 +105,17 @@
       ],
     };
   });
+
+  /** Trip haul mini-table shared by the desktop expansion row and the
+   * mobile card expansion. */
+  function haulRows(trip: TravelTripDto) {
+    return trip.items;
+  }
 </script>
 
 <svelte:head><title>Travel · TornScope</title></svelte:head>
 
-<div class="space-y-10">
+<div class="space-y-8 lg:space-y-10">
   <PageHeader
     eyebrow="Travel · Trading"
     title="Routes & profit"
@@ -135,195 +144,241 @@
       />
     {:else}
       {#if staleMsg}
-        <p class="rounded-xl border border-warning/30 bg-warning/5 px-5 py-3 text-xs leading-relaxed text-warning">
+        <p class="rounded-tile border border-warning/30 bg-warning/5 px-5 py-3 text-xs leading-relaxed text-warning">
           <span class="font-medium">{staleMsg.title}.</span>
           {staleMsg.hint}
         </p>
       {/if}
-    {#if summary.coverage.trackingSince !== null}
-      <p class="rounded-xl border border-border bg-surface px-5 py-3 text-xs leading-relaxed text-fg-muted">
-        <span class="font-medium text-fg">Full trip data available from Torn:{' '}</span>
-        {summary.coverage.completeTripsFrom !== null ? formatDate(summary.coverage.completeTripsFrom) : "—"}
-        <span class="mx-2 text-border-strong">·</span>
-        <span class="font-medium text-fg">TornScope tracking since:{' '}</span>
-        {formatDate(summary.coverage.trackingSince)}
-        — trips are stored permanently from that point and do not disappear when Torn prunes its logs.
-        {#if dateRange.from !== undefined && dateRange.from < summary.coverage.trackingSince}
-          <span class="font-medium text-warning"> The selected range predates complete trip coverage, so it shows partial history — no zeros are invented.</span>
-        {/if}
-      </p>
-    {/if}
-    <div class="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border shadow-panel md:grid-cols-4">
-      <Stat label="Trips" value={String(summary.trips)} provenance="exact" tone="accent" />
-      <Stat
-        label="Tracked trip profit"
-        value={formatKpiValue(summary.estimatedProfit)}
-        provenance="estimated"
-        tone={summary.estimatedProfit.value === null ? "neutral" : summary.estimatedProfit.value >= 0 ? "positive" : "negative"}
-        sub={summary.estimatedProfit.availability === "incomplete" ? "purchases without a trip exist" : null}
-      />
-      <Stat label="Profit / hour" value={formatKpiValue(summary.profitPerHour)} provenance="estimated" />
-      <Stat label="Top item" value={summary.topItem.item ?? "—"} sub={summary.topItem.profit !== null ? formatMoneyCompact(summary.topItem.profit) : null} provenance="estimated" />
-    </div>
-
-    {#if summary.unattachedPurchases.count > 0}
-      <p class="rounded-xl border border-border bg-surface px-5 py-3 text-xs text-fg-muted">
-        <span class="font-medium text-fg">Unmatched purchases:</span>
-        {summary.unattachedPurchases.count} abroad purchase{summary.unattachedPurchases.count === 1 ? "" : "s"}
-        ({formatMoneyCompact(summary.unattachedPurchases.spend)} across {summary.unattachedPurchases.itemsBought} items) whose
-        trip cannot be attached confidently — the departure/arrival logs Torn exposes no longer cover them. The purchases and
-        their destinations are kept permanently; they are shown separately and never mixed into Tracked trip profit or
-        profit/hour, since their trip duration is unknown.
-      </p>
-    {/if}
-
-    <section class="grid grid-cols-1 gap-6 lg:grid-cols-5">
-      <div class="lg:col-span-3">
-        <Panel title="Profit by destination" caption="Estimated profit, best routes first" flush>
-          {#if !destOption}
-            <StateMessage state="empty" title="No destinations in this range" />
-          {:else}
-            <Chart option={destOption} height={300} />
-          {/if}
-        </Panel>
-      </div>
-      <div class="lg:col-span-2">
-        <Panel title="What you haul" caption="Items bought abroad — plushies, flowers, Xanax and the rest, by quantity" flush>
-          {#if !haulOption}
-            <StateMessage state="empty" title="No purchases in this range" />
-          {:else}
-            <Chart option={haulOption} height={280} />
-          {/if}
-          {#if summary && summary.itemsByCategory.length > 0}
-            <div class="border-t border-border px-5 py-3">
-              <ul class="space-y-1 text-xs text-fg-muted">
-                {#each summary.itemsByCategory as row (row.category)}
-                  <li class="flex items-baseline justify-between gap-3">
-                    <span>{CATEGORY_LABELS[row.category] ?? row.category}</span>
-                    <span class="tnum">
-                      {formatMoneyCompact(row.spend)} spend
-                      {#if row.estimatedValue !== null}
-                        · {formatMoneyCompact(row.estimatedValue)} est. value
-                      {/if}
-                    </span>
-                  </li>
-                {/each}
-              </ul>
-            </div>
-          {/if}
-          {#if summary && summary.topItems.length > 0}
-            <div class="border-t border-border px-5 py-3">
-              <p class="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-fg-faint">Top items by spend</p>
-              <ul class="space-y-1 text-xs text-fg-muted">
-                {#each summary.topItems as row (row.item)}
-                  <li class="flex items-baseline justify-between gap-3">
-                    <span class="text-fg">{row.item} <span class="text-fg-faint">({CATEGORY_LABELS[row.category] ?? row.category})</span></span>
-                    <span class="tnum">
-                      {Math.round(row.spendShare * 100)}% of spend · {row.quantity}×
-                      {#if row.estimatedProfit !== null}
-                        · <span class={row.estimatedProfit >= 0 ? "text-positive" : "text-negative"}>{formatMoneyCompact(row.estimatedProfit)}</span>
-                      {/if}
-                    </span>
-                  </li>
-                {/each}
-              </ul>
-              <p class="mt-2 text-[11px] leading-relaxed text-fg-faint">
-                Estimated values use Torn market prices (conservative, same semantics as other travel goods). Xanax you
-                consume personally is tracked under Drugs — this section is travel merchandise only.
-              </p>
-            </div>
-          {/if}
-        </Panel>
-      </div>
-    </section>
-
-    <Panel title="Profit by departure day" caption="Days you flew out, ranked by what came back" flush>
-      {#if !dayOption}
-        <StateMessage state="empty" title="No departures in this range" />
-      {:else}
-        <Chart option={dayOption} height={280} />
+      {#if summary.coverage.trackingSince !== null}
+        <details class="group rounded-tile border border-border bg-surface px-5 py-3 text-xs leading-relaxed text-fg-muted">
+          <summary class="flex cursor-pointer items-center justify-between gap-3 font-medium text-fg transition-colors hover:text-accent [&::-webkit-details-marker]:hidden">
+            Trip data coverage
+            <span class="transition-transform group-open:rotate-180">▾</span>
+          </summary>
+          <p class="mt-2.5 border-t border-border pt-2.5">
+            Full trip data available from Torn: {summary.coverage.completeTripsFrom !== null ? formatDate(summary.coverage.completeTripsFrom) : "—"}
+            <span class="mx-2 text-border-strong">·</span>
+            TornScope tracking since: {formatDate(summary.coverage.trackingSince)}
+            — trips are stored permanently from that point and do not disappear when Torn prunes its logs.
+            {#if dateRange.from !== undefined && dateRange.from < summary.coverage.trackingSince}
+              <span class="font-medium text-warning"> The selected range predates complete trip coverage, so it shows partial history — no zeros are invented.</span>
+            {/if}
+          </p>
+        </details>
       {/if}
-    </Panel>
+      <div class="grid grid-cols-2 gap-px overflow-hidden rounded-card border border-border bg-border shadow-panel md:grid-cols-4">
+        <Stat label="Trips" value={String(summary.trips)} provenance="exact" tone="accent" />
+        <Stat
+          label="Tracked trip profit"
+          value={formatKpiValue(summary.estimatedProfit)}
+          provenance="estimated"
+          tone={summary.estimatedProfit.value === null ? "neutral" : summary.estimatedProfit.value >= 0 ? "positive" : "negative"}
+          sub={summary.estimatedProfit.availability === "incomplete" ? "purchases without a trip exist" : null}
+        />
+        <Stat label="Profit / hour" value={formatKpiValue(summary.profitPerHour)} provenance="estimated" />
+        <Stat label="Top item" value={summary.topItem.item ?? "—"} sub={summary.topItem.profit !== null ? formatMoneyCompact(summary.topItem.profit) : null} provenance="estimated" />
+      </div>
 
-    <!-- Trip history -->
-    <Panel title="Trip log" caption="Select a row to unfold the haul" flush>
-      {#if !history || history.items.length === 0}
-        <div class="px-6 pb-6 pt-2">
-          <StateMessage state={histBlocked && histAv ? availabilityMessage(histAv).state : "empty"} title={histBlocked && histAv ? availabilityMessage(histAv).title : "No trips recorded in this range yet"} hint={histBlocked && histAv ? availabilityMessage(histAv).hint : "Trips assemble automatically from travel logs and item purchases."} />
+      {#if summary.unattachedPurchases.count > 0}
+        <details class="group rounded-tile border border-border bg-surface px-5 py-3 text-xs leading-relaxed text-fg-muted">
+          <summary class="flex cursor-pointer items-center justify-between gap-3 text-fg transition-colors hover:text-accent [&::-webkit-details-marker]:hidden">
+            {summary.unattachedPurchases.count} unmatched abroad purchase{summary.unattachedPurchases.count === 1 ? "" : "s"}
+            <span class="tnum font-normal text-fg-muted">{formatMoneyCompact(summary.unattachedPurchases.spend)}</span>
+          </summary>
+          <p class="mt-2.5 border-t border-border pt-2.5">
+            ({formatMoneyCompact(summary.unattachedPurchases.spend)} across {summary.unattachedPurchases.itemsBought} items) whose
+            trip cannot be attached confidently — the departure/arrival logs Torn exposes no longer cover them. The purchases and
+            their destinations are kept permanently; they are shown separately and never mixed into Tracked trip profit or
+            profit/hour, since their trip duration is unknown.
+          </p>
+        </details>
+      {/if}
+
+      <section class="grid grid-cols-1 gap-6 lg:grid-cols-5">
+        <div class="lg:col-span-3">
+          <Panel title="Profit by destination" caption="Estimated profit, best routes first" flush class="h-full">
+            {#if !destOption}
+              <StateMessage state="empty" compact title="No destinations in this range" />
+            {:else}
+              <Chart option={destOption} height={280} />
+            {/if}
+          </Panel>
         </div>
-      {:else}
-        <div class="overflow-x-auto">
-          <table class="w-full text-left text-[13px]">
-            <thead>
-              <tr class="border-b border-border text-[11px] uppercase tracking-[0.12em] text-fg-faint">
-                <th class="py-2.5 pl-6 pr-4 font-medium">Departed</th>
-                <th class="py-2.5 pr-4 font-medium">Destination</th>
-                <th class="py-2.5 pr-4 text-right font-medium">Duration</th>
-                <th class="py-2.5 pr-4 text-right font-medium">Items</th>
-                <th class="py-2.5 pr-4 text-right font-medium">Spend</th>
-                <th class="py-2.5 pr-6 text-right font-medium">Est. profit</th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each history.items as trip (trip.id)}
-                <tr class="cursor-pointer border-b border-border/50 transition-colors hover:bg-surface-2/50" onclick={() => toggle(trip.id)}>
-                  <td class="tnum whitespace-nowrap py-3 pl-6 pr-4 text-xs text-fg-faint">{formatDateTime(trip.departedAt)}</td>
-                  <td class="py-3 pr-4">
-                    <span class="font-medium text-fg">{trip.destination}</span>
-                    {#if trip.returnedAt === null}
-                      <span class="ml-2 inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-accent">
-                        <span class="live-dot h-1 w-1 rounded-full bg-accent"></span>
-                        in flight
+        <div class="lg:col-span-2">
+          <Panel title="What you haul" caption="Items bought abroad — plushies, flowers, Xanax and the rest, by quantity" flush class="h-full">
+            {#if !haulOption}
+              <StateMessage state="empty" compact title="No purchases in this range" />
+            {:else}
+              <Chart option={haulOption} height={240} />
+            {/if}
+            {#if summary && summary.itemsByCategory.length > 0}
+              <div class="border-t border-border px-5 py-3">
+                <ul class="space-y-1 text-xs text-fg-muted">
+                  {#each summary.itemsByCategory as row (row.category)}
+                    <li class="flex items-baseline justify-between gap-3">
+                      <span>{CATEGORY_LABELS[row.category] ?? row.category}</span>
+                      <span class="tnum">
+                        {formatMoneyCompact(row.spend)} spend
+                        {#if row.estimatedValue !== null}
+                          · {formatMoneyCompact(row.estimatedValue)} est. value
+                        {/if}
                       </span>
-                    {/if}
-                  </td>
-                  <td class="tnum py-3 pr-4 text-right text-fg-muted">{formatDuration(trip.durationSeconds)}</td>
-                  <td class="tnum py-3 pr-4 text-right text-fg-muted">{trip.itemsBought}</td>
-                  <td class="tnum py-3 pr-4 text-right text-fg-muted">{formatMoneyCompact(-trip.spend)}</td>
-                  <td class="tnum py-3 pr-6 text-right font-semibold {trip.estimatedProfit === null ? 'text-fg-faint' : trip.estimatedProfit >= 0 ? 'text-positive' : 'text-negative'}">
-                    {trip.estimatedProfit !== null ? formatMoneyCompact(trip.estimatedProfit) : "—"}
-                  </td>
+                    </li>
+                  {/each}
+                </ul>
+              </div>
+            {/if}
+            {#if summary && summary.topItems.length > 0}
+              <div class="border-t border-border px-5 py-3">
+                <p class="section-label mb-2">Top items by spend</p>
+                <ul class="space-y-1 text-xs text-fg-muted">
+                  {#each summary.topItems as row (row.item)}
+                    <li class="flex items-baseline justify-between gap-3">
+                      <span class="text-fg">{row.item} <span class="text-fg-faint">({CATEGORY_LABELS[row.category] ?? row.category})</span></span>
+                      <span class="tnum">
+                        {Math.round(row.spendShare * 100)}% of spend · {row.quantity}×
+                        {#if row.estimatedProfit !== null}
+                          · <span class={row.estimatedProfit >= 0 ? "text-positive" : "text-negative"}>{formatMoneyCompact(row.estimatedProfit)}</span>
+                        {/if}
+                      </span>
+                    </li>
+                  {/each}
+                </ul>
+                <p class="mt-2 text-[11px] leading-relaxed text-fg-faint">
+                  Estimated values use Torn market prices (conservative, same semantics as other travel goods). Xanax you
+                  consume personally is tracked under Drugs — this section is travel merchandise only.
+                </p>
+              </div>
+            {/if}
+          </Panel>
+        </div>
+      </section>
+
+      <Panel title="Profit by departure day" caption="Days you flew out, ranked by what came back" flush>
+        {#if !dayOption}
+          <StateMessage state="empty" compact title="No departures in this range" />
+        {:else}
+          <Chart option={dayOption} height={260} />
+        {/if}
+      </Panel>
+
+      <!-- Trip log: table on md+, cards on phones -->
+      <Panel title="Trip log" caption="Select a row to unfold the haul" flush>
+        {#if !history || history.items.length === 0}
+          <div class="px-6 pb-6 pt-2">
+            <StateMessage state={histBlocked && histAv ? availabilityMessage(histAv).state : "empty"} title={histBlocked && histAv ? availabilityMessage(histAv).title : "No trips recorded in this range yet"} hint={histBlocked && histAv ? availabilityMessage(histAv).hint : "Trips assemble automatically from travel logs and item purchases."} />
+          </div>
+        {:else}
+          <!-- Desktop / tablet table -->
+          <div class="hidden overflow-x-auto md:block">
+            <table class="tsv-table">
+              <thead>
+                <tr>
+                  <th>Departed</th>
+                  <th>Destination</th>
+                  <th class="text-right">Duration</th>
+                  <th class="text-right">Items</th>
+                  <th class="text-right">Spend</th>
+                  <th class="text-right">Est. profit</th>
                 </tr>
-                {#if expanded.has(trip.id) && trip.items.length > 0}
-                  <tr class="border-b border-border/50 bg-bg-raise">
-                    <td colspan="6" class="p-0">
-                      <div class="px-6 py-4">
-                        <table class="w-full text-left text-xs">
-                          <thead>
-                            <tr class="text-[10px] uppercase tracking-[0.12em] text-fg-faint">
-                              <th class="py-1.5 pr-4 font-medium">Item</th>
-                              <th class="py-1.5 pr-4 font-medium">Category</th>
-                              <th class="py-1.5 pr-4 text-right font-medium">Qty</th>
-                              <th class="py-1.5 pr-4 text-right font-medium">Unit cost</th>
-                              <th class="py-1.5 pr-4 text-right font-medium">Est. unit value</th>
-                              <th class="py-1.5 text-right font-medium">Est. profit</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {#each trip.items as item (item.id)}
-                              <tr class="border-t border-border/40">
-                                <td class="py-1.5 pr-4 text-fg">{item.itemName}</td>
-                                <td class="py-1.5 pr-4 text-fg-muted">{CATEGORY_LABELS[item.category] ?? item.category}</td>
-                                <td class="tnum py-1.5 pr-4 text-right text-fg-muted">{item.quantity}</td>
-                                <td class="tnum py-1.5 pr-4 text-right text-fg-muted">{formatMoneyCompact(item.unitCost)}</td>
-                                <td class="tnum py-1.5 pr-4 text-right text-fg-muted">{item.estimatedUnitValue !== null ? formatMoneyCompact(item.estimatedUnitValue) : "—"}</td>
-                                <td class="tnum py-1.5 text-right font-medium {item.estimatedProfit === null ? 'text-fg-faint' : item.estimatedProfit >= 0 ? 'text-positive' : 'text-negative'}">
-                                  {item.estimatedProfit !== null ? formatMoneyCompact(item.estimatedProfit) : "—"}
-                                </td>
-                              </tr>
-                            {/each}
-                          </tbody>
-                        </table>
-                      </div>
+              </thead>
+              <tbody>
+                {#each history.items as trip (trip.id)}
+                  <tr class="cursor-pointer" onclick={() => toggle(trip.id)}>
+                    <td class="tnum whitespace-nowrap text-xs text-fg-faint">{formatDateTime(trip.departedAt)}</td>
+                    <td>
+                      <span class="font-medium text-fg">{trip.destination}</span>
+                      {#if trip.returnedAt === null}
+                        <span class="chip chip-accent ml-2 !px-1.5 !text-[10px]">
+                          <span class="live-dot h-1 w-1 rounded-full bg-accent"></span>
+                          in flight
+                        </span>
+                      {/if}
+                    </td>
+                    <td class="tnum text-right text-fg-muted">{formatDuration(trip.durationSeconds)}</td>
+                    <td class="tnum text-right text-fg-muted">{trip.itemsBought}</td>
+                    <td class="tnum text-right text-fg-muted">{formatMoneyCompact(-trip.spend)}</td>
+                    <td class="tnum text-right font-semibold {trip.estimatedProfit === null ? 'text-fg-faint' : trip.estimatedProfit >= 0 ? 'text-positive' : 'text-negative'}">
+                      {trip.estimatedProfit !== null ? formatSignedMoneyCompact(trip.estimatedProfit) : "—"}
                     </td>
                   </tr>
+                  {#if expanded.has(trip.id) && haulRows(trip).length > 0}
+                    <tr class="bg-bg-raise">
+                      <td colspan="6" class="p-0">
+                        <div class="px-6 py-4">
+                          <table class="tsv-table !text-xs">
+                            <thead>
+                              <tr class="[&>th]:!text-[9px]">
+                                <th>Item</th>
+                                <th>Category</th>
+                                <th class="text-right">Qty</th>
+                                <th class="text-right">Unit cost</th>
+                                <th class="text-right">Est. unit value</th>
+                                <th class="text-right">Est. profit</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {#each trip.items as item (item.id)}
+                                <tr class="[&>td]:!border-t [&>td]:!border-border/40">
+                                  <td class="text-fg">{item.itemName}</td>
+                                  <td class="text-fg-muted">{CATEGORY_LABELS[item.category] ?? item.category}</td>
+                                  <td class="tnum text-right text-fg-muted">{item.quantity}</td>
+                                  <td class="tnum text-right text-fg-muted">{formatMoneyCompact(item.unitCost)}</td>
+                                  <td class="tnum text-right text-fg-muted">{item.estimatedUnitValue !== null ? formatMoneyCompact(item.estimatedUnitValue) : "—"}</td>
+                                  <td class="tnum text-right font-medium {item.estimatedProfit === null ? 'text-fg-faint' : item.estimatedProfit >= 0 ? 'text-positive' : 'text-negative'}">
+                                    {item.estimatedProfit !== null ? formatSignedMoneyCompact(item.estimatedProfit) : "—"}
+                                  </td>
+                                </tr>
+                              {/each}
+                            </tbody>
+                          </table>
+                        </div>
+                      </td>
+                    </tr>
+                  {/if}
+                {/each}
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Mobile card list -->
+          <div class="divide-y divide-border md:hidden">
+            {#each history.items as trip (trip.id)}
+              <div class="px-5 py-4">
+                <button type="button" class="flex w-full flex-col gap-2 text-left" onclick={() => toggle(trip.id)}>
+                  <div class="flex items-baseline justify-between gap-3">
+                    <span class="font-medium text-fg">{trip.destination}</span>
+                    <span class="tnum text-sm font-semibold {trip.estimatedProfit === null ? 'text-fg-faint' : trip.estimatedProfit >= 0 ? 'text-positive' : 'text-negative'}">
+                      {trip.estimatedProfit !== null ? formatSignedMoneyCompact(trip.estimatedProfit) : "—"}
+                    </span>
+                  </div>
+                  <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-fg-faint">
+                    <span class="tnum">{formatDateTime(trip.departedAt)}</span>
+                    <span>{formatDuration(trip.durationSeconds)}</span>
+                    <span>{trip.itemsBought} items</span>
+                    <span class="tnum">{formatMoneyCompact(-trip.spend)}</span>
+                    {#if trip.returnedAt === null}
+                      <span class="chip chip-accent !px-1.5 !text-[10px]"><span class="live-dot h-1 w-1 rounded-full bg-accent"></span> in flight</span>
+                    {/if}
+                  </div>
+                </button>
+                {#if expanded.has(trip.id) && haulRows(trip).length > 0}
+                  <ul class="mt-3 space-y-1.5 rounded-tile border border-border bg-bg-raise p-3 text-xs">
+                    {#each trip.items as item (item.id)}
+                      <li class="flex items-baseline justify-between gap-3">
+                        <span class="min-w-0 truncate text-fg">{item.itemName} <span class="tnum text-fg-faint">×{item.quantity}</span></span>
+                        <span class="tnum shrink-0 {item.estimatedProfit === null ? 'text-fg-faint' : item.estimatedProfit >= 0 ? 'text-positive' : 'text-negative'}">
+                          {item.estimatedProfit !== null ? formatSignedMoneyCompact(item.estimatedProfit) : "—"}
+                        </span>
+                      </li>
+                    {/each}
+                  </ul>
                 {/if}
-              {/each}
-            </tbody>
-          </table>
-        </div>
-      {/if}
-    </Panel>
+              </div>
+            {/each}
+          </div>
+        {/if}
+      </Panel>
     {/if}
   {/if}
 </div>

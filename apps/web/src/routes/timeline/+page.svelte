@@ -7,6 +7,34 @@
   import { formatDayHeading, formatClock } from "$lib/reltime";
   import PageHeader from "$lib/components/PageHeader.svelte";
   import StateMessage from "$lib/components/StateMessage.svelte";
+  import Icon, { type IconName } from "$lib/components/Icon.svelte";
+
+  /** Coarse event → icon mapping: supports scanning, never decoration. */
+  function eventIcon(event: TimelineEventDto): IconName {
+    const cat = (event.category ?? "").toLowerCase();
+    if (event.type === "torn_event") return "alert";
+    if (cat.includes("overdos")) return "alert";
+    if (cat.includes("money")) return "wallet";
+    if (cat.includes("faction") || cat.includes("organized")) return "faction";
+    if (cat.includes("crim") || cat.includes("jail")) return "crimes";
+    if (cat.includes("attack") || cat.includes("combat")) return "combat";
+    if (cat.includes("travel") || cat.includes("flight") || cat.includes("abroad")) return "travel";
+    if (cat.includes("stock") || cat.includes("trade") || cat.includes("bazaar") || cat.includes("auction") || cat.includes("item")) return "economy";
+    if (cat.includes("drug") || cat.includes("rehab") || cat.includes("medical")) return "drugs";
+    return "clock";
+  }
+
+  /**
+   * Torn log categories arrive as coded titles ("0234 MONEY TRADING").
+   * Strip the numeric code and title-case the words — the title line stays
+   * the precise record, this is just a quiet context tag.
+   */
+  function categoryLabel(raw: string): string {
+    return raw
+      .replace(/^\d+\s+/, "")
+      .toLowerCase()
+      .replace(/(^|\s)\S/g, (m) => m.toUpperCase());
+  }
 
   let events = $state<Paginated<TimelineEventDto> | null>(null);
   let loading = $state(true);
@@ -72,7 +100,7 @@
 
 <svelte:head><title>Timeline · TornScope</title></svelte:head>
 
-<div class="space-y-10">
+<div class="space-y-8 lg:space-y-10">
   <PageHeader
     eyebrow="History"
     title="Your timeline"
@@ -82,7 +110,7 @@
       <div class="inline-flex items-center gap-0.5 rounded-full border border-border bg-surface p-1">
         {#each typeFilters as f (f.value)}
           <button
-            class="rounded-full px-3.5 py-1.5 text-xs font-medium transition-all {typeFilter === f.value ? 'bg-fg font-semibold text-bg' : 'text-fg-muted hover:text-fg'}"
+            class="rounded-full px-3 py-1 text-xs font-medium transition-all {typeFilter === f.value ? 'bg-fg font-semibold text-bg' : 'text-fg-muted hover:text-fg'}"
             onclick={() => (typeFilter = f.value)}
           >
             {f.label}
@@ -106,20 +134,28 @@
   {:else if events && events.items.length === 0}
     <StateMessage state="empty" title="Quiet in this range" hint={me.data?.isDemo ? "Synthetic example data — the demo dataset has no timeline entries here." : "No timeline entries match. Widen the date range or wait for the next sync."} />
   {:else if events}
-    <div class="space-y-10">
+    <div class="space-y-8">
       {#each dayGroups as group (group.day)}
         <section>
-          <h2 class="font-display text-xl font-medium text-fg-muted">{formatDayHeading(group.list[0]!.occurredAt)}</h2>
-          <ol class="relative mt-4 space-y-1">
-            <span class="absolute top-2 bottom-2 left-[7px] w-px bg-border"></span>
+          <h2 class="sticky top-14 z-10 -mx-2 bg-bg/85 px-2 py-1.5 font-display text-lg font-medium text-fg-muted backdrop-blur-sm md:top-14">{formatDayHeading(group.list[0]!.occurredAt)}</h2>
+          <ol class="relative mt-3 space-y-0.5">
+            <span class="absolute top-2 bottom-2 left-[13px] w-px bg-border" aria-hidden="true"></span>
             {#each group.list as event (event.id)}
-              <li class="relative flex items-start gap-4 rounded-xl px-2 py-2.5 transition-colors hover:bg-surface/70">
-                <span class="relative z-10 mt-1.5 h-[9px] w-[9px] shrink-0 rounded-full border-2 {event.type === 'torn_event' ? 'border-warning bg-warning/25' : event.category?.toLowerCase().includes('overdos') ? 'border-negative bg-negative/25' : 'border-accent bg-accent/25'}"></span>
+              <li class="group relative flex items-start gap-3.5 rounded-tile px-2 py-2.5 transition-colors hover:bg-surface/70">
+                <span class="relative z-10 mt-1 flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full border bg-surface {event.type === 'torn_event'
+                  ? 'border-warning/40 text-warning'
+                  : event.category?.toLowerCase().includes('overdos')
+                    ? 'border-negative/40 text-negative'
+                    : event.amount !== null && event.amount !== undefined
+                      ? 'border-positive/40 text-positive'
+                      : 'border-border text-fg-faint'}">
+                  <Icon name={eventIcon(event)} size={11} />
+                </span>
                 <div class="min-w-0 flex-1">
                   <div class="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
                     <span class="tnum text-xs text-fg-faint">{formatClock(event.occurredAt)}</span>
                     {#if event.category}
-                      <span class="text-[11px] uppercase tracking-[0.1em] text-fg-faint">{event.category}</span>
+                      <span class="text-[11px] font-medium text-fg-faint">{categoryLabel(event.category)}</span>
                     {/if}
                   </div>
                   <p class="mt-0.5 text-sm leading-relaxed text-fg">{event.title}</p>
@@ -128,7 +164,7 @@
                   {/if}
                 </div>
                 {#if event.amount !== null && event.amount !== undefined}
-                  <span class="tnum mt-0.5 shrink-0 text-sm font-medium {event.amount >= 0 ? 'text-positive' : 'text-negative'}">
+                  <span class="tnum mt-1 shrink-0 text-sm font-medium {event.amount >= 0 ? 'text-positive' : 'text-negative'}">
                     {event.amount >= 0 ? '+' : ''}{formatMoneyCompact(event.amount)}
                   </span>
                 {/if}
@@ -142,7 +178,7 @@
         {#if loadingMore}
           <div class="h-4 w-4 animate-spin rounded-full border-2 border-border-strong border-t-accent"></div>
         {:else if events.nextCursor}
-          <button class="rounded-full border border-border-strong px-5 py-2 text-xs font-medium text-fg-muted transition-colors hover:border-accent hover:text-accent" onclick={() => void loadMore()}>
+          <button class="btn" onclick={() => void loadMore()}>
             Load older entries
           </button>
         {/if}

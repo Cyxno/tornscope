@@ -60,9 +60,12 @@ describe("operational state copy", () => {
     for (const kind of ["sync_failures", "stale_recovered", "capability_denied"] as const) {
       expect(INCIDENT_KIND_COPY[kind]).toBeTruthy();
     }
+    // Severity styles are chip modifiers (v0.2 design system): combined with
+    // the .chip primitive they must produce a visible status treatment —
+    // warning and error are color-coded, info stays intentionally neutral.
     for (const severity of ["info", "warning", "error"] as const) {
       expect(SEVERITY_LABELS[severity]).toBe(severity);
-      expect(SEVERITY_STYLES[severity]).toContain("border-");
+      expect(["", "chip-warning", "chip-negative"]).toContain(SEVERITY_STYLES[severity]);
     }
   });
 

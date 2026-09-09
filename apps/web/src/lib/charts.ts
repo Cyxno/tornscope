@@ -15,7 +15,7 @@ export const C = {
   violet: "#a78bfa",
   pink: "#f472b6",
   label: "#8f8f99",
-  labelFaint: "#6e6e78",
+  labelFaint: "#7d7d87",
   axisLine: "#232329",
   splitLine: "#1b1b20",
   tooltipBg: "#141417",

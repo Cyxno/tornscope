@@ -9,7 +9,7 @@
   <p class="max-w-md text-sm leading-relaxed text-fg-muted">
     {page.error?.message ?? "An unexpected error occurred"}
   </p>
-  <a href="/" class="mt-2 rounded-full border border-border-strong px-5 py-2 text-xs font-medium text-fg-muted transition-colors hover:border-accent hover:text-accent">
+  <a href="/" class="btn mt-2">
     Back to the dashboard
   </a>
 </div>

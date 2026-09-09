@@ -11,7 +11,7 @@
   import SegmentedDateRange from "$lib/components/SegmentedDateRange.svelte";
   import StateMessage from "$lib/components/StateMessage.svelte";
   import { availabilityMessage, availabilityHasData } from "$lib/capabilities";
-  import { C, TOOLTIP, LEGEND, GRID, timeAxis, dayLabel } from "$lib/charts";
+  import { C, TOOLTIP, LEGEND, GRID, timeAxis, countAxis, dayLabel, MOTION, CHART_SURFACE } from "$lib/charts";
 
   let data = $state<DrugsSummaryResponse | null>(null);
   let loading = $state(true);
@@ -63,6 +63,7 @@
   const dailyOption = $derived.by(() => {
     if (!data || data.dailySeries.every((p) => p.good === 0 && p.bad === 0)) return null;
     return {
+      ...MOTION,
       tooltip: { ...TOOLTIP, trigger: "axis" },
       legend: { ...LEGEND, data: ["Successful", "Overdose"], top: 0, right: 0 },
       grid: { ...GRID, bottom: 34 },
@@ -70,8 +71,8 @@
         { type: "inside" },
         { type: "slider", height: 16, bottom: 4, borderColor: C.axisLine, backgroundColor: "transparent", fillerColor: "rgba(45,212,191,0.08)", handleStyle: { color: C.accent }, textStyle: { color: C.labelFaint } },
       ],
-      xAxis: timeAxis(data.dailySeries.map((p) => dayLabel(p.t))),
-      yAxis: { type: "value", minInterval: 1, axisLabel: { color: C.label, fontSize: 10.5 }, splitLine: { lineStyle: { color: C.splitLine } }, axisLine: { show: false } },
+      xAxis: timeAxis(data.dailySeries.map((p) => dayLabel(p.t)), { boundaryGap: true }),
+      yAxis: countAxis(),
       series: [
         { name: "Successful", type: "bar", stack: "use", data: data.dailySeries.map((p) => p.good), barMaxWidth: 14, itemStyle: { color: C.accent, borderRadius: [3, 3, 0, 0] } },
         { name: "Overdose", type: "bar", stack: "use", data: data.dailySeries.map((p) => p.bad), barMaxWidth: 14, itemStyle: { color: C.negative, borderRadius: [3, 3, 0, 0] } },
@@ -85,6 +86,7 @@
     if (rows.length === 0) return null;
     const palette = [C.accent, C.violet ?? "#a78bfa", C.positive, C.warning, C.pink ?? "#f472b6", "#818cf8", C.accentStrong, "#94a3b8", "#c084fc", "#5eead4", "#fca5a5"];
     return {
+      ...MOTION,
       tooltip: { ...TOOLTIP, trigger: "item", formatter: "{b}: {c} uses ({d}%)" },
       legend: { ...LEGEND, type: "scroll", orient: "vertical", right: 4, top: "middle" },
       series: [
@@ -93,17 +95,35 @@
           radius: ["58%", "82%"],
           center: ["34%", "50%"],
           label: { show: false },
-          itemStyle: { borderRadius: 4, borderColor: "#151518", borderWidth: 2 },
+          itemStyle: { borderRadius: 4, borderColor: CHART_SURFACE, borderWidth: 2 },
           data: rows.map((d, i) => ({ name: d.drug, value: d.uses, itemStyle: { color: palette[i % palette.length] } })),
         },
       ],
     };
   });
+
+  /**
+   * Provenance split for the funding bar. Order is semantic: proven first,
+   * then unknowns — the bar never implies unknown stock is personal spend.
+   */
+  const provenanceSegments = $derived.by(() => {
+    if (!data || data.xanaxFunding.used === 0) return [];
+    const f = data.xanaxFunding;
+    const segs = [
+      { key: "faction", label: "Faction-sponsored", count: f.confirmedFaction, color: "#3fd68f" },
+      { key: "personal", label: "Confirmed personal", count: f.confirmedPersonal, color: "#2dd4bf" },
+      { key: "other", label: "External source", count: f.confirmedOther, color: "#8fd6c0" },
+      { key: "opening", label: "Opening inventory — origin unknown", count: f.openingInventoryUnknown, color: "#f0b24a" },
+      { key: "unknown", label: "Unknown source", count: f.unknown, color: "#6e6e78" },
+    ].filter((s) => s.count > 0);
+    const total = segs.reduce((s, x) => s + x.count, 0) || 1;
+    return segs.map((s) => ({ ...s, share: (s.count / total) * 100 }));
+  });
 </script>
 
 <svelte:head><title>Drugs · TornScope</title></svelte:head>
 
-<div class="space-y-10">
+<div class="space-y-8 lg:space-y-10">
   <PageHeader
     eyebrow="Personal · Habits"
     title="Substances & rehab"
@@ -114,23 +134,24 @@
     {/snippet}
   </PageHeader>
 
-  <!-- Substance filter -->
-  <div class="flex flex-wrap items-center gap-2">
-    <span class="mr-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-faint">Filter</span>
+  <!-- Substance filter: scrollable on phones, wrapped on wider screens -->
+  <div class="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:flex-wrap sm:overflow-visible sm:pb-0">
+    <span class="section-label mr-1 hidden shrink-0 self-center sm:inline">Filter</span>
     <button
-      class="rounded-full border px-3.5 py-1.5 text-xs font-medium transition-all {selectAll
-        ? 'border-accent/40 bg-accent/10 text-accent'
-        : 'border-border bg-surface text-fg-muted hover:border-border-strong hover:text-fg'}"
+      class="chip shrink-0 cursor-pointer !py-1.5 text-xs {selectAll
+        ? 'chip-accent'
+        : 'hover:border-border-strong hover:text-fg'}"
       onclick={toggleAll}
     >
       All substances
     </button>
     {#each TORN_DRUG_NAMES as name (name)}
       <button
-        class="rounded-full border px-3.5 py-1.5 text-xs transition-all {(selectAll || selected.includes(name))
-          ? 'border-accent/40 bg-accent/10 text-accent'
-          : 'border-border bg-surface text-fg-muted hover:border-border-strong hover:text-fg'}"
+        class="chip shrink-0 cursor-pointer !py-1.5 text-xs {(selectAll || selected.includes(name))
+          ? 'chip-accent'
+          : 'hover:border-border-strong hover:text-fg'}"
         onclick={() => toggleDrug(name)}
+        aria-pressed={selectAll || selected.includes(name)}
       >
         {name}
       </button>
@@ -146,13 +167,13 @@
     {@const histBlocked = histAv !== undefined && !availabilityHasData(histAv)}
     {@const staleMsg = histAv && histAv.state === "stale_permission" ? availabilityMessage(histAv) : null}
     {#if staleMsg}
-      <p class="rounded-xl border border-warning/30 bg-warning/5 px-5 py-3 text-xs leading-relaxed text-warning">
+      <p class="rounded-tile border border-warning/30 bg-warning/5 px-5 py-3 text-xs leading-relaxed text-warning">
         <span class="font-medium">{staleMsg.title}.</span>
         {staleMsg.hint}
       </p>
     {/if}
     <!-- Quiet stat strip -->
-    <div class="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border shadow-panel md:grid-cols-5">
+    <div class="grid grid-cols-2 gap-px overflow-hidden rounded-card border border-border bg-border shadow-panel md:grid-cols-5">
       <Stat label="Total uses" value={histBlocked ? "—" : String(data.overall.totalUses)} provenance="exact" tone="accent" />
       <Stat
         label="Xanax / day"
@@ -187,131 +208,124 @@
 
     {#if !histBlocked}
     {#if data.xanaxFunding.used > 0}
-      <div class="space-y-3 rounded-xl border border-border bg-surface px-5 py-4">
-        <div class="flex flex-wrap items-baseline justify-between gap-2">
-          <p class="text-[13px] font-medium text-fg">Xanax used</p>
-          <p class="tnum text-[13px] font-semibold text-fg">{data.xanaxFunding.used}</p>
-        </div>
-        <div class="flex flex-wrap items-baseline justify-between gap-2 border-t border-border/60 pt-2.5">
-          <p class="text-[13px] text-fg-muted" title="Market value of ALL Xanax used at current catalog prices — a consumption value, not your personal spend.">
-            Estimated consumption value
-          </p>
-          <p class="tnum text-[13px] font-semibold text-fg" data-xanax-consumption-value>
-            {data.xanaxFunding.values.consumption !== null ? formatMoneyCompact(data.xanaxFunding.values.consumption) : "—"}
-          </p>
-        </div>
+      <Panel
+        title="Xanax funding"
+        caption="Where the supply came from — provenance from a stock ledger over all recorded purchases, hauls, gifts and armory events"
+      >
+        <div class="space-y-4">
+          <div class="flex flex-wrap items-baseline justify-between gap-2">
+            <p class="text-[13px] text-fg-muted">Xanax used in range</p>
+            <p class="tnum text-lg font-semibold text-fg" data-xanax-used>{data.xanaxFunding.used}</p>
+          </div>
 
-        {#if data.xanaxFunding.confirmedFaction > 0}
-          <div class="rounded-xl border border-positive/25 bg-positive/5 px-4 py-3 text-xs leading-relaxed text-fg-muted">
-            <div class="flex flex-wrap items-baseline justify-between gap-2">
-              <p class="text-[13px] font-medium text-positive">Faction-sponsored</p>
-              <p class="tnum text-[13px] font-semibold text-positive">{data.xanaxFunding.confirmedFaction}</p>
+          <!-- Provenance split bar: proven classes first, unknowns last -->
+          {#if provenanceSegments.length > 0}
+            <div class="flex h-2.5 gap-px overflow-hidden rounded-full bg-surface-2" role="img" aria-label="Xanax provenance split">
+              {#each provenanceSegments as seg (seg.key)}
+                <div style="width: {seg.share}%; background: {seg.color}" title="{seg.label}: {seg.count}"></div>
+              {/each}
             </div>
-            <p class="mt-1 flex flex-wrap items-baseline justify-between gap-2">
-              <span>Estimated value{data.xanaxFunding.values.factionSponsored !== null ? ` ${formatMoneyCompact(data.xanaxFunding.values.factionSponsored)}` : ""}</span>
-              <span class="font-semibold text-fg">Personal cost $0</span>
+          {/if}
+
+          <ul class="grid gap-2 sm:grid-cols-2">
+            {#each provenanceSegments as seg (seg.key)}
+              <li class="rounded-tile border border-border bg-bg-raise px-4 py-3 text-xs">
+                <div class="flex flex-wrap items-baseline justify-between gap-2">
+                  <span class="flex items-center gap-2 font-medium text-fg">
+                    <span class="h-2 w-2 rounded-full" style="background: {seg.color}"></span>
+                    {seg.label}
+                  </span>
+                  <span class="tnum font-semibold text-fg">{seg.count}</span>
+                </div>
+                <p class="mt-1 pl-4 text-fg-muted">
+                  {#if seg.key === "faction"}
+                    Estimated value{data.xanaxFunding.values.factionSponsored !== null ? ` ${formatMoneyCompact(data.xanaxFunding.values.factionSponsored)}` : ""} — proven from faction armory evidence. <span class="font-medium text-fg">Personal cost $0.</span>
+                  {:else if seg.key === "personal"}
+                    Estimated value{data.xanaxFunding.values.confirmedPersonal !== null ? ` ${formatMoneyCompact(data.xanaxFunding.values.confirmedPersonal)}` : ""} — drawn from recorded purchases.
+                  {:else if seg.key === "opening"}
+                    Estimated value{data.xanaxFunding.values.openingInventory !== null ? ` ${formatMoneyCompact(data.xanaxFunding.values.openingInventory)}` : ""} — held when the range began; origin not proven, so not labelled personal spend.
+                  {:else if seg.key === "other"}
+                    Gift/trade evidence — not personal spend.
+                  {:else}
+                    Not attributable to any recorded supply.
+                  {/if}
+                </p>
+              </li>
+            {/each}
+          </ul>
+          {#if data.xanaxFunding.confirmedFaction === 0 && data.xanaxFunding.confirmedPersonal === 0 && data.xanaxFunding.confirmedOther === 0 && data.xanaxFunding.openingInventoryUnknown === 0}
+            <p class="text-xs text-fg-muted">All uses lack traceable supply records.</p>
+          {/if}
+
+          <div class="space-y-1.5 border-t border-border pt-3 text-[11px] leading-relaxed text-fg-faint">
+            <p>
+              Values are estimated at the current catalog market price and are consumption values, not personal spend.
+              Sponsored Xanax costs you $0.
             </p>
-            <p class="mt-0.5 text-fg-faint">Proven from faction armory evidence at the logged moment — supplied by your faction, not purchased by you.</p>
+            {#if data.xanaxFunding.armoryHistory.available}
+              <p>
+                Faction armory history covers events since {formatDate(data.xanaxFunding.armoryHistory.earliestAt)} ({data.xanaxFunding.armoryHistory.events} armory events stored);
+                uses before that date cannot be matched to armory evidence and stay unclassified rather than assumed personal.
+              </p>
+            {:else}
+              <p class="text-warning">
+                Faction armory history is not available through the connected API source, so faction sponsorship cannot be
+                detected — uses stay unattributed rather than assumed personal.
+              </p>
+            {/if}
           </div>
-        {/if}
-
-        {#if data.xanaxFunding.confirmedPersonal > 0}
-          <div class="rounded-xl border border-border bg-bg-raise px-4 py-3 text-xs leading-relaxed text-fg-muted">
-            <div class="flex flex-wrap items-baseline justify-between gap-2">
-              <p class="text-[13px] font-medium text-fg">Confirmed personal</p>
-              <p class="tnum text-[13px] font-semibold text-fg">{data.xanaxFunding.confirmedPersonal}</p>
-            </div>
-            <p class="mt-1">Estimated value{data.xanaxFunding.values.confirmedPersonal !== null ? ` ${formatMoneyCompact(data.xanaxFunding.values.confirmedPersonal)}` : ""} — drawn from recorded purchases.</p>
-          </div>
-        {/if}
-
-        {#if data.xanaxFunding.openingInventoryUnknown > 0}
-          <div class="rounded-xl border border-warning/25 bg-warning/5 px-4 py-3 text-xs leading-relaxed text-fg-muted">
-            <div class="flex flex-wrap items-baseline justify-between gap-2">
-              <p class="text-[13px] font-medium text-warning">Opening inventory — origin unknown</p>
-              <p class="tnum text-[13px] font-semibold text-warning">{data.xanaxFunding.openingInventoryUnknown}</p>
-            </div>
-            <p class="mt-1">Estimated value{data.xanaxFunding.values.openingInventory !== null ? ` ${formatMoneyCompact(data.xanaxFunding.values.openingInventory)}` : ""} — stock you already held when this range began; its origin is not proven by records, so it is not labeled personal spend.</p>
-          </div>
-        {/if}
-
-        {#if data.xanaxFunding.confirmedOther > 0}
-          <p class="text-xs text-fg-muted">{data.xanaxFunding.confirmedOther} from an external source (gift/trade evidence).</p>
-        {/if}
-        {#if data.xanaxFunding.unknown > 0}
-          <p class="text-xs text-warning">{data.xanaxFunding.unknown} unknown source.</p>
-        {/if}
-        {#if data.xanaxFunding.confirmedFaction === 0 && data.xanaxFunding.confirmedPersonal === 0 && data.xanaxFunding.confirmedOther === 0 && data.xanaxFunding.openingInventoryUnknown === 0}
-          <p class="text-xs text-fg-muted">All uses lack traceable supply records.</p>
-        {/if}
-
-        <p class="border-t border-border/60 pt-2.5 text-[11px] leading-relaxed text-fg-faint">
-          Values are estimated at the current catalog market price and are consumption values, not personal spend.
-          Classification uses a stock ledger over all recorded purchases, travel hauls, gifts and faction armory events —
-          never just activity inside the selected range. Sponsored Xanax costs you $0.
-        </p>
-        {#if data.xanaxFunding.armoryHistory.available}
-          <p class="text-[11px] text-fg-faint">
-            Faction armory history covers events since {formatDate(data.xanaxFunding.armoryHistory.earliestAt)} ({data.xanaxFunding.armoryHistory.events} armory events stored);
-            uses before that date cannot be matched to armory evidence and stay unclassified rather than assumed personal.
-          </p>
-        {:else}
-          <p class="text-[11px] text-warning">
-            Faction armory history is not available through the connected API source, so faction sponsorship cannot be
-            detected — uses stay unattributed rather than assumed personal.
-          </p>
-        {/if}
-      </div>
+        </div>
+      </Panel>
     {/if}
 
     <!-- Hero chart -->
     <Panel title="Daily drug use" caption="Successful uses vs overdoses — scroll or pinch inside the chart to zoom" flush>
       {#if !dailyOption}
-        <StateMessage state="empty" title="No drug events in this range" hint="Events appear as Torn logs sync, or adjust your substance filter." />
+        <StateMessage state="empty" compact title="No drug events in this range" hint="Events appear as Torn logs sync, or adjust your substance filter." />
       {:else}
-        <Chart option={dailyOption} height={400} />
+        <Chart option={dailyOption} height={380} />
       {/if}
     </Panel>
 
     <!-- Breakdown + rehab -->
     <section class="grid gap-6 lg:grid-cols-2">
-      <Panel title="By substance" caption="Share of total uses">
+      <Panel title="By substance" caption="Share of total uses" flush class="h-full">
         {#if !donutOption}
-          <StateMessage state="empty" title="No uses to break down" />
+          <StateMessage state="empty" compact title="No uses to break down" />
         {:else}
           <Chart option={donutOption} height={280} />
         {/if}
       </Panel>
 
-      <Panel title="Rehab" caption="One Torn Rehab log = one visit; sessions come from Torn's explicit rehab-times count">
+      <Panel title="Rehab" caption="One Torn Rehab log = one visit; sessions come from Torn's explicit rehab-times count" class="h-full">
         <div class="grid grid-cols-3 gap-4">
           <div>
-            <p class="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint" title="One Torn Rehab log row is one visit — Torn pre-groups each visit into a single log">Visits</p>
+            <p class="text-[11px] font-medium text-fg-faint" title="One Torn Rehab log row is one visit — Torn pre-groups each visit into a single log">Visits</p>
             <p class="tnum mt-1 text-xl font-semibold text-fg">{data.rehab.visits}</p>
             <p class="tnum text-[11px] text-fg-faint">
               {#if data.rehab.sessions !== null}{data.rehab.sessions} sessions{#if data.rehab.sessionsUnavailable > 0} · {data.rehab.sessionsUnavailable} unknown{/if}{:else}Sessions unavailable{/if}
             </p>
           </div>
           <div>
-            <p class="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint" title="Mean of Torn's explicit per-visit session counts (rehab_times)">Sessions / visit</p>
+            <p class="text-[11px] font-medium text-fg-faint" title="Mean of Torn's explicit per-visit session counts (rehab_times)">Sessions / visit</p>
             <p class="tnum mt-1 text-xl font-semibold text-fg">{data.rehab.averageSessionsPerVisit ?? "—"}</p>
             <p class="tnum text-[11px] text-fg-faint">{data.rehab.averageCostPerSession.value !== null ? `${formatMoneyCompact(data.rehab.averageCostPerSession.value).replace("-", "")}/session` : "cost/session unavailable"}</p>
           </div>
           <div>
-            <p class="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint">Total spend</p>
+            <p class="text-[11px] font-medium text-fg-faint">Total spend</p>
             <p class="tnum mt-1 text-xl font-semibold text-negative">{data.rehab.totalSpend.value !== null ? `-${formatMoneyCompact(data.rehab.totalSpend.value).replace("-", "")}` : "—"}</p>
             <p class="tnum text-[11px] text-fg-faint">{data.rehab.averageCostPerVisit.value !== null ? `${formatMoneyCompact(data.rehab.averageCostPerVisit.value).replace("-", "")}/visit` : ""}</p>
           </div>
         </div>
         {#if data.rehab.sessionsUnavailable > 0 && data.rehab.sessions === null}
-          <p class="mt-3 rounded-xl border border-warning/30 bg-warning/5 px-4 py-2 text-[11px] leading-relaxed text-warning">
+          <p class="mt-3 rounded-tile border border-warning/30 bg-warning/5 px-4 py-2 text-[11px] leading-relaxed text-warning">
             Torn's logs for this range did not carry the per-visit session count, so sessions are shown as unavailable —
             never inferred from log counts or money.
           </p>
         {/if}
         {#if data.rehab.visitTrend.length >= 2}
           <div class="mt-4">
-            <p class="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-faint">Cost per visit (oldest → newest)</p>
+            <p class="text-[11px] font-medium text-fg-faint">Cost per visit (oldest → newest)</p>
             <div class="mt-2 flex items-end gap-1.5">
               {#each data.rehab.visitTrend.slice(-16) as visit, i (visit.startedAt)}
                 {@const maxCost = Math.max(...data.rehab.visitTrend.slice(-16).map((t) => t.cost ?? 0), 1)}
@@ -332,7 +346,7 @@
         {/if}
         {#if data.rehab.recent.length === 0}
           <div class="mt-4">
-            <StateMessage state="empty" title="No rehab visits in this range" />
+            <StateMessage state="empty" compact title="No rehab visits in this range" />
           </div>
         {:else}
           {@const anyPercent = data.rehab.recent.some((v) => v.rehabPercent !== null)}
@@ -357,27 +371,27 @@
     <!-- Per-drug cost table -->
     <Panel title="Cost per substance" caption="Estimated from Torn item market prices">
       {#if data.byDrug.length === 0}
-        <StateMessage state="empty" title="Nothing to cost yet" />
+        <StateMessage state="empty" compact title="Nothing to cost yet" />
       {:else}
         <div class="overflow-x-auto">
-          <table class="w-full text-left text-[13px]">
+          <table class="tsv-table">
             <thead>
-              <tr class="border-b border-border text-[11px] uppercase tracking-[0.12em] text-fg-faint">
-                <th class="py-2.5 pr-4 font-medium">Substance</th>
-                <th class="py-2.5 pr-4 text-right font-medium">Uses</th>
-                <th class="py-2.5 pr-4 text-right font-medium">Overdoses</th>
-                <th class="py-2.5 pr-4 text-right font-medium">Share</th>
-                <th class="py-2.5 text-right font-medium">Est. cost</th>
+              <tr>
+                <th>Substance</th>
+                <th class="text-right">Uses</th>
+                <th class="text-right">Overdoses</th>
+                <th class="text-right">Share</th>
+                <th class="text-right">Est. cost</th>
               </tr>
             </thead>
             <tbody>
               {#each data.byDrug as row (row.drug)}
-                <tr class="border-b border-border/50 transition-colors last:border-0 hover:bg-surface-2/50">
-                  <td class="py-2.5 pr-4 font-medium text-fg">{row.drug}</td>
-                  <td class="tnum py-2.5 pr-4 text-right text-fg-muted">{row.uses}</td>
-                  <td class="tnum py-2.5 pr-4 text-right {row.overdoses > 0 ? 'text-negative' : 'text-fg-faint'}">{row.overdoses}</td>
-                  <td class="tnum py-2.5 pr-4 text-right text-fg-muted">{(row.shareOfTotal * 100).toFixed(0)}%</td>
-                  <td class="tnum py-2.5 text-right text-fg-muted">{row.estimatedCost !== null ? formatMoneyCompact(row.estimatedCost) : "—"}</td>
+                <tr>
+                  <td class="font-medium text-fg">{row.drug}</td>
+                  <td class="tnum text-right text-fg-muted">{row.uses}</td>
+                  <td class="tnum text-right {row.overdoses > 0 ? 'text-negative' : 'text-fg-faint'}">{row.overdoses}</td>
+                  <td class="tnum text-right text-fg-muted">{(row.shareOfTotal * 100).toFixed(0)}%</td>
+                  <td class="tnum text-right text-fg-muted">{row.estimatedCost !== null ? formatMoneyCompact(row.estimatedCost) : "—"}</td>
                 </tr>
               {/each}
             </tbody>
