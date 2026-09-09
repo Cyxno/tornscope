@@ -46,6 +46,10 @@ Acceptance criteria:
 
 ### 2. Daily Summary — *issue: `feat(v0.2): daily summary page`* · labels: `v0.2` `analytics` `enhancement`
 
+**Status: In Progress (implemented on `develop`, deployed to the dev stack —
+see [DAILY-SUMMARY.md](DAILY-SUMMARY.md)).** Status is flipped to Complete
+after dev verification passes.
+
 One page answering "how did today go": daily earned, daily spent, asset
 conversions, net worth delta, estimated travel profit, drug consumption and
 value, major account events — with an explanation of important net-worth
