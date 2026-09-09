@@ -135,9 +135,21 @@ marker — see [ENVIRONMENTS.md](ENVIRONMENTS.md)).
 ## NICE TO HAVE
 
 ### 10. UX polish — *issue: `feat(v0.2): UX consistency & state polish`* · labels: `v0.2` `ux`
-Better loading/empty/error states, mobile/tablet layout fixes where needed,
-consistency pass across analytics cards/tables/charts, clearer provenance
-tooltips.
+
+**Status: Complete (v0.2 UI overhaul).** Implemented on `develop`, deployed to
+the dev stack — see [UI-DESIGN.md](UI-DESIGN.md). The interface was redesigned
+as a coherent v0.2 visual system ("precision calm"): centralized design tokens
+(graphite surface scale, radius/control scales, teal accent), grouped adaptive
+navigation with a mobile bottom tab bar + nav sheet, one panel/page-header/KPI
+system, structure-matched loading skeletons, disclosure-based methodology copy,
+a unified chart theme and table language, humanized Timeline entries, an
+aligned Sync Status grid, and verified responsive behavior from 320px to 1920px
+(no horizontal overflow, WCAG-AA label contrast, reduced-motion support).
+
+- [x] Loading/empty/error states coherent and structure-matched
+- [x] Consistency pass across analytics cards/tables/charts
+- [x] Mobile/tablet layout passes (320–430 / 768–1024 verified per route)
+- [x] Clearer provenance/confidence presentation without badge overload
 
 ### 11. Operator health overview — *issue: `feat(v0.2): operator health overview`* · labels: `v0.2` `enhancement` `reliability`
 Infrastructure/sync health only — aggregate operational metrics; no ability

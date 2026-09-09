@@ -75,7 +75,10 @@ export function timeAxis(data: (number | string)[], opts: { boundaryGap?: boolea
     type: "category",
     data,
     boundaryGap: opts.boundaryGap,
-    axisLabel: AXIS_LABEL,
+    // hideOverlap keeps dense ranges readable on narrow charts: ECharts
+    // drops colliding labels instead of letting them collide or forcing
+    // every label onto tiny screens.
+    axisLabel: { ...AXIS_LABEL, hideOverlap: true },
     axisLine: AXIS_LINE,
     axisTick: { show: false },
   };
