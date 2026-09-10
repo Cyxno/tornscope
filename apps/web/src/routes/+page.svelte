@@ -417,6 +417,19 @@
           </span>
           <span class="shrink-0 text-[13px] text-fg-faint">{#if !attacksBlocked && data.combat}Successful defenses {data.combat.incomingDefended}{/if}</span>
         </a>
+        <!-- Progression: one concise glimpse (full analysis on /progression) -->
+        <a href="/progression" class="group flex items-baseline justify-between gap-4 border-b border-border/60 py-3 transition-colors hover:bg-surface/40">
+          <span class="min-w-0">
+            <span class="block text-[13px] font-medium text-fg group-hover:text-accent">Training</span>
+            <span class="block text-xs text-fg-faint">
+              {#if data.progression.battlestatGain.value === null}No stat history in this range{:else}
+                +{formatMoneyCompact(data.progression.battlestatGain.value)} battlestats in range
+                {#if data.progression.energyTrained.value !== null}· {formatMoneyCompact(data.progression.energyTrained.value)} energy trained{/if}
+              {/if}
+            </span>
+          </span>
+          <span class="shrink-0 text-[13px] text-fg-faint">estimated · inferred</span>
+        </a>
         <!-- Faction -->
         <a href="/faction" class="group flex items-baseline justify-between gap-4 border-b border-border/60 py-3 transition-colors hover:bg-surface/40">
           <span class="min-w-0">

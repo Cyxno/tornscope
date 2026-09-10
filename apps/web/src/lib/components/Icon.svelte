@@ -29,12 +29,14 @@
     | "alert"
     | "clock"
     | "wallet"
-    | "spark";
+    | "spark"
+    | "progression";
 
   const paths: Record<IconName, string> = {
     overview: "M3 3h7v9H3zM14 3h7v5h-7zM14 12h7v9h-7zM3 16h7v5H3z",
     today: "M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8",
     economy: "M3 3v18h18M7 15l4-4 3 3 5-6",
+    progression: "M3 20h18M5 16l4-5 3 3 6-8",
     drugs: "M10.5 20.5a4.95 4.95 0 0 1-7-7l6-6 7 7zM8 8l8 8M14.5 6.5l3-3a2.12 2.12 0 0 1 3 3l-3 3",
     travel: "M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z",
     crimes: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z",

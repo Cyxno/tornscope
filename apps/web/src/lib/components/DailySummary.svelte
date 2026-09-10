@@ -355,6 +355,22 @@
           </p>
         {/if}
       </div>
+      {#if summary.progression && (summary.progression.battlestatGain.value !== null || summary.progression.energyTrained.value !== null)}
+        <div class="border-t border-border pt-7">
+          <div class="flex items-center justify-between gap-2">
+            <p class="section-label">Training</p>
+            <ConfidenceBadge meta={summary.progression.confidence} tooltip={confidenceTitle(summary.progression.confidence)} />
+          </div>
+          <p class="mt-3 flex flex-wrap items-baseline gap-x-3">
+            <span class="tnum text-3xl font-semibold {summary.progression.battlestatGain.value !== null && summary.progression.battlestatGain.value < 0 ? 'text-negative' : 'text-fg'}">
+              {summary.progression.battlestatGain.value !== null ? `+${formatMoneyCompact(summary.progression.battlestatGain.value)}` : "—"}
+            </span>
+            <span class="text-xs text-fg-faint">
+              battlestats · {formatKpiValue(summary.progression.energyTrained)} energy · {summary.progression.sessions} inferred session{summary.progression.sessions === 1 ? "" : "s"}
+            </span>
+          </p>
+        </div>
+      {/if}
     </div>
 
     <!-- ── What moved today: ledger rows, no panel ── -->
