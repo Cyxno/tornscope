@@ -85,6 +85,35 @@ container only, in memory, for the duration of the test.
   it is covered by the rehearsal script above, run from the server where the
   real dump lives. Run it before every release promotion.
 
+`packages/database/tests/migration-safety.test.ts` adds standing regression
+coverage for both: a destructive-operation guard over every migration added
+after the production baseline (each future destructive change must be
+allow-listed with a written compatibility plan or the suite fails), a
+nullable-or-defaulted check for every added column, an inventory check that
+pending-since-production migrations are listed here, and — when
+`TEST_DATABASE_URL` points at a throwaway database — live `migrate deploy`
+(idempotence) and `prisma validate` runs.
+
+## v0.2 migration inventory (production 0.1.x → 0.2.0)
+
+Production 0.1.x baseline = 20 migrations, latest applied
+`20260909120000_sync_state_last_heartbeat_at` (verified read-only against the
+production `_prisma_migrations` table). The complete v0.2 delta is:
+
+| Migration | Classification | Notes |
+|---|---|---|
+| `20260909130000_sync_state_last_error_kind` | SAFE EXPAND | Adds nullable `SyncState.lastErrorKind` (machine reason of the last failure). No default, no backfill, no data touched — existing rows keep NULL ("unknown reason") until their next run writes a code. Operational-state derivation treats NULL as "no recorded reason". |
+
+There are **no destructive, rename, type-rewrite or NOT NULL-tightening
+operations** in the v0.2 delta. `packages/database/tests/migration-safety.test.ts`
+enforces that classification automatically for every future migration.
+
+Pre-0.2 baseline history (all shipped to production between 2026-09-04 and
+2026-09-09, all applied and verified there): `20260904000000_init` through
+`20260909120000_sync_state_last_heartbeat_at` — see the migrations directory
+for the full list; each was applied to production by its corresponding
+production deploy.
+
 ## Dev data policy
 
 - Dev/staging normally runs demo/synthetic data (`pnpm seed:demo`).
