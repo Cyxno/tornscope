@@ -82,29 +82,46 @@ Acceptance criteria:
 
 ### 4. Onboarding / capabilities improvements — *issue: `feat(v0.2): onboarding & key capability clarity`* · labels: `v0.2` `enhancement` `ux`
 
-Clear Limited vs Full capability explanation, showing exactly which features
-each key enables, better initial sync progress, and a clear warning when
-historical data cannot be recovered.
+**Status: Complete.** Implemented on `develop`, deployed to the dev stack.
+The welcome flow shows a feature-by-feature Limited-vs-Full consequence
+matrix generated from `FEATURE_REQUIREMENTS` before any key is entered, plus
+an honest historical-loss warning ("log-window history not collected before
+it ages out can never be recovered; upgrading later does not guarantee a
+full backfill") with a per-resource "What can be recovered later?"
+disclosure. Validation detects custom capability sets and names them; the
+initial sync reports real per-resource stages with a staged summary
+("N of M resources ready") and progressive readiness into the app; Settings
+shows the capability mode, at-a-glance availability counts and a per-feature
+missing-permission matrix. Key replacement previews capability gain/loss
+before storing anything.
 
 Acceptance criteria:
-- [ ] Capability selection explains per-feature consequences before the user picks.
-- [ ] Settings shows which features the current key enables.
-- [ ] Initial sync shows real progress per resource (ties into 3).
-- [ ] Choosing Limited (or a partial key) warns clearly that the skipped history cannot be recovered later.
+- [x] Capability selection explains per-feature consequences before the user picks.
+- [x] Settings shows which features the current key enables.
+- [x] Initial sync shows real progress per resource (ties into 3).
+- [x] Choosing Limited (or a partial key) warns clearly that the skipped history cannot be recovered later.
 
 ### 5. v0.2 database upgrade safety — *issue: `chore(v0.2): database upgrade safety for 0.2.x`* · labels: `v0.2` `database`
 
-All schema changes land as committed Prisma migrations using
-expand/migrate/contract where appropriate; a production-copy migration
-rehearsal is **required** before release; no destructive migration without
-rollback/compatibility consideration. See
-[DATABASE-MIGRATIONS.md](DATABASE-MIGRATIONS.md).
+**Status: Complete.** The entire production 0.1.x → 0.2.0 schema delta is one
+expand-only migration (`20260909130000_sync_state_last_error_kind` — nullable
+`SyncState.lastErrorKind`, no data touched), verified against a restored copy
+of the real production database on 2026-09-10: migrations apply cleanly, a
+second `migrate deploy` is a no-op, and no table lost rows (only the
+`_prisma_migrations` bookkeeping row is added). Clean install from an empty
+database passes, `prisma validate` passes, and the upgraded copy serves
+DB+Redis "ok" to the API. The rehearsal script now enforces idempotence and
+prints a PASS verdict; `packages/database/tests/migration-safety.test.ts`
+guards the classification (future destructive migrations must be allow-listed
+with a compatibility plan or the suite fails). See
+[DATABASE-MIGRATIONS.md](DATABASE-MIGRATIONS.md) and
+[V0.2-UPGRADE-CHECKLIST.md](V0.2-UPGRADE-CHECKLIST.md).
 
 Acceptance criteria:
-- [ ] Every 0.2 schema change has a committed migration; no manual schema edits.
-- [ ] `scripts/rehearse-prod-upgrade.sh --from-prod` passes on a recent production backup.
-- [ ] Upgrade from the current 0.1.x production DB and clean install both succeed.
-- [ ] No migration drops/renames data without a documented compatibility path.
+- [x] Every 0.2 schema change has a committed migration; no manual schema edits.
+- [x] `scripts/rehearse-prod-upgrade.sh --from-prod` passes on a recent production backup.
+- [x] Upgrade from the current 0.1.x production DB and clean install both succeed.
+- [x] No migration drops/renames data without a documented compatibility path.
 
 ---
 
