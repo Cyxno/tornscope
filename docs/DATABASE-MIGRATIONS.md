@@ -103,6 +103,7 @@ production `_prisma_migrations` table). The complete v0.2 delta is:
 | Migration | Classification | Notes |
 |---|---|---|
 | `20260909130000_sync_state_last_error_kind` | SAFE EXPAND | Adds nullable `SyncState.lastErrorKind` (machine reason of the last failure). No default, no backfill, no data touched — existing rows keep NULL ("unknown reason") until their next run writes a code. Operational-state derivation treats NULL as "no recorded reason". |
+| `20260910200000_bars_snapshots` | SAFE EXPAND | Adds the new `BarsSnapshot` table (energy/happy bar history — Torn exposes bars live-only, so this history must be captured going forward). New table only: no existing table, column, or row is touched; fully additive. See docs/PROGRESSION-ENERGY.md. |
 
 There are **no destructive, rename, type-rewrite or NOT NULL-tightening
 operations** in the v0.2 delta. `packages/database/tests/migration-safety.test.ts`

@@ -194,6 +194,32 @@ across 12 routes × 16 widths.
 Infrastructure/sync health only — aggregate operational metrics; no ability
 to browse private user analytics.
 
+### 12. Progression & Energy Intelligence — *issue: `feat(v0.2): progression & energy intelligence`* · labels: `v0.2` `analytics`
+
+**Status: Complete (foundation).** Implemented on `develop`, deployed to the
+dev stack — see [PROGRESSION-ENERGY.md](PROGRESSION-ENERGY.md).
+
+Turns the `/progression` placeholder into a first-class analytics area:
+battlestat progression from the hourly personal-stats snapshots, energy
+flow from a new 5-minute bars snapshot resource, conservatively inferred
+training sessions, gym gain efficiency against personal baselines, and
+transparent happy-jump inference with full evidence disclosure.
+
+Scope:
+- battlestat progression (exact hourly observations, derived deltas, milestones)
+- energy attribution (exact refill gains, derived natural regeneration, estimated Xanax, unattributed spend first-class)
+- training-session analytics (inferred; energy declines + stat gains, competing evidence excluded)
+- gym gain efficiency (gain per energy only where both sides are supportable)
+- happy-jump analysis (deterministic signal scoring; likely/possible, never "confirmed")
+
+- [x] Source capability audit preceded implementation; no unsupported metric presented as exact
+- [x] Energy ledger with cap-aware regeneration and surfaced residuals
+- [x] Training sessions carry inference strength, separate from data confidence
+- [x] Happy-jump evidence and missing-evidence lists exposed in the UI
+- [x] Capability matrix + Settings consequences updated; Limited keys degrade per section
+- [x] Daily Summary training strip + single Overview row; demo data fully coherent
+- [x] Full test matrix (analytics + DB-backed + isolation + timezone) green
+
 ---
 
 ## Release blockers — v0.2.0 does NOT ship unless
