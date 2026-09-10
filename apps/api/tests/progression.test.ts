@@ -123,7 +123,10 @@ suite("progression & energy intelligence", () => {
     await caughtUpStates(p.id);
     await seedBars(p.id);
     await seedStats(p.id);
-    const s = await getProgression(p.id, { preset: "custom", from: nowSec - 2 * 3600, to: nowSec });
+    // Window anchored to the stat grid so it always contains a burst and
+    // both delta anchors (the fixtures span hourStart-3h .. hourStart).
+    const hourStart = Math.floor(nowSec / 3600) * 3600;
+    const s = await getProgression(p.id, { preset: "custom", from: hourStart - 2 * 3600, to: nowSec });
     expect(s.summary.totalBattlestats.value).toBeGreaterThan(0);
     expect(s.summary.totalDelta.value).toBeGreaterThan(0);
     expect(s.battlestats.series.length).toBeGreaterThanOrEqual(2);
