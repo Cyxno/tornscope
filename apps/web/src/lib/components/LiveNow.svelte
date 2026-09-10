@@ -5,7 +5,7 @@
   import { onMount } from "svelte";
 
   /**
-   * Compact "Right now" live strip for Overview. Consumes the SAME
+   * "Right now" as an inline sentence, not boxes. Consumes the SAME
    * /api/today payload as the Today page and derives countdowns with the
    * SAME shared helpers (cooldownDisplay / barFullDisplay) — identical
    * payload + server clock = identical state on both pages. The "Ready ·
@@ -125,8 +125,8 @@
 
     if (t.bank.state === "active" && t.bank.maturesAt !== null) {
       const left = t.bank.maturesAt - nowSec;
-      if (left <= 0) out.push({ key: "bank", label: "Bank", value: "Matured — collect", tone: "warning", live: false, href: "/economy" });
-      else if (left < 7 * 86_400) out.push({ key: "bank", label: "Bank", value: `matures in ${formatCountdownCompact(left)}`, tone: "warning", live: true, href: "/economy" });
+      if (left <= 0) out.push({ key: "bank", label: "Bank", value: "Matured — collect", tone: "warning", live: false, href: "/money" });
+      else if (left < 7 * 86_400) out.push({ key: "bank", label: "Bank", value: `matures in ${formatCountdownCompact(left)}`, tone: "warning", live: true, href: "/money" });
     }
     return out;
   });
@@ -143,63 +143,59 @@
     }
     return { key: "oc", label: `OC · ${oc.name}${oc.tier !== null ? ` · T${oc.tier}` : ""}`, value, tone: "accent", live: true, href: "/faction" };
   });
+
+  const toneTick: Record<string, string> = {
+    neutral: "bg-fg-faint",
+    negative: "bg-negative",
+    accent: "bg-accent",
+    warning: "bg-warning",
+    positive: "bg-positive",
+  };
 </script>
 
 {#if today}
-  <section aria-label="Right now" class="space-y-3">
-    <div class="flex items-center justify-between">
-      <h2 class="section-label">Right now</h2>
-      <button class="text-link text-xs font-medium" onclick={onOpenToday}>
+  <!-- The live state as one inline sentence: colored ticks, no boxes.
+       Values that act link out to Torn; the strip reads left to right. -->
+  <section aria-label="Right now">
+    <div class="flex flex-wrap items-center gap-x-6 gap-y-2 text-[13px]">
+      {#if energyChip}
+        <span class="inline-flex items-center gap-2">
+          <span class="h-1.5 w-1.5 rounded-full {toneTick[energyChip.tone]}" aria-hidden="true"></span>
+          <a href="https://www.torn.com/gym.php" target="_blank" rel="noopener noreferrer" class="font-medium text-fg transition-colors hover:text-accent" title="Open the gym in Torn">Energy</a>
+          <span class="tnum text-fg">{energyChip.value}</span>
+        </span>
+      {/if}
+      {#if nerveChip}
+        <span class="inline-flex items-center gap-2">
+          <span class="h-1.5 w-1.5 rounded-full {toneTick[nerveChip.tone]}" aria-hidden="true"></span>
+          <a href="https://www.torn.com/crimes.php" target="_blank" rel="noopener noreferrer" class="font-medium text-fg transition-colors hover:text-accent" title="Open crimes in Torn">Nerve</a>
+          <span class="tnum text-fg">{nerveChip.value}</span>
+        </span>
+      {/if}
+      {#each cooldownChips as chip (chip.key)}
+        <span class="inline-flex items-center gap-2">
+          <span class="h-1.5 w-1.5 rounded-full {chip.tone === 'positive' ? 'bg-positive' : 'bg-fg-faint'}" aria-hidden="true"></span>
+          <a href={chip.href} target="_blank" rel="noopener noreferrer" class="font-medium text-fg transition-colors hover:text-accent" title="Open items in Torn">{chip.label}</a>
+          <span class="tnum {chip.tone === 'positive' ? 'text-positive' : 'text-fg'}">{chip.value}</span>
+        </span>
+      {/each}
+      {#if ocChip}
+        <span class="inline-flex items-center gap-2">
+          <span class="h-1.5 w-1.5 rounded-full bg-accent" aria-hidden="true"></span>
+          <a href={ocChip.href} class="font-medium text-accent transition-opacity hover:opacity-80">{ocChip.label}</a>
+          <span class="tnum text-fg-muted">{ocChip.value}</span>
+        </span>
+      {/if}
+      {#each attentionChips as chip (chip.key)}
+        <span class="inline-flex items-center gap-2">
+          <span class="h-1.5 w-1.5 rounded-full {toneTick[chip.tone]}" aria-hidden="true"></span>
+          <a href={chip.href ?? "/today"} class="font-medium {chip.tone === 'negative' ? 'text-negative' : chip.tone === 'accent' ? 'text-accent' : chip.tone === 'warning' ? 'text-warning' : 'text-fg'} transition-opacity hover:opacity-80">{chip.label}</a>
+          <span class="tnum text-fg-muted">{chip.value}</span>
+        </span>
+      {/each}
+      <button class="ml-auto text-xs font-medium text-accent transition-opacity hover:opacity-80" onclick={onOpenToday}>
         Today →
       </button>
     </div>
-
-    <!-- Bars (energy/nerve) + cooldowns: the daily-use glanceables -->
-    <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5">
-      {#if energyChip}
-        <a href="https://www.torn.com/gym.php" target="_blank" rel="noopener noreferrer" class="rounded-tile border border-border bg-surface px-4 py-3 transition-colors hover:border-accent/50" title="Open in Torn">
-          <p class="text-[10px] font-medium uppercase tracking-[0.13em] text-fg-faint">{energyChip.label}</p>
-          <p class="tnum mt-1 text-sm font-semibold text-fg">{energyChip.value}</p>
-          <div class="mt-1.5 h-1 overflow-hidden rounded-full bg-surface-2">
-            <div class="h-full rounded-full bg-accent" style="width: {today.bars.energy?.percent ?? 0}%"></div>
-          </div>
-        </a>
-      {/if}
-      {#if nerveChip}
-        <a href="https://www.torn.com/crimes.php" target="_blank" rel="noopener noreferrer" class="rounded-tile border border-border bg-surface px-4 py-3 transition-colors hover:border-warning/60" title="Open in Torn">
-          <p class="text-[10px] font-medium uppercase tracking-[0.13em] text-fg-faint">{nerveChip.label}</p>
-          <p class="tnum mt-1 text-sm font-semibold text-fg">{nerveChip.value}</p>
-          <div class="mt-1.5 h-1 overflow-hidden rounded-full bg-surface-2">
-            <div class="h-full rounded-full bg-warning" style="width: {today.bars.nerve?.percent ?? 0}%"></div>
-          </div>
-        </a>
-      {/if}
-      {#each cooldownChips as chip (chip.key)}
-        <a href={chip.href} target="_blank" rel="noopener noreferrer" class="cursor-pointer rounded-tile border bg-surface px-4 py-3 transition-colors {chip.tone === 'positive' ? 'border-positive/30 hover:border-positive/60' : 'border-border hover:border-accent/50'}" title="Open in Torn">
-          <p class="text-[10px] font-medium uppercase tracking-[0.13em] text-fg-faint">{chip.label}</p>
-          <p class="tnum mt-1 text-sm font-semibold {chip.tone === 'positive' ? 'text-positive' : 'text-fg'}">
-            {chip.value}{#if chip.live}<span class="ml-1 text-[10px] font-normal text-fg-faint">left</span>{/if}
-          </p>
-        </a>
-      {/each}
-    </div>
-
-    <!-- Conditional attention states: only when relevant -->
-    {#if attentionChips.length > 0 || ocChip}
-      <div class="flex flex-wrap gap-2">
-        {#if ocChip}
-          <a href={ocChip.href} class="chip chip-accent !h-auto !py-1.5 !text-xs">
-            <span class="font-semibold">{ocChip.label}</span>
-            <span class="tnum text-fg-muted">{ocChip.value}</span>
-          </a>
-        {/if}
-        {#each attentionChips as chip (chip.key)}
-          <a href={chip.href ?? "/today"} class="chip !h-auto !py-1.5 !text-xs {chip.tone === 'negative' ? 'chip-negative' : chip.tone === 'accent' ? 'chip-accent' : chip.tone === 'warning' ? 'chip-warning' : ''}">
-            <span class="font-semibold">{chip.label}</span>
-            <span class="tnum {chip.tone === 'neutral' ? 'text-fg-muted' : ''}">{chip.value}</span>
-          </a>
-        {/each}
-      </div>
-    {/if}
   </section>
 {/if}

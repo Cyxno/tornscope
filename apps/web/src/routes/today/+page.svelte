@@ -12,8 +12,6 @@
   import { me } from "$lib/state.svelte";
   import { formatDateTimeInZone, greetingForHour } from "$lib/reltime";
   import { cooldownDisplay } from "$lib/live";
-  import PageHeader from "$lib/components/PageHeader.svelte";
-  import Panel from "$lib/components/Panel.svelte";
   import StateMessage from "$lib/components/StateMessage.svelte";
   import Countdown from "$lib/components/Countdown.svelte";
   import Icon from "$lib/components/Icon.svelte";
@@ -200,24 +198,23 @@
 <svelte:head><title>Today · TornScope</title></svelte:head>
 
 <div class="space-y-8 lg:space-y-10">
-  <PageHeader eyebrow="Today · live status" title="{greeting}{data?.player.name ? `, ${data.player.name}` : ""}." description={statusLine || "Everything that matters right now."}>
-    {#snippet actions()}
-      <div class="flex items-center gap-3">
-        {#if data?.demo}
-          <span class="chip chip-warning !py-1 uppercase tracking-wide">
-            <span class="h-1.5 w-1.5 rounded-full bg-warning"></span>
-            Demo — simulated
-          </span>
-        {/if}
-        {#if data}
-          <span class="hidden text-xs text-fg-faint sm:inline">Updated {updatedAgo}</span>
-        {/if}
-        <button class="btn btn-sm" onclick={() => void load()} disabled={refreshing}>
-          {refreshing ? "Refreshing…" : "Refresh"}
-        </button>
-      </div>
-    {/snippet}
-  </PageHeader>
+  <!-- The date masthead below (in Daily Summary) is this page's headline;
+       this row only carries the live context quietly. -->
+  <header class="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
+    <p class="flex min-w-0 flex-wrap items-center gap-x-2 text-[13px] text-fg-muted">
+      <span class="section-label mr-1">Live now</span>
+      <span class="font-medium text-fg">{greeting}{data ? (data.player.name ? `, ${data.player.name}` : "") : ""}.</span>
+      {#if statusLine}<span>{statusLine}</span>{/if}
+    </p>
+    <div class="flex items-center gap-3">
+      {#if data}
+        <span class="hidden text-xs text-fg-faint sm:inline">Updated {updatedAgo}</span>
+      {/if}
+      <button class="btn btn-sm" onclick={() => void load()} disabled={refreshing}>
+        {refreshing ? "Refreshing…" : "Refresh"}
+      </button>
+    </div>
+  </header>
 
   {#if loading && !data}
     <StateMessage state="loading" />
@@ -261,13 +258,13 @@
     <!-- Daily Summary: what actually happened today (or any picked day) -->
     <DailySummary />
 
-    <!-- LIVE STATE: the four bars -->
-    <section aria-label="Live bars" class="rounded-card border border-border bg-surface px-5 py-2 shadow-panel sm:px-7">
-      <p class="section-label pt-4">Live state</p>
-      <div>
+    <!-- LIVE STATE: the four bars as open rows -->
+    <section aria-label="Live bars" class="section-rule">
+      <p class="section-label">Live state</p>
+      <div class="mt-1">
         {#each bars as bar, i (i)}
           {@const barLink = bar ? BAR_LINKS[bar.key] : undefined}
-          <div class="flex flex-col gap-2 border-b border-border/60 py-4 last:border-0 md:flex-row md:items-center md:gap-6">
+          <div class="flex flex-col gap-2 border-b border-border/60 py-3.5 last:border-0 md:flex-row md:items-center md:gap-6">
             {#if barLink}
               <a href={barLink} target="_blank" rel="noopener noreferrer" class="flex w-20 shrink-0 items-center gap-1 text-[13px] font-medium text-fg transition-colors hover:text-accent">
                 {bar?.label ?? "—"} <Icon name="external" size={11} class="text-fg-faint" />
@@ -297,16 +294,16 @@
       </div>
     </section>
 
-    <!-- Travel + cooldowns -->
-    <section class="grid grid-cols-1 gap-6 lg:grid-cols-5">
-      <div class="lg:col-span-3">
-        <Panel title="Travel" caption="Where you are, and what is in the air" class="h-full">
-          {#snippet actions()}
-            <a class="flex items-center gap-1 pr-2 text-xs text-fg-faint transition-colors hover:text-accent" href={TORN_TRAVEL_LINK} target="_blank" rel="noopener noreferrer">Torn <Icon name="external" size={11} /></a>
-          {/snippet}
-          <div class="space-y-3">
-            <p class="font-display text-3xl font-medium text-fg">{travelHeadline}</p>
-            <p class="text-sm text-fg-muted">{travelSub}</p>
+    <!-- Travel + cooldowns: two open columns separated by a hairline -->
+    <section class="grid grid-cols-1 gap-x-10 gap-y-7 border-t border-border pt-7 lg:grid-cols-5 lg:divide-x lg:divide-border">
+      <div class="min-w-0 lg:col-span-3 lg:pr-10">
+        <div class="flex items-center justify-between gap-2">
+          <p class="section-label">Travel</p>
+          <a class="flex items-center gap-1 text-xs text-fg-faint transition-colors hover:text-accent" href={TORN_TRAVEL_LINK} target="_blank" rel="noopener noreferrer">Torn <Icon name="external" size={11} /></a>
+        </div>
+        <div class="mt-3 space-y-3">
+          <p class="font-display text-3xl font-medium text-fg">{travelHeadline}</p>
+          <p class="text-sm text-fg-muted">{travelSub}</p>
             {#if travel?.state === "traveling" && travel.landsAt !== null}
               <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 pt-1">
                 <span class="text-[13px] font-medium text-fg-muted">
@@ -334,12 +331,14 @@
               <p class="text-[13px] text-warning">{travel.unavailableReason ?? "Live travel data is unavailable."}</p>
             {/if}
           </div>
-        </Panel>
       </div>
 
-      <div class="lg:col-span-2">
-        <Panel title="Cooldowns" caption="Ready when the clock hits zero — tap a row to open Torn" flush class="h-full">
-          <div class="px-6 pb-6 pt-3">
+      <div class="min-w-0 lg:pl-10">
+        <div class="flex items-baseline justify-between gap-2">
+          <p class="section-label">Cooldowns</p>
+          <span class="text-[11px] text-fg-faint">tap a row to open Torn</span>
+        </div>
+        <div class="mt-1">
             {#each cooldowns as cd, i (i)}
               {@const state = cooldownState(cd)}
               <a
@@ -365,17 +364,17 @@
                 {/if}
               </a>
             {/each}
-          </div>
-        </Panel>
+        </div>
       </div>
     </section>
 
-    <!-- Longer-term: bank + education -->
-    <section class="grid gap-6 lg:grid-cols-2">
-      <Panel title="Bank investment" caption="City bank position" class="h-full">
-        {#snippet actions()}
-          <a class="flex items-center gap-1 pr-2 text-xs text-fg-faint transition-colors hover:text-accent" href={TORN_URLS.bank} target="_blank" rel="noopener noreferrer">Torn <Icon name="external" size={11} /></a>
-        {/snippet}
+    <!-- Longer-term: bank + education as open columns -->
+    <section class="grid gap-x-10 gap-y-7 border-t border-border pt-7 lg:grid-cols-2 lg:divide-x lg:divide-border">
+      <div class="min-w-0 lg:pr-10">
+        <div class="flex items-center justify-between gap-2">
+          <p class="section-label">Bank investment</p>
+          <a class="flex items-center gap-1 text-xs text-fg-faint transition-colors hover:text-accent" href={TORN_URLS.bank} target="_blank" rel="noopener noreferrer">Torn <Icon name="external" size={11} /></a>
+        </div>
         {#if bank?.state === "active" || bank?.state === "mature"}
           <div class="space-y-2">
             <div>
@@ -415,18 +414,19 @@
             </div>
           </div>
         {:else if bank?.state === "none"}
-          <p class="text-sm text-fg-muted">No active investment.</p>
+          <p class="mt-3 text-sm text-fg-muted">No active investment.</p>
         {:else if bank}
-          <p class="text-sm text-warning">{bank.requiredAccess ? `This requires ${bank.requiredAccess} access.` : (bank.unavailableReason ?? "Bank data unavailable.")}</p>
+          <p class="mt-3 text-sm text-warning">{bank.requiredAccess ? `This requires ${bank.requiredAccess} access.` : (bank.unavailableReason ?? "Bank data unavailable.")}</p>
         {:else}
-          <p class="text-sm text-fg-muted">—</p>
+          <p class="mt-3 text-sm text-fg-muted">—</p>
         {/if}
-      </Panel>
+      </div>
 
-      <Panel title="Education" caption="Current course" class="h-full">
-        {#snippet actions()}
-          <a class="flex items-center gap-1 pr-2 text-xs text-fg-faint transition-colors hover:text-accent" href={TORN_URLS.education} target="_blank" rel="noopener noreferrer">Torn <Icon name="external" size={11} /></a>
-        {/snippet}
+      <div class="min-w-0 lg:pl-10">
+        <div class="flex items-center justify-between gap-2">
+          <p class="section-label">Education</p>
+          <a class="flex items-center gap-1 text-xs text-fg-faint transition-colors hover:text-accent" href={TORN_URLS.education} target="_blank" rel="noopener noreferrer">Torn <Icon name="external" size={11} /></a>
+        </div>
         {#if education?.state === "active" || education?.state === "complete"}
           <div class="space-y-2">
             <p class="font-display text-2xl font-medium text-fg">{education.courseName ?? "Course in progress"}</p>
@@ -444,36 +444,38 @@
             {/if}
           </div>
         {:else if education?.state === "none"}
-          <p class="text-sm text-fg-muted">No active course.</p>
+          <p class="mt-3 text-sm text-fg-muted">No active course.</p>
         {:else if education}
-          <p class="text-sm text-warning">{education.requiredAccess ? `This requires ${education.requiredAccess} access.` : (education.unavailableReason ?? "Education data unavailable.")}</p>
+          <p class="mt-3 text-sm text-warning">{education.requiredAccess ? `This requires ${education.requiredAccess} access.` : (education.unavailableReason ?? "Education data unavailable.")}</p>
         {:else}
-          <p class="text-sm text-fg-muted">—</p>
+          <p class="mt-3 text-sm text-fg-muted">—</p>
         {/if}
-      </Panel>
+      </div>
     </section>
 
     <!-- Upcoming: one merged chronological list -->
-    <Panel title="Upcoming" caption="Everything on your account clock, soonest first" flush>
-      <div class="px-6 pb-6 pt-3">
-        {#if upcoming.length === 0}
-          <p class="py-6 text-center text-[13px] text-fg-faint">Nothing scheduled — everything is ready.</p>
-        {:else}
-          <div>
-            {#each upcoming as event (event.id)}
-              <div class="flex items-center gap-3 border-b border-border/60 py-3 last:border-0">
-                <span class={`h-1.5 w-1.5 shrink-0 rounded-full ${severityDot[event.severity]}`}></span>
-                <span class="min-w-0 flex-1 truncate text-[13.5px] text-fg">{event.title}</span>
-                <span class="tnum hidden shrink-0 text-xs text-fg-faint sm:inline">{formatDateTimeInZone(event.at, timeZone)}</span>
-                <span class="tnum w-20 shrink-0 text-right text-[13px] font-semibold text-fg">
-                  <Countdown seconds={remainingSeconds(serverNowMs, event.at)} style="compact" />
-                </span>
-              </div>
-            {/each}
-          </div>
-        {/if}
+    <section class="section-rule" aria-label="Upcoming">
+      <div class="flex items-baseline justify-between gap-2">
+        <p class="section-label">Upcoming</p>
+        <span class="text-[11px] text-fg-faint">everything on your account clock, soonest first</span>
       </div>
-    </Panel>
+      {#if upcoming.length === 0}
+        <p class="mt-3 text-[13px] text-fg-faint">Nothing scheduled — everything is ready.</p>
+      {:else}
+        <div class="mt-1">
+          {#each upcoming as event (event.id)}
+            <div class="flex items-center gap-3 border-b border-border/60 py-3 last:border-0">
+              <span class={`h-1.5 w-1.5 shrink-0 rounded-full ${severityDot[event.severity]}`}></span>
+              <span class="min-w-0 flex-1 truncate text-[13.5px] text-fg">{event.title}</span>
+              <span class="tnum hidden shrink-0 text-xs text-fg-faint sm:inline">{formatDateTimeInZone(event.at, timeZone)}</span>
+              <span class="tnum w-20 shrink-0 text-right text-[13px] font-semibold text-fg">
+                <Countdown seconds={remainingSeconds(serverNowMs, event.at)} style="compact" />
+              </span>
+            </div>
+          {/each}
+        </div>
+      {/if}
+    </section>
 
     <p class="text-center text-[11px] text-fg-faint">
       Countdowns run in your browser from Torn's absolute timestamps · live state refreshes every {Math.round(POLL_MS / 1000)}s while the tab is open.

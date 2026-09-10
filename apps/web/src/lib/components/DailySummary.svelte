@@ -6,14 +6,16 @@
   import { confidenceTitle } from "$lib/confidence";
   import { formatRelative } from "$lib/reltime";
   import ConfidenceBadge from "./ConfidenceBadge.svelte";
-  import Panel from "./Panel.svelte";
 
   /**
    * Daily Summary (v0.2): one trustworthy recap of a calendar day in the
-   * user's timezone, mounted on the Today page. The selected date lives in
-   * the URL (?date=YYYY-MM-DD) so days can be shared and revisited; empty
-   * selection = today. Every section renders through the shared confidence
-   * model — unavailable is "—", a confirmed zero is $0, estimates are labeled.
+   * user's timezone, mounted on the Today page — composed like a dated
+   * report, not a card grid: serif date masthead, open hero delta, "why it
+   * moved" as diverging bars, the three lenses as hairline-separated
+   * columns, highlights as a ledger. The selected date lives in the URL
+   * (?date=YYYY-MM-DD) so days can be shared and revisited; empty selection
+   * = today. Every section renders through the shared confidence model —
+   * unavailable is "—", a confirmed zero is $0, estimates are labeled.
    */
 
   let date = $state<string>("");
@@ -91,7 +93,20 @@
     return `${weekday} ${formatDate(summary?.range.from ?? Math.floor(d.getTime() / 1000))}`;
   });
 
+  /** Masthead split: the weekday is the display word; the date is metadata. */
+  const mastheadWeekday = $derived.by(() => {
+    const key = summary?.date ?? (date || todayKey);
+    if (key === todayKey) return "Today";
+    const d = new Date(`${key}T00:00:00Z`);
+    return d.toLocaleDateString("en-GB", { weekday: "long", timeZone: "UTC" });
+  });
+
   const displayDate = $derived(summary ? formatDate(summary.range.from) : "");
+
+  /** Diverging driver bars scale to the day's largest absolute movement. */
+  const driverMax = $derived(
+    summary ? Math.max(1, ...(summary.netWorth.drivers ?? []).map((d) => Math.abs(d.magnitude ?? 0))) : 1
+  );
 
   function highlightCopy(h: DailyHighlight): { text: string; hint?: string } {
     const amount = h.amount !== null ? formatSignedMoneyCompact(h.amount) : null;
@@ -130,21 +145,23 @@
   }
 </script>
 
-<section aria-label="Daily summary" class="space-y-5">
-  <div class="flex flex-wrap items-center justify-between gap-3">
-    <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-      <h2 class="font-display text-[22px] font-medium text-fg">{dayLabel}</h2>
-      <span class="text-xs text-fg-faint">{displayDate}{summary?.ongoingDay ? " · day in progress" : ""}</span>
-      {#if summary}
-        <ConfidenceBadge meta={summary.overallConfidence} tooltip={confidenceTitle(summary.overallConfidence, summary.overallConfidence.lastRefreshedAt ? `last refreshed ${formatRelative(summary.overallConfidence.lastRefreshedAt)}` : undefined)} />
-      {/if}
+<section aria-label="Daily summary" class="space-y-10">
+  <!-- ── Masthead: the date IS the headline ── -->
+  <div class="flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
+    <div class="min-w-0">
+      <h2 class="font-display text-[30px] font-medium leading-[1.05] text-fg sm:text-[36px]">{mastheadWeekday}</h2>
+      <p class="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[13px] text-fg-muted">
+        <span class="tnum">{dayLabel === "Today" ? displayDate : displayDate}</span>
+        {#if summary?.ongoingDay}
+          <span class="chip chip-warning !py-0 !text-[9px]">day in progress</span>
+        {/if}
+        {#if summary}
+          <ConfidenceBadge meta={summary.overallConfidence} tooltip={confidenceTitle(summary.overallConfidence, summary.overallConfidence.lastRefreshedAt ? `last refreshed ${formatRelative(summary.overallConfidence.lastRefreshedAt)}` : undefined)} />
+        {/if}
+      </p>
     </div>
     <div class="flex items-center gap-1.5">
-      <button
-        class="btn btn-sm !px-2.5"
-        onclick={() => shiftDay(-1)}
-        aria-label="Previous day"
-      >←</button>
+      <button class="btn btn-sm !px-2.5" onclick={() => shiftDay(-1)} aria-label="Previous day">←</button>
       <input
         type="date"
         class="input !h-[30px] w-36 [color-scheme:dark]"
@@ -156,30 +173,20 @@
         }}
         aria-label="Pick a day"
       />
-      <button
-        class="btn btn-sm !px-2.5"
-        onclick={() => shiftDay(1)}
-        disabled={!date || date >= todayKey}
-        aria-label="Next day"
-      >→</button>
+      <button class="btn btn-sm !px-2.5" onclick={() => shiftDay(1)} disabled={!date || date >= todayKey} aria-label="Next day">→</button>
       {#if date && date !== todayKey}
-        <button
-          class="btn btn-sm"
-          onclick={() => setDay("")}
-        >Today</button>
+        <button class="btn btn-sm" onclick={() => setDay("")}>Today</button>
       {/if}
     </div>
   </div>
 
   {#if loading && !summary}
     <div class="space-y-4" data-testid="skeleton" aria-busy="true">
-      <div class="rounded-card border border-border bg-surface p-6">
-        <div class="skeleton h-3 w-40"></div>
-        <div class="skeleton mt-4 h-10 w-52"></div>
-      </div>
-      <div class="grid grid-cols-1 gap-px overflow-hidden rounded-card border border-border bg-border md:grid-cols-3">
+      <div class="skeleton h-3 w-40"></div>
+      <div class="skeleton h-12 w-64"></div>
+      <div class="grid grid-cols-1 md:grid-cols-3">
         {#each Array(3) as _, i (i)}
-          <div class="bg-surface p-5"><div class="skeleton h-3 w-20"></div><div class="skeleton mt-3 h-5 w-24"></div><div class="skeleton mt-2 h-5 w-16"></div></div>
+          <div class="p-5 max-md:max-w-sm"><div class="skeleton h-3 w-20"></div><div class="skeleton mt-3 h-5 w-24"></div><div class="skeleton mt-2 h-5 w-16"></div></div>
         {/each}
       </div>
     </div>
@@ -189,41 +196,57 @@
       <button class="ml-3 underline" onclick={() => (reloadToken += 1)}>Retry</button>
     </div>
   {:else if summary}
-    <!-- Hero: the official snapshot delta — a wealth movement, never profit -->
-    <div class="rounded-card border border-border bg-surface px-6 py-6 shadow-panel sm:px-8">
+    <!-- ── Hero: the official snapshot delta — a wealth movement, never profit ── -->
+    <div class="section-rule">
       <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
         <p class="section-label">{netWorthWord(summary.netWorth.coverage)}</p>
         <span class="text-[10px] font-medium uppercase tracking-[0.12em] text-fg-faint">exact · official Torn snapshots</span>
         <ConfidenceBadge meta={summary.netWorth.confidence} tooltip={confidenceTitle(summary.netWorth.confidence)} />
       </div>
-      <p class="mt-2 flex flex-wrap items-baseline gap-x-3">
-        <span class="tnum font-display text-4xl font-semibold {summary.netWorth.delta === null ? 'text-fg-faint' : summary.netWorth.delta >= 0 ? 'text-positive' : 'text-negative'}">
-          {summary.netWorth.delta === null ? "Insufficient history" : formatSignedMoneyCompact(summary.netWorth.delta)}
-        </span>
-        {#if summary.netWorth.changePct !== null}
-          <span class="tnum text-sm text-fg-muted">{summary.netWorth.changePct >= 0 ? "+" : ""}{summary.netWorth.changePct.toFixed(2)}%</span>
+      <p class="hero-num tnum mt-3 {summary.netWorth.delta === null ? 'text-fg-faint' : summary.netWorth.delta >= 0 ? 'text-positive' : 'text-negative'}">
+        {summary.netWorth.delta === null ? "Insufficient history" : formatSignedMoneyCompact(summary.netWorth.delta)}
+        {#if summary.netWorth.changePct !== null && summary.netWorth.delta !== null}
+          <span class="ml-2 align-baseline text-[0.32em] font-medium text-fg-muted">{summary.netWorth.changePct >= 0 ? "+" : ""}{summary.netWorth.changePct.toFixed(2)}%</span>
         {/if}
       </p>
       {#if summary.netWorth.startAt !== null || summary.netWorth.endAt !== null}
-        <p class="mt-1 text-xs text-fg-faint">
+        <p class="mt-2 text-xs text-fg-faint">
           snapshots {summary.netWorth.startAt !== null ? formatDate(summary.netWorth.startAt) : "—"} → {summary.netWorth.endAt !== null ? formatDate(summary.netWorth.endAt) : "—"}
           {#if summary.netWorth.coverage === "partial"} · covers the tracked portion only{/if}
           · includes price moves and asset movement, not a profit figure
         </p>
       {/if}
-      {#if summary.netWorth.drivers && summary.netWorth.drivers.length > 0}
-        <div class="mt-4 space-y-1.5 border-t border-border pt-3">
-          <p class="section-label">Likely contributors — recorded movements, not causes</p>
-          <ul class="space-y-1 text-[13px]">
-            {#each summary.netWorth.drivers as driver (driver.kind + driver.label)}
-              <li class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5">
-                <span class="text-fg-muted">
+
+      <!-- Why it moved: diverging signed bars on the open canvas -->
+      {#if (summary.netWorth.drivers ?? []).length > 0}
+        <div class="mt-7">
+          <p class="section-label">Why it moved — recorded movements, not causes</p>
+          <ul class="mt-3 space-y-2.5">
+            {#each summary.netWorth.drivers ?? [] as driver (driver.kind + driver.label)}
+              {@const magnitude = driver.magnitude}
+              <li class="grid grid-cols-[1fr_auto] items-baseline gap-x-4 gap-y-1 sm:grid-cols-[minmax(0,1fr)_180px_auto]">
+                <span class="min-w-0 truncate text-[13.5px] {driver.certainty === 'unexplained' ? 'text-warning' : 'text-fg-muted'}">
                   {driver.label}
                   {#if driver.certainty === "estimated"}<span class="ml-1 text-[10px] uppercase tracking-wide text-fg-faint">est.</span>{/if}
                   {#if driver.certainty === "unexplained"}<span class="ml-1 text-[10px] uppercase tracking-wide text-warning">unexplained</span>{/if}
                 </span>
-                <span class="tnum {driver.magnitude === null ? 'text-fg-faint' : driver.magnitude >= 0 ? 'text-positive' : 'text-negative'}">
-                  {driver.magnitude === null ? "—" : formatSignedMoneyCompact(driver.magnitude)}
+                <span class="hidden items-center sm:flex" aria-hidden="true">
+                  <span class="flex h-4 w-full items-center">
+                    <span class="flex w-1/2 justify-end">
+                      {#if magnitude !== null && magnitude < 0}
+                        <span class="delta-bar bg-negative/70" style="width: {Math.max(4, (Math.abs(magnitude) / driverMax) * 100)}%"></span>
+                      {/if}
+                    </span>
+                    <span class="h-3 w-px bg-border-strong"></span>
+                    <span class="flex w-1/2">
+                      {#if magnitude !== null && magnitude >= 0}
+                        <span class="delta-bar bg-positive/70" style="width: {Math.max(4, (magnitude / driverMax) * 100)}%"></span>
+                      {/if}
+                    </span>
+                  </span>
+                </span>
+                <span class="tnum text-right text-[13.5px] font-medium {magnitude === null ? 'text-fg-faint' : magnitude >= 0 ? 'text-positive' : 'text-negative'}">
+                  {magnitude === null ? "—" : formatSignedMoneyCompact(magnitude)}
                 </span>
               </li>
             {/each}
@@ -232,17 +255,17 @@
       {/if}
     </div>
 
-    <!-- Three lenses: cash movement | economic effect | conversions -->
-    <div class="grid grid-cols-1 gap-px overflow-hidden rounded-card border border-border bg-border shadow-panel md:grid-cols-3">
-      <div class="bg-surface p-5">
+    <!-- ── Three lenses: hairline-separated columns on open canvas ── -->
+    <div class="grid grid-cols-1 gap-x-10 gap-y-7 md:grid-cols-3 md:divide-x md:divide-border">
+      <div class="md:pr-8">
         <div class="flex items-center justify-between gap-2">
-          <p class="section-label !tracking-[0.1em]">Cash flow</p>
+          <p class="section-label">Cash flow</p>
           <ConfidenceBadge meta={summary.cashFlow.confidence} tooltip={confidenceTitle(summary.cashFlow.confidence)} />
         </div>
         <div class="mt-3 space-y-1.5 text-sm">
           <p class="flex items-baseline justify-between gap-3"><span class="text-fg-muted">Received</span><span class="tnum font-medium text-positive">{formatKpiValue(summary.cashFlow.received)}</span></p>
           <p class="flex items-baseline justify-between gap-3"><span class="text-fg-muted">Spent</span><span class="tnum font-medium text-negative">{formatKpiValue(summary.cashFlow.spent)}</span></p>
-          <p class="flex items-baseline justify-between gap-3 border-t border-border pt-1.5"><span class="text-fg-muted">Net movement</span><span class="tnum font-semibold text-fg">{formatKpiValue(summary.cashFlow.net, formatSignedMoneyCompact)}</span></p>
+          <p class="flex items-baseline justify-between gap-3 border-t border-border pt-1.5"><span class="text-fg">Net movement</span><span class="tnum font-semibold text-fg">{formatKpiValue(summary.cashFlow.net, formatSignedMoneyCompact)}</span></p>
         </div>
         {#if summary.cashFlow.topInflow.length > 0 || summary.cashFlow.topOutflow.length > 0}
           <p class="mt-3 text-[11px] leading-relaxed text-fg-faint">
@@ -252,21 +275,21 @@
           </p>
         {/if}
       </div>
-      <div class="bg-surface p-5">
+      <div class="md:px-8">
         <div class="flex items-center justify-between gap-2">
-          <p class="section-label !tracking-[0.1em]">Economic effect</p>
+          <p class="section-label">Economic effect</p>
           <ConfidenceBadge meta={summary.economicEffect.confidence} tooltip={confidenceTitle(summary.economicEffect.confidence)} />
         </div>
         <div class="mt-3 space-y-1.5 text-sm">
           <p class="flex items-baseline justify-between gap-3"><span class="text-fg-muted">True income</span><span class="tnum font-medium text-positive">{formatKpiValue(summary.economicEffect.trueIncome)}</span></p>
           <p class="flex items-baseline justify-between gap-3"><span class="text-fg-muted">True expenses</span><span class="tnum font-medium text-negative">{formatKpiValue(summary.economicEffect.trueExpense)}</span></p>
-          <p class="flex items-baseline justify-between gap-3 border-t border-border pt-1.5"><span class="text-fg-muted">Economic net</span><span class="tnum font-semibold text-fg">{formatKpiValue(summary.economicEffect.net, formatSignedMoneyCompact)}</span></p>
+          <p class="flex items-baseline justify-between gap-3 border-t border-border pt-1.5"><span class="text-fg">Economic net</span><span class="tnum font-semibold text-fg">{formatKpiValue(summary.economicEffect.net, formatSignedMoneyCompact)}</span></p>
         </div>
         <p class="mt-3 text-[11px] leading-relaxed text-fg-faint">Earned or lost value — conversions are excluded here.</p>
       </div>
-      <div class="bg-surface p-5">
+      <div class="md:pl-8">
         <div class="flex items-center justify-between gap-2">
-          <p class="section-label !tracking-[0.1em]">Conversions</p>
+          <p class="section-label">Conversions</p>
           <ConfidenceBadge meta={summary.assetConversions.confidence} tooltip={confidenceTitle(summary.assetConversions.confidence)} />
         </div>
         <div class="mt-3 space-y-1.5 text-sm">
@@ -280,24 +303,24 @@
       </div>
     </div>
 
-    <!-- Travel | Drugs & rehab -->
-    <div class="grid grid-cols-1 gap-px overflow-hidden rounded-card border border-border bg-border shadow-panel md:grid-cols-2">
-      <div class="bg-surface p-5">
+    <!-- ── Activity story: travel | drugs & rehab ── -->
+    <div class="grid grid-cols-1 gap-x-10 gap-y-7 border-t border-border pt-7 md:grid-cols-2 md:divide-x md:divide-border">
+      <div class="md:pr-8">
         <div class="flex items-center justify-between gap-2">
-          <p class="section-label !tracking-[0.1em]">Travel</p>
+          <p class="section-label">Travel</p>
           <div class="flex items-center gap-2">
             <ConfidenceBadge meta={summary.travel.confidence} tooltip={confidenceTitle(summary.travel.confidence)} />
             <span class="text-[10px] font-medium uppercase tracking-[0.12em] text-warning" title="Estimated value — based on current item market prices, not historical values">estimated</span>
           </div>
         </div>
         <p class="mt-3 flex flex-wrap items-baseline gap-x-3">
-          <span class="tnum text-2xl font-semibold text-fg">{formatKpiValue(summary.travel.estimatedProfit)}</span>
+          <span class="tnum text-3xl font-semibold text-fg">{formatKpiValue(summary.travel.estimatedProfit)}</span>
           <span class="text-xs text-fg-faint">{summary.travel.trips} trip{summary.travel.trips === 1 ? "" : "s"} · est. profit</span>
         </p>
       </div>
-      <div class="bg-surface p-5">
+      <div class="md:pl-8">
         <div class="flex items-center justify-between gap-2">
-          <p class="section-label !tracking-[0.1em]">Drugs &amp; rehab</p>
+          <p class="section-label">Drugs &amp; rehab</p>
           <ConfidenceBadge meta={summary.drugs.confidence} tooltip={confidenceTitle(summary.drugs.confidence)} />
         </div>
         <div class="mt-3 space-y-1.5 text-sm">
@@ -325,23 +348,24 @@
       </div>
     </div>
 
-    <!-- What moved today -->
-    <Panel title="What moved today" caption="Deterministic highlights — recorded movements and catalog estimates, never causes" flush>
+    <!-- ── What moved today: ledger rows, no panel ── -->
+    <div class="section-rule">
+      <p class="section-label">What moved — deterministic highlights, never causes</p>
       {#if summary.highlights.length === 0 || (summary.highlights.length === 1 && summary.highlights[0]?.kind === "quiet_day")}
-        <p class="px-5 py-6 text-sm text-fg-faint">A quiet day — nothing notable recorded.</p>
+        <p class="mt-3 text-sm text-fg-faint">A quiet day — nothing notable recorded.</p>
       {:else}
-        <ul class="divide-y divide-border">
+        <ul class="divide-y divide-border/70">
           {#each summary.highlights as h (h.kind + h.label + (h.occurredAt ?? ""))}
             {@const copy = highlightCopy(h)}
-            <li class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 px-5 py-3">
-              <span class="min-w-0 text-[13px] {toneClass[h.tone]}">{copy.text}</span>
+            <li class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 py-2.5">
+              <span class="min-w-0 text-[13.5px] {toneClass[h.tone]}">{copy.text}</span>
               {#if copy.hint !== undefined}
-                <span class="tnum text-[13px] font-medium text-fg-muted">{copy.hint}</span>
+                <span class="tnum text-[13.5px] font-medium text-fg-muted">{copy.hint}</span>
               {/if}
             </li>
           {/each}
         </ul>
       {/if}
-    </Panel>
+    </div>
   {/if}
 </section>

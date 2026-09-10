@@ -33,7 +33,7 @@
 
 <!-- Bottom tab bar -->
 <nav
-  class="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-bg/92 backdrop-blur-md md:hidden"
+  class="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-bg/92 backdrop-blur-md lg:hidden"
   style="padding-bottom: env(safe-area-inset-bottom);"
   aria-label="Primary mobile"
 >
@@ -64,7 +64,7 @@
 
 <!-- Grouped nav sheet -->
 {#if sheetOpen}
-  <div class="fixed inset-0 z-50 md:hidden" role="dialog" aria-modal="true" aria-label="All sections">
+  <div class="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="All sections">
     <button type="button" class="absolute inset-0 bg-black/60" aria-label="Close navigation" onclick={closeSheet}></button>
     <div class="absolute inset-x-0 bottom-0 rise-in rounded-t-2xl border-t border-border bg-bg-raise pb-[calc(env(safe-area-inset-bottom)+72px)] shadow-pop">
       <div class="flex items-center justify-between border-b border-border px-5 py-3.5">

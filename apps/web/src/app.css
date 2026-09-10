@@ -77,8 +77,8 @@
     padding-block: 2.75rem 5rem;
   }
 }
-/* Room for the fixed mobile tab bar (rendered below md only). */
-@media (max-width: 767px) {
+/* Room for the fixed bottom tab bar (rendered below lg — phone AND tablet). */
+@media (max-width: 1023px) {
   .page-shell {
     padding-bottom: 5.75rem;
   }
@@ -336,6 +336,26 @@ body {
   }
   .text-link:hover {
     opacity: 0.8;
+  }
+
+  /* ---- Editorial helpers ("open canvas" language) ---- */
+  /* A section on the open canvas: eyebrow + hairline rule, no box. */
+  .section-rule {
+    border-top: 1px solid var(--color-border);
+    padding-top: 0.9rem;
+  }
+  /* Hero numerals: the page's single loudest figure. */
+  .hero-num {
+    font-size: clamp(2.6rem, 6vw, 4.4rem);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    line-height: 1.02;
+  }
+  /* Diverging signed bar (the ledger-story device). */
+  .delta-bar {
+    height: 4px;
+    border-radius: 999px;
+    min-width: 2px;
   }
 }
 
