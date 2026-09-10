@@ -3,7 +3,18 @@
   import { onMount } from "svelte";
   import { endpoints, ApiClientError } from "$lib/api";
   import type { ApiKeyStatusResponse, ApiKeyValidationResponse, ExistingProfileInfo, KeyCapabilitiesDto, SyncResource } from "@tornscope/shared";
-  import { branding, CAPABILITY_LABELS, moduleAvailability, resourceRequirementLabel, summarizeKeyAccess } from "@tornscope/shared";
+  import {
+    branding,
+    CAPABILITY_LABELS,
+    featureConsequenceMatrix,
+    capabilitySetName,
+    moduleAvailability,
+    resourceRequirementLabel,
+    summarizeKeyAccess,
+    unrecoverableWhileSkipping,
+    RECOVERABILITY_COPY,
+    type MatrixState,
+  } from "@tornscope/shared";
   import { refreshMe, me } from "$lib/state.svelte";
 
   let apiKey = $state("");
@@ -55,6 +66,27 @@
     torn_catalog: "Catalog",
   };
 
+  /** Step 1: validate against Torn without storing anything. Errors map to
+   * honest, distinct states (invalid / rate-limited / Torn down / network). */
+  function validationErrorMessage(err: unknown): string {
+    if (err instanceof ApiClientError) {
+      switch (err.code) {
+        case "invalid_api_key":
+          return err.message;
+        case "access_denied":
+          return err.message;
+        case "rate_limited":
+        case "too_many_requests":
+          return "Too many attempts — wait a moment, then try again.";
+        case "torn_unavailable":
+          return "Torn's API isn't answering right now — try again in a minute.";
+        default:
+          return err.message;
+      }
+    }
+    return "Could not reach the TornScope server — check your connection and try again.";
+  }
+
   /** Step 1: validate against Torn without storing anything. */
   async function validateKey() {
     if (apiKey.trim().length < 10) {
@@ -69,7 +101,7 @@
       apiKey = "";
       step = 2;
     } catch (err) {
-      error = err instanceof ApiClientError ? err.message : (err as Error).message;
+      error = validationErrorMessage(err);
     } finally {
       validating = false;
     }
@@ -205,6 +237,30 @@
     }
   }
 
+  /**
+   * Roadmap #4: honest onboarding summary — stage counts, never an invented
+   * overall percentage. "Ready enough" is progressive: identity + any synced
+   * data means the app is usable while background backfill continues.
+   */
+  const syncSummary = $derived.by(() => {
+    if (syncRows.length === 0) return null;
+    let ready = 0;
+    let importing = 0;
+    let skipped = 0;
+    let failed = 0;
+    let waiting = 0;
+    for (const row of syncRows) {
+      const state = rowState(row);
+      if (state.skipped) skipped += 1;
+      else if (state.label.startsWith("ready")) ready += 1;
+      else if (state.label === "importing" || state.label === "syncing") importing += 1;
+      else if (state.label === "failed") failed += 1;
+      else waiting += 1;
+    }
+    const settled = ready + skipped;
+    return { total: syncRows.length, ready, importing, skipped, failed, waiting, done: settled === syncRows.length };
+  });
+
   async function exploreDemo() {
     loadingDemo = true;
     error = null;
@@ -245,6 +301,27 @@
   }));
   const availableModules = $derived(modules.filter((m) => m.available));
   const unavailableModules = $derived(modules.filter((m) => !m.available));
+
+  /**
+   * Roadmap #4: the pre-choice consequence matrix and the historical-loss
+   * warning — generated from the shared FEATURE_REQUIREMENTS model, so the
+   * onboarding copy can never drift from what the app actually enforces.
+   */
+  const consequenceMatrix = $derived(featureConsequenceMatrix());
+
+  function matrixChip(state: MatrixState): { label: string; cls: string } {
+    if (state === "enabled") return { label: "✓", cls: "text-positive" };
+    if (state === "partial") return { label: "partial", cls: "text-warning" };
+    return { label: "—", cls: "text-fg-faint" };
+  }
+
+  // Resources the DETECTED key cannot collect, grouped by recoverability —
+  // drives the honest "what can be recovered later?" warning (step 2).
+  const skippedResources = $derived(
+    detected ? unrecoverableWhileSkipping(detected.capabilities) : []
+  );
+  const skippedWindowResources = $derived(skippedResources.filter((r) => r.recoverability === "window"));
+  const skippedFromStartResources = $derived(skippedResources.filter((r) => r.recoverability === "from_start"));
 
   onMount(() => {
     const poll = setInterval(() => {
@@ -288,11 +365,13 @@
           type="password"
           bind:value={apiKey}
           placeholder="Paste your Torn API key"
-          class="w-full rounded-tile border border-border bg-bg-raise px-4 py-3 font-mono text-sm text-fg placeholder:font-sans placeholder:text-fg-faint focus:border-accent"
+          class="input font-mono"
           autocomplete="off"
+          aria-invalid={error ? "true" : undefined}
+          aria-describedby={error ? "api-key-error" : undefined}
         />
         {#if error}
-          <p class="mt-2.5 text-sm text-negative">{error}</p>
+          <p class="mt-2.5 text-sm text-negative" id="api-key-error" role="alert" aria-live="polite">{error}</p>
         {/if}
         <button
           class="mt-5 w-full rounded-tile bg-accent-strong py-3 text-sm font-semibold text-bg transition-colors hover:bg-accent disabled:opacity-40"
@@ -346,6 +425,60 @@
             </div>
           </div>
 
+          <!-- Feature consequence matrix: generated from FEATURE_REQUIREMENTS —
+               the same model the app enforces. Opt-in detail, stacked rows so
+               phones never need a horizontal-scroll table. -->
+          <details class="group">
+            <summary class="cursor-pointer select-none text-[11px] font-semibold uppercase tracking-[0.14em] text-fg-faint transition-colors hover:text-fg-muted">
+              Feature-by-feature: what Limited vs Full enables
+            </summary>
+            <div class="mt-2 max-h-72 space-y-0 overflow-y-auto rounded-tile border border-border bg-surface px-3 py-2">
+              <div class="sticky top-0 grid grid-cols-[1fr_64px_64px] items-center gap-2 bg-surface pb-1.5 text-[9.5px] font-semibold uppercase tracking-wide text-fg-faint">
+                <span>Feature</span>
+                <span class="text-center">Limited</span>
+                <span class="text-center">Full</span>
+              </div>
+              {#each consequenceMatrix as row (row.feature)}
+                <div class="grid grid-cols-[1fr_64px_64px] items-center gap-2 border-t border-border/50 py-1.5 text-[11.5px] {row.factionSelection ? 'opacity-75' : ''}">
+                  <span class="min-w-0 truncate text-fg-muted" title={row.label}>
+                    {row.label}{#if row.factionSelection}<span class="ml-1 text-fg-faint">*</span>{/if}
+                  </span>
+                  <span class="text-center text-[10px] font-medium {matrixChip(row.limited).cls}">{matrixChip(row.limited).label}</span>
+                  <span class="text-center text-[10px] font-medium {matrixChip(row.full).cls}">{matrixChip(row.full).label}</span>
+                </div>
+              {/each}
+            </div>
+            <p class="mt-1.5 text-[10.5px] leading-relaxed text-fg-faint">
+              Generated from what each feature genuinely requires. <span class="text-fg-faint">*</span> Faction features need separate
+              faction key selections (available with either choice when granted). Custom permission mixes are detected per key —
+              this matrix describes the two common presets, not a promise about any specific key.
+            </p>
+          </details>
+
+          <!-- Historical-loss warning: honest, before any key is chosen -->
+          <div class="rounded-tile border border-warning/30 bg-warning/5 px-4 py-3">
+            <p class="text-[12px] font-medium text-warning">Some Torn history is only available for a limited time</p>
+            <p class="mt-1 text-[11.5px] leading-relaxed text-fg-muted">
+              Log-based history (money, drugs, travel, rehab, events, attacks) covers roughly the last 180 days. If a key
+              skips a category, anything not collected before Torn's window ages out can never be recovered — upgrading the
+              key later does <span class="font-medium text-fg">not</span> guarantee a full backfill. Net worth and personal-stats
+              histories start when syncing begins.
+            </p>
+            <details class="group mt-2">
+              <summary class="cursor-pointer select-none text-[11px] font-semibold uppercase tracking-[0.14em] text-warning transition-colors hover:text-fg-muted">
+                What can be recovered later?
+              </summary>
+              <ul class="mt-2 space-y-1.5">
+                {#each Object.entries(RECOVERABILITY_COPY) as [kind, copy] (kind)}
+                  <li class="text-[11.5px] leading-relaxed text-fg-muted">
+                    <span class="font-medium text-fg">{kind === "current" ? "Live state" : kind === "window" ? "Log-window history" : kind === "from_start" ? "Accrued histories" : "Source data"}:</span>
+                    {copy}
+                  </li>
+                {/each}
+              </ul>
+            </details>
+          </div>
+
           <details class="group">
             <summary class="cursor-pointer select-none text-[11px] font-semibold uppercase tracking-[0.14em] text-fg-faint transition-colors hover:text-fg-muted">
               Who can see my data? · the honest trust model
@@ -389,7 +522,13 @@
         <div class="space-y-5">
           <div class="space-y-1 text-center">
             <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-faint">Detected key</p>
-            <p class="font-display text-2xl font-medium text-fg">{accessSummary.levelName} Access</p>
+            <p class="font-display text-2xl font-medium text-fg">
+              {#if capabilitySetName(detected.capabilities) === "Custom"}
+                Custom capability set
+              {:else}
+                {accessSummary.levelName} Access
+              {/if}
+            </p>
             <p class="text-xs text-fg-muted">
               Privacy: <span class={limitedAccess ? "text-positive" : "text-warning"}>{limitedAccess ? "Reduced data exposure" : "Broader Torn data access"}</span>
             </p>
@@ -397,6 +536,13 @@
               <p class="text-xs text-fg-faint">{accessSummary.accessType} key{accessSummary.level !== null ? ` · Torn access level ${accessSummary.level}` : ""}</p>
             {/if}
           </div>
+
+          {#if capabilitySetName(detected.capabilities) === "Custom"}
+            <p class="mx-auto max-w-md text-center text-[11.5px] leading-relaxed text-fg-faint">
+              Your key's selections don't match the standard Limited or Full presets — TornScope derives every feature's
+              availability from the actual capabilities below, so a custom mix works fine.
+            </p>
+          {/if}
 
           <p class="text-center text-xs text-fg-faint">
             TornScope modules:
@@ -453,11 +599,35 @@
             </details>
           {/if}
 
+          {#if skippedResources.length > 0}
+            <!-- Historical-loss warning: tied to THIS key's actual skipped resources -->
+            <div class="rounded-tile border border-warning/30 bg-warning/5 px-4 py-3">
+              <p class="text-[12px] font-medium text-warning">
+                {skippedResources.length} data {skippedResources.length === 1 ? "area" : "areas"} won't be collected with this key
+              </p>
+              <ul class="mt-1.5 space-y-1 text-[11.5px] leading-relaxed text-fg-muted">
+                {#each skippedWindowResources as item (item.label)}
+                  <li>· <span class="text-fg">{item.label}</span> — {RECOVERABILITY_COPY[item.recoverability]}</li>
+                {/each}
+                {#each skippedFromStartResources as item (item.label)}
+                  <li>· <span class="text-fg">{item.label}</span> — {RECOVERABILITY_COPY[item.recoverability]}</li>
+                {/each}
+                {#each skippedResources.filter((r) => r.recoverability === "source" || r.recoverability === "current") as item (item.label)}
+                  <li>· <span class="text-fg">{item.label}</span> — needs a permission change in Torn; data Torn still exposes can be collected once granted.</li>
+                {/each}
+              </ul>
+              <p class="mt-2 text-[11px] leading-relaxed text-fg-faint">
+                Everything already listed is honest: upgrading later starts collection for newly granted areas, but log history
+                that ages out of Torn's window meanwhile is gone for good.
+              </p>
+            </div>
+          {/if}
+
           <p class="text-center text-[13px] leading-relaxed text-fg-muted">
             {#if limitedAccess}
               You can continue with this key. TornScope will only sync data your key permits —
               unavailable areas are clearly marked, never shown as zeros. Collected history is kept
-              forever, and upgrading the key later fills in what it missed.
+              forever, and upgrading the key later starts collecting the newly granted areas.
             {:else}
               {accessSummary.note}
             {/if}
@@ -604,9 +774,22 @@
             </div>
           {/if}
 
-          <!-- Resource-level progress (no invented overall percentage).
-               Capability-blocked resources show an explicit skip so the
-               Limited-vs-Full behavior is understandable at a glance. -->
+          <!-- Initial sync summary: real per-resource stages + a total, never
+               a fake percentage. Capability-blocked resources show an explicit
+               skip so Limited-vs-Full behavior is understandable at a glance. -->
+          {#if syncSummary}
+            <div class="flex flex-wrap items-baseline justify-between gap-2 px-1">
+              <p class="text-[13px] font-medium text-fg">
+                Initial sync — <span class="tnum">{syncSummary.ready}</span> of <span class="tnum">{syncSummary.total}</span> resources ready
+              </p>
+              <p class="flex flex-wrap gap-x-3 text-[11px]">
+                {#if syncSummary.importing > 0}<span class="text-accent">{syncSummary.importing} importing</span>{/if}
+                {#if syncSummary.waiting > 0}<span class="text-fg-faint">{syncSummary.waiting} waiting</span>{/if}
+                {#if syncSummary.skipped > 0}<span class="text-fg-faint">{syncSummary.skipped} skipped (permission)</span>{/if}
+                {#if syncSummary.failed > 0}<span class="text-negative">{syncSummary.failed} failed</span>{/if}
+              </p>
+            </div>
+          {/if}
           <div class="rounded-tile border border-border bg-bg-raise px-4 py-2">
             {#each syncRows as row (row.resource)}
               <div class="flex items-center justify-between gap-3 border-b border-border/50 py-2 last:border-0">
@@ -623,6 +806,13 @@
           <button class="w-full rounded-tile bg-accent-strong py-3 text-sm font-semibold text-bg transition-colors hover:bg-accent" onclick={openApp}>
             Open Today
           </button>
+          <p class="text-center text-[11px] leading-relaxed text-fg-faint">
+            {#if syncSummary && !syncSummary.done}
+              You can start exploring now — some history is still importing in the background.
+            {:else}
+              Large historical imports continue safely in the background whenever needed.
+            {/if}
+          </p>
           <div class="flex items-center justify-center gap-4 text-xs">
             <a href="/sync" class="text-fg-muted transition-colors hover:text-accent">Sync status</a>
             {#if syncRows.some((r) => r.errorMessage && r.lastSuccessAt === null)}
