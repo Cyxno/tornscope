@@ -1,5 +1,5 @@
 import type { KeyCapabilities, CapabilityKey } from "./torn.js";
-import { SYNC_RESOURCES } from "./torn.js";
+import { SYNC_RESOURCES, CAPABILITY_KEYS } from "./torn.js";
 import { accessLevelName } from "./today.js";
 import type { SyncResource } from "./torn.js";
 
@@ -351,4 +351,175 @@ export function summarizeKeyAccess(
       ? "Full Access unlocks TornScope's complete supported historical analytics."
       : "You can continue with this key. TornScope will only sync data your key permits — unavailable areas are marked instead of shown as zeros.";
   return { level: accessLevel ?? null, levelName, accessType: accessType ?? null, available, unavailable, note };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Capability presets + the Limited-vs-Full consequence matrix (roadmap #4)    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Canonical USER-key capability presets used ONLY for the pre-choice
+ * consequence matrix. They describe what a privacy-first "Limited" key and a
+ * "Full" key mean for TornScope's features, derived from FEATURE_REQUIREMENTS
+ * — never rendered as guarantees: Torn's own access levels decide what a key
+ * can actually answer, and custom selections are detected per key.
+ *
+ * - LIMITED_PRESET ("privacy-first"): live state + identity + net worth +
+ *   combat — deliberately NO User Logs / User Money (the broadest,
+ *   most sensitive history).
+ * - FULL_PRESET: every user selection granted. Faction capabilities are
+ *   separate Torn key selections and are part of NEITHER preset — the matrix
+ *   labels faction features "requires faction selections".
+ */
+export const LIMITED_PRESET: KeyCapabilities = {
+  canReadUserBasic: true,
+  canReadUserBars: true,
+  canReadUserCooldowns: true,
+  canReadUserEducation: true,
+  canReadUserTravel: true,
+  canReadUserMoney: false,
+  canReadUserLogs: false,
+  canReadUserAttacks: true,
+  canReadUserNetworth: true,
+  canReadUserEvents: true,
+  canReadUserPersonalStats: true,
+  canReadFactionBasic: false,
+  canReadFactionMembers: false,
+  canReadFactionRankedWars: false,
+  canReadFactionChains: false,
+  canReadFactionCrimes: false,
+  canReadFactionArmoryNews: false,
+  canReadFactionBalance: false,
+  canReadFactionLogs: false,
+};
+
+export const FULL_PRESET: KeyCapabilities = {
+  canReadUserBasic: true,
+  canReadUserBars: true,
+  canReadUserCooldowns: true,
+  canReadUserEducation: true,
+  canReadUserTravel: true,
+  canReadUserMoney: true,
+  canReadUserLogs: true,
+  canReadUserAttacks: true,
+  canReadUserNetworth: true,
+  canReadUserEvents: true,
+  canReadUserPersonalStats: true,
+  canReadFactionBasic: false,
+  canReadFactionMembers: false,
+  canReadFactionRankedWars: false,
+  canReadFactionChains: false,
+  canReadFactionCrimes: false,
+  canReadFactionArmoryNews: false,
+  canReadFactionBalance: false,
+  canReadFactionLogs: false,
+};
+
+/** The user-selection slice of a capability set (faction keys excluded). */
+const USER_CAPABILITY_KEYS = CAPABILITY_KEYS.filter((k) => k.startsWith("canReadUser"));
+
+function sameUserSelections(a: KeyCapabilities, b: KeyCapabilities): boolean {
+  return USER_CAPABILITY_KEYS.every((k) => a[k] === b[k]);
+}
+
+/**
+ * Name the key's capability set against the presets. Faction selections are
+ * ignored for the comparison (they are separate Torn selections); a set that
+ * matches neither preset is honestly labelled custom.
+ */
+export function capabilitySetName(caps: KeyCapabilities | null | undefined): "Full" | "Limited" | "Custom" {
+  if (!caps) return "Custom";
+  if (sameUserSelections(caps, FULL_PRESET)) return "Full";
+  if (sameUserSelections(caps, LIMITED_PRESET)) return "Limited";
+  return "Custom";
+}
+
+/** Per-feature state in a consequence matrix cell. */
+export type MatrixState = "enabled" | "partial" | "unavailable";
+
+export interface ConsequenceRow {
+  feature: TornScopeFeature;
+  label: string;
+  limited: MatrixState;
+  full: MatrixState;
+  /** Missing capability label in the LIMITED preset (details view). */
+  limitedMissing: string | null;
+  /** True when the feature needs separate faction key selections. */
+  factionSelection: boolean;
+}
+
+function matrixStateFor(caps: KeyCapabilities, feature: TornScopeFeature): MatrixState {
+  const req = featureRequirement(feature);
+  const missingRequired = req.requires.some((key) => !caps[key]);
+  if (missingRequired) return "unavailable";
+  const missingOptional = (req.optional ?? []).filter((key) => !caps[key]);
+  return missingOptional.length > 0 && req.partial ? "partial" : "enabled";
+}
+
+/**
+ * The Limited-vs-Full feature consequence matrix, generated from the SAME
+ * FEATURE_REQUIREMENTS the running app enforces — never hardcoded guesses.
+ * Faction features are flagged so the UI can explain the separate key
+ * selections instead of implying either preset grants them.
+ */
+export function featureConsequenceMatrix(): ConsequenceRow[] {
+  return FEATURE_REQUIREMENTS.map((req) => ({
+    feature: req.feature,
+    label: req.label,
+    limited: matrixStateFor(LIMITED_PRESET, req.feature),
+    full: matrixStateFor(FULL_PRESET, req.feature),
+    limitedMissing: missingRequirementLabel(LIMITED_PRESET, req.feature)?.label ?? null,
+    factionSelection: req.requires.some((key) => key.startsWith("canReadFaction")),
+  }));
+}
+
+/* -------------------------------------------------------------------------- */
+/* Historical recoverability (the "what can be recovered later?" model)        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Honest per-resource recoverability semantics for onboarding. Three honest
+ * classes — never promise a backfill Torn cannot serve:
+ *
+ * - "current"    reflects live state; always (re)collectable.
+ * - "window"     Torn keeps a limited-time log window (roughly the last 180
+ *                days); anything not collected before it ages out is gone.
+ * - "from_start" accrues only from when syncing begins; the past cannot be
+ *                reconstructed.
+ * - "source"     public/shared data Torn still exposes.
+ */
+export type Recoverability = "current" | "window" | "from_start" | "source";
+
+export const RESOURCE_RECOVERABILITY: Record<SyncResource, Recoverability> = {
+  profile: "current",
+  personal_stats: "from_start",
+  networth: "from_start",
+  drugs: "window",
+  travel: "window",
+  rehab: "window",
+  money_logs: "window",
+  events: "window",
+  attacks: "window",
+  faction_basic: "source",
+  faction: "source",
+  ranked_wars: "source",
+  chains: "source",
+  organized_crimes: "source",
+  torn_catalog: "source",
+};
+
+/** Short user-facing recoverability sentence per class (details view). */
+export const RECOVERABILITY_COPY: Record<Recoverability, string> = {
+  current: "Reflects your current Torn state — always collectable, nothing to miss.",
+  window: "Torn keeps a limited-time log window (about the last 180 days). History not collected before it ages out can never be recovered.",
+  from_start: "Accumulates from the moment syncing starts — the past cannot be reconstructed, so earlier is genuinely better.",
+  source: "Collected from data Torn still exposes; depth depends on what Torn serves, and it accrues while stored.",
+};
+
+/** Which resources a capability key gates, for warning copy. */
+export function unrecoverableWhileSkipping(caps: KeyCapabilities | null | undefined): Array<{ label: string; recoverability: Recoverability }> {
+  return SYNC_RESOURCES.filter((resource) => !resourceAllowed(caps, resource)).map((resource) => ({
+    label: RESOURCE_LABELS[resource]!,
+    recoverability: RESOURCE_RECOVERABILITY[resource],
+  }));
 }
