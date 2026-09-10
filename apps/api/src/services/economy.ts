@@ -1,6 +1,33 @@
-import { autoInterval, kpiAvailabilityFromConfidence, resolveDateRange, worstKpiAvailability, type DateRangeInput, type EconomySummaryResponse, type KpiAvailability, type MoneyCategory, type SyncResource } from "@tornscope/shared";
-import { aggregateMoneyEvents, aggregateMoneySemantics, aggregateConsumption, calculateTravelProfit, type ConsumptionEventLike } from "@tornscope/analytics";
-import { bigintToNumber, getPrismaClient, loadMarketPrices } from "@tornscope/database";
+import {
+  autoInterval,
+  kpiAvailabilityFromConfidence,
+  resolveDateRange,
+  worstConfidence,
+  worstKpiAvailability,
+  type DateRangeInput,
+  type EconomySummaryResponse,
+  type KpiAvailability,
+  type KpiValue,
+  type MoneyCategory,
+  type SyncResource,
+} from "@tornscope/shared";
+import {
+  aggregateConversions,
+  aggregateMoneyEvents,
+  aggregateMoneySemantics,
+  aggregateConsumption,
+  buildCashReceivedBreakdown,
+  buildCashSpentBreakdown,
+  buildWalletBridge,
+  calculateTravelProfit,
+  classifyReconciliation,
+  deriveBankInterest,
+  explainedRatio,
+  majorMoneyMovements,
+  type ConsumptionEventLike,
+  type ReconciliationQuality,
+} from "@tornscope/analytics";
+import { bigintToNumber, getPrismaClient, isOcPayoutRow, loadMarketPrices } from "@tornscope/database";
 import { getNetworthPeriodForRange } from "./networth.js";
 import { loadAvailabilityContext, sectionAvailability } from "./availability.js";
 import { resourceConfidence } from "./confidence.js";
@@ -83,18 +110,28 @@ async function nonCashWealthGains(
 }
 
 /**
- * Economy view: the three financial concepts, cleanly separated.
+ * Economy view: the financial lenses, cleanly separated and related, NOT
+ * additive (cash net + economic net + conversion net ≠ net worth change).
  *
  * A. Cash Flow — only real cash movements (purchases, sales, fees, payouts).
- * B. Consumption — value of items used up (drugs, boosters, medical, happy
- *    items, energy, candy, other consumables). A Xanax bought for 840,000 is
- *    a -840,000 cash flow at purchase; the later use is consumption with zero
- *    additional cash movement. The two are never summed into one "profit".
- * C. Networth — difference between Torn networth snapshots (exact), with the
- *    Torn-provided category breakdown. Inventory appreciation lands here,
- *    never in cash income.
+ * B. Economic Effect — true income/expense: value gained or lost. Asset
+ *    conversions are excluded; derived bank interest is included; principal
+ *    returns are not.
+ * C. Conversions — cash exchanged for assets (bank, stocks, items, points,
+ *    faction vault). Value changes form, it is not gained or lost.
+ * D. Wallet — reconciliation: opening cash + recorded inflows − recorded
+ *    outflows = expected closing, compared against the actual closing wallet.
+ *    The residual is always surfaced with an explicit quality grade.
+ * E. Consumption — value of items used up (estimated, never cash P&L).
+ * F. Networth — official Torn snapshot delta with category deltas; a wealth
+ *    movement, never "profit". `explanation` maps recorded/estimated
+ *    contributors onto it and reports what remains unexplained.
  *
- * Plus the estimated travel profit as its own clearly-labeled figure.
+ * Query budget (documented, roadmap #6 phase 21): one bounded MoneyEvent
+ * fetch + one unknown-row count + consumption + travel events/items + one
+ * market-price map + the networth anchor set + two wallet anchor snapshots +
+ * sale payload rows + the non-cash gains pair — all issued in two batched
+ * waves; no per-row queries anywhere.
  */
 export async function getEconomySummary(userId: string, rangeInput: DateRangeInput): Promise<EconomySummaryResponse> {
   const db = getPrismaClient();
@@ -103,30 +140,56 @@ export async function getEconomySummary(userId: string, rangeInput: DateRangeInp
   const from = new Date(range.from * 1000);
   const to = new Date(range.to * 1000);
 
-  const [moneyRows, unknownCount, consumptionRows, travelEvents, travelItems, marketPrices, nwPeriod] = await Promise.all([
-    db.moneyEvent.findMany({
-      where: { userId, occurredAt: { gte: from, lte: to } },
-      // No metadata here: the raw payload is only needed for valuing SOLD
-      // inventory, which gets its own targeted query below. Loading it for
-      // every row shipped the full raw log JSONB on every Economy view.
-      select: { id: true, occurredAt: true, category: true, subcategory: true, direction: true, amount: true, description: true },
-    }),
-    db.moneyEvent.count({ where: { userId, direction: "unknown", occurredAt: { gte: from, lte: to } } }),
-    db.consumptionEvent.findMany({
-      where: { userId, occurredAt: { gte: from, lte: to } },
-      select: { occurredAt: true, category: true, quantity: true, totalValue: true, valuationMethod: true },
-    }),
-    db.travelEvent.findMany({
-      where: { userId, departedAt: { gte: new Date((range.from - 7 * 86_400) * 1000), lte: to } },
-      select: { id: true, destination: true, departedAt: true, returnedAt: true, durationSeconds: true },
-    }),
-    db.travelItemEvent.findMany({
-      where: { userId, occurredAt: { gte: new Date((range.from - 7 * 86_400) * 1000), lte: to } },
-      select: { id: true, travelEventId: true, itemId: true, itemName: true, category: true, quantity: true, unitCost: true, totalCost: true },
-    }),
-    loadMarketPrices(db),
-    getNetworthPeriodForRange(userId, range.from, range.to),
-  ]);
+  const [moneyRows, unknownCount, consumptionRows, travelEvents, travelItems, marketPrices, nwPeriod, walletStart, walletEnd, ocRows, saleRows] =
+    await Promise.all([
+      db.moneyEvent.findMany({
+        where: { userId, occurredAt: { gte: from, lte: to } },
+        // No metadata here: the raw payload is only needed for valuing SOLD
+        // inventory and detecting OC payouts, which get their own targeted
+        // queries below. Loading it for every row shipped the full raw log
+        // JSONB on every Economy view.
+        select: { id: true, occurredAt: true, category: true, subcategory: true, direction: true, amount: true, description: true },
+      }),
+      db.moneyEvent.count({ where: { userId, direction: "unknown", occurredAt: { gte: from, lte: to } } }),
+      db.consumptionEvent.findMany({
+        where: { userId, occurredAt: { gte: from, lte: to } },
+        select: { occurredAt: true, category: true, quantity: true, totalValue: true, valuationMethod: true },
+      }),
+      db.travelEvent.findMany({
+        where: { userId, departedAt: { gte: new Date((range.from - 7 * 86_400) * 1000), lte: to } },
+        select: { id: true, destination: true, departedAt: true, returnedAt: true, durationSeconds: true },
+      }),
+      db.travelItemEvent.findMany({
+        where: { userId, occurredAt: { gte: new Date((range.from - 7 * 86_400) * 1000), lte: to } },
+        select: { id: true, travelEventId: true, itemId: true, itemName: true, category: true, quantity: true, unitCost: true, totalCost: true },
+      }),
+      loadMarketPrices(db),
+      getNetworthPeriodForRange(userId, range.from, range.to),
+      // Wallet reconciliation anchors: closest snapshot at/before each end.
+      db.networthSnapshot.findFirst({
+        where: { userId, capturedAt: { lte: from } },
+        orderBy: { capturedAt: "desc" },
+        select: { capturedAt: true, wallet: true },
+      }),
+      db.networthSnapshot.findFirst({
+        where: { userId, capturedAt: { lte: to } },
+        orderBy: { capturedAt: "desc" },
+        select: { capturedAt: true, wallet: true },
+      }),
+      // OC payouts: faction income rows carry the scenario probe in metadata.
+      db.moneyEvent.findMany({
+        where: { userId, occurredAt: { gte: from, lte: to }, category: "faction", direction: "income" },
+        select: { id: true, amount: true, metadata: true },
+      }),
+      // Sale valuation needs the raw payloads of the (few) sale rows only.
+      db.moneyEvent.findMany({
+        where: { userId, occurredAt: { gte: from, lte: to }, category: { in: [...SALE_CATEGORIES] }, direction: "income" },
+        select: { category: true, direction: true, amount: true, metadata: true },
+      }),
+    ]);
+  const ocRowIds = new Set(
+    ocRows.filter((r) => isOcPayoutRow({ category: "faction", direction: "income", metadata: r.metadata })).map((r) => r.id)
+  );
 
   // Dataset confidence — the same central derivation Overview uses, so the
   // two endpoints can no longer disagree about the same underlying state.
@@ -144,17 +207,16 @@ export async function getEconomySummary(userId: string, rangeInput: DateRangeInp
     direction: r.direction as "income" | "expense" | "neutral" | "unknown",
     amount: bigintToNumber(r.amount) ?? 0,
     description: r.description,
+    // Faction income with OC scenario metadata credits the FACTION MEMBER
+    // BALANCE, never the wallet — kept out of wallet flows below.
+    ocPayout: ocRowIds.has(r.id),
   }));
   const flow = aggregateMoneyEvents(moneyEvents, range.from, range.to, autoInterval(range));
   const semantics = aggregateMoneySemantics(moneyEvents, range.from, range.to);
-  // Sale valuation needs the raw payloads of the (few) sale rows only.
-  const saleRows = await db.moneyEvent.findMany({
-    where: { userId, occurredAt: { gte: from, lte: to }, category: { in: [...SALE_CATEGORIES] }, direction: "income" },
-    select: { category: true, direction: true, amount: true, metadata: true },
-  });
   const sold = valueSoldInventory(saleRows, marketPrices);
   const salesEconomicResult = sold.inventoryValueRemoved !== null ? sold.cashReceived - sold.inventoryValueRemoved : null;
   const nonCash = await nonCashWealthGains(db, userId, from, to, marketPrices);
+
   const cashAvailability: KpiAvailability = (() => {
     let availability = kpiAvailabilityFromConfidence(cashFlowConfidence);
     if (unknownCount > 0) availability = worstKpiAvailability(availability, "incomplete");
@@ -166,6 +228,86 @@ export async function getEconomySummary(userId: string, rangeInput: DateRangeInp
     return availability;
   })();
 
+  /* --------------------------- wallet reconciliation ---------------------- */
+  const openingWallet = walletStart ? bigintToNumber(walletStart.wallet) : null;
+  const closingWallet = walletEnd ? bigintToNumber(walletEnd.wallet) : null;
+  const factionBalanceCredits = ocRows.reduce((sum, r) => (ocRowIds.has(r.id) ? sum + (bigintToNumber(r.amount) ?? 0) : sum), 0);
+  const wallet = buildWalletBridge(
+    moneyEvents
+      .filter((e) => !e.ocPayout)
+      .map((e) => ({ amount: e.amount, direction: e.direction, category: String(e.category) })),
+    openingWallet,
+    closingWallet,
+    factionBalanceCredits
+  );
+  // Known coverage gaps cap the reconciliation grade at "partial": a perfect
+  // residual over a partial history is luck, not proof.
+  const coverageGap =
+    cashFlowConfidence.confidence !== "complete" ||
+    cashFlowConfidence.coverage.hasKnownGaps ||
+    (cashFlowConfidence.coverage.from !== null && cashFlowConfidence.coverage.from > range.from);
+  const quality: ReconciliationQuality = classifyReconciliation({
+    openingWallet,
+    closingWallet,
+    residual: wallet.unreconciled,
+    inflows: wallet.walletInflow,
+    outflows: wallet.walletOutflow,
+    coverageGap,
+  });
+  const walletConfidence = worstConfidence([cashFlowConfidence, networthConfidence]) ?? cashFlowConfidence;
+
+  /* ----------------------------- economic effect -------------------------- */
+  // Bank interest is DERIVED from invest/withdraw pairs — principal returns
+  // are never income. Incomplete splits (principal predating history) lower
+  // the availability instead of fabricating a figure.
+  const bank = deriveBankInterest(moneyEvents, range.from, range.to);
+  const economicIncome = semantics.trueIncome + bank.interestIncome;
+  const economicExpenses = semantics.trueExpense;
+  const economicAvailability: KpiAvailability = worstKpiAvailability(cashAvailability, bank.complete ? "ok" : "incomplete");
+  const economicKpi = (value: number, provenance: "exact" | "derived"): KpiValue => ({
+    value: cashAvailability === "unavailable" ? null : value,
+    provenance,
+    availability: economicAvailability,
+  });
+  const received = buildCashReceivedBreakdown(moneyEvents);
+  const spent = buildCashSpentBreakdown(moneyEvents);
+  const economicEffect: EconomySummaryResponse["economicEffect"] = {
+    income: economicKpi(economicIncome, bank.interestIncome > 0 ? "derived" : "exact"),
+    expenses: economicKpi(economicExpenses, "exact"),
+    net: {
+      value: cashAvailability === "unavailable" ? null : economicIncome - economicExpenses,
+      provenance: bank.interestIncome > 0 ? "derived" : "exact",
+      availability: economicAvailability,
+    },
+    interestIncome: bank.interestIncome,
+    interestComplete: bank.complete,
+    incomeCategories: [
+      ...received.earned.rows.map((r) => ({ key: r.key, label: r.label, total: r.amount, provenance: "exact" as const })),
+      ...(bank.interestIncome > 0
+        ? [{ key: "bank_interest", label: "Bank interest (derived from invest/withdraw pairs)", total: bank.interestIncome, provenance: "derived" as const }]
+        : []),
+    ],
+    expenseCategories: spent.expenses.rows.map((r) => ({ key: r.key, label: r.label, total: r.amount, provenance: "exact" as const })),
+    confidence: cashFlowConfidence,
+  };
+
+  /* ------------------------------- conversions ---------------------------- */
+  const conversionsAgg = aggregateConversions(moneyEvents, range.from, range.to);
+  const conversionKpi = (value: number): KpiValue => ({
+    value: cashAvailability === "unavailable" ? null : value,
+    provenance: "exact",
+    availability: cashAvailability,
+  });
+  const conversions: EconomySummaryResponse["conversions"] = {
+    cashIntoAssets: conversionKpi(conversionsAgg.cashIntoAssets),
+    assetsIntoCash: conversionKpi(conversionsAgg.assetsIntoCash),
+    netCashEffect: conversionKpi(conversionsAgg.netCashEffect),
+    bankTransfers: conversionsAgg.bankTransfers,
+    byPair: conversionsAgg.byPair,
+    confidence: cashFlowConfidence,
+  };
+
+  /* ----------------------------- consumption ------------------------------ */
   const consumptionEvents: ConsumptionEventLike[] = consumptionRows.map((r) => ({
     occurredAt: Math.floor(r.occurredAt.getTime() / 1000),
     category: r.category,
@@ -180,6 +322,7 @@ export async function getEconomySummary(userId: string, rangeInput: DateRangeInp
   );
   const drugValue = consumption.byCategory.find((c) => c.category === "drug")?.totalValue ?? null;
 
+  /* --------------------------------- travel ------------------------------- */
   const trips = buildTrips(travelEvents, travelItems, marketPrices);
   const travel = calculateTravelProfit(trips, range.from, range.to);
   // Value-level truth on top of dataset confidence: a null estimated profit
@@ -189,8 +332,56 @@ export async function getEconomySummary(userId: string, rangeInput: DateRangeInp
     travel.trips === 0 ? "unavailable" : travel.estimatedProfit === null ? "incomplete" : "ok"
   );
 
+  /* ------------------------- net worth explanation ------------------------ */
+  // Contributors: official snapshot category deltas first (recorded), then
+  // estimated economic effects, then what recorded activity cannot explain.
+  // Estimated figures are NEVER summed into the official delta.
+  const contributors: EconomySummaryResponse["explanation"]["contributors"] = nwPeriod.byCategory
+    .filter((c) => c.change !== 0)
+    .sort((a, b) => Math.abs(b.change) - Math.abs(a.change))
+    .map((c) => ({
+      key: `nw_${c.key}`,
+      label: c.label,
+      value: c.change,
+      provenance: "derived" as const,
+      certainty: "recorded" as const,
+      source: "Official Torn net worth snapshots",
+    }));
+  if (travel.estimatedProfit !== null && travel.estimatedProfit !== 0) {
+    contributors.push({
+      key: "travel",
+      label: "Travel activity (estimated economic effect)",
+      value: travel.estimatedProfit,
+      provenance: "estimated",
+      certainty: "estimated",
+      source: "Current Torn catalog valuations",
+    });
+  }
+  if (consumption.totalValue !== null && consumption.totalValue !== 0) {
+    contributors.push({
+      key: "consumption",
+      label: "Consumed items (estimated accessible value)",
+      value: -consumption.totalValue,
+      provenance: "estimated",
+      certainty: "estimated",
+      source: "Torn catalog valuations at use time",
+    });
+  }
+  const nwDelta = nwPeriod.change;
+  const estimatedNet = (travel.estimatedProfit ?? 0) + (consumption.totalValue !== null ? -consumption.totalValue : 0);
+  const netWorthUnexplained = nwDelta !== null ? nwDelta - (wallet.walletInflow - wallet.walletOutflow) - estimatedNet : null;
+  contributors.push({
+    key: "nw_residual",
+    label: "Not explained by recorded activity",
+    value: netWorthUnexplained,
+    provenance: "derived",
+    certainty: "unexplained",
+    source: "Includes market repricing, inventory revaluation and activity outside available history",
+  });
+
   return {
     range: { from: range.from, to: range.to, interval: autoInterval(range) },
+    generatedAt: Math.floor(Date.now() / 1000),
     availability: {
       cashFlow: sectionAvailability(availCtx, "money_cash_flow", "money_logs"),
       walletBridge: sectionAvailability(availCtx, "wallet_bridge", "money_logs"),
@@ -208,6 +399,34 @@ export async function getEconomySummary(userId: string, rangeInput: DateRangeInp
       trueExpense: semantics.trueExpense,
       assetInflow: semantics.assetInflow,
       assetOutflow: semantics.assetOutflow,
+    },
+    economicEffect,
+    conversions,
+    wallet: {
+      openingWallet,
+      closingWallet,
+      expectedClosingWallet: wallet.expectedEndingCash,
+      recordedInflows: wallet.walletInflow,
+      recordedOutflows: wallet.walletOutflow,
+      recordedNet: wallet.walletInflow - wallet.walletOutflow,
+      residual: wallet.unreconciled,
+      quality,
+      explainedRatio: explainedRatio(wallet.unreconciled, openingWallet, closingWallet),
+      openingSnapshotAt: walletStart ? Math.floor(walletStart.capturedAt.getTime() / 1000) : null,
+      closingSnapshotAt: walletEnd ? Math.floor(walletEnd.capturedAt.getTime() / 1000) : null,
+      factionBalanceCredits: wallet.factionBalanceCredits,
+      confidence: walletConfidence,
+    },
+    explanation: {
+      contributors,
+      walletUnexplained: wallet.unreconciled,
+      netWorthUnexplained,
+      quality,
+    },
+    majorMovements: majorMoneyMovements(moneyEvents, range.from, range.to),
+    series: {
+      flow: flow.flowSeries,
+      cumulativeNet: flow.cumulativeNetSeries,
     },
     sales: {
       cashReceived: sold.cashReceived,

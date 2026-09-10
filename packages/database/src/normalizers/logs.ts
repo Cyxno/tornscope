@@ -667,3 +667,23 @@ export function normalizeTornEvent(event: { id: number | string; timestamp: numb
     raw: event,
   };
 }
+
+/* -------------------------------------------------------------------------- */
+/* OC payout rows                                                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Single source of truth for "was this faction income an ORGANIZED CRIME
+ * payout?". Such rows carry the OC scenario inside the raw log payload
+ * (metadata.data.scenario) and were paid into the FACTION MEMBER BALANCE,
+ * never the wallet (verified against live faction-balance snapshots: the
+ * balance rises by the payout while the wallet does not move).
+ *
+ * They stay earned income in every P&L figure but MUST stay out of wallet
+ * flows — every consumer (dashboard, daily summary, economy) routes through
+ * this helper so the probe can never drift between endpoints.
+ */
+export function isOcPayoutRow(row: { category: string; direction: string; metadata?: unknown }): boolean {
+  if (row.category !== "faction" || row.direction !== "income") return false;
+  return Boolean(((row.metadata ?? {}) as { data?: { scenario?: string } }).data?.scenario);
+}

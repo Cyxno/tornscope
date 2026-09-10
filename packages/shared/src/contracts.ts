@@ -566,15 +566,36 @@ export const MoneySummaryResponseSchema = z.object({
 export type MoneySummaryResponse = z.infer<typeof MoneySummaryResponseSchema>;
 
 /**
- * Economy view: three clearly separated concepts.
+ * Quality of the wallet cash reconciliation (roadmap #6). Anchors missing →
+ * unavailable; known money-log coverage gaps cap at partial; sub-dollar
+ * residual → exact; a tiny fraction of recorded flow → small_residual;
+ * anything larger → unreconciled. Never hidden, never rendered as zero.
+ */
+export const ReconciliationQualitySchema = z.enum(["exact", "small_residual", "partial", "unreconciled", "unavailable"]);
+export type ReconciliationQuality = z.infer<typeof ReconciliationQualitySchema>;
+
+/** Semantic role of one ledger row (the canonical economy vocabulary). */
+export const MovementRoleSchema = z.enum(["income", "expense", "conversion_in", "conversion_out", "transfer"]);
+export type MovementRole = z.infer<typeof MovementRoleSchema>;
+
+/**
+ * Economy view: clearly separated financial lenses.
  * - Cash Flow: ONLY real cash movements (purchases, sales, fees, payouts).
- * - Consumption: value of items used up (drugs, boosters, medical, happy
- *   items, other) — never added to the cash P&L.
+ * - Economic Effect: true income/expense — value gained or lost, conversions
+ *   excluded, derived bank interest included.
+ * - Conversions: cash ↔ asset exchanges (bank, stocks, items, points, vault).
+ * - Consumption: value of items used up — never added to the cash P&L.
+ * - Wallet: reconciliation of opening cash → recorded movements → actual.
  * - Networth: Torn snapshot totals and their change over the period.
+ * - Explanation: deterministic contributors + what remains unexplained.
+ * The lenses are related, NOT additive — cash net + economic net +
+ * conversion net does not equal net worth change.
  * Plus the estimated travel profit, kept separate from all of the above.
  */
 export const EconomySummaryResponseSchema = z.object({
   range: z.object({ from: z.number(), to: z.number(), interval: z.string() }),
+  /** Unix seconds when this payload was computed. */
+  generatedAt: z.number(),
   availability: z
     .object({
       cashFlow: FeatureAvailabilitySchema,
@@ -595,6 +616,103 @@ export const EconomySummaryResponseSchema = z.object({
     trueExpense: z.number(),
     assetInflow: z.number(),
     assetOutflow: z.number(),
+  }),
+  /**
+   * True income vs expense (economic effect). Bank interest is DERIVED from
+   * invest/withdraw pairs and included here; principal returns are not.
+   * This is the closest figure to profit/loss — never labeled as such,
+   * because acquisition cost bases remain unknown.
+   */
+  economicEffect: z.object({
+    income: KpiValueSchema,
+    expenses: KpiValueSchema,
+    net: KpiValueSchema,
+    /** Derived bank interest inside income. */
+    interestIncome: z.number(),
+    /** false when some withdrawal's principal/interest split is unattributable. */
+    interestComplete: z.boolean(),
+    incomeCategories: z.array(z.object({ key: z.string(), label: z.string(), total: z.number(), provenance: ProvenanceSchema })),
+    expenseCategories: z.array(z.object({ key: z.string(), label: z.string(), total: z.number(), provenance: ProvenanceSchema })),
+    confidence: DataConfidenceMetaSchema,
+  }),
+  /**
+   * Cash exchanged for assets and vice versa. Conversions are NOT income or
+   * expense: value changes form, it is not gained or lost.
+   */
+  conversions: z.object({
+    cashIntoAssets: KpiValueSchema,
+    assetsIntoCash: KpiValueSchema,
+    /** assetsIntoCash − cashIntoAssets (cash released / absorbed by assets). */
+    netCashEffect: KpiValueSchema,
+    /** Bank-account subset of the conversion volume (both directions). */
+    bankTransfers: z.number(),
+    byPair: z.array(z.object({ pair: z.string(), label: z.string(), amount: z.number(), count: z.number() })),
+    confidence: DataConfidenceMetaSchema,
+  }),
+  /**
+   * Wallet cash reconciliation over the range: opening wallet + recorded
+   * inflows − recorded outflows = expected closing, compared against the
+   * actual closing wallet from networth snapshots. The residual is always
+   * surfaced, never hidden and never zero-filled.
+   */
+  wallet: z.object({
+    openingWallet: z.number().nullable(),
+    closingWallet: z.number().nullable(),
+    expectedClosingWallet: z.number().nullable(),
+    recordedInflows: z.number(),
+    recordedOutflows: z.number(),
+    recordedNet: z.number(),
+    /** actualClosing − expectedClosing; null without both anchors. */
+    residual: z.number().nullable(),
+    quality: ReconciliationQualitySchema,
+    /** 0..1 share of the wallet change explained by recorded movements. */
+    explainedRatio: z.number().nullable(),
+    openingSnapshotAt: z.number().nullable(),
+    closingSnapshotAt: z.number().nullable(),
+    /** OC payouts credited to the faction balance (excluded from flows above). */
+    factionBalanceCredits: z.number(),
+    /** worst of money_logs + networth confidence (both anchor the bridge). */
+    confidence: DataConfidenceMetaSchema,
+  }),
+  /**
+   * Why did net worth move? Official snapshot category deltas (recorded),
+   * estimated economic effects (travel, consumption) and the residual that
+   * recorded activity does not explain. Related, not additive.
+   */
+  explanation: z.object({
+    contributors: z.array(
+      z.object({
+        key: z.string(),
+        label: z.string(),
+        value: z.number().nullable(),
+        provenance: ProvenanceSchema,
+        certainty: z.enum(["recorded", "estimated", "unexplained"]),
+        source: z.string(),
+      })
+    ),
+    /** Wallet reconciliation residual (same figure as wallet.residual). */
+    walletUnexplained: z.number().nullable(),
+    /** Net worth delta not explained by recorded + estimated activity. */
+    netWorthUnexplained: z.number().nullable(),
+    quality: ReconciliationQualitySchema,
+  }),
+  /** Largest meaningful movements across all semantic roles, largest first. */
+  majorMovements: z.array(
+    z.object({
+      id: z.string(),
+      occurredAt: z.number(),
+      category: z.string(),
+      label: z.string(),
+      description: z.string().nullable(),
+      role: MovementRoleSchema,
+      /** Magnitude (always positive). */
+      amount: z.number(),
+    })
+  ),
+  /** Bucketed series for the Economy charts (same range as everything else). */
+  series: z.object({
+    flow: z.array(z.object({ t: z.number(), income: z.number(), expenses: z.number() })),
+    cumulativeNet: z.array(z.object({ t: z.number(), net: z.number() })),
   }),
   /** Item sales: cash received vs estimated market value of items removed. */
   sales: z.object({

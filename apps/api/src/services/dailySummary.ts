@@ -24,7 +24,7 @@ import {
   classifyMoneySemantics,
   type ConsumptionEventLike,
 } from "@tornscope/analytics";
-import { bigintToNumber, getPrismaClient, loadMarketPrices } from "@tornscope/database";
+import { bigintToNumber, getPrismaClient, isOcPayoutRow, loadMarketPrices } from "@tornscope/database";
 import { AppError } from "../errors.js";
 import { loadAvailabilityContext } from "./availability.js";
 import { resourceConfidence } from "./confidence.js";
@@ -154,10 +154,7 @@ export async function getDailySummary(
     // Faction income carrying OC scenario metadata = earned, but credited to
     // the faction member balance — the canonical semantics keep it out of the
     // wallet bridge and split it in the received breakdown.
-    ocPayout:
-      r.category === "faction" && r.direction === "income"
-        ? Boolean(((r.metadata ?? {}) as { data?: { scenario?: string } }).data?.scenario)
-        : false,
+    ocPayout: isOcPayoutRow(r),
   }));
   const sem = aggregateMoneySemantics(moneyEvents, range.from, range.to);
 

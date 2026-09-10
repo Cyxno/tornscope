@@ -240,6 +240,7 @@ export interface MoneyPlan {
  *  Casino          Casino spin the wheel win casino tokens none   (tokens, not cash)
  *  Stocks          Stock buy                              expense (amount)
  *  Stocks          Stock sell                             income  (amount)
+ *  Stocks          Stock dividend                         income  (yield on held shares — not a sale)
  *  Company         Company employee pay                   income  (pay)
  *  Job             Job pay                                income  (pay)
  *  Property        Property upkeep                        expense (upkeep_paid)
@@ -306,6 +307,11 @@ export function moneyPlanFor(category: string, title: string): MoneyPlan | null 
   if (is(/^property rental market extension accept renter$/)) return { category: "housing", direction: "expense", skip: false, transfer: false };
   // Gym memberships (category "Gym"): a service fee, not an asset.
   if (is(/^gym purchase$/)) return { category: "gym", direction: "expense", skip: false, transfer: false };
+  // Stock dividends pay cash for shares already owned — earned income, NOT a
+  // conversion and never "unknown": without this rule the generic fallback
+  // cannot see the word and files the row as direction "unknown", which
+  // silently drops real yield out of every income figure.
+  if (is(/stock dividend/)) return { category: "stock", direction: "income", skip: false, transfer: false };
   if (is(/^stock buy/)) return { category: "stock", direction: "expense", skip: false, transfer: false };
   if (is(/^stock sell/)) return { category: "stock", direction: "income", skip: false, transfer: false };
   if (is(/^trade money incoming|^trade completed money/)) return { category: "trading", direction: "income", skip: false, transfer: false };

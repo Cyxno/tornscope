@@ -87,7 +87,7 @@ const EXPENSE_SEEDS = [
   { category: "points", label: "Bought 100 points", min: 45_000, max: 52_000 },
   { category: "items", label: "Bought weapons & armor", min: 10_000, max: 400_000 },
   { category: "bazaar", label: "Bazaar restock", min: 5_000, max: 150_000 },
-  { category: "city_bank", label: "City bank deposit", min: 100_000, max: 800_000 },
+  { category: "housing", label: "Property rent paid", min: 20_000, max: 80_000 },
 ] as const;
 
 function weightedPick<T extends { weight: number }>(items: readonly T[]): T {
@@ -290,7 +290,48 @@ async function main(): Promise<void> {
   }
 
   /* ---------------------------- money ledger ----------------------------- */
-  const moneyRows = [];
+  // The signature day's deterministic money rows are seeded HERE (not in the
+  // signature-day section below) so the networth snapshots below can track
+  // them like real data would.
+  const sigStart = Math.floor(now / DAY) * DAY - DAY; // UTC midnight, yesterday
+  const sig = (h: number, m = 0): Date => new Date((sigStart + h * HOUR + m * 60) * 1000);
+  const sigMoneyRows = [
+    { userId: user.id, occurredAt: sig(2, 15), category: "salary", direction: "income" as const, amount: 365_000n, source: "demo", sourceRef: "demo:sig:salary", description: "Salary money receive" },
+    // Bazaar sale: big cash inflow, but an asset conversion — never profit.
+    { userId: user.id, occurredAt: sig(9, 40), category: "bazaar", direction: "income" as const, amount: 2_400_000n, source: "demo", sourceRef: "demo:sig:bazaarsale", description: "Bazaar sale money receive" },
+    // Stock purchase: cash → asset (conversion, not an expense).
+    { userId: user.id, occurredAt: sig(11, 5), category: "stock", direction: "expense" as const, amount: -1_500_000n, source: "demo", sourceRef: "demo:sig:stockbuy", description: "Stock buy money sent" },
+    // Bank investment then withdrawal WITH yield: deposit leaves the wallet
+    // (neutral), the withdrawal returns principal + interest — the interest
+    // portion must surface only as derived economic income, never as raw cash income.
+    { userId: user.id, occurredAt: sig(11, 20), category: "city_bank", direction: "neutral" as const, amount: -500_000n, source: "demo", sourceRef: "demo:sig:bankdep", description: "Bank invest" },
+    { userId: user.id, occurredAt: sig(21, 45), category: "city_bank", direction: "neutral" as const, amount: 521_000n, source: "demo", sourceRef: "demo:sig:bankwd", description: "Bank withdraw" },
+    // Gym upgrade: a true expense where existing semantics say so.
+    { userId: user.id, occurredAt: sig(18, 30), category: "gym", direction: "expense" as const, amount: -75_000n, source: "demo", sourceRef: "demo:sig:gym", description: "Gym paid" },
+    // Rehab cost mirrored to the ledger (same as the real normalizer).
+    { userId: user.id, occurredAt: sig(14, 10), category: "rehab", direction: "expense" as const, amount: -250_000n, source: "demo", sourceRef: "demo:sig:rehab", description: "Drug rehabilitation paid" },
+    // Rental extension ACCEPTANCE (renter side): true expense, actual rent.
+    { userId: user.id, occurredAt: sig(16, 5), category: "housing", direction: "expense" as const, amount: -3_200_000n, source: "demo", sourceRef: "demo:sig:rent", description: "Property rental market extension accept renter", subcategory: "Property rental market extension accept renter" },
+    // OC payout: earned income credited to the FACTION MEMBER BALANCE —
+    // exercises the scenario-metadata exclusion from wallet flows (it must
+    // NOT move the wallet, or the bridge reports a phantom gap).
+    { userId: user.id, occurredAt: sig(15, 0), category: "faction", direction: "income" as const, amount: 1_200_000n, source: "demo", sourceRef: "demo:sig:ocpayout", description: "Faction payout money balance receive", subcategory: "Faction payout money balance receive", metadata: { demo: true, data: { scenario: "Break the Bank" } } },
+  ];
+  await db.moneyEvent.createMany({ data: sigMoneyRows, skipDuplicates: true });
+
+  type DemoMoneyRow = {
+    userId: string;
+    occurredAt: Date;
+    category: string;
+    subcategory?: string | null;
+    direction: "income" | "expense" | "neutral";
+    amount: bigint;
+    source: string;
+    sourceRef: string;
+    description: string;
+    metadata?: { demo?: boolean; data?: { scenario?: string } };
+  };
+  const moneyRows: DemoMoneyRow[] = [...sigMoneyRows];
   for (let t = start; t < now; t += HOUR) {
     const perHour = rand() < 0.4 ? 1 : 2;
     for (let i = 0; i < perHour; i++) {
@@ -324,19 +365,61 @@ async function main(): Promise<void> {
         });
       }
     }
+    // Occasional bank transfer pair: invest, then withdraw with ~4% yield —
+    // exercises the conversion lens and the derived bank-interest split.
+    if (rand() < 0.02 && t < now - 10 * DAY) {
+      const invest = between(200_000, 2_000_000);
+      const interest = Math.round(invest * 0.04);
+      moneyRows.push({
+        userId: user.id,
+        occurredAt: new Date((t + between(0, HOUR)) * 1000),
+        category: "city_bank",
+        subcategory: null,
+        direction: "neutral" as const,
+        amount: -BigInt(invest),
+        source: "demo",
+        sourceRef: `demo:bankdep:${t}`,
+        description: "Bank invest",
+      });
+      moneyRows.push({
+        userId: user.id,
+        occurredAt: new Date(Math.min(t + between(24, 240) * HOUR, now - HOUR) * 1000),
+        category: "city_bank",
+        subcategory: null,
+        direction: "neutral" as const,
+        amount: BigInt(invest + interest),
+        source: "demo",
+        sourceRef: `demo:bankwd:${t}`,
+        description: "Bank withdraw",
+      });
+    }
   }
   await db.moneyEvent.createMany({ data: moneyRows, skipDuplicates: true });
 
   /* ------------------------- networth snapshots -------------------------- */
+  // Wallet cash is DERIVED from the recorded ledger movements plus a tiny
+  // unexplained drift, so the demo's wallet reconciliation behaves like real
+  // data: a small residual that analytics must surface, never a fake exact
+  // match. OC payouts are excluded here (they credit the faction balance).
+  const movementByHour = new Map<number, number>();
+  for (const row of moneyRows) {
+    if ((row.metadata as { data?: { scenario?: string } } | null)?.data?.scenario) continue;
+    const h = Math.floor(row.occurredAt.getTime() / 1000 / HOUR) * HOUR;
+    movementByHour.set(h, (movementByHour.get(h) ?? 0) + Number(row.amount));
+  }
   let base = 180_000_000;
+  let wallet = 25_000_000;
   const nwRows = [];
   for (let t = start; t < now; t += HOUR) {
     base = Math.max(50_000_000, base + between(-400_000, 560_000));
+    const moved = movementByHour.get(t) ?? 0;
+    const drift = Math.round((rand() - 0.5) * 12_000); // the demo's small residual
+    wallet = Math.max(1_000_000, wallet + moved + drift);
     nwRows.push({
       userId: user.id,
       capturedAt: new Date(t * 1000),
       total: BigInt(base),
-      wallet: BigInt(Math.round(base * 0.08)),
+      wallet: BigInt(wallet),
       vault: BigInt(Math.round(base * 0.02)),
       cityBank: BigInt(Math.round(base * 0.3)),
       caymanBank: BigInt(Math.round(base * 0.12)),
@@ -468,27 +551,10 @@ async function main(): Promise<void> {
   // faction-sponsored Xanax, a rehab visit and notable account events. Fixed
   // hours keep it reproducible; every row stays user-scoped demo data and the
   // global item catalog is never touched.
-  const sigStart = Math.floor(now / DAY) * DAY - DAY; // UTC midnight, yesterday
-  const sig = (h: number, m = 0): Date => new Date((sigStart + h * HOUR + m * 60) * 1000);
+  // (The signature day's MONEY rows are seeded in the money-ledger section
+  // above so the networth snapshots can track them like real data would.)
   const xanaxItem = DRUGS.find((d) => d.name === "Xanax")!;
   const xanaxPriceNow = realPrices.get(xanaxItem.itemId) ?? BigInt(xanaxItem.price);
-
-  await db.moneyEvent.createMany({
-    data: [
-      { userId: user.id, occurredAt: sig(2, 15), category: "salary", direction: "income", amount: 365_000n, source: "demo", sourceRef: "demo:sig:salary", description: "Salary money receive" },
-      // Bazaar sale: big cash inflow, but an asset conversion — never profit.
-      { userId: user.id, occurredAt: sig(9, 40), category: "bazaar", direction: "income", amount: 2_400_000n, source: "demo", sourceRef: "demo:sig:bazaarsale", description: "Bazaar sale money receive" },
-      // Stock purchase: cash → asset (conversion, not an expense).
-      { userId: user.id, occurredAt: sig(11, 5), category: "stock", direction: "expense", amount: -1_500_000n, source: "demo", sourceRef: "demo:sig:stockbuy", description: "Stock buy money sent" },
-      // Bank deposit: internal movement between owned accounts (neutral).
-      { userId: user.id, occurredAt: sig(11, 20), category: "city_bank", direction: "neutral", amount: 500_000n, source: "demo", sourceRef: "demo:sig:bankdep", description: "Bank investment" },
-      // Gym upgrade: a true expense where existing semantics say so.
-      { userId: user.id, occurredAt: sig(18, 30), category: "gym", direction: "expense", amount: -75_000n, source: "demo", sourceRef: "demo:sig:gym", description: "Gym paid" },
-      // Rehab cost mirrored to the ledger (same as the real normalizer).
-      { userId: user.id, occurredAt: sig(14, 10), category: "rehab", direction: "expense", amount: -250_000n, source: "demo", sourceRef: "demo:sig:rehab", description: "Drug rehabilitation paid" },
-    ],
-    skipDuplicates: true,
-  });
 
   // Two Xanax uses; the first is faction-sponsored (armory "used" evidence
   // within the matching tolerance), the second draws the armory batch below —

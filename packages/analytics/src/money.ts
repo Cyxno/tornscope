@@ -266,6 +266,12 @@ export function classifyMoneySemantics(event: {
   const desc = event.description ?? "";
   const income = event.direction === "income";
 
+  // Yield on owned value is true income, not a conversion: stock dividends pay
+  // cash for shares you already hold, and bank interest (wherever a ledger row
+  // carries it as income) is earned on deposited money. Paying interest
+  // (loans) is symmetric true expense.
+  if (/dividend|interest/i.test(desc)) return income ? "true_income" : "true_expense";
+
   switch (cat) {
     // Asset <-> cash conversions (value stays owned, in another form).
     case "bazaar":
@@ -578,4 +584,297 @@ export function buildCashSpentBreakdown(events: readonly CashFlowEventLike[]): C
     other: { total: otherTotal, rows: sortRows(otherRows) },
     unclassified: { total: unclassifiedTotal, count: unclassifiedCount },
   };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Bank interest (derived — principal return is never income)                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Bank maturity pays back the principal AND the interest in one withdrawal —
+ * the historical log carries only the total. The interest (the only true
+ * income here) must therefore be DERIVED, never booked from the raw amount.
+ *
+ * Model, per bank pool (city / cayman / piggy) over the range:
+ *   surplus = Σ withdrawals − Σ investments
+ * When every invest/withdraw pair lies inside the range the surplus IS the
+ * interest — exact, whatever the interleaving. When withdrawals exceed the
+ * recorded investments beyond any plausible yield (Torn's top rates are
+ * ≈11% per term, so anything over MAX_PLAUSIBLE_INTEREST_RATIO of the
+ * recorded principal is principal from investments that predate the range),
+ * the split is unattributable: no income is claimed and `complete` goes
+ * false. A negative surplus is principal still returning — never negative
+ * income.
+ */
+export const MAX_PLAUSIBLE_INTEREST_RATIO = 0.5;
+
+export interface BankInterestDerivation {
+  /** Derived interest earned on matured investments (true income). */
+  interestIncome: number;
+  /** Principal returned to the wallet on attributed withdrawals. */
+  principalReturned: number;
+  /** Yield-bearing withdrawals whose principal/interest split is not attributable. */
+  unattributableWithdrawals: number;
+  /** Recorded principal still invested (or awaiting withdrawal) at range end. */
+  principalStillInvested: number;
+  /** true when every bank pool's surplus was attributable. */
+  complete: boolean;
+  provenance: "derived";
+}
+
+export function deriveBankInterest(events: readonly MoneyEventLike[], from: number, to: number): BankInterestDerivation {
+  let interestIncome = 0;
+  let principalReturned = 0;
+  let unattributableWithdrawals = 0;
+  let principalStillInvested = 0;
+  let complete = true;
+
+  for (const bank of BANK_TRANSFER_CATEGORIES) {
+    let deposits = 0;
+    let withdrawals = 0;
+    for (const e of filterByRange(events, from, to)) {
+      if (e.direction !== "neutral" || e.category !== bank || e.amount === 0) continue;
+      if (e.amount < 0) deposits += -e.amount;
+      else withdrawals += e.amount;
+    }
+    const surplus = withdrawals - deposits;
+    if (surplus <= 0) {
+      // All principal (or investments still held): no income to claim.
+      principalReturned += withdrawals;
+      principalStillInvested += -surplus;
+      continue;
+    }
+    if (deposits > 0 && surplus <= deposits * MAX_PLAUSIBLE_INTEREST_RATIO) {
+      interestIncome += surplus;
+      principalReturned += deposits;
+    } else {
+      // Principal predates recorded history: the split is unknowable.
+      unattributableWithdrawals += surplus;
+      principalReturned += withdrawals - surplus; // matched principal, if any
+      complete = false;
+    }
+  }
+
+  return {
+    interestIncome,
+    principalReturned,
+    unattributableWithdrawals,
+    principalStillInvested,
+    complete,
+    provenance: "derived",
+  };
+}
+
+/** The bank transfer categories (wallet ↔ bank), shared by all economy math. */
+export function isBankTransferCategory(category: string): boolean {
+  return BANK_TRANSFER_CATEGORIES.has(category);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Asset conversions                                                            */
+/* -------------------------------------------------------------------------- */
+
+export interface ConversionRow {
+  /** Stable pair id, e.g. "cash->bank" or "items->cash". */
+  pair: string;
+  label: string;
+  /** Total moved (magnitude). */
+  amount: number;
+  count: number;
+}
+
+export interface ConversionsAggregate {
+  /** Wallet cash spent acquiring assets (bank deposits, stock/item/point buys, vault deposits). */
+  cashIntoAssets: number;
+  /** Assets sold/redeemed into wallet cash. */
+  assetsIntoCash: number;
+  /** assetsIntoCash − cashIntoAssets. */
+  netCashEffect: number;
+  /** Subset of the above that moved through bank accounts (both directions, magnitude). */
+  bankTransfers: number;
+  byPair: ConversionRow[];
+  provenance: "exact";
+}
+
+/**
+ * Conversion pair table. Neutral rows are own-pool movements (bank, faction
+ * vault); non-neutral rows qualify only when their economic semantics say
+ * asset_in/asset_out — earned income and true expenses never appear here.
+ */
+const CONVERSION_PAIR_BY_CATEGORY: Record<string, { into: [string, string]; outOf: [string, string] }> = {
+  city_bank: { into: ["cash->bank", "Cash → Bank"], outOf: ["bank->cash", "Bank → Cash"] },
+  cayman_bank: { into: ["cash->bank", "Cash → Cayman"], outOf: ["bank->cash", "Cayman → Cash"] },
+  piggy_bank: { into: ["cash->bank", "Cash → Piggy Bank"], outOf: ["bank->cash", "Piggy Bank → Cash"] },
+  faction: { into: ["cash->faction", "Cash → Faction vault"], outOf: ["faction->cash", "Faction vault → Cash"] },
+  stock: { into: ["cash->stocks", "Cash → Stocks"], outOf: ["stocks->cash", "Stocks → Cash"] },
+  points: { into: ["cash->points", "Cash → Points"], outOf: ["points->cash", "Points → Cash"] },
+  bazaar: { into: ["cash->items", "Cash → Items"], outOf: ["items->cash", "Items → Cash"] },
+  items: { into: ["cash->items", "Cash → Items"], outOf: ["items->cash", "Items → Cash"] },
+  trading: { into: ["cash->items", "Cash → Items"], outOf: ["items->cash", "Items → Cash"] },
+  auction: { into: ["cash->items", "Cash → Items"], outOf: ["items->cash", "Items → Cash"] },
+  travel: { into: ["cash->items", "Cash → Items"], outOf: ["items->cash", "Items → Cash"] },
+  plushie: { into: ["cash->items", "Cash → Items"], outOf: ["items->cash", "Items → Cash"] },
+  flower: { into: ["cash->items", "Cash → Items"], outOf: ["items->cash", "Items → Cash"] },
+  drugs: { into: ["cash->items", "Cash → Items"], outOf: ["items->cash", "Items → Cash"] },
+};
+
+/** Aggregate cash ↔ asset conversions for a range (bank + vault + item/stock/point trades). */
+export function aggregateConversions(events: readonly MoneyEventLike[], from: number, to: number): ConversionsAggregate {
+  let cashIntoAssets = 0;
+  let assetsIntoCash = 0;
+  let bankTransfers = 0;
+  const byPair = new Map<string, ConversionRow>();
+
+  const add = (pair: [string, string], amount: number): void => {
+    if (pair[0].startsWith("cash->")) cashIntoAssets += amount;
+    else assetsIntoCash += amount;
+    const existing = byPair.get(pair[0]);
+    if (existing) {
+      existing.amount += amount;
+      existing.count += 1;
+    } else {
+      byPair.set(pair[0], { pair: pair[0], label: pair[1], amount, count: 1 });
+    }
+  };
+
+  for (const event of filterByRange(events, from, to)) {
+    if (event.amount === 0) continue;
+    const magnitude = Math.abs(event.amount);
+    const pairTable = CONVERSION_PAIR_BY_CATEGORY[event.category];
+    if (!pairTable) continue;
+    if (event.direction === "neutral") {
+      const pair = event.amount > 0 ? pairTable.outOf : pairTable.into;
+      add(pair, magnitude);
+      if (isBankTransferCategory(event.category)) bankTransfers += magnitude;
+      continue;
+    }
+    // Non-neutral rows must be conversions semantically — yields (dividends,
+    // interest) and earned income are excluded here.
+    const kind = classifyMoneySemantics(event);
+    if (kind === "asset_out") add(pairTable.into, magnitude);
+    else if (kind === "asset_in") add(pairTable.outOf, magnitude);
+  }
+
+  const rows = [...byPair.values()].sort((a, b) => b.amount - a.amount || a.pair.localeCompare(b.pair));
+  return {
+    cashIntoAssets,
+    assetsIntoCash,
+    netCashEffect: assetsIntoCash - cashIntoAssets,
+    bankTransfers,
+    byPair: rows,
+    provenance: "exact",
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Wallet reconciliation quality                                                */
+/* -------------------------------------------------------------------------- */
+
+export type ReconciliationQuality = "exact" | "small_residual" | "partial" | "unreconciled" | "unavailable";
+
+/**
+ * Grade a wallet reconciliation. Anchors missing → unavailable (never a
+ * fabricated grade). Known money-log coverage gaps cap the grade at partial
+ * — a perfect-looking residual over a partial history is luck, not proof.
+ * `exact` is reserved for sub-dollar residuals; `small_residual` allows a
+ * tiny fraction of the recorded flow; anything larger is unreconciled.
+ */
+export function classifyReconciliation(input: {
+  openingWallet: number | null;
+  closingWallet: number | null;
+  residual: number | null;
+  inflows: number;
+  outflows: number;
+  coverageGap: boolean;
+}): ReconciliationQuality {
+  if (input.openingWallet === null || input.closingWallet === null || input.residual === null) return "unavailable";
+  if (input.coverageGap) return "partial";
+  const abs = Math.abs(input.residual);
+  if (abs < 1) return "exact"; // sub-dollar: rounding only
+  const flow = input.inflows + input.outflows;
+  if (abs <= Math.max(1_000, flow * 0.002)) return "small_residual";
+  return "unreconciled";
+}
+
+/**
+ * Share of the actual wallet change that recorded movements explain
+ * (0..1). null when the ratio is meaningless: missing anchors, or a zero
+ * wallet change with a non-zero residual (division by zero).
+ */
+export function explainedRatio(residual: number | null, openingWallet: number | null, closingWallet: number | null): number | null {
+  if (residual === null || openingWallet === null || closingWallet === null) return null;
+  const change = closingWallet - openingWallet;
+  if (Math.abs(change) < 1) return Math.abs(residual) < 1 ? 1 : null;
+  return Math.max(0, Math.min(1, 1 - Math.abs(residual) / Math.abs(change)));
+}
+
+/* -------------------------------------------------------------------------- */
+/* Major movements                                                              */
+/* -------------------------------------------------------------------------- */
+
+export type MovementRole = "income" | "expense" | "conversion_in" | "conversion_out" | "transfer";
+
+export interface MajorMovement {
+  id: string;
+  occurredAt: number;
+  category: string;
+  label: string;
+  description: string | null;
+  role: MovementRole;
+  /** Magnitude (always positive). */
+  amount: number;
+}
+
+/**
+ * Largest meaningful movements in a range, across ALL semantic roles so a
+ * huge bank investment is never crowded out by sale proceeds. The floor is
+ * adaptive: 0.1% of total recorded magnitude (min $1k) keeps $5k events out
+ * of a multi-billion account. Deterministic: magnitude desc, then time asc,
+ * then id.
+ */
+export function majorMoneyMovements(events: readonly MoneyEventLike[], from: number, to: number, opts?: { limit?: number }): MajorMovement[] {
+  const limit = opts?.limit ?? 8;
+  const inRange = filterByRange(events, from, to).filter((e) => e.amount !== 0 && e.direction !== "unknown");
+  const totalMagnitude = inRange.reduce((s, e) => s + Math.abs(e.amount), 0);
+  const floor = Math.max(1_000, totalMagnitude * 0.001);
+
+  const rows: MajorMovement[] = [];
+  for (const e of inRange) {
+    const magnitude = Math.abs(e.amount);
+    if (magnitude < floor) continue;
+    let role: MovementRole;
+    let label: string;
+    if (e.direction === "neutral") {
+      role = "transfer";
+      label = humanLabel(e.category);
+    } else {
+      const kind = classifyMoneySemantics(e);
+      if (kind === "true_income") {
+        role = "income";
+        label = financeIncomeLabel(e.category);
+      } else if (kind === "true_expense") {
+        role = "expense";
+        label = financeExpenseLabel(e.category);
+      } else if (kind === "asset_in") {
+        role = "conversion_in";
+        label = financeIncomeLabel(e.category);
+      } else if (kind === "asset_out") {
+        role = "conversion_out";
+        label = financeExpenseLabel(e.category);
+      } else {
+        continue; // unknown semantics never surface as a major movement
+      }
+    }
+    rows.push({
+      id: e.id,
+      occurredAt: e.occurredAt,
+      category: String(e.category),
+      label,
+      description: e.description ?? null,
+      role,
+      amount: magnitude,
+    });
+  }
+
+  return rows.sort((a, b) => b.amount - a.amount || a.occurredAt - b.occurredAt || a.id.localeCompare(b.id)).slice(0, limit);
 }

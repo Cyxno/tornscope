@@ -20,7 +20,7 @@ import {
   calculateTravelProfit,
   buildDailyTravelProfit,
 } from "@tornscope/analytics";
-import { bigintToNumber, getPrismaClient, loadMarketPrices } from "@tornscope/database";
+import { bigintToNumber, getPrismaClient, isOcPayoutRow, loadMarketPrices } from "@tornscope/database";
 import { getLatestNetworth, getNetworthPeriodForRange } from "./networth.js";
 import { loadAvailabilityContext } from "./availability.js";
 import { resourceConfidence } from "./confidence.js";
@@ -125,10 +125,7 @@ export async function getDashboard(userId: string, rangeInput: DateRangeInput): 
     source: r.source,
     // Faction income carrying OC scenario metadata = an OC payout credited
     // to the FACTION MEMBER BALANCE (earned, but never wallet cash).
-    ocPayout:
-      r.category === "faction" && r.direction === "income"
-        ? Boolean(((r.metadata ?? {}) as { data?: { scenario?: string } }).data?.scenario)
-        : false,
+    ocPayout: isOcPayoutRow(r),
   }));
   const agg = aggregateMoneyEvents(moneyEvents, range.from, range.to, autoInterval(range));
   const fin = aggregateMoneySemantics(moneyEvents, range.from, range.to);
@@ -194,18 +191,10 @@ export async function getDashboard(userId: string, rangeInput: DateRangeInput): 
   // wallet flows or the bridge reports a phantom unreconciled gap of exactly
   // the payout. They remain income in the P&L — the money is owned, just not
   // wallet cash (Extended Wealth tracks the balance).
-  const factionBalanceCredits = moneyRows
-    .filter((r) => r.category === "faction" && r.direction === "income")
-    .reduce((sum, r) => {
-      const meta = (r.metadata ?? {}) as { data?: { scenario?: string } };
-      return meta.data?.scenario ? sum + (bigintToNumber(r.amount) ?? 0) : sum;
-    }, 0);
+  const factionBalanceCredits = moneyRows.reduce((sum, r) => (isOcPayoutRow(r) ? sum + (bigintToNumber(r.amount) ?? 0) : sum), 0);
   const wallet = buildWalletBridge(
     moneyRows
-      .filter((r) => {
-        if (r.category !== "faction" || r.direction !== "income") return true;
-        return !((r.metadata ?? {}) as { data?: { scenario?: string } }).data?.scenario;
-      })
+      .filter((r) => !isOcPayoutRow(r))
       .map((r) => ({ amount: bigintToNumber(r.amount) ?? 0, direction: r.direction as "income" | "expense" | "neutral" | "unknown", category: r.category })),
     walletStart ? bigintToNumber(walletStart.wallet) : null,
     walletEnd ? bigintToNumber(walletEnd.wallet) : null,

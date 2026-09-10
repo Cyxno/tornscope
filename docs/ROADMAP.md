@@ -128,9 +128,26 @@ Acceptance criteria:
 ## SHOULD HAVE
 
 ### 6. Economy analytics improvements — *issue: `feat(v0.2): economy analytics refinements`* · labels: `v0.2` `analytics`
+
+**Status: Complete.** Implemented on `develop`, deployed to the dev stack —
+see [ECONOMY-ANALYTICS.md](ECONOMY-ANALYTICS.md).
+
 Stronger cashflow vs asset-conversion distinction, better wallet
 reconciliation, better "why did my net worth move?" analysis, clearer
 confirmed-vs-estimated values. Related: 1, 2.
+
+Acceptance criteria:
+- [x] Cash movement, asset conversions, economic effect and net worth are first-class, separate lenses (related, never additive).
+- [x] Bank principal/interest semantics: interest is derived from invest/withdraw pairs; principal return is never income; unattributable splits degrade availability instead of fabricating.
+- [x] Bazaar/item sales are cash inflow + conversion — profit is never fabricated; value differences are labeled estimated.
+- [x] Purchases (items, stocks, points, bank deposits) are conversions, never automatic expenses (consumptive classifications excepted: gym, rehab, upkeep, rent).
+- [x] Wallet reconciliation with opening/recorded/expected/actual/residual and quality grades (exact / small_residual / partial / unreconciled / unavailable); residual always surfaced.
+- [x] Net worth explanation: official category deltas as recorded drivers, estimated contributors labeled, unexplained residual reported; NW delta never called profit.
+- [x] Confirmed vs estimated is clear (provenance + confidence on every major section); unavailable never becomes zero.
+- [x] Major movement detection across all semantic roles with adaptive thresholds.
+- [x] `/api/economy` is one coherent batched payload (no N+1); demo and Limited profiles supported.
+- [x] Economy UI redesigned as a lens workspace (editorial summary, four lenses, reconciliation rail); mobile/tablet/desktop verified, keyboard-accessible lens switcher.
+- [x] Full test matrix (39 new tests; 864 total pass) and docs.
 
 ### 7. Notification improvements — *issue: `feat(v0.2): notification settings & delivery improvements`* · labels: `v0.2` `notifications` `enhancement`
 Per-notification-type settings, improved quiet-hours behavior, queue
