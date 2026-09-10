@@ -333,7 +333,7 @@
           </div>
       </div>
 
-      <div class="min-w-0 lg:pl-10">
+      <div class="min-w-0 lg:col-span-2 lg:pl-10">
         <div class="flex items-baseline justify-between gap-2">
           <p class="section-label">Cooldowns</p>
           <span class="text-[11px] text-fg-faint">tap a row to open Torn</span>

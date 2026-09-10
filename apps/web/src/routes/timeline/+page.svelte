@@ -137,34 +137,32 @@
     <div class="space-y-8">
       {#each dayGroups as group (group.day)}
         <section>
-          <h2 class="sticky top-14 z-10 -mx-2 bg-bg/85 px-2 py-1.5 font-display text-lg font-medium text-fg-muted backdrop-blur-sm md:top-14">{formatDayHeading(group.list[0]!.occurredAt)}</h2>
-          <ol class="relative mt-3 space-y-0.5">
-            <span class="absolute top-2 bottom-2 left-[13px] w-px bg-border" aria-hidden="true"></span>
+          <!-- Date anchor: sticky, the ledger's section rule -->
+          <h2 class="section-label sticky top-0 z-10 -mx-2 border-b border-border bg-bg/90 px-2 py-2 backdrop-blur-sm">{formatDayHeading(group.list[0]!.occurredAt)}</h2>
+          <ol>
             {#each group.list as event (event.id)}
-              <li class="group relative flex items-start gap-3.5 rounded-tile px-2 py-2.5 transition-colors hover:bg-surface/70">
-                <span class="relative z-10 mt-1 flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full border bg-surface {event.type === 'torn_event'
-                  ? 'border-warning/40 text-warning'
-                  : event.category?.toLowerCase().includes('overdos')
-                    ? 'border-negative/40 text-negative'
-                    : event.amount !== null && event.amount !== undefined
-                      ? 'border-positive/40 text-positive'
-                      : 'border-border text-fg-faint'}">
-                  <Icon name={eventIcon(event)} size={11} />
-                </span>
-                <div class="min-w-0 flex-1">
-                  <div class="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
-                    <span class="tnum text-xs text-fg-faint">{formatClock(event.occurredAt)}</span>
-                    {#if event.category}
-                      <span class="text-[11px] font-medium text-fg-faint">{categoryLabel(event.category)}</span>
-                    {/if}
-                  </div>
-                  <p class="mt-0.5 text-sm leading-relaxed text-fg">{event.title}</p>
-                  {#if event.description && event.description !== event.title}
-                    <p class="mt-0.5 line-clamp-2 text-[13px] leading-relaxed text-fg-muted">{event.description}</p>
+              <li class="grid grid-cols-[44px_minmax(0,1fr)_auto] items-baseline gap-3 border-b border-border/40 px-2 py-2 transition-colors last:border-0 hover:bg-surface/60">
+                <span class="tnum text-right text-[11px] text-fg-faint">{formatClock(event.occurredAt)}</span>
+                <span class="min-w-0 truncate text-[13px] text-fg" title={event.title}>
+                  <Icon
+                    name={eventIcon(event)}
+                    size={11}
+                    class="mr-1.5 inline {event.type === 'torn_event'
+                      ? 'text-warning'
+                      : event.category?.toLowerCase().includes('overdos')
+                        ? 'text-negative'
+                        : 'text-fg-faint'}"
+                  />
+                  {event.title}
+                  {#if event.category}
+                    <span class="ml-2 text-[10px] font-medium uppercase tracking-[0.1em] text-fg-faint">{categoryLabel(event.category)}</span>
                   {/if}
-                </div>
+                  {#if event.description && event.description !== event.title}
+                    <span class="hidden text-xs text-fg-faint lg:inline"> — {event.description}</span>
+                  {/if}
+                </span>
                 {#if event.amount !== null && event.amount !== undefined}
-                  <span class="tnum mt-1 shrink-0 text-sm font-medium {event.amount >= 0 ? 'text-positive' : 'text-negative'}">
+                  <span class="tnum text-right text-[13px] font-medium {event.amount >= 0 ? 'text-positive' : 'text-negative'}">
                     {event.amount >= 0 ? '+' : ''}{formatMoneyCompact(event.amount)}
                   </span>
                 {/if}

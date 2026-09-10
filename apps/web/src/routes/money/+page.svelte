@@ -20,6 +20,8 @@
   let eventsLoading = $state(false);
   let error = $state<string | null>(null);
   let eventsError = $state<string | null>(null);
+  // The semantic lens switcher: one analytical body, three readings.
+  let lens = $state<"cash" | "consumption" | "wealth">("cash");
   let reloadToken = $state(0);
 
   let category = $state("");
@@ -236,17 +238,75 @@
   {:else if error && !summary}
     <StateMessage state="error" title="Could not load economy analytics" hint={error} action={{ label: "Retry", run: () => (reloadToken += 1) }} />
   {:else if summary && economy}
-    <!-- ═══ A. Cash flow ═══ -->
-    <section class="space-y-5">
-      <div class="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 class="section-label text-[12px]"><span class="mr-2 text-accent">A</span> Cash received &amp; spent — money that moved through your wallet</h2>
-        <!-- Semantic legend: the vocabulary the whole page uses -->
-        <div class="flex flex-wrap gap-1.5">
-          <span class="chip chip-positive !text-[10px]" title="Earned money — raises total wealth">earned</span>
-          <span class="chip chip-quiet !border-border !text-[10px]" title="A conversion: value changing form, not gain or loss">conversion</span>
-          <span class="chip chip-negative !text-[10px]" title="True expense — value gone">true expense</span>
+    <!-- ═══ Editorial summary: the period in one sentence ═══ -->
+    <section aria-label="The period in one sentence" class="section-rule">
+      <p class="font-display max-w-4xl text-[22px] font-medium leading-snug text-fg sm:text-[26px]">
+        Across {period.toLowerCase()}, you received
+        <span class="tnum font-semibold text-positive">{formatKpiValue(economy.cashFlow.income)}</span>
+        and spent
+        <span class="tnum font-semibold text-negative">{formatKpiValue(economy.cashFlow.expenses)}</span>{' '}through the wallet.
+        {#if economy.networth.change.value !== null && economy.networth.coverage !== "none"}
+          Total wealth moved
+          <span class="tnum font-semibold {economy.networth.change.value >= 0 ? 'text-positive' : 'text-negative'}">{formatSignedMoneyCompact(economy.networth.change.value)}</span>.
+        {:else}
+          Wealth change needs two snapshots in range.
+        {/if}
+      </p>
+      <p class="mt-2 max-w-3xl text-xs leading-relaxed text-fg-faint">
+        Four lenses on the same period — related, never additive: cash that moved, value that changed form, value
+        consumed, and the net-worth snapshot delta. A wallet deficit is not a loss; most spending buys assets you keep.
+      </p>
+
+      <!-- Flow strip: the four lenses as one reading -->
+      <div class="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-tile border border-border bg-border lg:grid-cols-4">
+        <div class="bg-bg-raise px-5 py-4">
+          <p class="flex items-center gap-2 text-[11px] font-medium text-fg-faint"><span class="h-1.5 w-1.5 rounded-full bg-positive"></span>1 · Cash movement</p>
+          <p class="tnum mt-1 text-lg font-semibold {economy.cashFlow.netCashFlow.value === null ? 'text-fg-faint' : economy.cashFlow.netCashFlow.value >= 0 ? 'text-positive' : 'text-negative'}">
+            {formatKpiValue(economy.cashFlow.netCashFlow, formatSignedMoneyCompact)}
+          </p>
+        </div>
+        <div class="bg-bg-raise px-5 py-4">
+          <p class="flex items-center gap-2 text-[11px] font-medium text-fg-faint"><span class="h-1.5 w-1.5 rounded-full bg-fg-faint"></span>2 · Conversions</p>
+          <p class="tnum mt-1 text-lg font-semibold text-fg">{formatMoneyCompact(assetPurchases)} in · {formatMoneyCompact(soldInventoryIncome)} out</p>
+        </div>
+        <div class="bg-bg-raise px-5 py-4">
+          <p class="flex items-center gap-2 text-[11px] font-medium text-fg-faint"><span class="h-1.5 w-1.5 rounded-full bg-negative"></span>3 · Economic effect</p>
+          <p class="tnum mt-1 text-lg font-semibold {economy.cashFlow.trueIncome - economy.cashFlow.trueExpense >= 0 ? 'text-positive' : 'text-negative'}">
+            {formatSignedMoneyCompact(economy.cashFlow.trueIncome - economy.cashFlow.trueExpense)}
+          </p>
+        </div>
+        <div class="bg-bg-raise px-5 py-4">
+          <p class="flex items-center gap-2 text-[11px] font-medium text-fg-faint"><span class="h-1.5 w-1.5 rounded-full bg-accent"></span>4 · Net worth movement</p>
+          <p class="tnum mt-1 text-lg font-semibold {economy.networth.change.value === null || economy.networth.coverage === 'none' ? 'text-fg-faint' : economy.networth.change.value >= 0 ? 'text-positive' : 'text-negative'}">
+            {economy.networth.coverage === "none" ? "insufficient history" : formatSignedMoneyCompact(economy.networth.change.value)}
+          </p>
         </div>
       </div>
+
+      <!-- Lens switcher -->
+      <div class="mt-7 flex items-center gap-3">
+        <div class="inline-flex max-w-full flex-wrap items-center gap-0.5 rounded-full border border-border bg-surface p-1" role="tablist" aria-label="Economy lens">
+          {#each [["cash", "Cash flow"], ["consumption", "Consumption"], ["wealth", "Wealth"]] as [id, label] (id)}
+            <button
+              type="button"
+              role="tab"
+              aria-selected={lens === id}
+              class="rounded-full px-3.5 py-1.5 text-xs font-medium transition-all {lens === id ? 'bg-fg font-semibold text-bg' : 'text-fg-muted hover:text-fg'}"
+              onclick={() => (lens = id as typeof lens)}
+            >
+              {label}
+            </button>
+          {/each}
+        </div>
+        <span class="hidden text-[11px] text-fg-faint sm:block">
+          {lens === "cash" ? "money that moved through the wallet" : lens === "consumption" ? "value used up, valued from the catalog" : "what happened to total wealth"}
+        </span>
+      </div>
+    </section>
+
+    <!-- ═══ Lens: Cash flow ═══ -->
+    {#if lens === "cash"}
+    <section class="space-y-5" aria-label="Cash flow lens">
       {#if cashBlocked && cashAv}
         <!-- Cash flow needs User Logs: a permission state, never $0 -->
         <StateMessage
@@ -355,11 +415,85 @@
         {/if}
       </Panel>
       {/if}
-    </section>
 
-    <!-- ═══ B. Asset movement & consumption ═══ -->
-    <section class="space-y-5">
-      <h2 class="section-label text-[12px]"><span class="mr-2 text-accent">B</span> Asset movement &amp; consumption — value that changed form or left your inventory</h2>
+      <!-- Cash flow charts, inside the cash lens -->
+      {#if !cashBlocked}
+        <Panel title="Cumulative net cash flow" caption="Running cash flow across the selected range" flush>
+          {#if !cumulativeOption}
+            <StateMessage state="empty" compact title="No money events in this range" />
+          {:else}
+            <Chart option={cumulativeOption} height={300} />
+          {/if}
+        </Panel>
+
+        <section class="grid gap-6 lg:grid-cols-2">
+          <Panel title="Cash received vs spent" caption="Per-day cash movement in both directions" flush>
+            {#if !flowOption}
+              <StateMessage state="empty" compact title="No flow to show" />
+            {:else}
+              <Chart option={flowOption} height={280} />
+            {/if}
+          </Panel>
+          <Panel title="Received vs spent mix" caption="Top categories by side — legends sit below each chart, never over the graphic">
+            {#if summary.incomeByCategory.length === 0 && summary.expensesByCategory.length === 0}
+              <StateMessage state="empty" compact title="No categories to break down" />
+            {:else}
+              <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                <div class="min-w-0">
+                  <p class="mb-1 text-center text-[11px] font-semibold uppercase tracking-[0.14em] text-positive">Cash received</p>
+                  {#if receivedDonut}
+                    <Chart option={receivedDonut} height={190} />
+                  {:else}
+                    <div class="flex h-[190px] items-center justify-center text-xs text-fg-faint">No received cash in this range</div>
+                  {/if}
+                  <ul class="mx-auto mt-2 grid max-w-sm gap-1 text-xs">
+                    {#each receivedSlices as slice (slice.name)}
+                      <li class="flex items-baseline gap-2">
+                        <span class="h-2 w-2 shrink-0 rounded-full" style="background: {slice.color}"></span>
+                        <span class="min-w-0 flex-1 truncate text-fg-muted" title={slice.name}>{slice.name}</span>
+                        <span class="tnum text-fg-muted">{formatMoneyCompact(slice.value)}</span>
+                        <span class="tnum w-9 text-right text-fg-faint">{Math.round(slice.share * 100)}%</span>
+                      </li>
+                    {/each}
+                  </ul>
+                </div>
+                <div class="min-w-0">
+                  <p class="mb-1 text-center text-[11px] font-semibold uppercase tracking-[0.14em] text-negative">Cash spent</p>
+                  {#if spentDonut}
+                    <Chart option={spentDonut} height={190} />
+                  {:else}
+                    <div class="flex h-[190px] items-center justify-center text-xs text-fg-faint">No spent cash in this range</div>
+                  {/if}
+                  <ul class="mx-auto mt-2 grid max-w-sm gap-1 text-xs">
+                    {#each spentSlices as slice (slice.name)}
+                      <li class="flex items-baseline gap-2">
+                        <span class="h-2 w-2 shrink-0 rounded-full" style="background: {slice.color}"></span>
+                        <span class="min-w-0 flex-1 truncate text-fg-muted" title={slice.name}>{slice.name}</span>
+                        <span class="tnum text-fg-muted">{formatMoneyCompact(slice.value)}</span>
+                        <span class="tnum w-9 text-right text-fg-faint">{Math.round(slice.share * 100)}%</span>
+                      </li>
+                    {/each}
+                  </ul>
+                </div>
+              </div>
+            {/if}
+          </Panel>
+        </section>
+      {/if}
+    </section>
+    {/if}
+
+    <!-- ═══ Lens: Consumption ═══ -->
+    {#if lens === "consumption"}
+    <section class="space-y-5" aria-label="Consumption lens">
+      <div class="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 class="section-label text-[12px]">Consumption — value used up, valued from the Torn catalog</h2>
+        <div class="flex flex-wrap gap-1.5">
+          <span class="chip chip-positive !text-[10px]" title="Earned money — raises total wealth">earned</span>
+          <span class="chip chip-quiet !border-border !text-[10px]" title="A conversion: value changing form, not gain or loss">conversion</span>
+          <span class="chip chip-negative !text-[10px]" title="True expense — value gone">true expense</span>
+        </div>
+      </div>
       <details class="group rounded-tile border border-border bg-surface px-5 py-3">
         <summary class="flex cursor-pointer items-center justify-between gap-3 text-xs font-medium text-fg-muted transition-colors hover:text-fg [&::-webkit-details-marker]:hidden">
           How purchases, sales and consumption differ
@@ -408,10 +542,12 @@
         {/if}
       </Panel>
     </section>
+    {/if}
 
-    <!-- ═══ C. Wealth effects ═══ -->
-    <section class="space-y-5">
-      <h2 class="section-label text-[12px]"><span class="mr-2 text-accent">C</span> Wealth effects — what actually happened to your total wealth</h2>
+    <!-- ═══ Lens: Wealth ═══ -->
+    {#if lens === "wealth"}
+    <section class="space-y-5" aria-label="Wealth lens">
+      <h2 class="section-label text-[12px]">Wealth — what actually happened to your total worth</h2>
       {#if nwBlocked && nwAv}
         <StateMessage
           state={availabilityMessage(nwAv).state}
@@ -493,69 +629,7 @@
       {/if}
       {/if}
     </section>
-
-    <!-- Cash flow charts -->
-    <Panel title="Cumulative net cash flow" caption="Running cash flow across the selected range" flush>
-      {#if !cumulativeOption}
-        <StateMessage state="empty" compact title="No money events in this range" />
-      {:else}
-        <Chart option={cumulativeOption} height={300} />
-      {/if}
-    </Panel>
-
-    <section class="grid gap-6 lg:grid-cols-2">
-      <Panel title="Cash received vs spent" caption="Per-day cash movement in both directions" flush>
-        {#if !flowOption}
-          <StateMessage state="empty" compact title="No flow to show" />
-        {:else}
-          <Chart option={flowOption} height={260} />
-        {/if}
-      </Panel>
-      <Panel title="Received vs spent mix" caption="Top categories by side — legends sit below each chart, never over the graphic">
-        {#if summary.incomeByCategory.length === 0 && summary.expensesByCategory.length === 0}
-          <StateMessage state="empty" compact title="No categories to break down" />
-        {:else}
-          <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
-            <div class="min-w-0">
-              <p class="mb-1 text-center text-[11px] font-semibold uppercase tracking-[0.13em] text-positive">Cash received</p>
-              {#if receivedDonut}
-                <Chart option={receivedDonut} height={170} />
-              {:else}
-                <div class="flex h-[170px] items-center justify-center text-xs text-fg-faint">No received cash in this range</div>
-              {/if}
-              <ul class="mx-auto mt-2 grid max-w-sm gap-1 text-xs">
-                {#each receivedSlices as slice (slice.name)}
-                  <li class="flex items-baseline gap-2">
-                    <span class="h-2 w-2 shrink-0 rounded-full" style="background: {slice.color}"></span>
-                    <span class="min-w-0 flex-1 truncate text-fg-muted" title={slice.name}>{slice.name}</span>
-                    <span class="tnum text-fg-muted">{formatMoneyCompact(slice.value)}</span>
-                    <span class="tnum w-9 text-right text-fg-faint">{Math.round(slice.share * 100)}%</span>
-                  </li>
-                {/each}
-              </ul>
-            </div>
-            <div class="min-w-0">
-              <p class="mb-1 text-center text-[11px] font-semibold uppercase tracking-[0.13em] text-negative">Cash spent</p>
-              {#if spentDonut}
-                <Chart option={spentDonut} height={170} />
-              {:else}
-                <div class="flex h-[170px] items-center justify-center text-xs text-fg-faint">No spent cash in this range</div>
-              {/if}
-              <ul class="mx-auto mt-2 grid max-w-sm gap-1 text-xs">
-                {#each spentSlices as slice (slice.name)}
-                  <li class="flex items-baseline gap-2">
-                    <span class="h-2 w-2 shrink-0 rounded-full" style="background: {slice.color}"></span>
-                    <span class="min-w-0 flex-1 truncate text-fg-muted" title={slice.name}>{slice.name}</span>
-                    <span class="tnum text-fg-muted">{formatMoneyCompact(slice.value)}</span>
-                    <span class="tnum w-9 text-right text-fg-faint">{Math.round(slice.share * 100)}%</span>
-                  </li>
-                {/each}
-              </ul>
-            </div>
-          </div>
-        {/if}
-      </Panel>
-    </section>
+    {/if}
 
     <!-- Ledger -->
     <Panel title="The cash ledger" caption="Every real cash movement recorded from Torn logs — deduplicated, exact amounts">

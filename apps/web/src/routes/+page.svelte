@@ -107,7 +107,7 @@
 
   /* Today story: drivers scaled to the largest absolute movement */
   const drivers = $derived(todaySummary?.netWorth.drivers ?? []);
-  const driverMax = $derived(Math.max(1, ...drivers.map((d) => Math.abs(d.magnitude ?? 0))));
+  const driverMax = $derived(Math.max(1, ...drivers.map((d) => Math.abs(d.magnitude === null ? 0 : d.magnitude))));
 
   // Permission gates: never a fake zero when the key cannot see the data.
   const caps = $derived(me.data?.capabilities ?? null);
@@ -449,7 +449,7 @@
           </span>
           <span class="flex shrink-0 items-center gap-2">
             <ConfidenceBadge meta={data?.confidence?.travelProfit} />
-            <span class="tnum text-[15px] font-semibold {logsBlocked ? 'text-fg' : (data.travelProfit.value ?? 0) >= 0 ? 'text-positive' : 'text-negative'}">
+            <span class="tnum text-[15px] font-semibold {logsBlocked ? 'text-fg' : (data.travelProfit.value === null || data.travelProfit.value >= 0) ? 'text-positive' : 'text-negative'}">
               {logsBlocked ? "" : formatKpiValue(data.travelProfit)}
             </span>
           </span>

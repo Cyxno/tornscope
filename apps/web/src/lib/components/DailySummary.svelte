@@ -103,10 +103,18 @@
 
   const displayDate = $derived(summary ? formatDate(summary.range.from) : "");
 
-  /** Diverging driver bars scale to the day's largest absolute movement. */
-  const driverMax = $derived(
-    summary ? Math.max(1, ...(summary.netWorth.drivers ?? []).map((d) => Math.abs(d.magnitude ?? 0))) : 1
-  );
+  /** Diverging driver bars scale to the day's largest absolute movement.
+   * (Null coalescing uses the explicit `=== null` form: the copy-regression
+   * contract forbids numeric coercion of unavailable values.) */
+  const driverMax = $derived.by(() => {
+    if (!summary) return 1;
+    let max = 1;
+    for (const d of summary.netWorth.drivers ?? []) {
+      const magnitude = d.magnitude === null ? 0 : Math.abs(d.magnitude);
+      if (magnitude > max) max = magnitude;
+    }
+    return max;
+  });
 
   function highlightCopy(h: DailyHighlight): { text: string; hint?: string } {
     const amount = h.amount !== null ? formatSignedMoneyCompact(h.amount) : null;
@@ -220,7 +228,8 @@
       <!-- Why it moved: diverging signed bars on the open canvas -->
       {#if (summary.netWorth.drivers ?? []).length > 0}
         <div class="mt-7">
-          <p class="section-label">Why it moved — recorded movements, not causes</p>
+          <p class="section-label">Why it moved</p>
+          <p class="mt-1 text-[11px] text-fg-faint">Likely contributors — recorded movements, not causes</p>
           <ul class="mt-3 space-y-2.5">
             {#each summary.netWorth.drivers ?? [] as driver (driver.kind + driver.label)}
               {@const magnitude = driver.magnitude}

@@ -5,12 +5,11 @@
   import { dateRange } from "$lib/state.svelte";
   import PageHeader from "$lib/components/PageHeader.svelte";
   import Panel from "$lib/components/Panel.svelte";
-  import Stat from "$lib/components/Stat.svelte";
   import Chart from "$lib/components/Chart.svelte";
   import SegmentedDateRange from "$lib/components/SegmentedDateRange.svelte";
   import StateMessage from "$lib/components/StateMessage.svelte";
   import { availabilityMessage, availabilityHasData } from "$lib/capabilities";
-  import { C, TOOLTIP, LEGEND, GRID, timeAxis, valueAxis, dayLabel, MOTION, CHART_SURFACE } from "$lib/charts";
+  import { C, TOOLTIP, GRID, timeAxis, valueAxis, dayLabel, MOTION } from "$lib/charts";
 
   let summary = $state<TravelSummaryResponse | null>(null);
   let history = $state<Paginated<TravelTripDto> | null>(null);
@@ -48,23 +47,30 @@
     void load();
   });
 
-  const destOption = $derived.by(() => {
-    if (!summary || summary.profitByDestination.length === 0) return null;
-    const rows = summary.profitByDestination.slice(0, 8);
-    return {
-      ...MOTION,
-      tooltip: { ...TOOLTIP, trigger: "axis", axisPointer: { type: "shadow" } },
-      grid: GRID,
-      xAxis: { type: "value", ...valueAxis() },
-      yAxis: {
-        type: "category",
-        data: rows.map((r) => r.destination),
-        axisLabel: { color: C.label, fontSize: 11 },
-        axisLine: { lineStyle: { color: C.axisLine } },
-        axisTick: { show: false },
-      },
-      series: [{ type: "bar", data: rows.map((r) => r.profit), barWidth: 12, itemStyle: { color: C.accentStrong, borderRadius: [0, 4, 4, 0] } }],
-    };
+  /** Friendly haul categories. Xanax is first-class: a major travel
+   * commodity must not hide in Other. */
+  const CATEGORY_LABELS: Record<string, string> = { flower: "Flowers", plushie: "Plushies", xanax: "Xanax", other: "Other" };
+  const CATEGORY_COLOR: Record<string, string> = { plushie: C.warning, flower: C.pink, xanax: C.violet, other: C.accent };
+
+  /** Destination ranking rows: the primary visual. Signed bars share the
+   * scale of the largest absolute estimated profit. */
+  const destRows = $derived.by(() => {
+    if (!summary) return [];
+    const rows = [...summary.profitByDestination].sort((a, b) => b.profit - a.profit);
+    const max = Math.max(1, ...rows.map((r) => Math.abs(r.profit)));
+    return rows.map((r) => ({ ...r, width: Math.max(3, (Math.abs(r.profit) / max) * 100), positive: r.profit >= 0 }));
+  });
+
+  /** Haul category rows: quantity-share bars instead of a donut. */
+  const haulCategories = $derived.by(() => {
+    if (!summary) return [];
+    const max = Math.max(1, ...summary.itemsByCategory.map((r) => r.quantity));
+    return summary.itemsByCategory.map((r) => ({
+      ...r,
+      label: CATEGORY_LABELS[r.category] ?? r.category,
+      color: CATEGORY_COLOR[r.category] ?? C.accent,
+      width: Math.max(3, (r.quantity / max) * 100),
+    }));
   });
 
   const dayOption = $derived.by(() => {
@@ -76,33 +82,6 @@
       xAxis: timeAxis(summary.profitSeries.map((p) => dayLabel(p.t)), { boundaryGap: true }),
       yAxis: valueAxis(),
       series: [{ name: "Estimated profit", type: "bar", data: summary.profitSeries.map((p) => p.profit), barMaxWidth: 12, itemStyle: { color: C.accentStrong, borderRadius: 3 } }],
-    };
-  });
-
-  /** Friendly haul categories; the pie splits by PURCHASED QUANTITY.
-   * Xanax is first-class: a major travel commodity must not hide in Other. */
-  const CATEGORY_LABELS: Record<string, string> = { flower: "Flowers", plushie: "Plushies", xanax: "Xanax", other: "Other" };
-  const CATEGORY_COLOR: Record<string, string> = { plushie: C.warning, flower: C.pink, xanax: C.violet, other: C.accent };
-  const haulOption = $derived.by(() => {
-    if (!summary || summary.itemsByCategory.length === 0) return null;
-    return {
-      ...MOTION,
-      tooltip: { ...TOOLTIP, trigger: "item", formatter: (p: { name: string; value: number; percent: number }) => `${p.name}: ${p.value.toLocaleString("en-US")} items (${p.percent}%)` },
-      legend: { ...LEGEND, bottom: 0 },
-      series: [
-        {
-          type: "pie",
-          radius: ["52%", "76%"],
-          center: ["50%", "46%"],
-          label: { show: false },
-          itemStyle: { borderRadius: 4, borderColor: CHART_SURFACE, borderWidth: 2 },
-          data: summary.itemsByCategory.map((r) => ({
-            name: CATEGORY_LABELS[r.category] ?? r.category,
-            value: r.quantity,
-            itemStyle: { color: CATEGORY_COLOR[r.category] ?? C.accent },
-          })),
-        },
-      ],
     };
   });
 
@@ -166,18 +145,76 @@
           </p>
         </details>
       {/if}
-      <div class="grid grid-cols-2 gap-px overflow-hidden rounded-card border border-border bg-border shadow-panel md:grid-cols-4">
-        <Stat label="Trips" value={String(summary.trips)} provenance="exact" tone="accent" />
-        <Stat
-          label="Tracked trip profit"
-          value={formatKpiValue(summary.estimatedProfit)}
-          provenance="estimated"
-          tone={summary.estimatedProfit.value === null ? "neutral" : summary.estimatedProfit.value >= 0 ? "positive" : "negative"}
-          sub={summary.estimatedProfit.availability === "incomplete" ? "purchases without a trip exist" : null}
-        />
-        <Stat label="Profit / hour" value={formatKpiValue(summary.profitPerHour)} provenance="estimated" />
-        <Stat label="Top item" value={summary.topItem.item ?? "—"} sub={summary.topItem.profit !== null ? formatMoneyCompact(summary.topItem.profit) : null} provenance="estimated" />
-      </div>
+
+      <!-- Estimate block: the page's hero figure, on open canvas -->
+      <section class="section-rule" aria-label="Estimated profit">
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <p class="section-label">Tracked trip profit</p>
+          <span class="text-[10px] font-medium uppercase tracking-[0.12em] text-warning">estimated</span>
+        </div>
+        <p class="hero-num tnum mt-3 {summary.estimatedProfit.value === null ? 'text-fg-faint' : summary.estimatedProfit.value >= 0 ? 'text-positive' : 'text-negative'}">
+          {formatKpiValue(summary.estimatedProfit, formatSignedMoneyCompact)}
+        </p>
+        <dl class="mt-6 grid grid-cols-2 gap-y-5 md:grid-cols-3 md:divide-x md:divide-border">
+          <div class="md:pr-6">
+            <dt class="text-[11px] font-medium text-fg-faint">Trips</dt>
+            <dd class="tnum mt-1 text-[22px] font-semibold text-fg">{summary.trips}</dd>
+          </div>
+          <div class="md:px-6">
+            <dt class="text-[11px] font-medium text-fg-faint">Profit / hour <span class="text-warning">est.</span></dt>
+            <dd class="tnum mt-1 text-[22px] font-semibold text-fg">{formatKpiValue(summary.profitPerHour, formatSignedMoneyCompact)}</dd>
+          </div>
+          <div class="md:pl-6">
+            <dt class="text-[11px] font-medium text-fg-faint">Top item <span class="text-warning">est.</span></dt>
+            <dd class="mt-1 truncate text-[22px] font-semibold text-fg" title={summary.topItem.item ?? ""}>{summary.topItem.item ?? "—"}</dd>
+            {#if summary.topItem.profit !== null}
+              <dd class="tnum text-[11px] {summary.topItem.profit >= 0 ? 'text-positive' : 'text-negative'}">{formatSignedMoneyCompact(summary.topItem.profit)}</dd>
+            {/if}
+          </div>
+        </dl>
+        {#if summary.estimatedProfit.availability === "incomplete"}
+          <p class="mt-3 text-[11px] text-warning">Some purchases exist without an attachable trip — they are excluded from tracked profit, never mixed in.</p>
+        {/if}
+      </section>
+
+      <!-- Destination ranking: the primary visual, on open canvas -->
+      <section class="section-rule" aria-label="Destinations">
+        <div class="flex items-baseline justify-between gap-3">
+          <h2 class="section-label">Destinations — ranked by estimated profit</h2>
+          <span class="text-[11px] text-fg-faint">bar length = |profit|</span>
+        </div>
+        {#if destRows.length === 0}
+          <p class="mt-4 text-[13px] text-fg-faint">No destinations in this range yet.</p>
+        {:else}
+          <ul class="mt-3 divide-y divide-border/70">
+            {#each destRows as dest (dest.destination)}
+              <li class="grid grid-cols-[1fr_auto] items-baseline gap-x-4 gap-y-1 py-3 sm:grid-cols-[140px_minmax(0,1fr)_auto_auto]">
+                <span class="text-[13.5px] font-medium text-fg">{dest.destination}</span>
+                <span class="hidden items-center sm:flex" aria-hidden="true">
+                  <span class="flex h-4 w-full items-center">
+                    <span class="flex w-1/2 justify-end">
+                      {#if !dest.positive}
+                        <span class="delta-bar bg-negative/70" style="width: {dest.width}%"></span>
+                      {/if}
+                    </span>
+                    <span class="h-3 w-px bg-border-strong"></span>
+                    <span class="flex w-1/2">
+                      {#if dest.positive}
+                        <span class="delta-bar bg-accent/80" style="width: {dest.width}%"></span>
+                      {/if}
+                    </span>
+                  </span>
+                </span>
+                <span class="tnum text-right text-xs text-fg-faint">{dest.trips} trip{dest.trips === 1 ? "" : "s"}</span>
+                <span class="tnum text-right text-[13.5px] font-semibold {dest.positive ? 'text-positive' : 'text-negative'}">{formatSignedMoneyCompact(dest.profit)}</span>
+              </li>
+            {/each}
+          </ul>
+          <p class="mt-2 text-[11px] text-fg-faint">
+            Profit per destination is estimated from current catalog prices at trip time — a reading, not a realized profit or loss.
+          </p>
+        {/if}
+      </section>
 
       {#if summary.unattachedPurchases.count > 0}
         <details class="group rounded-tile border border-border bg-surface px-5 py-3 text-xs leading-relaxed text-fg-muted">
@@ -195,42 +232,33 @@
       {/if}
 
       <section class="grid grid-cols-1 gap-6 lg:grid-cols-5">
-        <div class="lg:col-span-3">
-          <Panel title="Profit by destination" caption="Estimated profit, best routes first" flush class="h-full">
-            {#if !destOption}
-              <StateMessage state="empty" compact title="No destinations in this range" />
-            {:else}
-              <Chart option={destOption} height={280} />
-            {/if}
-          </Panel>
-        </div>
-        <div class="lg:col-span-2">
-          <Panel title="What you haul" caption="Items bought abroad — plushies, flowers, Xanax and the rest, by quantity" flush class="h-full">
-            {#if !haulOption}
+        <div class="min-w-0 lg:col-span-2">
+          <Panel title="What you haul" caption="Items bought abroad — by quantity, valued from the catalog">
+            {#if haulCategories.length === 0}
               <StateMessage state="empty" compact title="No purchases in this range" />
             {:else}
-              <Chart option={haulOption} height={240} />
-            {/if}
-            {#if summary && summary.itemsByCategory.length > 0}
-              <div class="border-t border-border px-5 py-3">
-                <ul class="space-y-1 text-xs text-fg-muted">
-                  {#each summary.itemsByCategory as row (row.category)}
-                    <li class="flex items-baseline justify-between gap-3">
-                      <span>{CATEGORY_LABELS[row.category] ?? row.category}</span>
-                      <span class="tnum">
+              <ul class="space-y-4">
+                {#each haulCategories as row (row.category)}
+                  <li>
+                    <div class="flex items-baseline justify-between gap-3 text-[13px]">
+                      <span class="text-fg">{row.label} <span class="text-[11px] text-fg-faint">{row.quantity} item{row.quantity === 1 ? "" : "s"}</span></span>
+                      <span class="tnum text-xs text-fg-muted">
                         {formatMoneyCompact(row.spend)} spend
                         {#if row.estimatedValue !== null}
                           · {formatMoneyCompact(row.estimatedValue)} est. value
                         {/if}
                       </span>
-                    </li>
-                  {/each}
-                </ul>
-              </div>
+                    </div>
+                    <div class="mt-1.5 h-1.5 overflow-hidden rounded-full bg-surface-2">
+                      <div class="h-full rounded-full" style="width: {row.width}%; background: {row.color}"></div>
+                    </div>
+                  </li>
+                {/each}
+              </ul>
             {/if}
-            {#if summary && summary.topItems.length > 0}
-              <div class="border-t border-border px-5 py-3">
-                <p class="section-label mb-2">Top items by spend</p>
+            {#if summary.topItems.length > 0}
+              <div class="mt-5 border-t border-border pt-4">
+                <p class="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-fg-faint">Top items by spend</p>
                 <ul class="space-y-1 text-xs text-fg-muted">
                   {#each summary.topItems as row (row.item)}
                     <li class="flex items-baseline justify-between gap-3">
@@ -252,15 +280,16 @@
             {/if}
           </Panel>
         </div>
+        <div class="min-w-0 lg:col-span-3">
+          <Panel title="Profit by departure day" caption="Days you flew out, ranked by what came back" flush>
+            {#if !dayOption}
+              <StateMessage state="empty" compact title="No departures in this range" />
+            {:else}
+              <Chart option={dayOption} height={280} />
+            {/if}
+          </Panel>
+        </div>
       </section>
-
-      <Panel title="Profit by departure day" caption="Days you flew out, ranked by what came back" flush>
-        {#if !dayOption}
-          <StateMessage state="empty" compact title="No departures in this range" />
-        {:else}
-          <Chart option={dayOption} height={260} />
-        {/if}
-      </Panel>
 
       <!-- Trip log: table on md+, cards on phones -->
       <Panel title="Trip log" caption="Select a row to unfold the haul" flush>

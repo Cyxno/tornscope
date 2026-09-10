@@ -5,7 +5,6 @@
   import { dateRange } from "$lib/state.svelte";
   import PageHeader from "$lib/components/PageHeader.svelte";
   import Panel from "$lib/components/Panel.svelte";
-  import Stat from "$lib/components/Stat.svelte";
   import Chart from "$lib/components/Chart.svelte";
   import SegmentedDateRange from "$lib/components/SegmentedDateRange.svelte";
   import StateMessage from "$lib/components/StateMessage.svelte";
@@ -115,61 +114,76 @@
       </p>
     {/if}
 
-    <!-- Outgoing vs incoming: the two sides are never merged -->
-    <section class="grid gap-6 lg:grid-cols-2">
-      <Panel title="Outgoing — attacks I initiated" caption="My results as the attacker" flush>
-        <div class="grid grid-cols-4 gap-px bg-border">
-          <div class="bg-surface p-5 text-center">
-            <p class="tnum text-2xl font-semibold text-fg">{summary.attacksMade}</p>
-            <p class="mt-1 text-[10px] uppercase tracking-[0.14em] text-fg-faint">attacks</p>
-          </div>
-          <div class="bg-surface p-5 text-center">
-            <p class="tnum text-2xl font-semibold text-positive">{summary.outgoingWins}</p>
-            <p class="mt-1 text-[10px] uppercase tracking-[0.14em] text-fg-faint">wins</p>
-          </div>
-          <div class="bg-surface p-5 text-center">
-            <p class="tnum text-2xl font-semibold text-negative">{summary.outgoingLosses}</p>
-            <p class="mt-1 text-[10px] uppercase tracking-[0.14em] text-fg-faint">losses</p>
-          </div>
-          <div class="bg-surface p-5 text-center">
-            <p class="tnum text-2xl font-semibold text-fg">{summary.mugsMade}</p>
-            <p class="mt-1 text-[10px] uppercase tracking-[0.14em] text-fg-faint">mugs</p>
-          </div>
+    <!-- Outgoing vs incoming: two open directional columns, never merged -->
+    <section class="section-rule" aria-label="Outgoing and incoming">
+      <div class="grid grid-cols-1 gap-x-10 gap-y-7 lg:grid-cols-2 lg:divide-x lg:divide-border">
+        <div class="min-w-0 lg:pr-10">
+          <p class="section-label">Outgoing — attacks I initiated</p>
+          <dl class="mt-3 grid grid-cols-4 gap-x-2 gap-y-4">
+            <div>
+              <dt class="order-2 text-[10.5px] font-medium uppercase tracking-[0.13em] text-fg-faint">attacks</dt>
+              <dd class="tnum text-[26px] font-semibold leading-none text-fg">{summary.attacksMade}</dd>
+            </div>
+            <div>
+              <dt class="text-[10.5px] font-medium uppercase tracking-[0.13em] text-fg-faint">wins</dt>
+              <dd class="tnum text-[26px] font-semibold leading-none text-positive">{summary.outgoingWins}</dd>
+            </div>
+            <div>
+              <dt class="text-[10.5px] font-medium uppercase tracking-[0.13em] text-fg-faint">losses</dt>
+              <dd class="tnum text-[26px] font-semibold leading-none text-negative">{summary.outgoingLosses}</dd>
+            </div>
+            <div>
+              <dt class="text-[10.5px] font-medium uppercase tracking-[0.13em] text-fg-faint">mugs</dt>
+              <dd class="tnum text-[26px] font-semibold leading-none text-fg">{summary.mugsMade}</dd>
+            </div>
+          </dl>
         </div>
-      </Panel>
-      <Panel title="Incoming — attacks against me" caption="My results as the defender" flush>
-        <div class="grid grid-cols-4 gap-px bg-border">
-          <div class="bg-surface p-5 text-center">
-            <p class="tnum text-2xl font-semibold text-fg">{summary.attacksReceived}</p>
-            <p class="mt-1 text-[10px] uppercase tracking-[0.14em] text-fg-faint">attacks</p>
-          </div>
-          <div class="bg-surface p-5 text-center">
-            <p class="tnum text-2xl font-semibold text-positive">{summary.incomingDefended}</p>
-            <p class="mt-1 text-[10px] uppercase tracking-[0.14em] text-fg-faint">defended</p>
-          </div>
-          <div class="bg-surface p-5 text-center">
-            <p class="tnum text-2xl font-semibold text-negative">{summary.incomingLost}</p>
-            <p class="mt-1 text-[10px] uppercase tracking-[0.14em] text-fg-faint">lost</p>
-          </div>
-          <div class="bg-surface p-5 text-center">
-            <p class="tnum text-2xl font-semibold text-fg">{summary.mugsReceived}</p>
-            <p class="mt-1 text-[10px] uppercase tracking-[0.14em] text-fg-faint">mugged</p>
-          </div>
+        <div class="min-w-0 lg:pl-10">
+          <p class="section-label">Incoming — attacks against me</p>
+          <dl class="mt-3 grid grid-cols-4 gap-x-2 gap-y-4">
+            <div>
+              <dt class="text-[10.5px] font-medium uppercase tracking-[0.13em] text-fg-faint">attacks</dt>
+              <dd class="tnum text-[26px] font-semibold leading-none text-fg">{summary.attacksReceived}</dd>
+            </div>
+            <div>
+              <dt class="text-[10.5px] font-medium uppercase tracking-[0.13em] text-fg-faint">defended</dt>
+              <dd class="tnum text-[26px] font-semibold leading-none text-positive">{summary.incomingDefended}</dd>
+            </div>
+            <div>
+              <dt class="text-[10.5px] font-medium uppercase tracking-[0.13em] text-fg-faint">lost</dt>
+              <dd class="tnum text-[26px] font-semibold leading-none text-negative">{summary.incomingLost}</dd>
+            </div>
+            <div>
+              <dt class="text-[10.5px] font-medium uppercase tracking-[0.13em] text-fg-faint">mugged</dt>
+              <dd class="tnum text-[26px] font-semibold leading-none text-fg">{summary.mugsReceived}</dd>
+            </div>
+          </dl>
         </div>
-      </Panel>
-    </section>
+      </div>
 
-    <div class="grid grid-cols-2 gap-px overflow-hidden rounded-card border border-border bg-border shadow-panel md:grid-cols-4">
-      <Stat label="{period} attacks made" value={String(summary.attacksMade)} provenance="exact" tone="accent" sub={`${summary.attacksReceived} received`} />
-      <Stat label="{period} wins (both directions)" value={String(summary.wins)} provenance="exact" tone="positive" sub={summary.winRate !== null ? `${Math.round(summary.winRate * 100)}% of decided` : null} />
-      <Stat label="{period} hospitalizations" value={String(summary.hospitalizationsCaused)} provenance="exact" sub={`${summary.hospitalizationsReceived} received`} />
-      <Stat
-        label="Money mugged"
-        value={formatKpiValue(summary.moneyMugged)}
-        provenance="exact"
-        sub={summary.moneyLostToMugs.value !== null ? `${formatMoneyCompact(summary.moneyLostToMugs.value)} lost to mugs` : null}
-      />
-    </div>
+      <dl class="mt-8 grid grid-cols-2 gap-y-5 border-t border-border pt-5 md:grid-cols-4 md:divide-x md:divide-border">
+        <div class="md:pr-5">
+          <dt class="text-[11px] font-medium text-fg-faint">{period} attacks made</dt>
+          <dd class="tnum mt-1 text-[20px] font-semibold text-accent">{summary.attacksMade}</dd>
+          <dd class="text-[11px] text-fg-faint">{summary.attacksReceived} received</dd>
+        </div>
+        <div class="md:px-5">
+          <dt class="text-[11px] font-medium text-fg-faint">{period} wins (both directions)</dt>
+          <dd class="tnum mt-1 text-[20px] font-semibold text-positive">{summary.wins}</dd>
+          <dd class="text-[11px] text-fg-faint">{summary.winRate !== null ? `${Math.round(summary.winRate * 100)}% of decided` : ""}</dd>
+        </div>
+        <div class="md:px-5">
+          <dt class="text-[11px] font-medium text-fg-faint">{period} hospitalizations</dt>
+          <dd class="tnum mt-1 text-[20px] font-semibold text-fg">{summary.hospitalizationsCaused}</dd>
+          <dd class="text-[11px] text-fg-faint">{summary.hospitalizationsReceived} received</dd>
+        </div>
+        <div class="md:pl-5">
+          <dt class="text-[11px] font-medium text-fg-faint">Money mugged</dt>
+          <dd class="tnum mt-1 text-[20px] font-semibold text-fg">{formatKpiValue(summary.moneyMugged)}</dd>
+          <dd class="text-[11px] text-fg-faint">{summary.moneyLostToMugs.value !== null ? `${formatMoneyCompact(summary.moneyLostToMugs.value)} lost to mugs` : ""}</dd>
+        </div>
+      </dl>
+    </section>
 
     <section class="grid gap-6 lg:grid-cols-2">
       <Panel title="Attack activity" caption="Made vs received per day" flush>

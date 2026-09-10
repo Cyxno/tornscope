@@ -136,15 +136,20 @@ marker — see [ENVIRONMENTS.md](ENVIRONMENTS.md)).
 
 ### 10. UX polish — *issue: `feat(v0.2): UX consistency & state polish`* · labels: `v0.2` `ux`
 
-**Status: Complete (v0.2 UI overhaul).** Implemented on `develop`, deployed to
-the dev stack — see [UI-DESIGN.md](UI-DESIGN.md). The interface was redesigned
-as a coherent v0.2 visual system ("precision calm"): centralized design tokens
-(graphite surface scale, radius/control scales, teal accent), grouped adaptive
-navigation with a mobile bottom tab bar + nav sheet, one panel/page-header/KPI
-system, structure-matched loading skeletons, disclosure-based methodology copy,
-a unified chart theme and table language, humanized Timeline entries, an
-aligned Sync Status grid, and verified responsive behavior from 320px to 1920px
-(no horizontal overflow, WCAG-AA label contrast, reduced-motion support).
+**Status: Complete (v0.2 UI overhaul + true redesign pass).** Implemented on
+`develop`, deployed to the dev stack — see [UI-DESIGN.md](UI-DESIGN.md). The
+interface was redesigned as a coherent v0.2 visual system ("precision calm"):
+centralized design tokens, grouped adaptive navigation, one panel/page-header
+system, structure-matched loading skeletons, disclosure-based methodology
+copy, a unified chart theme and table language, and verified responsive
+behavior from 320px to 1920px. A second "true redesign" pass then replaced
+the residual v0.1 dashboard feel: desktop navigation moved to a persistent
+left rail (context bar + bottom tab bar below desktop), pages were recomposed
+as open-canvas sections with editorial hero numerals and diverging signed
+bars instead of grids of equal cards, each major route received its own
+composition (see [REDESIGN-CONCEPT-v0.2.md](REDESIGN-CONCEPT-v0.2.md) and
+UI-DESIGN.md "Page compositions"), and the responsive sweep was re-verified
+across 12 routes × 16 widths.
 
 - [x] Loading/empty/error states coherent and structure-matched
 - [x] Consistency pass across analytics cards/tables/charts

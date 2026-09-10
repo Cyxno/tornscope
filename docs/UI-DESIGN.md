@@ -81,24 +81,101 @@ label.
 
 - Content column: `.page-shell` — max-width 80rem (1280px), padding
   16/24px inline, rhythm 2rem mobile → 2.75rem desktop between sections.
-- Every page: `<PageHeader>` (eyebrow · serif title · concise description ·
-  actions/date range right-aligned). Pages never invent their own header.
-- Stat strips: `grid grid-cols-2 md:grid-cols-N gap-px bg-border` wrapper with
-  `<Stat>` cells — hairline-divided, not separate cards.
+- Page mastheads vary by page on purpose: `PageHeader` (eyebrow · serif
+  title · description · actions) for analytics routes; custom editorial
+  mastheads where the data is the headline (Overview's greeting, Today's
+  date, Drugs' provenance question). Whichever form, there is exactly ONE
+  masthead per page and it never competes with section headers.
+- Stat strips: open hairline strips (`grid + md:divide-x divide-border`, no
+  outer border) by default; the boxed `gap-px bg-border` variant is an inset
+  reserved for surfaces that need containment.
 - Bento sections: `Panel` tiles in 3-col desktop / 2-col tablet / 1-col mobile
   grids; `class="h-full"` keeps rows equal height.
 
-## Navigation
+## Navigation — the v0.2 rail shell (Option B)
 
-- Desktop (lg+): compact 56px app bar; grouped nav (Core: Overview, Today ·
+Desktop navigation left the top bar entirely. Three regimes:
+
+- **Desktop (lg+)**: a slim, always-visible **left rail** (`NavRail.svelte`) —
+  brand + environment chip on top, grouped nav below (Core: Overview, Today ·
   Analytics: Economy, Drugs, Travel · Activity: Crimes, Combat, Faction,
-  Timeline) separated by hairlines; Sync pill + identity chip right.
-- Tablet (md–lg): the same bar collapses to a scrollable primary-pages row.
-- Mobile (<md): header holds brand + sync + identity only; a fixed bottom tab
-  bar (Overview / Today / Timeline / More) owns navigation; **More** opens a
+  Timeline · System: Sync, Settings), sync pulse + identity pinned to the
+  rail's bottom. Labeled at xl (≥1280, 228px); icon-only between lg and xl
+  (68px, `title` tooltips). The active route gets an accent tick on the rail's
+  left edge.
+- **Tablet (md–lg)**: compact **context bar** (brand, env chip, sync pulse,
+  identity — never primary nav) plus the fixed bottom tab bar.
+- **Phone (<md)**: the same context bar and bottom tab bar; **More** opens a
   grouped bottom sheet listing every route. Route semantics never change.
 - Nav model lives in `apps/web/src/lib/nav.ts`; `isActivePath` decides
   `aria-current`.
+
+Why a rail: an analytics record benefits from a persistent spatial anchor —
+every page shares the same left edge, so the content column is free to
+compose (open canvas, hero numerals, asymmetric splits) instead of reserving
+its top for navigation.
+
+## Page composition — open canvas, not card soup
+
+The v0.2 rule: **sections, not boxes.**
+
+- A section is `eyebrow (section-label) + hairline rule (.section-rule) +
+  content on the bare canvas`. Borders are reserved for true insets
+  (tables, dense charts, form groups) and controls.
+- Hero numerals (`.hero-num`, `clamp(2.6rem, 6vw, 4.4rem)`) — each page leads
+  with ONE loudest figure; everything else steps down from it.
+- **Diverging signed bars** (`.delta-bar`) are the signature data device:
+  drivers, destination profit, per-day movement — a centred rule with
+  positive teal/green right, negative red left.
+- **Inline live sentences** replace status-card grids: colored ticks + linked
+  labels + tabular values (see `LiveNow.svelte`).
+- **Semantic legend bands** (`dot + label + amount + quiet meaning`) replace
+  explanatory paragraphs (Economy's "earned / asset sales / asset purchases /
+  true expenses").
+- Insets (`Panel`) are for what genuinely needs containment: the cash ledger,
+  daily-use charts, the trip log, settings forms. Count boxed containers per
+  page in review; Overview's target is zero.
+- Each major route has its own skeleton (see "Page compositions" below).
+  Sharing the design system is mandatory; sharing an identical template is a
+  regression.
+
+### Page compositions (v0.2)
+
+- **Overview** — masthead greeting + data-health line → live-state sentence →
+  net-worth hero with the trend chart integrated into the canvas → today's
+  story (driver bars + the three lenses condensed) → recent-activity ledger →
+  quiet beyond-the-wallet links. Zero bordered containers.
+- **Today** — a dated report: serif weekday masthead, status chips, date nav;
+  hero delta; "why it moved" bars; the three lens columns separated by
+  hairlines; travel/drugs open columns; live bars, cooldowns, bank,
+  education, upcoming as open rows.
+- **Economy** — editorial summary sentence ("Across 30d you received… spent…"),
+  a four-lens flow strip (cash → conversions → effect → net worth; related,
+  never additive), a real lens switcher (Cash flow / Consumption / Wealth)
+  swapping the analytical body; the ledger as inset.
+- **Drugs** — provenance-first: "Where did these Xanax come from?" with a
+  full-width composition bar (proven sources first, unknowns last), a
+  segment ledger with per-bucket meaning, then trend, rehab strip, cost table.
+- **Travel** — destination-led: hero estimate numeral, destination ranking
+  rows with signed bars, haul quantity bars, departure-day chart, trip log.
+- **Timeline** — an event ledger: sticky date anchors, aligned time column,
+  inline type icon + category, description revealed on wide screens, signed
+  value right.
+- **Sync** — an operations surface: fleet pulse ("4/15 caught up · 11
+  overdue"), grouped resource rows (Identity & live state / Logs & history /
+  Faction / Catalog), incidents only when present, coverage inset, operator
+  detail disclosed.
+
+### Mobile / tablet / desktop strategy
+
+- **Phone**: own interface, not stacked desktop — context bar + bottom tab
+  bar (52px targets, safe-area padding), single column, 2-col open KPI
+  strips, horizontal-scroll filter rows, stacked trip cards, sheet navigation.
+- **Tablet**: top context bar + bottom tab bar + 2-column editorial content
+  (an intentional intermediate, never a wide phone or squeezed desktop).
+- **Desktop**: the rail frees the canvas; content max-width 80rem; asymmetric
+  splits (3+2 lenses, hero + context rail) and hairline-divided open strips.
+
 
 ## Components (apps/web/src/lib/components)
 
@@ -117,7 +194,9 @@ label.
   reduced-motion aware. Shared theme in `$lib/charts.ts` (`C`, `TOOLTIP`,
   `LEGEND`, `GRID`, `MOTION`, axis factories, `tealArea()`).
 - **Icon** — inline stroke icon set (24×24, 1.75px); no icon library.
-- **MobileNav** — bottom tab bar + grouped sheet.
+- **MobileNav** — bottom tab bar (below lg: phones AND tablets) + grouped sheet.
+- **NavRail** — the desktop left rail (labeled ≥xl, icon-only lg–xl).
+- **Header** — the below-desktop context bar (brand, env chip, sync, identity).
 
 ### Primitives (app.css `@layer components`)
 
@@ -180,12 +259,13 @@ label.
 ## Developer guidance
 
 1. Consume tokens; never hardcode colors/radii/sizes in pages.
-2. Compose pages from `PageHeader` + `Panel`/`Stat` strips + `StateMessage`;
-   reach for `.btn`/`.chip`/`.input`/`.tsv-table` primitives before inventing
-   classes.
+2. Compose pages from open sections (`.section-rule` + `.section-label`) +
+   `Panel` insets + `StateMessage`; reach for `.btn`/`.chip`/`.input`/
+   `.tsv-table` primitives before inventing classes. Count your bordered
+   containers — if a page has more than ~3, you are building card soup.
 3. Money: compact formatters from `@tornscope/shared`; keep full precision in
    ledger detail only.
-4. New route: add it to `nav.ts` (group + icon) — header, tablet row and mobile
+4. New route: add it to `nav.ts` (group + icon) — rail, context bar and mobile
    sheet all follow.
 5. New chart: build options from `$lib/charts.ts` fragments; never restate
    axis/tooltip styling inline.

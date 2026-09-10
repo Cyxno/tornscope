@@ -239,6 +239,41 @@
 
   const COVERAGE_RESOURCES = ["drugs", "rehab", "money_logs", "travel", "events", "networth"] as const;
 
+  /** Fleet pulse: operational counts for the one-line health summary. */
+  const pulse = $derived.by(() => {
+    if (!health) return null;
+    const by: Record<string, number> = {};
+    for (const r of health.resources) by[r.operational.state] = (by[r.operational.state] ?? 0) + 1;
+    const n = (s: string) => by[s] ?? 0;
+    const caughtUp = n("caught_up");
+    const overdue = n("delayed") + n("retrying") + n("failed") + n("degraded") + n("stale_running");
+    const working = n("running") + n("backfilling");
+    const idle = n("parked") + n("never_run");
+    const failed = n("failed");
+    return { total: health.resources.length, caughtUp, overdue, working, idle, failed };
+  });
+
+  /** Operational grouping for the resources list. */
+  const RESOURCE_GROUPS: Array<{ label: string; resources: string[] }> = [
+    { label: "Identity & live state", resources: ["profile", "personal_stats", "networth", "events"] },
+    { label: "Logs & history", resources: ["money_logs", "drugs", "rehab", "travel"] },
+    { label: "Faction", resources: ["faction", "faction_basic", "ranked_wars", "chains", "organized_crimes", "attacks"] },
+    { label: "Catalog", resources: ["torn_catalog"] },
+  ];
+  const groupedResources = $derived.by(() => {
+    if (!health) return [];
+    const all = health.resources;
+    return RESOURCE_GROUPS.map((g) => ({
+      label: g.label,
+      rows: g.resources.map((r) => all.find((x) => x.resource === r)).filter((r): r is ResourceRow => Boolean(r)),
+    })).filter((g) => g.rows.length > 0);
+  });
+  const ungroupedResources = $derived.by(() => {
+    if (!health) return [];
+    const known = new Set(RESOURCE_GROUPS.flatMap((g) => g.resources));
+    return health.resources.filter((r) => !known.has(r.resource));
+  });
+
   /** Per-resource historical coverage rows for the table. */
   const coverageRows = $derived.by(() => {
     if (!health) return [];
@@ -303,6 +338,25 @@
   {:else if error}
     <StateMessage state="error" title="Could not load sync status" hint={error} action={{ label: "Retry", run: () => void load() }} />
   {:else if health}
+    <!-- Fleet pulse: the whole operation in one line -->
+    {#if pulse && pulse.total > 0}
+      <section class="section-rule" aria-label="Fleet pulse">
+        <p class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <span class="tnum text-[40px] font-semibold leading-none {pulse.failed > 0 ? 'text-negative' : pulse.overdue > 0 ? 'text-warning' : 'text-positive'}">
+            {pulse.caughtUp}<span class="text-[0.5em] font-medium text-fg-faint"> / {pulse.total}</span>
+          </span>
+          <span class="text-[13px] text-fg-muted">resources caught up</span>
+        </p>
+        <p class="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+          {#if pulse.working > 0}<span class="text-accent">{pulse.working} working now</span>{/if}
+          {#if pulse.overdue > 0}<span class="text-warning">{pulse.overdue} overdue / retrying</span>{/if}
+          {#if pulse.failed > 0}<span class="text-negative">{pulse.failed} failed</span>{/if}
+          {#if pulse.idle > 0}<span class="text-fg-faint">{pulse.idle} idle</span>{/if}
+          {#if pulse.overdue === 0 && pulse.failed === 0}<span class="text-fg-faint">operational health and data confidence are tracked separately</span>{/if}
+        </p>
+      </section>
+    {/if}
+
     <!-- Resources -->
     <Panel title="Resources" caption="Manual syncs are queued and rate-limited to protect your Torn API budget">
       {#snippet actions()}
@@ -324,9 +378,14 @@
           <StateMessage state="empty" title="No sync configuration yet" hint="Connect an API key in Settings to start collecting history." />
         {/if}
       {:else}
-        <!-- Desktop: an aligned 6-column row grid. Mobile: stacked resource cards. -->
+        <!-- Desktop: an aligned 6-column row grid. Mobile: stacked resource cards.
+             Rows are grouped operationally; labels sit between, no boxes. -->
         <ul class="divide-y divide-border">
-          {#each health.resources as row (row.resource)}
+          {#each groupedResources as group (group.label)}
+            <li class="pb-1 pt-5 first:pt-0" data-group={group.label}>
+              <p class="section-label">{group.label}</p>
+            </li>
+            {#each group.rows as row (row.resource)}
             {@const op = row.operational}
             {@const style = operationalOf(row)}
             {@const time = timing(row)}
@@ -481,6 +540,16 @@
               </li>
             {/if}
           {/each}
+          {/each}
+          {#if ungroupedResources.length > 0}
+            {#each ungroupedResources as row (row.resource)}
+              {@const style = operationalOf(row)}
+              <li class="py-4">
+                <span class="text-[13px] font-semibold capitalize text-fg">{RESOURCE_LABELS[row.resource] ?? humanLabel(row.resource)}</span>
+                <span class="ml-2 text-[11px] {style.text}">{style.label}</span>
+              </li>
+            {/each}
+          {/if}
         </ul>
       {/if}
     </Panel>

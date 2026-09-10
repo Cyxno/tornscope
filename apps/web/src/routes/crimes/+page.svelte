@@ -5,7 +5,6 @@
   import { dateRange } from "$lib/state.svelte";
   import PageHeader from "$lib/components/PageHeader.svelte";
   import Panel from "$lib/components/Panel.svelte";
-  import Stat from "$lib/components/Stat.svelte";
   import Chart from "$lib/components/Chart.svelte";
   import SegmentedDateRange from "$lib/components/SegmentedDateRange.svelte";
   import StateMessage from "$lib/components/StateMessage.svelte";
@@ -116,29 +115,42 @@
       </p>
     {/if}
 
-    <!-- Hero: the three numbers that matter most -->
-    <div class="grid grid-cols-1 gap-px overflow-hidden rounded-card border border-border bg-border shadow-panel md:grid-cols-3">
-      <div class="bg-surface p-7 text-center">
-        <p class="tnum text-4xl font-semibold text-fg">{summary.attempts}</p>
-        <p class="mt-1 text-[11px] font-medium uppercase tracking-[0.13em] text-fg-faint">attempts {summary.crimesPerDay ? `· ${summary.crimesPerDay.toFixed(1)}/day` : ""}</p>
-      </div>
-      <div class="bg-surface p-7 text-center">
-        <p class="tnum text-4xl font-semibold text-positive">{summary.successRate !== null ? `${Math.round(summary.successRate * 100)}%` : "—"}</p>
-        <p class="mt-1 text-[11px] font-medium uppercase tracking-[0.13em] text-fg-faint">success rate · {summary.successful} successful · {summary.failed} failed</p>
-      </div>
-      <div class="bg-surface p-7 text-center">
-        <p class="tnum text-4xl font-semibold {summary.netCrimeCash >= 0 ? "text-positive" : "text-negative"}">{formatSignedMoneyCompact(summary.netCrimeCash)}</p>
-        <p class="mt-1 text-[11px] font-medium uppercase tracking-[0.13em] text-fg-faint">net crime cash · exact</p>
-      </div>
-    </div>
-
-    <!-- Secondary strip: clearly-estimated + context values -->
-    <div class="grid grid-cols-2 gap-px overflow-hidden rounded-card border border-border bg-border shadow-panel md:grid-cols-4">
-      <Stat label="Item rewards (est.)" value={summary.estimatedItemsValue !== null ? formatMoneyCompact(summary.estimatedItemsValue) : "—"} provenance="estimated" sub="Torn catalog prices" />
-      <Stat label="Nerve used" value={summary.nerveUsed !== null ? String(summary.nerveUsed) : "—"} provenance="exact" />
-      <Stat label="Value per nerve (est.)" value={summary.valuePerNerve !== null ? formatMoneyCompact(summary.valuePerNerve) : "—"} provenance="estimated" />
-      <Stat label="Jail time" value={summary.jailedCount > 0 ? `${summary.jailedCount}× · ${Math.round(summary.totalJailSeconds / 3600)}h` : "0×"} provenance="exact" tone={summary.jailedCount > 0 ? "negative" : "neutral"} />
-    </div>
+    <!-- Hero: the three numbers, on the open canvas -->
+    <section class="section-rule" aria-label="Crime summary">
+      <dl class="grid grid-cols-1 gap-y-6 md:grid-cols-3 md:divide-x md:divide-border">
+        <div class="md:pr-8">
+          <dt class="text-[11px] font-medium text-fg-faint">Attempts {summary.crimesPerDay ? `· ${summary.crimesPerDay.toFixed(1)}/day` : ""}</dt>
+          <dd class="tnum mt-1 text-[40px] font-semibold leading-none text-fg">{summary.attempts}</dd>
+        </div>
+        <div class="md:px-8">
+          <dt class="text-[11px] font-medium text-fg-faint">Success rate · {summary.successful} successful · {summary.failed} failed</dt>
+          <dd class="tnum mt-1 text-[40px] font-semibold leading-none text-positive">{summary.successRate !== null ? `${Math.round(summary.successRate * 100)}%` : "—"}</dd>
+        </div>
+        <div class="md:pl-8">
+          <dt class="text-[11px] font-medium text-fg-faint">Net crime cash · exact</dt>
+          <dd class="tnum mt-1 text-[40px] font-semibold leading-none {summary.netCrimeCash >= 0 ? "text-positive" : "text-negative"}">{formatSignedMoneyCompact(summary.netCrimeCash)}</dd>
+        </div>
+      </dl>
+      <dl class="mt-8 grid grid-cols-2 gap-y-5 border-t border-border pt-5 md:grid-cols-4 md:divide-x md:divide-border">
+        <div class="md:pr-5">
+          <dt class="text-[11px] font-medium text-fg-faint">Item rewards <span class="text-warning">est.</span></dt>
+          <dd class="tnum mt-1 text-[20px] font-semibold text-fg">{summary.estimatedItemsValue !== null ? formatMoneyCompact(summary.estimatedItemsValue) : "—"}</dd>
+          <dd class="text-[11px] text-fg-faint">Torn catalog prices</dd>
+        </div>
+        <div class="md:px-5">
+          <dt class="text-[11px] font-medium text-fg-faint">Nerve used</dt>
+          <dd class="tnum mt-1 text-[20px] font-semibold text-fg">{summary.nerveUsed !== null ? summary.nerveUsed : "—"}</dd>
+        </div>
+        <div class="md:px-5">
+          <dt class="text-[11px] font-medium text-fg-faint">Value per nerve <span class="text-warning">est.</span></dt>
+          <dd class="tnum mt-1 text-[20px] font-semibold text-fg">{summary.valuePerNerve !== null ? formatMoneyCompact(summary.valuePerNerve) : "—"}</dd>
+        </div>
+        <div class="md:pl-5">
+          <dt class="text-[11px] font-medium text-fg-faint">Jail time</dt>
+          <dd class="tnum mt-1 text-[20px] font-semibold {summary.jailedCount > 0 ? 'text-negative' : 'text-fg'}">{summary.jailedCount > 0 ? `${summary.jailedCount}× · ${Math.round(summary.totalJailSeconds / 3600)}h` : "0×"}</dd>
+        </div>
+      </dl>
+    </section>
 
     <p class="text-xs text-fg-faint">
       Cash figures are <span class="font-medium text-fg">exact</span> from your Torn logs; item reward values are

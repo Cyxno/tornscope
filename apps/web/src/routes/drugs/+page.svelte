@@ -6,7 +6,6 @@
   import { dateRange } from "$lib/state.svelte";
   import PageHeader from "$lib/components/PageHeader.svelte";
   import Panel from "$lib/components/Panel.svelte";
-  import Stat from "$lib/components/Stat.svelte";
   import Chart from "$lib/components/Chart.svelte";
   import SegmentedDateRange from "$lib/components/SegmentedDateRange.svelte";
   import StateMessage from "$lib/components/StateMessage.svelte";
@@ -172,29 +171,31 @@
         {staleMsg.hint}
       </p>
     {/if}
-    <!-- Quiet stat strip -->
-    <div class="grid grid-cols-2 gap-px overflow-hidden rounded-card border border-border bg-border shadow-panel md:grid-cols-5">
-      <Stat label="Total uses" value={histBlocked ? "—" : String(data.overall.totalUses)} provenance="exact" tone="accent" />
-      <Stat
-        label="Xanax / day"
-        value={histBlocked ? "—" : data.overall.xanaxPerDay !== null ? String(data.overall.xanaxPerDay) : "—"}
-        provenance="derived"
-        sub={data.overall.coveredDays !== null ? `${data.xanaxFunding.used} used · ${data.overall.coveredDays} covered days${data.overall.coverage === "partial" ? " · partial" : ""}` : null}
-      />
-      <Stat label="Overdoses" value={histBlocked ? "—" : String(data.overall.overdoses)} provenance="exact" tone={data.overall.overdoses > 0 ? "negative" : "neutral"} />
-      <Stat
-        label="Estimated consumption value"
-        value={histBlocked ? "—" : data.xanaxFunding.values.consumption !== null ? formatMoneyCompact(data.xanaxFunding.values.consumption) : "—"}
-        provenance="estimated"
-        title={xanaxValueTooltip}
-      />
-      <Stat
-        label="Avg value / use"
-        value={histBlocked ? "—" : data.xanaxFunding.values.unitPrice !== null ? formatMoneyCompact(data.xanaxFunding.values.unitPrice) : "—"}
-        provenance="estimated"
-        title="Current catalog market price per Xanax — an estimated consumption value, not your purchase cost."
-      />
-    </div>
+    <!-- Quiet stat strip: open hairline columns, no box -->
+    <dl class="grid grid-cols-2 gap-y-5 md:grid-cols-5 md:divide-x md:divide-border">
+      <div class="md:pr-5">
+        <dt class="text-[11px] font-medium text-fg-faint">Total uses</dt>
+        <dd class="tnum mt-1 text-[22px] font-semibold text-accent">{histBlocked ? "—" : data.overall.totalUses}</dd>
+      </div>
+      <div class="md:px-5">
+        <dt class="text-[11px] font-medium text-fg-faint">Xanax / day</dt>
+        <dd class="tnum mt-1 text-[22px] font-semibold text-fg">{histBlocked ? "—" : data.overall.xanaxPerDay !== null ? data.overall.xanaxPerDay : "—"}</dd>
+        <dd class="mt-0.5 text-[11px] text-fg-faint">{data.overall.coveredDays !== null ? `${data.xanaxFunding.used} used · ${data.overall.coveredDays} covered days` : ""}</dd>
+      </div>
+      <div class="md:px-5">
+        <dt class="text-[11px] font-medium text-fg-faint">Overdoses</dt>
+        <dd class="tnum mt-1 text-[22px] font-semibold {data.overall.overdoses > 0 ? 'text-negative' : 'text-fg'}">{histBlocked ? "—" : data.overall.overdoses}</dd>
+      </div>
+      <div class="md:px-5">
+        <dt class="text-[11px] font-medium text-fg-faint" title={xanaxValueTooltip}>Estimated consumption value</dt>
+        <dd class="tnum mt-1 text-[22px] font-semibold text-fg">{histBlocked ? "—" : data.xanaxFunding.values.consumption !== null ? formatMoneyCompact(data.xanaxFunding.values.consumption) : "—"}</dd>
+        <dd class="mt-0.5 text-[11px] text-warning">estimated</dd>
+      </div>
+      <div class="md:pl-5">
+        <dt class="text-[11px] font-medium text-fg-faint" title="Current catalog market price per Xanax — an estimated consumption value, not your purchase cost.">Avg value / use</dt>
+        <dd class="tnum mt-1 text-[22px] font-semibold text-fg">{histBlocked ? "—" : data.xanaxFunding.values.unitPrice !== null ? formatMoneyCompact(data.xanaxFunding.values.unitPrice) : "—"}</dd>
+      </div>
+    </dl>
 
     {#if histBlocked && histAv}
       <!-- Drug history needs User Logs: a permission state, never zeros -->
@@ -208,74 +209,74 @@
 
     {#if !histBlocked}
     {#if data.xanaxFunding.used > 0}
-      <Panel
-        title="Xanax funding"
-        caption="Where the supply came from — provenance from a stock ledger over all recorded purchases, hauls, gifts and armory events"
-      >
-        <div class="space-y-4">
-          <div class="flex flex-wrap items-baseline justify-between gap-2">
-            <p class="text-[13px] text-fg-muted">Xanax used in range</p>
-            <p class="tnum text-lg font-semibold text-fg" data-xanax-used>{data.xanaxFunding.used}</p>
-          </div>
+      <!-- Provenance hero: the page's signature question, on open canvas -->
+      <section class="section-rule" aria-label="Xanax provenance">
+        <p class="section-label">Provenance</p>
+        <p class="font-display mt-2 max-w-3xl text-[24px] font-medium leading-tight text-fg sm:text-[28px]">
+          Where did <span class="tnum" data-xanax-used>{data.xanaxFunding.used}</span> Xanax come from?
+        </p>
 
-          <!-- Provenance split bar: proven classes first, unknowns last -->
-          {#if provenanceSegments.length > 0}
-            <div class="flex h-2.5 gap-px overflow-hidden rounded-full bg-surface-2" role="img" aria-label="Xanax provenance split">
+        <!-- Composition bar: proven classes first, unknowns last -->
+        {#if provenanceSegments.length > 0}
+          <div class="mt-5">
+            <div class="flex h-4 gap-px overflow-hidden rounded-full bg-surface-2" role="img" aria-label="Xanax provenance split">
               {#each provenanceSegments as seg (seg.key)}
                 <div style="width: {seg.share}%; background: {seg.color}" title="{seg.label}: {seg.count}"></div>
               {/each}
             </div>
-          {/if}
-
-          <ul class="grid gap-2 sm:grid-cols-2">
-            {#each provenanceSegments as seg (seg.key)}
-              <li class="rounded-tile border border-border bg-bg-raise px-4 py-3 text-xs">
-                <div class="flex flex-wrap items-baseline justify-between gap-2">
-                  <span class="flex items-center gap-2 font-medium text-fg">
-                    <span class="h-2 w-2 rounded-full" style="background: {seg.color}"></span>
-                    {seg.label}
-                  </span>
-                  <span class="tnum font-semibold text-fg">{seg.count}</span>
-                </div>
-                <p class="mt-1 pl-4 text-fg-muted">
-                  {#if seg.key === "faction"}
-                    Estimated value{data.xanaxFunding.values.factionSponsored !== null ? ` ${formatMoneyCompact(data.xanaxFunding.values.factionSponsored)}` : ""} — proven from faction armory evidence. <span class="font-medium text-fg">Personal cost $0.</span>
-                  {:else if seg.key === "personal"}
-                    Estimated value{data.xanaxFunding.values.confirmedPersonal !== null ? ` ${formatMoneyCompact(data.xanaxFunding.values.confirmedPersonal)}` : ""} — drawn from recorded purchases.
-                  {:else if seg.key === "opening"}
-                    Estimated value{data.xanaxFunding.values.openingInventory !== null ? ` ${formatMoneyCompact(data.xanaxFunding.values.openingInventory)}` : ""} — held when the range began; origin not proven, so not labelled personal spend.
-                  {:else if seg.key === "other"}
-                    Gift/trade evidence — not personal spend.
-                  {:else}
-                    Not attributable to any recorded supply.
-                  {/if}
-                </p>
-              </li>
-            {/each}
-          </ul>
-          {#if data.xanaxFunding.confirmedFaction === 0 && data.xanaxFunding.confirmedPersonal === 0 && data.xanaxFunding.confirmedOther === 0 && data.xanaxFunding.openingInventoryUnknown === 0}
-            <p class="text-xs text-fg-muted">All uses lack traceable supply records.</p>
-          {/if}
-
-          <div class="space-y-1.5 border-t border-border pt-3 text-[11px] leading-relaxed text-fg-faint">
-            <p>
-              Values are estimated at the current catalog market price and are consumption values, not personal spend.
-              Sponsored Xanax costs you $0.
-            </p>
-            {#if data.xanaxFunding.armoryHistory.available}
-              <p>
-                Faction armory history covers events since {formatDate(data.xanaxFunding.armoryHistory.earliestAt)} ({data.xanaxFunding.armoryHistory.events} armory events stored);
-                uses before that date cannot be matched to armory evidence and stay unclassified rather than assumed personal.
-              </p>
-            {:else}
-              <p class="text-warning">
-                Faction armory history is not available through the connected API source, so faction sponsorship cannot be
-                detected — uses stay unattributed rather than assumed personal.
-              </p>
-            {/if}
+            <p class="mt-1.5 text-[11px] text-fg-faint">{data.xanaxFunding.used} uses in range · proven sources first, unknowns last</p>
           </div>
+        {/if}
+
+        <!-- Segment ledger: dot + label + count + meaning, hairline rows -->
+        <ul class="mt-6 grid gap-x-12 md:grid-cols-2">
+          {#each provenanceSegments as seg (seg.key)}
+            <li class="border-b border-border/60 py-3">
+              <div class="flex flex-wrap items-baseline justify-between gap-2">
+                <span class="flex items-center gap-2.5 text-[13.5px] font-medium text-fg">
+                  <span class="h-2.5 w-2.5 rounded-sm" style="background: {seg.color}" aria-hidden="true"></span>
+                  {seg.label}
+                </span>
+                <span class="tnum text-[15px] font-semibold text-fg">{seg.count}<span class="ml-1.5 text-[11px] font-normal text-fg-faint">{Math.round(seg.share)}%</span></span>
+              </div>
+              <p class="mt-1 pl-[18px] text-xs leading-relaxed text-fg-muted">
+                {#if seg.key === "faction"}
+                  Estimated value{data.xanaxFunding.values.factionSponsored !== null ? ` ${formatMoneyCompact(data.xanaxFunding.values.factionSponsored)}` : ""} — proven from faction armory evidence. <span class="font-medium text-fg">Personal cost $0.</span>
+                {:else if seg.key === "personal"}
+                  Estimated value{data.xanaxFunding.values.confirmedPersonal !== null ? ` ${formatMoneyCompact(data.xanaxFunding.values.confirmedPersonal)}` : ""} — drawn from recorded purchases.
+                {:else if seg.key === "opening"}
+                  Estimated value{data.xanaxFunding.values.openingInventory !== null ? ` ${formatMoneyCompact(data.xanaxFunding.values.openingInventory)}` : ""} — held when the range began; origin not proven, so not labelled personal spend.
+                {:else if seg.key === "other"}
+                  Gift/trade evidence — not personal spend.
+                {:else}
+                  Not attributable to any recorded supply.
+                {/if}
+              </p>
+            </li>
+          {/each}
+        </ul>
+        {#if data.xanaxFunding.confirmedFaction === 0 && data.xanaxFunding.confirmedPersonal === 0 && data.xanaxFunding.confirmedOther === 0 && data.xanaxFunding.openingInventoryUnknown === 0}
+          <p class="mt-3 text-xs text-fg-muted">All uses lack traceable supply records.</p>
+        {/if}
+
+        <div class="mt-5 max-w-3xl space-y-1.5 text-[11px] leading-relaxed text-fg-faint">
+          <p>
+            Values are estimated at the current catalog market price and are consumption values, not personal spend.
+            Sponsored Xanax costs you $0.
+          </p>
+          {#if data.xanaxFunding.armoryHistory.available}
+            <p>
+              Faction armory history covers events since {formatDate(data.xanaxFunding.armoryHistory.earliestAt)} ({data.xanaxFunding.armoryHistory.events} armory events stored);
+              uses before that date cannot be matched to armory evidence and stay unclassified rather than assumed personal.
+            </p>
+          {:else}
+            <p class="text-warning">
+              Faction armory history is not available through the connected API source, so faction sponsorship cannot be
+              detected — uses stay unattributed rather than assumed personal.
+            </p>
+          {/if}
         </div>
-      </Panel>
+      </section>
     {/if}
 
     <!-- Hero chart -->
