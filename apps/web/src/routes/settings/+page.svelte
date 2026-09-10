@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { ApiKeyStatusResponse, ApiKeyValidationResponse, KeyCapabilitiesDto, MeResponse } from "@tornscope/shared";
-  import { branding, CAPABILITY_KEYS, FEATURE_REQUIREMENTS, capabilityLevel } from "@tornscope/shared";
+  import { branding, CAPABILITY_KEYS, FEATURE_REQUIREMENTS, capabilityLevel, capabilitySetName } from "@tornscope/shared";
   import { onMount } from "svelte";
   import { endpoints, ApiClientError } from "$lib/api";
   import { formatRelative } from "$lib/reltime";
@@ -153,7 +153,8 @@ import NotificationsSettings from "$lib/components/NotificationsSettings.svelte"
 
   const caps = $derived((status?.capabilities ?? me?.capabilities ?? null) as KeyCapabilitiesDto | null);
 
-  /** Rows of the feature matrix: what each TornScope feature needs and whether it works. */
+  /** Rows of the feature matrix: what each TornScope feature needs, whether
+   * it works, and WHICH permission is missing when it doesn't. */
   const matrixRows = $derived(
     FEATURE_REQUIREMENTS.map((f) => {
       const missing = f.requires.filter((k) => !caps || !caps[k]);
@@ -164,9 +165,25 @@ import NotificationsSettings from "$lib/components/NotificationsSettings.svelte"
         .map((k) => CAP_LABELS[k] ?? k)
         .join(" + ");
       const state = !available ? "Unavailable" : partial ? "Partial" : "Available";
-      return { label: f.label, requirementLabel, state, available, partial };
+      // Honest per-row reason: the missing required permission, or the
+      // missing optional one that would upgrade Partial → Available.
+      const missingLabel = !available
+        ? missing.map((k) => CAP_LABELS[k] ?? k).join(" + ")
+        : partial
+          ? optionalMissing.map((k) => CAP_LABELS[k] ?? k).join(" + ")
+          : null;
+      return { label: f.label, requirementLabel, state, available, partial, missingLabel };
     })
   );
+
+  /** Capability mode + at-a-glance counts (roadmap #4, Settings view). */
+  const capabilityMode = $derived(caps ? capabilitySetName(caps) : null);
+  const matrixCounts = $derived.by(() => {
+    const available = matrixRows.filter((r) => r.available && !r.partial).length;
+    const partial = matrixRows.filter((r) => r.partial).length;
+    const unavailable = matrixRows.filter((r) => !r.available).length;
+    return { available, partial, unavailable, total: matrixRows.length };
+  });
 
   /** Capabilities that would add something the current key lacks. */
   const missingCapabilities = $derived(caps ? CAPABILITY_KEYS.filter((k) => !caps[k]) : CAPABILITY_KEYS);
@@ -360,6 +377,20 @@ import NotificationsSettings from "$lib/components/NotificationsSettings.svelte"
     {#if loading}
       <StateMessage state="loading" />
     {:else if caps}
+      <!-- Capability mode + at-a-glance counts (roadmap #4) -->
+      <div class="mb-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs">
+        <span class="chip {capabilityMode === 'Full' ? 'chip-positive' : capabilityMode === 'Limited' ? 'chip-accent' : 'chip-info'}">
+          {capabilityMode === "Custom" ? "Custom capability set" : `${capabilityMode} preset`}
+        </span>
+        <span class="text-fg-muted">
+          <span class="tnum font-medium text-positive">{matrixCounts.available}</span> fully available
+          <span class="mx-1 text-border-strong">·</span>
+          <span class="tnum font-medium text-warning">{matrixCounts.partial}</span> partial
+          <span class="mx-1 text-border-strong">·</span>
+          <span class="tnum font-medium text-fg-faint">{matrixCounts.unavailable}</span> unavailable
+          <span class="text-fg-faint"> of {matrixCounts.total} features</span>
+        </span>
+      </div>
       <div class="overflow-x-auto">
         <table class="tsv-table">
           <thead>
@@ -367,6 +398,7 @@ import NotificationsSettings from "$lib/components/NotificationsSettings.svelte"
               <th class="font-medium">Feature</th>
               <th class="font-medium">Requires</th>
               <th class="py-2 font-medium">Status</th>
+              <th class="font-medium">Why</th>
             </tr>
           </thead>
           <tbody>
@@ -378,6 +410,9 @@ import NotificationsSettings from "$lib/components/NotificationsSettings.svelte"
                   <span class={row.available ? (row.partial ? "text-warning" : "text-positive") : "text-fg-faint"}>
                     {row.state}
                   </span>
+                </td>
+                <td class="text-xs {row.available && !row.partial ? 'text-fg-faint' : 'text-fg-muted'}">
+                  {row.missingLabel ? `Missing ${row.missingLabel}` : "—"}
                 </td>
               </tr>
             {/each}
