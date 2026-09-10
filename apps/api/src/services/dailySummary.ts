@@ -30,6 +30,7 @@ import { loadAvailabilityContext } from "./availability.js";
 import { resourceConfidence } from "./confidence.js";
 import { getNetworthPeriodForRange } from "./networth.js";
 import { buildXanaxLedger, resolveXanaxItem } from "./xanaxLedger.js";
+import { getProgressionGlimpse } from "./progression.js";
 import { buildTrips } from "./economy.js";
 
 /**
@@ -335,6 +336,10 @@ export async function getDailySummary(
     }
   }
 
+  // Compact Progression glimpse — battlestat gain + inferred training energy.
+  // Null figures when the backing history does not exist (never zero-filled).
+  const progGlimpse = await getProgressionGlimpse(user.id, range.from, range.to);
+
   return {
     date: day.dateKey,
     timezone: user.timezone,
@@ -386,6 +391,16 @@ export async function getDailySummary(
       confidence: rehabConfidence,
     },
     highlights,
+    progression: {
+      battlestatGain: { value: progGlimpse.battlestatGain, provenance: "derived" },
+      energyTrained: {
+        value: progGlimpse.energyTrained,
+        provenance: "estimated",
+        availability: progGlimpse.energyTrained === null ? "unavailable" : "ok",
+      },
+      sessions: progGlimpse.sessions,
+      confidence: drugsConfidence ?? moneyConfidence,
+    },
     overallConfidence: overall,
   };
 }

@@ -322,6 +322,23 @@ export async function insertPersonalStatSnapshot(
   });
 }
 
+export interface BarsSnapshotInput {
+  capturedAt: Date;
+  energyCurrent: number;
+  energyMaximum: number;
+  happyCurrent: number;
+  happyMaximum: number;
+}
+
+/** Bars are captured at poll time (capturedAt = now); upsert dedupes retries. */
+export async function insertBarsSnapshot(db: PrismaClientType, userId: string, input: BarsSnapshotInput): Promise<void> {
+  await db.barsSnapshot.upsert({
+    where: { userId_capturedAt: { userId, capturedAt: input.capturedAt } },
+    create: { userId, ...input },
+    update: { ...input },
+  });
+}
+
 /* -------------------------------------------------------------------------- */
 /* Faction                                                                    */
 /* -------------------------------------------------------------------------- */

@@ -490,6 +490,224 @@ async function main(): Promise<void> {
   }
   await db.networthSnapshot.createMany({ data: nwRows, skipDuplicates: true });
 
+  /* --------------------- progression & energy history -------------------- */
+  // A SIMULATED, internally coherent account: the energy state machine below
+  // is the ground truth that BarsSnapshot rows record, and every stat gain /
+  // xanax / refill / candy event it consumes is seeded alongside it — so the
+  // analytics' reconciliation, session detection and happy-jump inference all
+  // behave on demo data exactly as they would on real data. The random drug
+  // rows generated above feed the simulation too (a random Xanax shows up as
+  // a real +150 estimated gain, sometimes absorbed at cap — the honest noise
+  // the ledger must surface).
+  const PROG_WINDOW = 10 * DAY; // bars window
+  const progStart = now - PROG_WINDOW;
+  const barsRows = [];
+  const progRefillEvents: Array<{ at: number; energy: number }> = [];
+  const progXanaxEvents: Array<{ at: number; at2?: number }> = [];
+  const progEcstasyEvents: Array<{ at: number; happy: number }> = [];
+  const progHappyItemEvents: Array<{ at: number }> = [];
+
+  // Existing random drug rows within the window act as sim inputs (their
+  // Xanax carries the canonical estimated +150; overdoses skip).
+  const xanaxInWindow = drugRows
+    .filter((r) => r.drugName === "Xanax" && r.occurredAt.getTime() / 1000 >= progStart)
+    .map((r) => r.occurredAt.getTime() / 1000)
+    .sort((a, b) => a - b);
+
+  // Deterministic training schedule at ABSOLUTE times (UTC): one normal
+  // morning burst most days, occasional evening bursts, and one big happy
+  // jump yesterday evening — refill to full, then dump it all. Bursts sit
+  // inside one wall-clock hour so the following hourly stat snapshot
+  // brackets them cleanly for gain attribution.
+  const utcDay = (daysAgo: number, hour: number, minute: number): number =>
+    Math.floor((now - daysAgo * DAY) / DAY) * DAY + hour * 3600 + minute * 60;
+  const bursts: Array<{ from: number; to: number; jump?: boolean }> = [];
+  for (let d = 9; d >= 0; d--) {
+    if (d !== 3) bursts.push({ from: utcDay(d, 8, 32), to: utcDay(d, 8, 55) });
+    if (d % 3 === 0) bursts.push({ from: utcDay(d, 19, 2), to: utcDay(d, 19, 25) });
+  }
+  bursts.push({ from: utcDay(1, 20, 5), to: utcDay(1, 20, 55), jump: true }); // yesterday evening: the happy jump
+
+  const jumpBurst = bursts[bursts.length - 1]!;
+  const jumpPrepAt = jumpBurst.from - 60 * 60; // ~1h before the jump burst
+  progEcstasyEvents.push({ at: jumpPrepAt, happy: 6250 });
+  progXanaxEvents.push({ at: jumpPrepAt + 5 * 60, at2: jumpPrepAt + 20 * 60 });
+  progRefillEvents.push({ at: jumpBurst.from + 8 * 60, energy: 150 }); // mid-burst refill
+  progHappyItemEvents.push({ at: jumpPrepAt + 2 * 60 });
+
+  let energy = 40;
+  const energyMax = 150;
+  let happy = 1200;
+  const happyMax = 5000;
+  const clamp = (v: number, max: number): number => Math.max(0, Math.min(max, v));
+  const stepEvents = (stepStart: number): void => {
+    for (const e of progEcstasyEvents) if (e.at >= stepStart && e.at < stepStart + 300) happy = clamp(happy + e.happy, happyMax);
+    for (const e of progHappyItemEvents) if (e.at >= stepStart && e.at < stepStart + 300) happy = clamp(happy + 1500, happyMax);
+    for (const e of progXanaxEvents) {
+      if ((e.at >= stepStart && e.at < stepStart + 300) || (e.at2 !== undefined && e.at2 >= stepStart && e.at2 < stepStart + 300)) {
+        energy = clamp(energy + 150, energyMax);
+      }
+    }
+    for (const e of progRefillEvents) if (e.at >= stepStart && e.at < stepStart + 300) energy = clamp(energy + e.energy, energyMax);
+    for (const t of xanaxInWindow) if (t >= stepStart && t < stepStart + 300) energy = clamp(energy + 150, energyMax);
+  };
+
+  for (let t = progStart; t < now; t += 300) {
+    // natural regen: 1 energy / 5 min
+    energy = clamp(energy + 1, energyMax);
+    happy = clamp(happy + 2, happyMax);
+    stepEvents(t);
+    for (const burst of bursts) {
+      if (t >= burst.from && t < burst.to) {
+        // Train down hard: real bursts dump energy in minutes.
+        energy = clamp(energy - (burst.jump ? 30 : 28), energyMax);
+        if (burst.jump) happy = clamp(happy - 20, happyMax);
+      }
+    }
+    // Occasional unattributed spend (attacks/other) — no stat gain attached.
+    if (rand() < 0.004) energy = clamp(energy - between(30, 60), energyMax);
+    barsRows.push({
+      userId: user.id,
+      capturedAt: new Date(t * 1000),
+      energyCurrent: Math.round(energy),
+      energyMaximum: energyMax,
+      happyCurrent: Math.round(happy),
+      happyMaximum: happyMax,
+    });
+  }
+  await db.barsSnapshot.createMany({ data: barsRows, skipDuplicates: true });
+
+  // Refill/xanax/EDVD log-shaped evidence rows (timeline + drug + consumption),
+  // aligned with the simulation inputs above.
+  await db.timelineEvent.createMany({
+    data: progRefillEvents.map((e) => ({
+      userId: user.id,
+      occurredAt: new Date(e.at * 1000),
+      type: "log",
+      category: "Points building",
+      title: "Points energy refill use",
+      description: null,
+      amount: null,
+      source: "demo",
+      sourceRef: `demo:refill:${e.at}`,
+      metadata: { id: e.at, timestamp: e.at, details: { id: 0, title: "Points energy refill use", category: "Points building" }, data: { points_used: 30, energy_increased: e.energy } },
+    })),
+    skipDuplicates: true,
+  });
+  const progDrugRows = [
+    ...progXanaxEvents.flatMap((e) =>
+      [e.at, e.at2].filter((t): t is number => t !== undefined).map((t) => ({
+        userId: user.id,
+        occurredAt: new Date(t * 1000),
+        drugItemId: 206,
+        drugName: "Xanax",
+        outcome: "success" as const,
+        source: "demo",
+        sourceRef: `demo:progxanax:${t}`,
+      }))
+    ),
+    ...progEcstasyEvents.map((e) => ({
+      userId: user.id,
+      occurredAt: new Date(e.at * 1000),
+      drugItemId: 200,
+      drugName: "Ecstasy",
+      outcome: "success" as const,
+      source: "demo",
+      sourceRef: `demo:progecstasy:${e.at}`,
+    })),
+  ];
+  await db.drugEvent.createMany({ data: progDrugRows, skipDuplicates: true });
+  await db.consumptionEvent.createMany({
+    data: [
+      ...progHappyItemEvents.map((e) => ({
+        userId: user.id,
+        occurredAt: new Date(e.at * 1000),
+        itemId: 470,
+        itemName: "Erotic DVD",
+        category: "happy_jump",
+        quantity: 1,
+        valuationMethod: "unknown",
+        provenance: "unknown",
+        source: "demo",
+        sourceRef: `demo:edvd:${e.at}`,
+      })),
+    ],
+    skipDuplicates: true,
+  });
+
+  // Hourly personalstat snapshots (30 days): battle_stats gains land on the
+  // hourly snapshot AFTER each burst; cumulative counters advance coherently.
+  let str = 12_400_000;
+  let def = 9_850_000;
+  let spd = 10_320_000;
+  let dex = 8_640_000;
+  let cumXanax = 347 - (progXanaxEvents.length * 2 + xanaxInWindow.length);
+  const cumEcstasy = 41 - progEcstasyEvents.length;
+  let cumRefills = 137 - progRefillEvents.length;
+  let cumCandy = 2673 - 40;
+  let cumAwards = 172;
+  const progStatRows = [];
+  const gainFor = (jump: boolean): { str: number; def: number; spd: number; dex: number } =>
+    jump
+      ? { str: 2_500_000, def: 180_000, spd: 260_000, dex: 150_000 }
+      : { str: between(40_000, 52_000), def: between(4_000, 6_000), spd: between(5_000, 7_000), dex: between(3_000, 5_000) };
+  for (let t = now - 30 * DAY; t < now; t += HOUR) {
+    const date = new Date(t * 1000);
+    // Apply each burst's gains on the first hourly snapshot at/after its end.
+    for (const burst of bursts) {
+      // First grid snapshot at/after the burst end — gains land strictly
+      // after the burst, so the bracket [before, after] isolates them.
+      if (t >= burst.to && t - HOUR < burst.to) {
+        const g = gainFor(burst.jump === true);
+        str += g.str;
+        def += g.def;
+        spd += g.spd;
+        dex += g.dex;
+      }
+    }
+    // Smooth background growth for the pre-bars days.
+    if (t < progStart) {
+      str += between(400, 900);
+      def += between(250, 500);
+      spd += between(280, 560);
+      dex += between(220, 460);
+    }
+    if (date.getUTCHours() === 7) {
+      cumXanax += 0;
+      cumRefills += rand() < 0.35 ? 1 : 0;
+      cumCandy += between(0, 3);
+      if (rand() < 0.02) cumAwards += 1;
+    }
+    progStatRows.push({
+      userId: user.id,
+      capturedAt: date,
+      networthTotal: null,
+      stats: {
+        battle_stats: {
+          strength: Math.round(str),
+          defense: Math.round(def),
+          speed: Math.round(spd),
+          dexterity: Math.round(dex),
+          total: Math.round(str + def + spd + dex),
+        },
+        drugs: { xanax: cumXanax, ecstasy: cumEcstasy, total: cumXanax + cumEcstasy, overdoses: 11 },
+        other: { refills: { energy: cumRefills, nerve: 0, token: 0 }, awards: cumAwards },
+        items: { used: { candy: cumCandy, boosters: 1, energy_drinks: 0 } },
+        level: 42,
+      },
+    });
+  }
+  await db.personalStatSnapshot.createMany({ data: progStatRows, skipDuplicates: true });
+
+  // Level history: two level-ups inside the window (UserSnapshot rows).
+  await db.userSnapshot.createMany({
+    data: [
+      { userId: user.id, capturedAt: new Date((now - 6 * DAY) * 1000), level: 41, rank: "Bravo", factionId: 9999, status: { description: "Okay" }, raw: { demo: true } },
+      { userId: user.id, capturedAt: new Date((now - 2 * DAY) * 1000), level: 42, rank: "Bravo", factionId: 9999, status: { description: "Okay" }, raw: { demo: true } },
+    ],
+    skipDuplicates: true,
+  });
+
   /* --------------------------- timeline events --------------------------- */
   const timelineRows = [
     ...drugRows.slice(-400).map((row) => ({

@@ -22,6 +22,7 @@ import {
 } from "@tornscope/analytics";
 import { bigintToNumber, getPrismaClient, isOcPayoutRow, loadMarketPrices } from "@tornscope/database";
 import { getLatestNetworth, getNetworthPeriodForRange } from "./networth.js";
+import { getProgressionGlimpse } from "./progression.js";
 import { loadAvailabilityContext } from "./availability.js";
 import { resourceConfidence } from "./confidence.js";
 
@@ -294,8 +295,19 @@ export async function getDashboard(userId: string, rangeInput: DateRangeInput): 
     };
   }
 
+  // Compact Progression glimpse — one bounded read for the single Overview stat.
+  const progGlimpse = await getProgressionGlimpse(userId, range.from, range.to);
+
   return {
     range: { from: range.from, to: range.to, interval: autoInterval(range) },
+    progression: {
+      battlestatGain: { value: progGlimpse.battlestatGain, provenance: "derived" },
+      energyTrained: {
+        value: progGlimpse.energyTrained,
+        provenance: "estimated",
+        availability: progGlimpse.energyTrained === null ? "unavailable" : "ok",
+      },
+    },
     netWorth: { value: latestNw?.total ?? null, provenance: "exact", availability: latestNw ? "ok" : "unavailable" },
     cash: { value: latestNw?.cash ?? null, provenance: "exact", availability: latestNw ? "ok" : "unavailable" },
     extendedWealth: {

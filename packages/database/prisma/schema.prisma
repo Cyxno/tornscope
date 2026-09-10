@@ -68,6 +68,7 @@ model User {
   syncRuns             SyncRun[]
   userSnapshots        UserSnapshot[]
   personalStatSnapshot PersonalStatSnapshot[]
+  barsSnapshots        BarsSnapshot[]
   networthSnapshots    NetworthSnapshot[]
   drugEvents           DrugEvent[]
   consumptionEvents    ConsumptionEvent[]
@@ -304,6 +305,24 @@ model PersonalStatSnapshot {
   capturedAt    DateTime
   networthTotal BigInt?
   stats         Json
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, capturedAt])
+  @@index([userId, capturedAt])
+}
+
+/// Energy and happy bar snapshot (5-minute cadence) — the ONLY historical
+/// record of bar state; Torn exposes bars live-only. Captured going forward
+/// from first sync; there is no retroactive history (docs/PROGRESSION-ENERGY.md).
+model BarsSnapshot {
+  id            String   @id @default(cuid())
+  userId        String
+  capturedAt    DateTime
+  energyCurrent Int
+  energyMaximum Int
+  happyCurrent  Int
+  happyMaximum  Int
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

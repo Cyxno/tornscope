@@ -55,7 +55,7 @@ describe("summarizeKeyAccess (first-run access detection)", () => {
   it("every synced resource is classified exactly once", () => {
     for (const caps of [FULL_CAPS, LIMITED_CAPS]) {
       const s = summarizeKeyAccess(caps, 3, "Limited Access");
-      expect(s.available.length + s.unavailable.length).toBe(15);
+      expect(s.available.length + s.unavailable.length).toBe(16);
     }
   });
 

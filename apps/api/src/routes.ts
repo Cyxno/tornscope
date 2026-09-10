@@ -22,6 +22,7 @@ import { getDrugsSummary } from "./services/drugs.js";
 import { getTravelHistory, getTravelSummary } from "./services/travel.js";
 import { getNetworth } from "./services/networth.js";
 import { getEconomySummary } from "./services/economy.js";
+import { getProgression } from "./services/progression.js";
 import { getCrimesSummary, getCrimesTimeline, getCombatSummary, getCombatTimeline } from "./services/crimesCombat.js";
 import { getFactionOverview, getFactionRankedWars, getFactionMembers, getFactionChains, getFactionOcs, getFactionLedger } from "./services/faction.js";
 import { getTimeline } from "./services/timeline.js";
@@ -160,6 +161,14 @@ export function registerRoutes(app: FastifyInstance): void {
     const user = currentUser(req);
     const range = parseRange(req.query as Record<string, unknown>);
     return getEconomySummary(user.id, range);
+  });
+
+  // Progression & Energy Intelligence: battlestats, energy ledger, training
+  // sessions, happy jumps — every figure provenance-labeled.
+  app.get("/api/progression", async (req) => {
+    const user = currentUser(req);
+    const range = parseRange(req.query as Record<string, unknown>);
+    return getProgression(user.id, range);
   });
 
   app.get("/api/money/events", async (req) => {

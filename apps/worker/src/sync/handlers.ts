@@ -8,6 +8,7 @@ import {
   insertMoneyEvents,
   insertNetworthSnapshot,
   insertPersonalStatSnapshot,
+  insertBarsSnapshot,
   insertRehabEvents,
   insertTimelineEvents,
   insertTravelTransitions,
@@ -253,6 +254,29 @@ export const syncPersonalStats: SyncHandler = async ({ userId, torn }) => {
   });
 
   await insertPersonalStatSnapshot(ctx.db, userId, new Date(), result.personalstats, latestNetworth?.total ?? null);
+  return { records: 1 };
+};
+
+/* -------------------------------------------------------------------------- */
+/* bars                                                                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Energy/happy bar snapshot — the ONLY historical record of bar state (Torn
+ * exposes bars live-only). Five-minute cadence captures regen/spend shape at
+ * the resolution the energy analytics need (docs/PROGRESSION-ENERGY.md).
+ */
+export const syncBars: SyncHandler = async ({ userId, torn }) => {
+  const ctx = getWorkerContext();
+  const result = await torn.userBars();
+  const now = new Date();
+  await insertBarsSnapshot(ctx.db, userId, {
+    capturedAt: now,
+    energyCurrent: result.bars.energy.current,
+    energyMaximum: result.bars.energy.maximum,
+    happyCurrent: result.bars.happy.current,
+    happyMaximum: result.bars.happy.maximum,
+  });
   return { records: 1 };
 };
 
@@ -1000,6 +1024,7 @@ export const syncOrganizedCrimes: SyncHandler = async (args) => {
 
 export const SYNC_HANDLERS: Record<SyncResource, SyncHandler> = {
   profile: syncProfile,
+  bars: syncBars,
   personal_stats: syncPersonalStats,
   networth: syncNetworth,
   drugs: syncDrugLogs,

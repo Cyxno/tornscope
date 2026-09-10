@@ -520,6 +520,15 @@ export const DashboardResponseSchema = z.object({
     startingSnapshotAt: z.number().nullable(),
     endingSnapshotAt: z.number().nullable(),
   }),
+  /**
+   * One concise Progression glimpse (training gain + energy trained over the
+   * selected range). Null figures when the backing history does not exist —
+   * never zero-filled. The full analysis lives on /progression.
+   */
+  progression: z.object({
+    battlestatGain: KpiValueSchema,
+    energyTrained: KpiValueSchema,
+  }),
   networthSeries: z.array(z.object({ t: z.number(), total: z.number() })),
   incomeByCategory: z.array(z.object({ category: MoneyCategorySchema, total: z.number() })),
   expensesByCategory: z.array(z.object({ category: MoneyCategorySchema, total: z.number() })),
@@ -914,6 +923,19 @@ export const DailySummaryResponseSchema = z.object({
     confidence: DataConfidenceMetaSchema,
   }),
   highlights: z.array(DailyHighlightSchema),
+  /**
+   * Compact Progression glimpse (roadmap: Progression & Energy Intelligence).
+   * Battlestat gain is derived from hourly stat snapshots; training energy is
+   * an inference from bar history — null when that history does not exist.
+   */
+  progression: z
+    .object({
+      battlestatGain: KpiValueSchema,
+      energyTrained: KpiValueSchema,
+      sessions: z.number(),
+      confidence: DataConfidenceMetaSchema,
+    })
+    .nullable(),
   overallConfidence: DataConfidenceMetaSchema,
 });
 export type DailySummaryResponse = z.infer<typeof DailySummaryResponseSchema>;
@@ -1814,3 +1836,172 @@ export const NotificationsStatusResponseSchema = z.object({
   }),
 });
 export type NotificationsStatusResponse = z.infer<typeof NotificationsStatusResponseSchema>;
+
+/* -------------------------------------------------------------------------- */
+/* Progression & Energy Intelligence (roadmap item)                            */
+/* -------------------------------------------------------------------------- */
+
+export const ProgressionStatKeySchema = z.enum(["strength", "defense", "speed", "dexterity"]);
+export type ProgressionStatKey = z.infer<typeof ProgressionStatKeySchema>;
+
+/** How strongly stored evidence supports an inferred classification. */
+export const InferenceStrengthSchema = z.enum(["likely", "possible"]);
+export type InferenceStrength = z.infer<typeof InferenceStrengthSchema>;
+
+export const TrainingSessionSchema = z.object({
+  startedAt: z.number(),
+  endedAt: z.number(),
+  /** Observed energy declines inside the burst; null when bars are uncovered. */
+  energySpent: z.number().nullable(),
+  energyKnown: z.boolean(),
+  /** Observed battlestat gain bracketing the session; null when shared. */
+  gains: z.record(ProgressionStatKeySchema, z.number()).nullable(),
+  totalGain: z.number().nullable(),
+  gainPerEnergy: z.number().nullable(),
+  primaryStat: z.string().nullable(),
+  inference: InferenceStrengthSchema,
+  evidence: z.array(z.string()),
+  bracketShared: z.boolean(),
+});
+export type TrainingSessionDto = z.infer<typeof TrainingSessionSchema>;
+
+export const HappyJumpSchema = z.object({
+  preparedFrom: z.number(),
+  trainedFrom: z.number(),
+  trainedTo: z.number(),
+  xanaxCount: z.number(),
+  ecstasyCount: z.number(),
+  /** null = no refill evidence either way (never a fabricated false). */
+  refillUsed: z.boolean().nullable(),
+  energySpent: z.number().nullable(),
+  totalGain: z.number().nullable(),
+  primaryStat: z.string().nullable(),
+  gainPerEnergy: z.number().nullable(),
+  peakHappyObserved: z.number().nullable(),
+  confidence: InferenceStrengthSchema,
+  signals: z.array(z.string()),
+  evidence: z.array(z.string()),
+  missing: z.array(z.string()),
+});
+export type HappyJumpDto = z.infer<typeof HappyJumpSchema>;
+
+export const StatMilestoneSchema = z.object({
+  kind: z.string(),
+  label: z.string(),
+  threshold: z.number(),
+  crossedBetween: z.tuple([z.number(), z.number()]),
+});
+export type StatMilestoneDto = z.infer<typeof StatMilestoneSchema>;
+
+/**
+ * Progression & Energy Intelligence. Every figure carries its semantic class
+ * via provenance/inference fields: exact (Torn verbatim), derived
+ * (deterministic from exact), estimated (documented convention — Xanax
+ * energy), inferred (pattern classification: sessions/jumps). Energy history
+ * exists only from BarsSnapshot collection start; battlestat history comes
+ * from hourly personalstat snapshots (battle_stats).
+ */
+export const ProgressionResponseSchema = z.object({
+  range: z.object({ from: z.number(), to: z.number() }),
+  generatedAt: z.number(),
+  availability: z
+    .object({
+      battlestats: FeatureAvailabilitySchema,
+      energy: FeatureAvailabilitySchema,
+      training: FeatureAvailabilitySchema,
+      happyJumps: FeatureAvailabilitySchema,
+    })
+    .optional(),
+  summary: z.object({
+    totalBattlestats: KpiValueSchema,
+    totalDelta: KpiValueSchema,
+    gainPerDay: KpiValueSchema,
+    /** Energy attributed to training by session inference (never exact). */
+    energyTrained: KpiValueSchema,
+    sessions: z.number(),
+    likelyJumps: z.number(),
+  }),
+  battlestats: z.object({
+    perStat: z.array(
+      z.object({
+        key: ProgressionStatKeySchema,
+        label: z.string(),
+        opening: z.number().nullable(),
+        closing: z.number().nullable(),
+        delta: z.number().nullable(),
+        changePct: z.number().nullable(),
+      })
+    ),
+    openingTotal: z.number().nullable(),
+    closingTotal: z.number().nullable(),
+    deltaTotal: z.number().nullable(),
+    changePct: z.number().nullable(),
+    gainPerDay: z.number().nullable(),
+    distribution: z.array(z.object({ key: ProgressionStatKeySchema, share: z.number().nullable() })),
+    series: z.array(
+      z.object({
+        t: z.number(),
+        strength: z.number().nullable(),
+        defense: z.number().nullable(),
+        speed: z.number().nullable(),
+        dexterity: z.number().nullable(),
+        total: z.number().nullable(),
+      })
+    ),
+    milestones: z.array(StatMilestoneSchema),
+    /** First observation in stored history — nothing before it exists. */
+    trackedSince: z.number().nullable(),
+    confidence: DataConfidenceMetaSchema,
+  }),
+  energy: z.object({
+    /** False when no bar snapshots exist in range — everything stays null. */
+    covered: z.boolean(),
+    coveredFrom: z.number().nullable(),
+    coveredTo: z.number().nullable(),
+    sources: z.array(z.object({ category: z.string(), amount: z.number(), provenance: ProvenanceSchema })),
+    uses: z.array(z.object({ category: z.string(), amount: z.number(), provenance: ProvenanceSchema })),
+    derivedRegen: z.number().nullable(),
+    regenPerHour: z.number().nullable(),
+    /** Estimated regen while observed pinned at cap — never claimed as gained. */
+    potentialRegen: z.number().nullable(),
+    /** Lower-bound seconds observed at cap (snapshot-bounded). */
+    cappedSeconds: z.number().nullable(),
+    /** Known gains that never materialized as observed energy (cap effects). */
+    absorbedOvershoot: z.number().nullable(),
+    reconciliation: z.object({
+      opening: z.number().nullable(),
+      closing: z.number().nullable(),
+      observedDelta: z.number().nullable(),
+      quality: z.enum(["full", "partial", "unavailable"]),
+    }),
+    confidence: DataConfidenceMetaSchema,
+  }),
+  training: z.object({
+    sessions: z.array(TrainingSessionSchema),
+    medianGainPerEnergy: z.number().nullable(),
+    baselineMedianGainPerEnergy: z.number().nullable(),
+    baselineSamples: z.number(),
+    /** Current-period gain/E ratio vs the personal baseline (1.0 = equal). */
+    efficiencyVsBaseline: z.number().nullable(),
+    daysTrained: z.number(),
+    avgEnergyPerTrainingDay: z.number().nullable(),
+    normalVsJump: z.object({
+      normalMedianGainPerEnergy: z.number().nullable(),
+      jumpMedianGainPerEnergy: z.number().nullable(),
+      normalSamples: z.number(),
+      jumpSamples: z.number(),
+    }),
+    confidence: DataConfidenceMetaSchema,
+  }),
+  happyJumps: z.object({
+    jumps: z.array(HappyJumpSchema),
+    confidence: DataConfidenceMetaSchema,
+  }),
+  profile: z.object({
+    level: z.number().nullable(),
+    levelHistory: z.array(z.object({ t: z.number(), level: z.number() })),
+    awards: z.number().nullable(),
+    awardsDelta: z.number().nullable(),
+  }),
+});
+export type ProgressionResponse = z.infer<typeof ProgressionResponseSchema>;

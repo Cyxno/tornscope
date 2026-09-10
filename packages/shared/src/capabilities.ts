@@ -43,7 +43,11 @@ export type TornScopeFeature =
   | "faction_ranked_wars"
   | "faction_organized_crimes"
   | "faction_armory_history"
-  | "faction_balance";
+  | "faction_balance"
+  | "progression_battlestats"
+  | "progression_energy"
+  | "progression_training"
+  | "progression_happy_jumps";
 
 export interface FeatureRequirement {
   feature: TornScopeFeature;
@@ -90,6 +94,33 @@ export const FEATURE_REQUIREMENTS: FeatureRequirement[] = [
     partial: true,
   },
   { feature: "rehab_history", label: "Rehab history", requires: ["canReadUserLogs"], partial: false },
+  {
+    feature: "progression_battlestats",
+    label: "Battlestat history",
+    requires: ["canReadUserPersonalStats"],
+    partial: false,
+  },
+  {
+    feature: "progression_energy",
+    label: "Energy analytics",
+    requires: ["canReadUserBars"],
+    optional: ["canReadUserLogs"],
+    partial: true,
+  },
+  {
+    feature: "progression_training",
+    label: "Training sessions",
+    requires: ["canReadUserBars", "canReadUserPersonalStats"],
+    optional: ["canReadUserLogs"],
+    partial: true,
+  },
+  {
+    feature: "progression_happy_jumps",
+    label: "Happy-jump analysis",
+    requires: ["canReadUserLogs"],
+    optional: ["canReadUserBars"],
+    partial: true,
+  },
   { feature: "money_cash_flow", label: "Cash flow", requires: ["canReadUserLogs"], partial: false },
   {
     feature: "wallet_bridge",
@@ -259,6 +290,7 @@ export const CAPABILITY_RECHECK_SECONDS = 6 * 3600;
  */
 export const RESOURCE_REQUIREMENTS: Record<SyncResource, CapabilityKey | null> = {
   profile: "canReadUserBasic",
+  bars: "canReadUserBars",
   personal_stats: "canReadUserPersonalStats",
   networth: "canReadUserNetworth",
   drugs: "canReadUserLogs",
@@ -295,6 +327,7 @@ export function resourceRequirementLabel(resource: SyncResource): string {
 /** User-facing label per sync resource (onboarding detection screen). */
 export const RESOURCE_LABELS: Record<SyncResource, string> = {
   profile: "Basic profile data",
+  bars: "Energy & happy bars",
   personal_stats: "Live stats",
   networth: "Net worth snapshots",
   drugs: "Drug history",
@@ -492,6 +525,7 @@ export type Recoverability = "current" | "window" | "from_start" | "source";
 
 export const RESOURCE_RECOVERABILITY: Record<SyncResource, Recoverability> = {
   profile: "current",
+  bars: "from_start",
   personal_stats: "from_start",
   networth: "from_start",
   drugs: "window",

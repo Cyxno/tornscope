@@ -145,6 +145,7 @@ export type MoneyDirection = (typeof MONEY_DIRECTIONS)[number];
  */
 export const SYNC_RESOURCES = [
   "profile",
+  "bars",
   "personal_stats",
   "networth",
   "drugs",
@@ -165,6 +166,7 @@ export type SyncResource = (typeof SYNC_RESOURCES)[number];
 
 export const DEFAULT_SYNC_FREQUENCIES_SECONDS: Record<SyncResource, number> = {
   profile: 300,
+  bars: 300,
   personal_stats: 3600,
   networth: 3600,
   drugs: 600,
