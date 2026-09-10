@@ -367,7 +367,11 @@ async function main(): Promise<void> {
     }
     // Occasional bank transfer pair: invest, then withdraw with ~4% yield —
     // exercises the conversion lens and the derived bank-interest split.
-    if (rand() < 0.02 && t < now - 10 * DAY) {
+    // Pairs continue right up to `now` so every window keeps matched pairs;
+    // a withdrawal whose invest falls outside the analyzed window is
+    // conservatively unattributable interest (the honest case the analytics
+    // must also handle).
+    if (rand() < 0.02) {
       const invest = between(200_000, 2_000_000);
       const interest = Math.round(invest * 0.04);
       moneyRows.push({
@@ -401,10 +405,13 @@ async function main(): Promise<void> {
   // unexplained drift, so the demo's wallet reconciliation behaves like real
   // data: a small residual that analytics must surface, never a fake exact
   // match. OC payouts are excluded here (they credit the faction balance).
+  // Buckets align to the SNAPSHOT grid (start + k*HOUR), not epoch hours —
+  // the loop below steps on `start`-aligned hours.
   const movementByHour = new Map<number, number>();
+  const hourOf = (sec: number): number => start + Math.floor((sec - start) / HOUR) * HOUR;
   for (const row of moneyRows) {
     if ((row.metadata as { data?: { scenario?: string } } | null)?.data?.scenario) continue;
-    const h = Math.floor(row.occurredAt.getTime() / 1000 / HOUR) * HOUR;
+    const h = hourOf(Math.floor(row.occurredAt.getTime() / 1000));
     movementByHour.set(h, (movementByHour.get(h) ?? 0) + Number(row.amount));
   }
   let base = 180_000_000;
