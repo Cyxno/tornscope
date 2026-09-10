@@ -514,25 +514,26 @@ async function main(): Promise<void> {
     .map((r) => r.occurredAt.getTime() / 1000)
     .sort((a, b) => a - b);
 
-  // Deterministic training schedule at ABSOLUTE times (UTC): one normal
-  // morning burst most days, occasional evening bursts, and one big happy
-  // jump yesterday evening — refill to full, then dump it all. Bursts sit
-  // inside one wall-clock hour so the following hourly stat snapshot
-  // brackets them cleanly for gain attribution.
-  const utcDay = (daysAgo: number, hour: number, minute: number): number =>
-    Math.floor((now - daysAgo * DAY) / DAY) * DAY + hour * 3600 + minute * 60;
+  // Deterministic training schedule. Bursts are anchored to the SNAPSHOT
+  // grid (both bars and stat snapshots align to (now mod 3600)): a burst
+  // starts 3 minutes after a grid point and ends 28 minutes after it, so
+  // exactly one hourly stat point sits at/after each burst end — the gain
+  // bracket is cleanly adjacent for session attribution at any seed time.
+  const gridOffset = now % 3600;
+  const gridAt = (daysAgo: number, hour: number): number =>
+    Math.floor((now - daysAgo * DAY) / DAY) * DAY + hour * 3600 + gridOffset;
   const bursts: Array<{ from: number; to: number; jump?: boolean }> = [];
   for (let d = 9; d >= 0; d--) {
-    if (d !== 3) bursts.push({ from: utcDay(d, 8, 32), to: utcDay(d, 8, 55) });
-    if (d % 3 === 0) bursts.push({ from: utcDay(d, 19, 2), to: utcDay(d, 19, 25) });
+    if (d !== 3) bursts.push({ from: gridAt(d, 8) + 180, to: gridAt(d, 8) + 1680 });
+    if (d % 3 === 0) bursts.push({ from: gridAt(d, 19) + 180, to: gridAt(d, 19) + 1680 });
   }
-  bursts.push({ from: utcDay(1, 20, 5), to: utcDay(1, 20, 55), jump: true }); // yesterday evening: the happy jump
+  bursts.push({ from: gridAt(1, 20) + 180, to: gridAt(1, 20) + 1680, jump: true }); // yesterday evening: the happy jump
 
   const jumpBurst = bursts[bursts.length - 1]!;
   const jumpPrepAt = jumpBurst.from - 60 * 60; // ~1h before the jump burst
   progEcstasyEvents.push({ at: jumpPrepAt, happy: 6250 });
   progXanaxEvents.push({ at: jumpPrepAt + 5 * 60, at2: jumpPrepAt + 20 * 60 });
-  progRefillEvents.push({ at: jumpBurst.from + 8 * 60, energy: 150 }); // mid-burst refill
+  progRefillEvents.push({ at: jumpBurst.from + 300, energy: 150 }); // early-burst refill to full
   progHappyItemEvents.push({ at: jumpPrepAt + 2 * 60 });
 
   let energy = 40;
