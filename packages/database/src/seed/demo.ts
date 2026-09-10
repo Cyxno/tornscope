@@ -329,7 +329,7 @@ async function main(): Promise<void> {
     source: string;
     sourceRef: string;
     description: string;
-    metadata?: { demo?: boolean; data?: { scenario?: string } };
+    metadata?: { demo?: boolean; simulated?: boolean; warId?: number; data?: { scenario?: string } };
   };
   const moneyRows: DemoMoneyRow[] = [...sigMoneyRows];
   for (let t = start; t < now; t += HOUR) {
@@ -397,6 +397,53 @@ async function main(): Promise<void> {
         description: "Bank withdraw",
       });
     }
+  }
+  await db.moneyEvent.createMany({ data: moneyRows, skipDuplicates: true });
+
+  /* ------------------ ranked wars + personal payouts --------------------- */
+  // Seeded BEFORE the networth snapshots so the payouts are part of the
+  // wallet-tracking ledger below (a recorded payout that never reached the
+  // tracked wallet would fabricate a phantom reconciliation residual).
+  const DEMO_WAR_FACTION_ID = 9999;
+  const warRows = [
+    { id: 9001, opponent: "DEMO Rivals", started: now - 90 * DAY, days: 5, win: true, our: 12_000, their: 8_500, payout: 8_000_000 },
+    { id: 9002, opponent: "DEMO Warriors", started: now - 60 * DAY, days: 4, win: true, our: 15_200, their: 9_100, payout: 12_500_000 },
+    { id: 9003, opponent: "DEMO Titans", started: now - 30 * DAY, days: 6, win: false, our: 7_400, their: 16_800, payout: 2_000_000 },
+    { id: 9004, opponent: "DEMO Wolves", started: now - 10 * DAY, days: 5, win: true, our: 18_300, their: 11_000, payout: 15_000_000 },
+  ];
+  for (const [i, w] of warRows.entries()) {
+    await db.rankedWar.upsert({
+      where: { tornWarId: w.id },
+      create: {
+        tornWarId: w.id,
+        factionId: DEMO_WAR_FACTION_ID,
+        opponentFactionId: 8800 + i,
+        opponentName: w.opponent,
+        startedAt: new Date(w.started * 1000),
+        endedAt: new Date((w.started + w.days * DAY) * 1000),
+        winnerFactionId: w.win ? DEMO_WAR_FACTION_ID : 8800 + i,
+        targetScore: Math.max(w.our, w.their),
+        ourScore: w.our,
+        opponentScore: w.their,
+        source: "demo",
+        raw: { simulated: true, factions: [{ id: DEMO_WAR_FACTION_ID, name: "DEMO Syndicate", score: w.our }, { id: 8800 + i, name: w.opponent, score: w.their }] },
+      },
+      update: {},
+    });
+    // Personal payout inside the settlement tail (time-window match) —
+    // wallet cash, tracked by the snapshots below (no scenario metadata).
+    moneyRows.push({
+      userId: user.id,
+      occurredAt: new Date((w.started + (w.days + 1) * DAY) * 1000),
+      category: "faction",
+      subcategory: "Faction payout money receive",
+      direction: "income" as const,
+      amount: BigInt(Math.round(w.payout * 0.08)),
+      source: "demo",
+      sourceRef: `demo:war-payout:${w.id}`,
+      description: "Faction payout money receive",
+      metadata: { simulated: true, warId: w.id },
+    });
   }
   await db.moneyEvent.createMany({ data: moneyRows, skipDuplicates: true });
 
@@ -641,50 +688,6 @@ async function main(): Promise<void> {
     skipDuplicates: true,
   });
 
-  const warRows = [
-    { id: 9001, opponent: "DEMO Rivals", started: now - 90 * DAY, days: 5, win: true, our: 12_000, their: 8_500, payout: 8_000_000 },
-    { id: 9002, opponent: "DEMO Warriors", started: now - 60 * DAY, days: 4, win: true, our: 15_200, their: 9_100, payout: 12_500_000 },
-    { id: 9003, opponent: "DEMO Titans", started: now - 30 * DAY, days: 6, win: false, our: 7_400, their: 16_800, payout: 2_000_000 },
-    { id: 9004, opponent: "DEMO Wolves", started: now - 10 * DAY, days: 5, win: true, our: 18_300, their: 11_000, payout: 15_000_000 },
-  ];
-  for (const [i, w] of warRows.entries()) {
-    await db.rankedWar.upsert({
-      where: { tornWarId: w.id },
-      create: {
-        tornWarId: w.id,
-        factionId: DEMO_FACTION_ID,
-        opponentFactionId: 8800 + i,
-        opponentName: w.opponent,
-        startedAt: new Date(w.started * 1000),
-        endedAt: new Date((w.started + w.days * DAY) * 1000),
-        winnerFactionId: w.win ? DEMO_FACTION_ID : 8800 + i,
-        targetScore: Math.max(w.our, w.their),
-        ourScore: w.our,
-        opponentScore: w.their,
-        source: "demo",
-        raw: { simulated: true, factions: [{ id: DEMO_FACTION_ID, name: "DEMO Syndicate", score: w.our }, { id: 8800 + i, name: w.opponent, score: w.their }] },
-      },
-      update: {},
-    });
-    // Personal payout inside the settlement tail (time-window match).
-    await db.moneyEvent.createMany({
-      data: [
-        {
-          userId: user.id,
-          occurredAt: new Date((w.started + (w.days + 1) * DAY) * 1000),
-          category: "faction",
-          subcategory: "Faction payout money receive",
-          direction: "income",
-          amount: BigInt(Math.round(w.payout * 0.08)),
-          source: "demo",
-          sourceRef: `demo:war-payout:${w.id}`,
-          description: "Faction payout money receive",
-          metadata: { simulated: true, warId: w.id },
-        },
-      ],
-      skipDuplicates: true,
-    });
-  }
 
   const chainRows = [
     { id: 9101, chain: 420, respect: 810.5, daysAgo: 75, hours: 3 },
