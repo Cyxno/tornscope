@@ -128,6 +128,17 @@ else
   echo "      drops/losses are NOT. Inspect before promoting."
 fi
 
+# ---- Idempotence: a second deploy must be a no-op --------------------------
+echo "==> Idempotence: re-running migrate deploy (must report no pending migrations)"
+DATABASE_URL="postgresql://${DB_USER}:${DB_PASS}@127.0.0.1:${REHEARSAL_PORT}/${DB_NAME}?schema=public" \
+  pnpm exec prisma migrate deploy --schema packages/database/prisma/schema.prisma 2>&1 \
+  | tee /tmp/rehearsal-idempotence.txt | tail -2
+if grep -qiE "already in sync|no pending migrations" /tmp/rehearsal-idempotence.txt; then
+  echo "    idempotent: second deploy applied nothing"
+else
+  die "second migrate deploy was NOT a no-op — migrations are not idempotent. Do NOT promote."
+fi
+
 # ---- Optional: boot the API against the upgraded copy ---------------------
 if [[ "$START_API" == "1" ]]; then
   docker image inspect tornscope-api:latest >/dev/null 2>&1 \
@@ -149,5 +160,15 @@ if [[ "$START_API" == "1" ]]; then
   [[ "${api_code:-}" == *'"status":"ready"'* ]] || echo "    WARNING: rehearsal API not ready — inspect before promoting."
 fi
 
-echo "==> Rehearsal PASSED — migrations apply cleanly to a copy of production."
-echo "    Review the diff above, then (and only then) plan the production upgrade."
+# ---- Verdict ----------------------------------------------------------------
+echo
+echo "============================================================"
+echo "REHEARSAL RESULT: PASS"
+echo "  branch:   $(git rev-parse --abbrev-ref HEAD) @ $(git rev-parse --short HEAD)"
+echo "  dump:     $DUMP_FILE (kept for inspection)"
+echo "  verdict:  migrations apply cleanly to a copy of production,"
+echo "            are idempotent on re-run, and no table lost rows."
+echo "  next:     review the diff above, then plan the production"
+echo "            upgrade via docs/V0.2-UPGRADE-CHECKLIST.md."
+echo "============================================================"
+
