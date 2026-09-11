@@ -60,8 +60,11 @@ suite("subscribe rate limit", () => {
             keys: { p256dh: "p".repeat(20), auth: "a".repeat(20) },
           },
         });
-        if (res.json().error?.details?.formErrors?.[0]?.startsWith("Too many notification attempts")) {
+        if (res.json().error?.code === "rate_limited") {
           sawLimited = true;
+          // Roadmap #8: limit denials are proper 429s with Retry-After.
+          expect(res.statusCode).toBe(429);
+          expect(res.headers["retry-after"]).toBeDefined();
         } else {
           // Without VAPID configured the route 404s before touching the
           // subscription table — those attempts still count against the IP.
