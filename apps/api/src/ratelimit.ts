@@ -1,9 +1,13 @@
 /**
  * Lightweight in-memory sliding-window rate limiter for sensitive endpoints.
  * Single-node V1: state lives in the API process. Keys are (bucket, subject)
- * so per-IP and per-user limits coexist without coupling.
+ * so per-IP and per-user limits coexist without coupling. NOTE: state resets
+ * on restart and is not shared across replicas — documented in
+ * docs/HOSTED-SECURITY.md; restart-timed bursts are bounded by the small
+ * per-route windows and the global per-IP limit.
  */
 const buckets = new Map<string, number[]>();
+const lastDenialLogAt = new Map<string, number>();
 
 /** Drop fully-expired buckets occasionally so the map cannot grow forever. */
 function prune(now: number): void {
@@ -22,6 +26,17 @@ export function checkRateLimit(bucket: string, subject: string, limit: number, w
   const hits = (buckets.get(key) ?? []).filter((t) => now - t < windowMs);
   if (hits.length >= limit) {
     const oldest = hits[0] ?? now;
+    // Abuse telemetry (aggregate, throttled): one warn per key per 30s max —
+    // operators see throttling pressure without per-request log spam.
+    const lastWarn = lastDenialLogAt.get(key) ?? 0;
+    if (now - lastWarn > 30_000) {
+      lastDenialLogAt.set(key, now);
+      // Dynamic import avoids a cycle: ratelimit must stay dependency-light.
+      void import("./env.js").then(({ logger }) => {
+        // Operator-side aggregate abuse telemetry (bucket + subject only).
+        logger.warn({ bucket }, "rate limit engaged");
+      }).catch(() => undefined);
+    }
     return { ok: false, retryAfterSeconds: Math.max(1, Math.ceil((windowMs - (now - oldest)) / 1000)) };
   }
   hits.push(now);

@@ -21,6 +21,10 @@ export const errors = {
   notFound: (what: string) => new AppError("not_found", `${what} not found`, 404),
   validation: (details: unknown) => new AppError("validation_error", "Request validation failed", 400, details),
   cooldown: (message: string) => new AppError("cooldown", message, 429),
+  /** Rate-limit denial: ALWAYS 429 with a Retry-After hint so automated
+   *  clients can back off and monitors can distinguish abuse from errors. */
+  rateLimited: (message: string, retryAfterSeconds: number) =>
+    new AppError("rate_limited", message, 429, { retryAfterSeconds }),
   forbidden: (message: string) => new AppError("forbidden", message, 403),
   conflict: (message: string) => new AppError("conflict", message, 409),
   internal: (message: string) => new AppError("internal_error", message, 500),

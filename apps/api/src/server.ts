@@ -15,6 +15,16 @@ export async function buildServer(): Promise<FastifyInstance> {
         paths: ["apiKey", "api_key", "key", "*.apiKey", "*.api_key", "*.key", "authorization", "req.headers.authorization"],
         censor: "[REDACTED]",
       },
+      // Access-log hygiene: strip query strings (they can carry a push
+      // endpoint URL on GET /api/notifications — never belongs in logs).
+      serializers: {
+        req: (req: { method?: string; url?: string; host?: string; remoteAddress?: string }) => ({
+          method: req.method,
+          url: (req.url ?? "").split("?")[0],
+          host: req.host,
+          remoteAddress: req.remoteAddress,
+        }),
+      },
     },
     // Honors TRUST_PROXY (true / false / proxy-addr subnet list — env.ts).
     // With trust enabled, Fastify resolves req.ip/req.protocol from the
@@ -69,16 +79,25 @@ export async function buildServer(): Promise<FastifyInstance> {
       return;
     }
     req.log.error({ err }, "unhandled error");
-    reply.status(500).send({ error: { code: "internal_error", message: "Unexpected server error" } });
+    // Correlation id only — never a stack, SQL, or path material.
+    reply.status(500).send({ error: { code: "internal_error", message: "Unexpected server error", requestId: req.id } });
   });
 
   app.setNotFoundHandler((_req, reply) => {
     reply.status(404).send({ error: { code: "not_found", message: "Route not found" } });
   });
 
-  // Deployed build identity on every API response — the web proxy forwards
-  // it to the browser, making build drift visible from the client.
-  app.addHook("onSend", async (_req, reply) => {
+  app.addHook("onSend", async (req, reply) => {
+    // Private, per-session API responses must never be shared-cacheable by
+    // any intermediary (direct-access hardening; the web proxy enforces
+    // no-store for everything anyway).
+    if (req.raw.url?.startsWith("/api/")) {
+      reply.header("cache-control", "private, no-store");
+    }
+    // Support correlation: safe random id, echoed in logs and 5xx bodies.
+    reply.header("x-request-id", req.id);
+    // Deployed build identity on every API response — the web proxy forwards
+    // it to the browser, making build drift visible from the client.
     reply.header("x-tornscope-build", process.env.GIT_SHA ?? "dev");
   });
 

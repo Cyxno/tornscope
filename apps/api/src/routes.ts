@@ -114,7 +114,11 @@ export function registerRoutes(app: FastifyInstance): void {
 
   app.post("/api/demo-view", async (req, reply) => {
     // Toggle the flag on the SESSION's real profile — not on the resolved
-    // (demo) user — otherwise leaving demo mode is impossible.
+    // (demo) user — otherwise leaving demo mode is impossible. Bounded per
+    // session: the toggle is exempt from the demo-mutation block, so a
+    // scripted session could otherwise hammer it at the global cap.
+    const limit = checkRateLimit("demo-view", currentUser(req).id, 20, 10 * 60_000);
+    if (!limit.ok) throw errors.rateLimited("Too many demo-view toggles — try again later.", limit.retryAfterSeconds);
     const profileId = (req as unknown as { sessionProfileId?: string }).sessionProfileId ?? currentUser(req).id;
     const body = z.object({ enabled: z.boolean() }).safeParse(req.body);
     if (!body.success) throw errors.validation(body.error.flatten());
@@ -177,6 +181,7 @@ export function registerRoutes(app: FastifyInstance): void {
     const pagination = parsePagination(req.query as Record<string, unknown>);
     const q = req.query as { category?: string; direction?: string; search?: string };
     if (q.direction && !["income", "expense"].includes(q.direction)) throw errors.validation("direction must be income or expense");
+    if ((q.category ?? "").length > 100 || (q.search ?? "").length > 100) throw errors.validation("category/search must be ≤100 characters");
     return getMoneyEvents(user.id, range, {
       category: q.category,
       direction: q.direction as "income" | "expense" | undefined,
@@ -190,6 +195,7 @@ export function registerRoutes(app: FastifyInstance): void {
     const user = currentUser(req);
     const range = parseRange(req.query as Record<string, unknown>);
     const q = req.query as { drugs?: string };
+    if ((q.drugs ?? "").length > 200) throw errors.validation("drugs filter must be ≤200 characters");
     const drugFilter = q.drugs ? q.drugs.split(",").map((d) => d.trim()).filter(Boolean) : null;
     return getDrugsSummary(user.id, range, drugFilter);
   });
@@ -341,6 +347,8 @@ export function registerRoutes(app: FastifyInstance): void {
   });
 
   app.post("/api/sync/run", async (req) => {
+    const runLimit = checkRateLimit("sync-action", currentUser(req).id, 20, 10 * 60_000);
+    if (!runLimit.ok) throw errors.rateLimited("Too many sync actions — try again later.", runLimit.retryAfterSeconds);
     const user = currentUser(req);
     const body = z.object({ resource: z.string().min(1).max(64), force: z.boolean().optional() }).safeParse(req.body);
     if (!body.success) throw errors.validation(body.error.flatten());
@@ -352,6 +360,8 @@ export function registerRoutes(app: FastifyInstance): void {
   });
 
   app.post("/api/sync/retry-failed", async (req) => {
+    const runLimit = checkRateLimit("sync-action", currentUser(req).id, 20, 10 * 60_000);
+    if (!runLimit.ok) throw errors.rateLimited("Too many sync actions — try again later.", runLimit.retryAfterSeconds);
     const user = currentUser(req);
     return retryFailedSyncs(user.id);
   });
@@ -360,6 +370,8 @@ export function registerRoutes(app: FastifyInstance): void {
   // machine-refusal reason instead of a generic error so the UI can disable
   // the button state-appropriately next time.
   app.post("/api/sync/retry", async (req) => {
+    const runLimit = checkRateLimit("sync-action", currentUser(req).id, 20, 10 * 60_000);
+    if (!runLimit.ok) throw errors.rateLimited("Too many sync actions — try again later.", runLimit.retryAfterSeconds);
     const user = currentUser(req);
     const body = z.object({ resource: z.string().min(1).max(64) }).safeParse(req.body);
     if (!body.success) throw errors.validation(body.error.flatten());
@@ -371,6 +383,8 @@ export function registerRoutes(app: FastifyInstance): void {
   });
 
   app.post("/api/sync/backfill", async (req) => {
+    const runLimit = checkRateLimit("sync-action", currentUser(req).id, 20, 10 * 60_000);
+    if (!runLimit.ok) throw errors.rateLimited("Too many sync actions — try again later.", runLimit.retryAfterSeconds);
     const user = currentUser(req);
     const result = await restartBackfill(user.id);
     if (result.retryAfterSeconds && result.retryAfterSeconds > 0) {
@@ -396,7 +410,7 @@ export function registerRoutes(app: FastifyInstance): void {
     const user = currentUser(req);
     const limit = checkRateLimit("key-save", clientIp(req), 10, 10 * 60_000);
     if (!limit.ok) {
-      throw errors.validation({ formErrors: ["Too many key attempts — try again later."], fieldErrors: {} });
+      throw errors.rateLimited("Too many key attempts — try again later.", limit.retryAfterSeconds);
     }
     const body = API_KEY_SCHEMA.safeParse(req.body);
     if (!body.success) throw errors.validation(body.error.flatten());
@@ -413,7 +427,7 @@ export function registerRoutes(app: FastifyInstance): void {
     const limit = checkRateLimit("key-save", clientIp(req), 10, 10 * 60_000);
     if (!limit.ok) {
       reply.header("Retry-After", limit.retryAfterSeconds);
-      throw errors.validation({ formErrors: ["Too many key attempts — try again later."], fieldErrors: {} });
+      throw errors.rateLimited("Too many key attempts — try again later.", limit.retryAfterSeconds);
     }
     const body = API_KEY_SCHEMA.safeParse(req.body);
     if (!body.success) throw errors.validation(body.error.flatten());
@@ -438,7 +452,7 @@ export function registerRoutes(app: FastifyInstance): void {
     const limit = checkRateLimit("profile-link", clientIp(req), 10, 10 * 60_000);
     if (!limit.ok) {
       reply.header("Retry-After", limit.retryAfterSeconds);
-      throw errors.validation({ formErrors: ["Too many attempts — try again later."], fieldErrors: {} });
+      throw errors.rateLimited("Too many attempts — try again later.", limit.retryAfterSeconds);
     }
     const body = z.object({ key: z.string().regex(/^[A-Za-z0-9]{10,80}$/, "API key must be alphanumeric") }).strict().safeParse(req.body);
     if (!body.success) throw errors.validation(body.error.flatten());
@@ -462,7 +476,7 @@ export function registerRoutes(app: FastifyInstance): void {
   app.post("/api/session/sign-out-others", async (req) => {
     const user = currentUser(req);
     const limit = checkRateLimit("sign-out-others", clientIp(req), 10, 10 * 60_000);
-    if (!limit.ok) throw errors.validation({ formErrors: ["Too many attempts — try again later."], fieldErrors: {} });
+    if (!limit.ok) throw errors.rateLimited("Too many attempts — try again later.", limit.retryAfterSeconds);
     const tokenHash = currentSessionTokenHash(req);
     if (!tokenHash) throw errors.conflict("No active session found for this browser.");
     return signOutOtherSessions(user.id, tokenHash);
@@ -471,7 +485,7 @@ export function registerRoutes(app: FastifyInstance): void {
   app.delete("/api/settings/api-key", async (req) => {
     const user = currentUser(req);
     const limit = checkRateLimit("key-delete", clientIp(req), 10, 10 * 60_000);
-    if (!limit.ok) throw errors.validation({ formErrors: ["Too many attempts — try again later."], fieldErrors: {} });
+    if (!limit.ok) throw errors.rateLimited("Too many attempts — try again later.", limit.retryAfterSeconds);
     await deleteApiKey(user.id);
     return { deleted: true };
   });
@@ -494,7 +508,7 @@ export function registerRoutes(app: FastifyInstance): void {
     const limit = checkRateLimit("push-subscribe", clientIp(req), 20, 10 * 60_000);
     if (!limit.ok) {
       reply.header("Retry-After", limit.retryAfterSeconds);
-      throw errors.validation({ formErrors: ["Too many notification attempts — try again later."], fieldErrors: {} });
+      throw errors.rateLimited("Too many notification attempts — try again later.", limit.retryAfterSeconds);
     }
     const body = z
       .object({
@@ -509,6 +523,8 @@ export function registerRoutes(app: FastifyInstance): void {
   });
 
   app.post("/api/notifications/unsubscribe", async (req) => {
+    const writeLimit = checkRateLimit("notif-write", currentUser(req).id, 30, 10 * 60_000);
+    if (!writeLimit.ok) throw errors.rateLimited("Too many notification changes — try again later.", writeLimit.retryAfterSeconds);
     const user = currentUser(req);
     const body = z.object({ endpoint: z.string().url().max(1000) }).safeParse(req.body);
     if (!body.success) throw errors.validation(body.error.flatten());
@@ -516,13 +532,17 @@ export function registerRoutes(app: FastifyInstance): void {
   });
 
   app.post("/api/notifications/disable-device", async (req) => {
+    const writeLimit = checkRateLimit("notif-write", currentUser(req).id, 30, 10 * 60_000);
+    if (!writeLimit.ok) throw errors.rateLimited("Too many notification changes — try again later.", writeLimit.retryAfterSeconds);
     const user = currentUser(req);
-    const body = z.object({ id: z.string().min(1) }).safeParse(req.body);
+    const body = z.object({ id: z.string().min(1).max(64) }).safeParse(req.body);
     if (!body.success) throw errors.validation(body.error.flatten());
     return disableDevice(user, body.data.id);
   });
 
   app.post("/api/notifications/preferences", async (req) => {
+    const writeLimit = checkRateLimit("notif-write", currentUser(req).id, 30, 10 * 60_000);
+    if (!writeLimit.ok) throw errors.rateLimited("Too many notification changes — try again later.", writeLimit.retryAfterSeconds);
     const user = currentUser(req);
     const body = z
       .object({
@@ -547,7 +567,7 @@ export function registerRoutes(app: FastifyInstance): void {
   app.post("/api/notifications/test", async (req) => {
     const user = currentUser(req);
     const limit = checkRateLimit("notif-test", user.id, 5, 60_000);
-    if (!limit.ok) throw errors.validation({ formErrors: ["Too many test notifications — wait a minute."], fieldErrors: {} });
+    if (!limit.ok) throw errors.rateLimited("Too many test notifications — wait a minute.", limit.retryAfterSeconds);
     const body = z.object({ endpoint: z.string().url().max(1000) }).safeParse(req.body);
     if (!body.success) throw errors.validation(body.error.flatten());
     return sendTestNotification(user, body.data.endpoint);
@@ -562,7 +582,7 @@ export function registerRoutes(app: FastifyInstance): void {
   app.post("/api/profile/delete", async (req, reply) => {
     const user = currentUser(req);
     const limit = checkRateLimit("profile-delete", clientIp(req), 5, 60 * 60_000);
-    if (!limit.ok) throw errors.validation({ formErrors: ["Too many attempts — try again later."], fieldErrors: {} });
+    if (!limit.ok) throw errors.rateLimited("Too many attempts — try again later.", limit.retryAfterSeconds);
     await deleteProfile(user.id);
     reply.header("Set-Cookie", clearSessionCookie(requestIsSecure(req)));
     return { deleted: true };
