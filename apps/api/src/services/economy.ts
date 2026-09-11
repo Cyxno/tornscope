@@ -140,10 +140,17 @@ export async function getEconomySummary(userId: string, rangeInput: DateRangeInp
   const from = new Date(range.from * 1000);
   const to = new Date(range.to * 1000);
 
+  // Hard row caps (roadmap #8): the aggregate math is order-independent, so
+  // a pathological history cannot turn "preset=all" into an unbounded
+  // full-history load. Caps sit far above any real ledger (a heavy trader
+  // generates ~50k money rows/year) and only ever clip the tail.
+  const ECONOMY_MAX_MONEY_ROWS = 250_000;
+  const ECONOMY_MAX_AUX_ROWS = 100_000;
   const [moneyRows, unknownCount, consumptionRows, travelEvents, travelItems, marketPrices, nwPeriod, walletStart, walletEnd, ocRows, saleRows] =
     await Promise.all([
       db.moneyEvent.findMany({
         where: { userId, occurredAt: { gte: from, lte: to } },
+        take: ECONOMY_MAX_MONEY_ROWS,
         // No metadata here: the raw payload is only needed for valuing SOLD
         // inventory and detecting OC payouts, which get their own targeted
         // queries below. Loading it for every row shipped the full raw log
@@ -153,14 +160,17 @@ export async function getEconomySummary(userId: string, rangeInput: DateRangeInp
       db.moneyEvent.count({ where: { userId, direction: "unknown", occurredAt: { gte: from, lte: to } } }),
       db.consumptionEvent.findMany({
         where: { userId, occurredAt: { gte: from, lte: to } },
+        take: ECONOMY_MAX_AUX_ROWS,
         select: { occurredAt: true, category: true, quantity: true, totalValue: true, valuationMethod: true },
       }),
       db.travelEvent.findMany({
         where: { userId, departedAt: { gte: new Date((range.from - 7 * 86_400) * 1000), lte: to } },
+        take: ECONOMY_MAX_AUX_ROWS,
         select: { id: true, destination: true, departedAt: true, returnedAt: true, durationSeconds: true },
       }),
       db.travelItemEvent.findMany({
         where: { userId, occurredAt: { gte: new Date((range.from - 7 * 86_400) * 1000), lte: to } },
+        take: ECONOMY_MAX_AUX_ROWS,
         select: { id: true, travelEventId: true, itemId: true, itemName: true, category: true, quantity: true, unitCost: true, totalCost: true },
       }),
       loadMarketPrices(db),
@@ -179,11 +189,13 @@ export async function getEconomySummary(userId: string, rangeInput: DateRangeInp
       // OC payouts: faction income rows carry the scenario probe in metadata.
       db.moneyEvent.findMany({
         where: { userId, occurredAt: { gte: from, lte: to }, category: "faction", direction: "income" },
+        take: ECONOMY_MAX_AUX_ROWS,
         select: { id: true, amount: true, metadata: true },
       }),
       // Sale valuation needs the raw payloads of the (few) sale rows only.
       db.moneyEvent.findMany({
         where: { userId, occurredAt: { gte: from, lte: to }, category: { in: [...SALE_CATEGORIES] }, direction: "income" },
+        take: ECONOMY_MAX_AUX_ROWS,
         select: { category: true, direction: true, amount: true, metadata: true },
       }),
     ]);

@@ -51,6 +51,11 @@ import { resourceConfidence } from "./confidence.js";
 
 const BARS_MAX_ROWS = 20_000;
 const STATS_MAX_ROWS = 4_000;
+// Evidence queries (refills/drugs/consumption/combat/levels) never need the
+// full history — the analysis window is the fetch range + baseline. Caps are
+// pure runaway guards (roadmap #8), far above any real range.
+const EVIDENCE_MAX_ROWS = 20_000;
+const LEVELS_MAX_ROWS = 2_000;
 const BASELINE_WINDOW_SECONDS = 30 * 86_400;
 const ATTACK_COMPETITION_SECONDS = 900;
 
@@ -115,25 +120,30 @@ export async function getProgression(userId: string, rangeInput: DateRangeInput)
     db.timelineEvent.findMany({
       where: { userId, title: "Points energy refill use", occurredAt: { gte: new Date(fetchFrom * 1000), lte: new Date(to * 1000) } },
       orderBy: { occurredAt: "asc" },
+      take: EVIDENCE_MAX_ROWS,
       select: { occurredAt: true, metadata: true },
     }),
     db.drugEvent.findMany({
       where: { userId, drugName: { in: ["Xanax", "Ecstasy"] }, occurredAt: { gte: new Date(fetchFrom * 1000), lte: new Date(to * 1000) } },
       orderBy: { occurredAt: "asc" },
+      take: EVIDENCE_MAX_ROWS,
       select: { occurredAt: true, drugName: true, outcome: true },
     }),
     db.consumptionEvent.findMany({
       where: { userId, category: { in: ["energy", "candy", "happy_jump"] }, occurredAt: { gte: new Date(fetchFrom * 1000), lte: new Date(to * 1000) } },
       orderBy: { occurredAt: "asc" },
+      take: EVIDENCE_MAX_ROWS,
       select: { occurredAt: true, category: true, metadata: true },
     }),
     db.combatEvent.findMany({
       where: { userId, direction: "outgoing", occurredAt: { gte: new Date(fetchFrom * 1000), lte: new Date(to * 1000) } },
+      take: EVIDENCE_MAX_ROWS,
       select: { occurredAt: true },
     }),
     db.userSnapshot.findMany({
       where: { userId, capturedAt: { gte: new Date(fetchFrom * 1000), lte: new Date(to * 1000) } },
       orderBy: { capturedAt: "asc" },
+      take: LEVELS_MAX_ROWS,
       select: { capturedAt: true, level: true },
     }),
   ]);

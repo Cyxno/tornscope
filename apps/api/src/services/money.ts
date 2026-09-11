@@ -26,7 +26,9 @@ export async function getMoneySummary(userId: string, rangeInput: DateRangeInput
     userId,
     occurredAt: { gte: new Date(range.from * 1000), lte: new Date(range.to * 1000) },
   };
-  const rows = await db.moneyEvent.findMany({ where, orderBy: { occurredAt: "asc" }, select: { id: true, occurredAt: true, category: true, subcategory: true, direction: true, amount: true, description: true, source: true } });
+  // Roadmap #8: hard cap so "all" cannot stream a full ledger into memory;
+  // aggregates are order-independent, so only a pathological tail can clip.
+  const rows = await db.moneyEvent.findMany({ where, orderBy: { occurredAt: "asc" }, take: 250_000, select: { id: true, occurredAt: true, category: true, subcategory: true, direction: true, amount: true, description: true, source: true } });
 
   const events = rows.map((row) => ({
     id: row.id,
