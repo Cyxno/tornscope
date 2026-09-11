@@ -150,9 +150,49 @@ Acceptance criteria:
 - [x] Full test matrix (39 new tests; 864 total pass) and docs.
 
 ### 7. Notification improvements — *issue: `feat(v0.2): notification settings & delivery improvements`* · labels: `v0.2` `notifications` `enhancement`
-Per-notification-type settings, improved quiet-hours behavior, queue
-non-critical notifications instead of silently dropping where practical, and
-a device test notification.
+
+**Status: Complete.** Implemented on `develop`, deployed to the dev stack —
+see [NOTIFICATIONS.md](NOTIFICATIONS.md).
+
+The notification platform was rebuilt around a canonical type registry with
+an explicit urgency model, honest quiet hours, and a delivery ledger that
+explains itself:
+
+- Canonical registry: every type declared once (id, urgency, quiet-hours
+  behavior, deferral expiry, capability requirement, provenance, dedupe
+  strategy, inline config); legacy preference keys normalized transparently;
+  the dead `attention` toggle removed.
+- Quiet hours (user timezone, DST-safe, overnight windows) now DEFER
+  non-critical notifications instead of silently dropping them; deferred
+  events expire when they would be stale rather than delivering useless
+  morning alerts; critical is reserved for TornScope's own access-loss
+  alert with a user-controlled bypass.
+- Dedupe at two levels (profile-level logical event + per-device ledger
+  unique constraints), state-transition producers with first-observation
+  suppression and age guards, grouped sync-failure notifications, and
+  bounded retry with backoff; 404/410 revoke invalid subscriptions.
+- New producers: energy full/near-full (fresh bars snapshots, re-arm
+  hysteresis), sync degraded/recovered, capability lost, progression
+  milestones (crossing-window wording), level ups, daily summary ready,
+  major cash movement and net-worth movement (threshold-configurable,
+  conversion-safe wording). Refill-available and happy-jump pushes were
+  audited and intentionally omitted (see docs).
+- Settings rebuilt as grouped per-type toggles with inline thresholds,
+  quiet-hours policy UI, device management, a rate-labeled test push, and
+  a delivery history ledger with machine reasons in friendly language.
+- Additive migration only (documented in DATABASE-MIGRATIONS.md); demo mode
+  shows a synthetic ledger and can never emit a real push.
+
+- [x] Source/behavior audit preceded implementation (engine, ledger, SW, security)
+- [x] Canonical registry; no scatter; no dead toggles
+- [x] Quiet hours respect User.timezone; noncritical queue + expiry proven
+- [x] Dedupe/rate-limit/multi-device matrices green (engine suite, 28 tests)
+- [x] Delivery history + suppression/deferral reasons user-visible
+- [x] Test notification (rate-limited, device-scoped, ledger-recorded)
+- [x] Invalid-subscription cleanup + bounded retries verified
+- [x] Privacy: no endpoints/keys in payloads, ledger, or history; isolation tested
+- [x] Capability/confidence gating; Limited keys degrade per type
+- [x] Demo-safe; additive migration documented; full gates green
 
 ### 8. Hosted-instance hardening — *issue: `chore(v0.2): hosted-instance abuse & health hardening`* · labels: `v0.2` `security`
 Review abuse/rate-limit protection, sensible profile/session limits where

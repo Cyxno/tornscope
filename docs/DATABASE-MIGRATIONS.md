@@ -104,6 +104,7 @@ production `_prisma_migrations` table). The complete v0.2 delta is:
 |---|---|---|
 | `20260909130000_sync_state_last_error_kind` | SAFE EXPAND | Adds nullable `SyncState.lastErrorKind` (machine reason of the last failure). No default, no backfill, no data touched — existing rows keep NULL ("unknown reason") until their next run writes a code. Operational-state derivation treats NULL as "no recorded reason". |
 | `20260910200000_bars_snapshots` | SAFE EXPAND | Adds the new `BarsSnapshot` table (energy/happy bar history — Torn exposes bars live-only, so this history must be captured going forward). New table only: no existing table, column, or row is touched; fully additive. See docs/PROGRESSION-ENERGY.md. |
+| `20260911180000_notification_events` | SAFE EXPAND | Notification platform v2 (roadmap #7): new `NotificationEvent` table (profile-level dedupe + quiet-hours deferral queue), nullable `NotificationDelivery` lifecycle columns (`eventId`, `reason`, `attempts`, `nextAttemptAt`, `lastError`), defaulted `NotificationPreference.bypassCritical` (true) + nullable `typeConfig`, nullable `NotificationState.systemState`. All additions: existing rows keep working unchanged. See docs/NOTIFICATIONS.md. |
 
 There are **no destructive, rename, type-rewrite or NOT NULL-tightening
 operations** in the v0.2 delta. `packages/database/tests/migration-safety.test.ts`
