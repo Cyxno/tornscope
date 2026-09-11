@@ -82,6 +82,7 @@ services:
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
       VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+      ENV_LABEL: ${ENV_LABEL:-}
       # Extra origins accepted for cookie-authenticated mutations (comma separated).
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
       # Browser-facing origins. localhost defaults keep local testing easy;
@@ -134,6 +135,7 @@ services:
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
       VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+      ENV_LABEL: ${ENV_LABEL:-}
       # The worker owns the real backfill window — it must match what the
       # Sync Status page advertises.
       TORN_SYNC_INITIAL_HISTORY_DAYS: ${TORN_SYNC_INITIAL_HISTORY_DAYS:-180}

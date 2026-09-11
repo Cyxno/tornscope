@@ -1,4 +1,5 @@
 export * from "./branding.js";
+export * from "./build.js";
 export * from "./provenance.js";
 export * from "./confidence.js";
 export * from "./sync-health.js";

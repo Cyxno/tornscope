@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from "node:fs";
 import pino from "pino";
 
 export const logger = pino({
@@ -68,6 +69,13 @@ export const env = {
   /** Abandoned anonymous profiles older than this are cleaned up. */
   guestRetentionDays: Number(process.env.GUEST_PROFILE_RETENTION_DAYS ?? 60),
   /**
+   * Build identity (roadmap #9): the root package.json is the CANONICAL
+   * version source — resolved at boot by walking up from cwd (containers
+   * ship the repo root). APP_VERSION overrides for exotic deployments;
+   * ENV_LABEL names non-public deployments ("Development").
+   */
+  build: resolveBuildVersion(),
+  /**
    * Hosted abuse limits (roadmap #8). Centralized, env-tunable so a
    * self-hoster can loosen them; defaults suit a public beta. Security
    * BASICS (auth, CSRF, SSRF, isolation) never depend on these.
@@ -82,6 +90,29 @@ export const env = {
     maxPushDevices: clampInt(process.env.HOSTED_MAX_PUSH_DEVICES, 10, 1, 25),
   },
 } as const;
+
+function resolveBuildVersion(): { version: string; environment: string } {
+  const override = process.env.APP_VERSION?.trim();
+  let version = override || "";
+  if (!version) {
+    try {
+      // Walk up from cwd: the containers run at /app/apps/{api} with the
+      // repo root (and its canonical package.json) at /app.
+      let dir = process.cwd();
+      for (let i = 0; i < 5; i++) {
+        const candidate = `${dir}/package.json`;
+        if (existsSync(candidate)) {
+          version = JSON.parse(readFileSync(candidate, "utf8")).version ?? "";
+          if (version) break;
+        }
+        dir = `${dir}/..`;
+      }
+    } catch {
+      // fall through to the safe placeholder
+    }
+  }
+  return { version: version || "0.0.0-dev", environment: process.env.ENV_LABEL?.trim() || "Public Beta" };
+}
 
 function clampInt(raw: string | undefined, fallback: number, min: number, max: number): number {
   const parsed = Number(raw);

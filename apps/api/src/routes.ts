@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
-import { DateRangeSchema, PaginationQuerySchema, TORN_DRUG_NAMES, resolveDateRange, TypeConfigSchema, type DateRangePreset } from "@tornscope/shared";import { resolveSessionUser, assertSameOrigin, rebindCurrentSession, clearSessionCookie, currentSessionTokenHash, requestIsSecure, type SessionUser } from "./auth.js";
+import { DateRangeSchema, PaginationQuerySchema, TORN_DRUG_NAMES, resolveBuildIdentity, resolveDateRange, TypeConfigSchema, type DateRangePreset } from "@tornscope/shared";import { resolveSessionUser, assertSameOrigin, rebindCurrentSession, clearSessionCookie, currentSessionTokenHash, requestIsSecure, type SessionUser } from "./auth.js";
 import { checkRateLimit, clientIp } from "./ratelimit.js";
 import { env } from "./env.js";
 import { errors, mapTornError, AppError } from "./errors.js";
@@ -85,7 +85,10 @@ export function registerRoutes(app: FastifyInstance): void {
     }
   });
 
-  app.get("/api/health", async () => ({ status: "ok" }));
+  app.get("/api/health", async () => ({
+    status: "ok",
+    ...resolveBuildIdentity({ version: env.build.version, gitSha: process.env.GIT_SHA ?? "dev", environment: env.build.environment }),
+  }));
 
   // Readiness: can the hosted application actually serve users? Checks
   // PostgreSQL, Redis and worker heartbeat — never Torn API. (Migration

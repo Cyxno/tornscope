@@ -68,6 +68,7 @@ services:
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
       VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+      ENV_LABEL: ${ENV_LABEL:-}
       # Browser-facing origin (localhost default keeps local dev easy; a
       # non-local deployment MUST configure the real origin — see README
       # "Running TornScope outside localhost").
@@ -115,6 +116,7 @@ services:
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
       VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+      ENV_LABEL: ${ENV_LABEL:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     depends_on:
       migrate:

@@ -16,10 +16,10 @@
 # scripts/deploy-dev.sh and docs/ENVIRONMENTS.md). Never point this file at
 # production volumes, network names, or credentials.
 #
-# web is published on the LAN so Nginx Proxy Manager can route
-# https://torn.familievalk.com -> 192.168.1.2:5273. Access control (NPM
-# access list) lives at the proxy; this is the same exposure model as the
-# production web port.
+# web is published on the LAN so Nginx Proxy Manager can route a
+# public hostname -> this host:port. Access control (NPM access list)
+# lives at the proxy; this is the same exposure model as the production
+# web port.
 #
 # PUBLIC_ENV_LABEL defaults to "Development" so the UI clearly marks this
 # environment instead of presenting it as the public beta.
@@ -97,6 +97,7 @@ services:
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
       VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+      ENV_LABEL: ${ENV_LABEL:-}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:5273}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
@@ -142,6 +143,7 @@ services:
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
       VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+      ENV_LABEL: ${ENV_LABEL:-}
       TORN_SYNC_INITIAL_HISTORY_DAYS: ${TORN_SYNC_INITIAL_HISTORY_DAYS:-180}
       GUEST_PROFILE_RETENTION_DAYS: ${GUEST_PROFILE_RETENTION_DAYS:-60}
       LOG_LEVEL: ${LOG_LEVEL:-info}

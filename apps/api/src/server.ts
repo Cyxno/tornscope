@@ -3,6 +3,7 @@ import helmet from "@fastify/helmet";
 import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import { env } from "./env.js";
+import { resolveBuildIdentity } from "@tornscope/shared";
 import { registerRoutes } from "./routes.js";
 import { AppError } from "./errors.js";
 
@@ -101,7 +102,11 @@ export async function buildServer(): Promise<FastifyInstance> {
     reply.header("x-tornscope-build", process.env.GIT_SHA ?? "dev");
   });
 
-  app.get("/", async () => ({ name: "TornScope API", status: "ok" }));
+  app.get("/", async () => ({
+    name: "TornScope API",
+    status: "ok",
+    ...resolveBuildIdentity({ version: env.build.version, gitSha: process.env.GIT_SHA ?? "dev", environment: env.build.environment }),
+  }));
 
   registerRoutes(app as FastifyInstance);
 
