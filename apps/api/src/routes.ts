@@ -1,10 +1,11 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
-import { DateRangeSchema, PaginationQuerySchema, TORN_DRUG_NAMES, resolveDateRange, type DateRangePreset } from "@tornscope/shared";import { resolveSessionUser, assertSameOrigin, rebindCurrentSession, clearSessionCookie, currentSessionTokenHash, requestIsSecure, type SessionUser } from "./auth.js";
+import { DateRangeSchema, PaginationQuerySchema, TORN_DRUG_NAMES, resolveDateRange, TypeConfigSchema, type DateRangePreset } from "@tornscope/shared";import { resolveSessionUser, assertSameOrigin, rebindCurrentSession, clearSessionCookie, currentSessionTokenHash, requestIsSecure, type SessionUser } from "./auth.js";
 import { checkRateLimit, clientIp } from "./ratelimit.js";
 import { env } from "./env.js";
 import { errors, mapTornError, AppError } from "./errors.js";
 import { getMoneyEvents, getMoneySummary } from "./services/money.js";
+import { getNotificationsStatus, subscribePush, unsubscribePush, disableDevice, updatePreferences, sendTestNotification, getNotificationHistory } from "./services/notifications.js";
 import { cursorWhere, encodeCursor } from "./cursor.js";
 
 /** Prisma options continuing after a keyset cursor (merge into where.AND). */
@@ -34,7 +35,6 @@ import { deleteEmptyProfile } from "@tornscope/database";
 import { getSyncStatus, getSyncHealth, requestManualSync, retryFailedSyncs, retrySyncNow, restartBackfill } from "./services/syncStatus.js";
 import { getApiContext } from "./context.js";
 import { checkReadiness } from "./services/readiness.js";
-import { getNotificationsStatus, subscribePush, unsubscribePush, disableDevice, updatePreferences, sendTestNotification } from "./services/notifications.js";
 import { getPrismaClient } from "@tornscope/database";
 
 function parseRange(query: Record<string, unknown>) {
@@ -530,10 +530,18 @@ export function registerRoutes(app: FastifyInstance): void {
         sensitiveDetails: z.boolean().optional(),
         quietStartMin: z.number().int().min(0).max(1439).nullable().optional(),
         quietEndMin: z.number().int().min(0).max(1439).nullable().optional(),
+        bypassCritical: z.boolean().optional(),
+        typeConfig: TypeConfigSchema.partial().optional(),
       })
       .safeParse(req.body);
     if (!body.success) throw errors.validation(body.error.flatten());
     return updatePreferences(user, body.data);
+  });
+
+  // Delivery history: the visible "what fired / what didn't and why" ledger.
+  app.get("/api/notifications/history", async (req) => {
+    const user = currentUser(req);
+    return getNotificationHistory(user);
   });
 
   app.post("/api/notifications/test", async (req) => {

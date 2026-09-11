@@ -127,3 +127,45 @@ function nextDayKey(key: string): string {
   const next = new Date(Date.UTC(y, m - 1, d + 1));
   return `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, "0")}-${String(next.getUTCDate()).padStart(2, "0")}`;
 }
+
+/** Minutes since local midnight for the instant, in the timezone (0–1439). */
+export function localMinutesInZone(utcSeconds: number, timeZone: string): number {
+  const tz = isValidTimeZone(timeZone) ? timeZone : "UTC";
+  const parts = new Map(
+    dayPartFormatter(tz)
+      .formatToParts(new Date(utcSeconds * 1000))
+      .map((p) => [p.type, p.value] as const)
+  );
+  const h = Number(parts.get("hour"))! % 24;
+  const m = Number(parts.get("minute"))!;
+  return h * 60 + m;
+}
+
+/**
+ * Epoch seconds of the NEXT instant (>= `fromSec`, allowing equality within
+ * a minute) whose local wall clock equals `minutes` past local midnight.
+ * DST-safe: the offset is looked up at each candidate instant and the fixed
+ * point converges even across a spring-forward gap (the occurrence then
+ * lands at the first real instant with that wall time). Used for
+ * quiet-hours end and daily-summary scheduling.
+ */
+export function nextWallClockOccurrence(minutes: number, timeZone: string, fromSec: number): number {
+  const tz = isValidTimeZone(timeZone) ? timeZone : "UTC";
+  const W = minutes * 60;
+  const day = dayKeyInZone(fromSec, tz).split("-").map(Number) as [number, number, number];
+  let y = day[0], m = day[1], d = day[2];
+  for (let i = 0; i < 3; i++) {
+    // `guess` is the UTC-midnight whose wall-clock representation is this
+    // date's 00:00 — solve e + offsetAt(e) = guess + W by fixed point.
+    const guess = Date.UTC(y, m - 1, d) / 1000;
+    let e = guess + W;
+    e = guess + W - tzOffsetSeconds(e, tz);
+    e = guess + W - tzOffsetSeconds(e, tz);
+    if (e >= fromSec - 60) return e;
+    const next = new Date(Date.UTC(y, m - 1, d + 1));
+    y = next.getUTCFullYear();
+    m = next.getUTCMonth() + 1;
+    d = next.getUTCDate();
+  }
+  return fromSec;
+}

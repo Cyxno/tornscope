@@ -28,6 +28,7 @@ import type {
   TravelSummaryResponse,
   TravelTripDto,
   NotificationsStatusResponse,
+  NotificationHistoryResponse,
 } from "@tornscope/shared";
 
 /**
@@ -221,7 +222,10 @@ export const endpoints = {
     sensitiveDetails?: boolean;
     quietStartMin?: number | null;
     quietEndMin?: number | null;
+    bypassCritical?: boolean;
+    typeConfig?: Record<string, number>;
   }) => api.post<NotificationsStatusResponse["preferences"]>("/notifications/preferences", prefs),
+  notificationsHistory: () => api.get<NotificationHistoryResponse>("/notifications/history"),
   notificationsTest: (endpoint: string) => api.post<{ sent: boolean }>("/notifications/test", { endpoint }),
   notificationsVapidPublicKey: () => api.get<{ publicKey: string | null }>("/notifications/vapid-public-key"),
 };

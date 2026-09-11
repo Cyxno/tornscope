@@ -94,6 +94,7 @@ model User {
   notificationPreference NotificationPreference?
   notificationState    NotificationState?
   notificationDeliveries NotificationDelivery[]
+  notificationEvents   NotificationEvent[]
 }
 
 /// The Torn player connected to a user.
@@ -918,13 +919,20 @@ model PushSubscription {
 /// the cursor that prevents historical floods.
 model NotificationPreference {
   userId           String  @id
-  /// Category toggles keyed by canonical category id; absent = default.
+  /// Type toggles keyed by canonical NOTIFICATION_TYPES id; absent = default.
+  /// Pre-registry category keys are normalized at read time (shared/notifications).
   categories       Json
   /// Include amounts/senders in notification bodies. Default OFF (privacy).
   sensitiveDetails Boolean @default(false)
   /// Quiet hours in the user's timezone (minutes since midnight); null = off.
   quietStartMin    Int?
   quietEndMin      Int?
+  /// Critical (service-level) alerts may bypass quiet hours. Default true:
+  /// "all syncing stopped" should not wait until morning unless asked to.
+  bypassCritical   Boolean @default(true)
+  /// Per-type inline configuration (thresholds, delivery time); absent keys
+  /// fall back to the shared defaults.
+  typeConfig       Json?
   /// Activation boundary: only events observed after this instant are
   /// eligible for delivery. Set when preferences are first created.
   enabledAt        DateTime @default(now())
@@ -933,22 +941,69 @@ model NotificationPreference {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
-/// Dedup ledger: one row per delivered (subscription, event, type). The
-/// unique constraint makes worker restarts and re-evaluations idempotent.
+/// One LOGICAL notification event per profile. The unique (userId, dedupeKey)
+/// constraint is the profile-level dedupe: the same logical event can never
+/// be created twice, no matter how many devices, ticks or restarts occur.
+/// Deferred events (quiet hours) park here with deliverAt/expiresAt.
+model NotificationEvent {
+  id         String   @id @default(cuid())
+  userId     String
+  type       String
+  dedupeKey  String
+  occurredAt DateTime
+  title      String
+  body       String
+  clickPath  String   @default("/today")
+  /// Provenance of the underlying fact: exact | derived | estimated | inferred.
+  provenance String   @default("exact")
+  /// pending | deferred | delivered | failed | suppressed | expired
+  status     String   @default("pending")
+  /// Machine reason for a non-delivered outcome (DELIVERY_REASONS).
+  reason     String?
+  /// Earliest delivery instant (quiet-hours deferral).
+  deliverAt  DateTime?
+  /// Past this instant a deferred event expires instead of delivering stale.
+  expiresAt  DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user       User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deliveries NotificationDelivery[]
+
+  @@unique([userId, dedupeKey])
+  @@index([userId, createdAt])
+  @@index([status, deliverAt])
+}
+
+/// Per-device delivery attempt ledger. The unique constraint makes worker
+/// restarts and re-evaluations idempotent; status/reason/attempts record the
+/// real send outcome ("sent" = the push service ACCEPTED the payload —
+/// browser-level display is never claimed).
 model NotificationDelivery {
   id               String   @id @default(cuid())
   userId           String
   subscriptionId   String
   eventKey         String
   notificationType String
+  /// Owning logical event (null for rows written before the event model).
+  eventId          String?
   sentAt           DateTime @default(now())
+  /// pending | sent | failed | invalid_subscription | suppressed
   status           String   @default("sent")
+  /// Machine reason for a non-sent outcome (DELIVERY_REASONS).
+  reason           String?
+  attempts         Int      @default(0)
+  /// Next bounded-retry instant for a transient failure.
+  nextAttemptAt    DateTime?
+  lastError        String?
 
   user User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   subscription PushSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  event NotificationEvent? @relation(fields: [eventId], references: [id], onDelete: SetNull)
 
   @@unique([subscriptionId, eventKey, notificationType])
   @@index([userId, sentAt])
+  @@index([eventId])
 }
 
 /// Latest observed live-state snapshot per user (timers diffing). Stores the
@@ -964,6 +1019,9 @@ model NotificationState {
   nextEligibleAt DateTime?
   /// Highest TimelineEvent insertion-sequence evaluated for notifications.
   lastTimelineSeq BigInt   @default(0)
+  /// Producer state for the non-timer evaluators (energy re-arm, sync
+  /// incident signature, last milestone/level/economy cursors). Json.
+  systemState   Json?
   updatedAt      DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)

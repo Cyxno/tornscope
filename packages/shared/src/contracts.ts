@@ -1828,14 +1828,50 @@ export const NotificationsStatusResponseSchema = z.object({
     })
   ),
   preferences: z.object({
+    /** Type toggles keyed by canonical NOTIFICATION_TYPES id (legacy keys
+     *  normalized server-side). */
     categories: z.record(z.string(), z.boolean()),
     sensitiveDetails: z.boolean(),
     quietStartMin: z.number().nullable(),
     quietEndMin: z.number().nullable(),
+    /** Critical alerts may bypass quiet hours. */
+    bypassCritical: z.boolean(),
+    /** Per-type inline configuration (resolved with shared defaults). */
+    typeConfig: z.record(z.string(), z.number()),
     enabledAt: z.number().nullable(),
   }),
 });
 export type NotificationsStatusResponse = z.infer<typeof NotificationsStatusResponseSchema>;
+
+/** One logical notification event with its per-device delivery outcomes —
+ *  the user-visible delivery history (Settings → Notifications). */
+export const NotificationHistoryResponseSchema = z.object({
+  entries: z.array(
+    z.object({
+      id: z.string(),
+      type: z.string(),
+      title: z.string(),
+      body: z.string(),
+      occurredAt: z.number(),
+      /** pending | deferred | delivered | failed | suppressed | expired */
+      status: z.string(),
+      /** Machine reason for a non-delivered outcome (friendly-labeled in UI). */
+      reason: z.string().nullable(),
+      provenance: z.string(),
+      deliveries: z.array(
+        z.object({
+          status: z.string(),
+          reason: z.string().nullable(),
+          attempts: z.number(),
+          sentAt: z.number().nullable(),
+          /** Coarse device label — NEVER the raw endpoint URL. */
+          device: z.string().nullable(),
+        })
+      ),
+    })
+  ),
+});
+export type NotificationHistoryResponse = z.infer<typeof NotificationHistoryResponseSchema>;
 
 /* -------------------------------------------------------------------------- */
 /* Progression & Energy Intelligence (roadmap item)                            */
