@@ -195,7 +195,36 @@ explains itself:
 - [x] Demo-safe; additive migration documented; full gates green
 
 ### 8. Hosted-instance hardening — *issue: `chore(v0.2): hosted-instance abuse & health hardening`* · labels: `v0.2` `security`
-Review abuse/rate-limit protection, sensible profile/session limits where
+
+**Status: Complete.** Implemented on `develop`, deployed to the dev stack —
+see [HOSTED-SECURITY.md](HOSTED-SECURITY.md) and
+[HOSTED-DEPLOYMENT.md](HOSTED-DEPLOYMENT.md).
+
+Full public-beta hardening pass: threat model documented; external attack
+surface audited route-by-route (zero IDOR found — identity is always
+session-derived); rate-limit denials unified to 429 + Retry-After (were
+400); unmetered writes bounded (demo-view, sync actions, notification
+writes); heavy analytics given hard row caps (economy/money/progression);
+custom epochs bounded (absurd ranges are clean 400s); free-text filters and
+ids length-capped; per-profile session cap + env-tunable hosted limits;
+push-endpoint URLs stripped from access logs; `cache-control: private,
+no-store` + `x-request-id` on every API response (proxy-forwarded); abuse
+engagements logged (aggregate, throttled); app containers sandboxed
+(no-new-privileges, cap-drop ALL, read-only rootfs, tmpfs /tmp);
+`User.role` default fails safe; dependency audit assessed (1 high confined
+to the Prisma CLI migrate container); 9-test security regression matrix
+added alongside the existing suites.
+
+- [x] Threat model + attack surface inventory documented
+- [x] Expensive endpoints bounded and rate-limited; 429 signaling proven
+- [x] Session/profile/device limits implemented and tested
+- [x] CSRF/origin/CORS/trust-proxy verified with regression coverage
+- [x] Isolation matrix green; secrets/redaction audit clean
+- [x] Private API cache isolation + security headers asserted
+- [x] Compose sandboxing consistent across all three variants
+- [x] Hosted docs shipped; production untouched
+
+
 justified, operational health visibility without exposing user data.
 
 ### 9. Release/dev workflow hardening — *issue: `chore(v0.2): release & dev workflow hardening`* · labels: `v0.2` `enhancement`

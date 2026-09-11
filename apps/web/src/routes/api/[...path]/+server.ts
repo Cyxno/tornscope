@@ -119,6 +119,9 @@ const handler: RequestHandler = async ({ request, params, url, getClientAddress 
   // Forward Retry-After from 429/cooldown responses so clients can honour it.
   const retryAfter = proxied.headers.get("retry-after");
   if (retryAfter) responseHeaders.set("retry-after", retryAfter);
+  // Support correlation: safe request id echoed back to the caller.
+  const requestId = proxied.headers.get("x-request-id");
+  if (requestId) responseHeaders.set("x-request-id", requestId);
   responseHeaders.set("x-tornscope-build", proxied.headers.get("x-tornscope-build") ?? "");
 
   const text = await proxied.text();
