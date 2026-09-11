@@ -53,9 +53,15 @@ const BARS_MAX_ROWS = 20_000;
 const STATS_MAX_ROWS = 4_000;
 // Evidence queries (refills/drugs/consumption/combat/levels) never need the
 // full history — the analysis window is the fetch range + baseline. Caps are
-// pure runaway guards (roadmap #8), far above any real range.
-const EVIDENCE_MAX_ROWS = 20_000;
-const LEVELS_MAX_ROWS = 2_000;
+// pure runaway guards (roadmap #8), far above any real range. When a cap is
+// HIT the energy analysis downgrades to partial/analysis_truncated instead
+// of silently analyzing a clipped window (roadmap #9 remediation).
+const cap = (raw: string | undefined, fallback: number): number => {
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed >= 100 ? Math.round(parsed) : fallback;
+};
+const EVIDENCE_MAX_ROWS = cap(process.env.PROGRESSION_EVIDENCE_MAX_ROWS, 20_000);
+const LEVELS_MAX_ROWS = cap(process.env.PROGRESSION_LEVELS_MAX_ROWS, 2_000);
 const BASELINE_WINDOW_SECONDS = 30 * 86_400;
 const ATTACK_COMPETITION_SECONDS = 900;
 
@@ -137,6 +143,7 @@ export async function getProgression(userId: string, rangeInput: DateRangeInput)
     }),
     db.combatEvent.findMany({
       where: { userId, direction: "outgoing", occurredAt: { gte: new Date(fetchFrom * 1000), lte: new Date(to * 1000) } },
+      orderBy: { occurredAt: "asc" },
       take: EVIDENCE_MAX_ROWS,
       select: { occurredAt: true },
     }),
@@ -147,6 +154,16 @@ export async function getProgression(userId: string, rangeInput: DateRangeInput)
       select: { capturedAt: true, level: true },
     }),
   ]);
+
+  // Evidence truncation disclosure (roadmap #9 remediation).
+  const evidenceTruncated =
+    refillRows.length >= EVIDENCE_MAX_ROWS ||
+    drugRows.length >= EVIDENCE_MAX_ROWS ||
+    consumptionRows.length >= EVIDENCE_MAX_ROWS ||
+    combatRows.length >= EVIDENCE_MAX_ROWS;
+  const energyConfidence = evidenceTruncated
+    ? { ...barsConfidence, confidence: "partial" as const, reason: "analysis_truncated" as const }
+    : barsConfidence;
 
   /* ----------------------------- build inputs ----------------------------- */
   barsRows.reverse();
@@ -304,7 +321,7 @@ export async function getProgression(userId: string, rangeInput: DateRangeInput)
       cappedSeconds: ledger.cappedSeconds > 0 ? ledger.cappedSeconds : null,
       absorbedOvershoot: ledger.absorbedOvershoot > 0 ? ledger.absorbedOvershoot : null,
       reconciliation: ledger.reconciliation,
-      confidence: barsConfidence,
+      confidence: energyConfidence,
     },
     training: {
       sessions: rangeSessions,
@@ -320,7 +337,7 @@ export async function getProgression(userId: string, rangeInput: DateRangeInput)
         normalSamples: gainPerE(normalSessions).length,
         jumpSamples: gainPerE(jumpSessions).length,
       },
-      confidence: barsConfidence,
+      confidence: energyConfidence,
     },
     happyJumps: {
       jumps,

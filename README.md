@@ -3,7 +3,7 @@
 **TornScope** is a self-hostable analytics and history portal for [Torn](https://www.torn.com). Connect a Torn API key and get a modern, data-rich dashboard that **continuously collects, normalizes, stores and analyzes historical account data** — not just a mirror of what the API returns today.
 
 > **Public Beta** — TornScope is an independent community project, currently released as
-> **v0.1.0-beta.1 (public beta)**. It is not operated, endorsed, or hosted by Torn.
+> **v0.2 (Public Beta 2)**. It is not operated, endorsed, or hosted by Torn.
 > See [Public beta — what to expect](#public-beta--what-to-expect) and
 > [Contact & private deployments](#contact--private-deployments).
 
@@ -21,12 +21,15 @@ The product intentionally combines ideas from Torn.Report (information density, 
 | **Overview dashboard** | KPI cards (net worth, cash, 30d income/expenses/net gain, travel profit, drugs used, rehab spend), networth-over-time chart, income/expense by source, travel profit trend, drug use trend, recent activity |
 | **Drugs & rehab** | Daily drug use chart (Good/Bad with zoom), per-drug breakdown with donut, estimated spend from Torn market prices, overdose rate, rehab history & spend |
 | **Money** | Unified ledger (single source of truth, deduplicated), income vs expenses over time, cumulative net gain, category breakdowns, filterable + paginated ledger table |
-| **Travel** | Trips assembled from logs, estimated profit per trip/hour/destination, plushie vs flower vs other splits, expandable trip history with per-item economics |
+| **Travel** | Trips assembled from logs, estimated profit per trip/hour/destination (valued at current catalog prices — estimated, not historical sale prices), plushie vs flower vs other splits, expandable trip history with per-item economics |
 | **Timeline** | Unified chronological feed of logs and events with amounts and provenance |
 | **Sync system** | BullMQ worker with per-resource schedules, incremental cursors, deduplication, overlap locks, crash recovery, rate limiting, per-resource "Sync now" with cooldown |
 | **First run** | Welcome flow: validate key → detect player → encrypted storage → initial sync → dashboard |
 | **Demo mode** | `pnpm seed:demo` seeds 180 days of synthetic data for a clearly-marked demo user (never mixed with real data) |
-| **Foundation** | Faction, ranked war, organized crime, stocks, combat and progression models/routes exist as clearly-labeled "Coming soon" — no fake data |
+| **Progression & energy** | Battlestat progression from hourly snapshots (deltas, milestones with crossing windows), an energy ledger from 5-minute bar snapshots (sources, uses, cap time, unattributed spend), conservatively inferred training sessions with gain-per-energy vs your own baselines, and happy-jump inference (likely/possible — never "confirmed") with full evidence disclosure |
+| **Notifications** | Web push with a canonical type registry, quiet hours that defer instead of dropping (stale alerts expire), per-profile dedupe across devices, quiet-hours bypass only for access-loss alerts, test push, and a delivery ledger that explains every suppressed or expired alert |
+| **Data confidence** | Every figure carries an honest coverage state (complete / partial / stale permission / unavailable). Unavailable renders as "—", never zero |
+| **Foundation** | Faction, ranked war, organized crime and stocks routes exist as clearly-labeled "Coming soon" — no fake data |
 
 ## Architecture
 

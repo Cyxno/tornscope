@@ -179,6 +179,7 @@ export const ConfidenceReasonSchema = z.enum([
   "range_before_coverage",
   "source_unavailable",
   "day_in_progress",
+      "analysis_truncated",
 ]);
 export type ConfidenceReasonDto = z.infer<typeof ConfidenceReasonSchema>;
 
@@ -573,6 +574,9 @@ export const MoneySummaryResponseSchema = z.object({
   expensesByCategory: z.array(z.object({ category: MoneyCategorySchema, total: z.number() })),
   flowSeries: z.array(z.object({ t: z.number(), income: z.number(), expenses: z.number() })),
   cumulativeNetSeries: z.array(z.object({ t: z.number(), net: z.number() })),
+  /** True when the range held more events than the analysis cap — the
+   *  aggregates cover the earliest events and are explicitly partial. */
+  analysisTruncated: z.boolean().optional(),
 });
 export type MoneySummaryResponse = z.infer<typeof MoneySummaryResponseSchema>;
 

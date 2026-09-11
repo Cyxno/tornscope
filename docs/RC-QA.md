@@ -86,6 +86,40 @@ endpoints report 49 — the "69" was a stale/other-window render).
 One real fix landed from this round: the Overview glimpse energy figure
 now matches the progression page (likely-only sessions).
 
+## FINAL REMEDIATION PASS
+
+Follow-up remediation with end-to-end data-correctness verification.
+
+| Area | Issue | Severity | Before | After | Test | Status |
+|---|---|---|---|---|---|---|
+| Row caps | Capped aggregates (economy/money/progression) computed over clipped windows with no disclosure; no deterministic ordering | HIGH | 250k/100k/20k caps silently clipped; arbitrary row order | Env-injectable caps, oldest-first ordering, analysis_truncated confidence reason + response flag | row-cap-truncation.test.ts | FIXED + VERIFIED |
+| Cross-page | Overview glimpse counted "possible" sessions as energy trained; progression counted "likely" only — same label, 2,128 vs 1,816 | HIGH | Two definitions behind one label | Glimpse uses the same likely-only definition | golden-data parity via shared service; verified live | FIXED + VERIFIED |
+| Timeline | Raw machine tags rendered on ledger rows ("MONEY_POINTS", "ITEM_USE_DRUG") after CSS uppercasing | HIGH | categoryLabel kept underscores | Humanized to "Money Points" et al. | semantic-units contract | FIXED + VERIFIED |
+| Energy | Golden-data end-to-end identity unproven | HIGH | — | Fixture proves opening 10 + sources 290 - uses 280 = closing 20, exact attribution (refill exact, Xanax estimate, regen derived), training likely, no residue | golden-data.test.ts energy | FIXED + VERIFIED |
+| Battlestats | No end-to-end no-swap proof | MEDIUM | — | Injected distinct per-stat deltas (1000/2000/3000/4000) surface exactly; shares sum to 1 | golden-data.test.ts battlestats | FIXED + VERIFIED |
+| Economy | No end-to-end classification/wallet golden | MEDIUM | — | Salary=true income; bazaar/bank/items=conversions; rehab=true expense; unknown disclosed; wallet reconciles residual 0 | golden-data.test.ts economy | FIXED + VERIFIED |
+| Drugs | Cross-page count consistency unproven at API level | MEDIUM | — | Daily Summary xanax.consumed = seeded rows; sponsored semantics remain covered by armory suite | golden-data.test.ts drugs | FIXED + VERIFIED |
+| Travel | Today-Travel agreement unproven; unknown valuation rendered "$0" | MEDIUM | "$0 est. value" | Single canonical calculateTravelProfit asserted equal on both surfaces; unknown valuation renders "est. value unknown" | golden-data.test.ts travel + UI guard | FIXED + VERIFIED |
+| Timezone | DST day-boundary proof at API level | LOW | — | Amsterdam 23h/25h days resolve contiguously | golden-data.test.ts timezone | FIXED + VERIFIED |
+| Legacy | Upgraded profile without bars history | MEDIUM | — | Battlestats work; energy.covered false; energyTrained null — never fake 0 | golden-data.test.ts legacy | FIXED + VERIFIED |
+
+### Reopened-check result
+
+Every previously fixed RC finding was re-verified at current HEAD via the
+source-contract tests (currency-free progression, net-worth-never-profit,
+happy-jump-never-confirmed, no dead /economy targets, timeline humanization,
+compose env consistency, single version source). No regression found.
+
+### Cross-page consistency map (verified same-definition)
+
+- Net worth: Overview = Timeline = Economy NW lens (official snapshots).
+- Cash received/spent: Today = Economy for the same local day (golden test).
+- Travel profit: Today = Travel (single calculateTravelProfit).
+- Xanax: Today = Drugs (same DrugEvent source); Progression treats Xanax
+  energy as an estimate and never as money.
+- Energy trained: Overview = Progression (likely-only, same window).
+- Battlestat gain: Overview = Progression (same hourly bracket anchors).
+
 ## Accepted limitations
 
 - Compact axis ticks (chart internals) are money-aware but KPI cells remain

@@ -82,6 +82,15 @@ describe("inference honesty", () => {
   });
 });
 
+describe("timeline category tags", () => {
+  it("humanizes snake_case categories before the chip uppercases them", () => {
+    const timeline = read("routes/timeline/+page.svelte");
+    // The chip CSS applies text-transform: uppercase — an underscore that
+    // survives the labeler would render as a raw machine code.
+    expect(timeline).toContain('.replace(/[_-]+/g, " ")');
+  });
+});
+
 describe("route integrity", () => {
   it("no click target points at the dead /economy route", () => {
     const sharedNotifications = readFileSync(join(__dirname, "../../../packages/shared/src/notifications.ts"), "utf8");

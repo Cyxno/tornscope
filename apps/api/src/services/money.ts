@@ -28,7 +28,13 @@ export async function getMoneySummary(userId: string, rangeInput: DateRangeInput
   };
   // Roadmap #8: hard cap so "all" cannot stream a full ledger into memory;
   // aggregates are order-independent, so only a pathological tail can clip.
-  const rows = await db.moneyEvent.findMany({ where, orderBy: { occurredAt: "asc" }, take: 250_000, select: { id: true, occurredAt: true, category: true, subcategory: true, direction: true, amount: true, description: true, source: true } });
+  // Roadmap #9 remediation: hard cap with deterministic oldest-first
+  // ordering; hitting it flags the response partial instead of silently
+  // aggregating a clipped window. Env-injectable for tests.
+  const capRaw = Number(process.env.MONEY_SUMMARY_MAX_ROWS);
+  const moneyCap = Number.isFinite(capRaw) && capRaw >= 100 ? Math.round(capRaw) : 250_000;
+  const rows = await db.moneyEvent.findMany({ where, orderBy: { occurredAt: "asc" }, take: moneyCap, select: { id: true, occurredAt: true, category: true, subcategory: true, direction: true, amount: true, description: true, source: true } });
+  const analysisTruncated = rows.length >= moneyCap;
 
   const events = rows.map((row) => ({
     id: row.id,
@@ -61,6 +67,7 @@ export async function getMoneySummary(userId: string, rangeInput: DateRangeInput
     expensesByCategory: agg.expensesByCategory.map((c) => ({ category: c.category as MoneySummaryResponse["expensesByCategory"][number]["category"], total: c.total })),
     flowSeries: agg.flowSeries,
     cumulativeNetSeries: agg.cumulativeNetSeries,
+    ...(analysisTruncated ? { analysisTruncated: true } : {}),
   };
 }
 

@@ -33,6 +33,9 @@
     return raw
       .replace(/^\d+\s+/, "")
       .toLowerCase()
+      // snake_case categories ("money_points") read as machine codes once
+      // the chip's CSS uppercases them — humanize to "Money Points".
+      .replace(/[_-]+/g, " ")
       .replace(/(^|\s)\S/g, (m) => m.toUpperCase());
   }
 

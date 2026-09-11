@@ -143,13 +143,21 @@ export async function getEconomySummary(userId: string, rangeInput: DateRangeInp
   // Hard row caps (roadmap #8): the aggregate math is order-independent, so
   // a pathological history cannot turn "preset=all" into an unbounded
   // full-history load. Caps sit far above any real ledger (a heavy trader
-  // generates ~50k money rows/year) and only ever clip the tail.
-  const ECONOMY_MAX_MONEY_ROWS = 250_000;
-  const ECONOMY_MAX_AUX_ROWS = 100_000;
+  // generates ~50k money rows/year). When a cap is HIT the aggregates cover
+  // the EARLIEST events and the money confidence downgrades to
+  // partial/analysis_truncated — truncation is disclosed, never silent.
+  // Env-injectable so tests can exercise the truncated path cheaply.
+  const cap = (raw: string | undefined, fallback: number): number => {
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed >= 100 ? Math.round(parsed) : fallback;
+  };
+  const ECONOMY_MAX_MONEY_ROWS = cap(process.env.ECONOMY_MAX_MONEY_ROWS, 250_000);
+  const ECONOMY_MAX_AUX_ROWS = cap(process.env.ECONOMY_MAX_AUX_ROWS, 100_000);
   const [moneyRows, unknownCount, consumptionRows, travelEvents, travelItems, marketPrices, nwPeriod, walletStart, walletEnd, ocRows, saleRows] =
     await Promise.all([
       db.moneyEvent.findMany({
         where: { userId, occurredAt: { gte: from, lte: to } },
+        orderBy: { occurredAt: "asc" },
         take: ECONOMY_MAX_MONEY_ROWS,
         // No metadata here: the raw payload is only needed for valuing SOLD
         // inventory and detecting OC payouts, which get their own targeted
@@ -199,6 +207,14 @@ export async function getEconomySummary(userId: string, rangeInput: DateRangeInp
         select: { category: true, direction: true, amount: true, metadata: true },
       }),
     ]);
+  // Truncation disclosure (roadmap #9 remediation): hitting a cap means the
+  // aggregates below cover only the earliest events of the requested range.
+  const economyTruncated =
+    moneyRows.length >= ECONOMY_MAX_MONEY_ROWS ||
+    consumptionRows.length >= ECONOMY_MAX_AUX_ROWS ||
+    ocRows.length >= ECONOMY_MAX_AUX_ROWS ||
+    saleRows.length >= ECONOMY_MAX_AUX_ROWS;
+
   const ocRowIds = new Set(
     ocRows.filter((r) => isOcPayoutRow({ category: "faction", direction: "income", metadata: r.metadata })).map((r) => r.id)
   );
@@ -206,7 +222,12 @@ export async function getEconomySummary(userId: string, rangeInput: DateRangeInp
   // Dataset confidence — the same central derivation Overview uses, so the
   // two endpoints can no longer disagree about the same underlying state.
   const rangeForConfidence = { from: range.from, to: range.to };
-  const cashFlowConfidence = resourceConfidence(availCtx, "money_logs" as SyncResource, { range: rangeForConfidence });
+  const moneyBaseConfidence = resourceConfidence(availCtx, "money_logs" as SyncResource, { range: rangeForConfidence });
+  // A truncated analysis is partial BY DEFINITION — disclosed, never silent
+  // (roadmap #9 remediation, phase 60–63).
+  const cashFlowConfidence = economyTruncated
+    ? { ...moneyBaseConfidence, confidence: "partial" as const, reason: "analysis_truncated" as const }
+    : moneyBaseConfidence;
   const consumptionConfidence = resourceConfidence(availCtx, "drugs" as SyncResource, { range: rangeForConfidence });
   const networthConfidence = resourceConfidence(availCtx, "networth" as SyncResource);
   const travelConfidence = resourceConfidence(availCtx, "travel" as SyncResource, { range: rangeForConfidence });

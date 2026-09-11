@@ -24,6 +24,7 @@ export const CONFIDENCE_REASON_COPY: Record<ConfidenceReasonDto, string> = {
   range_before_coverage: "TornScope was not collecting history for the start of this period yet.",
   source_unavailable: "The Torn API returned no data for this resource.",
   day_in_progress: "This day has not ended yet, so the summary cannot claim end-of-day completeness.",
+  analysis_truncated: "This range holds more events than TornScope analyzes in one pass — figures cover the earliest events first.",
 };
 
 const COVERAGE_COPY = {

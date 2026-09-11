@@ -60,6 +60,9 @@ export const CONFIDENCE_REASONS = [
   "source_unavailable",
   /** The day has not ended yet — the summary cannot claim end-of-day completeness. */
   "day_in_progress",
+  /** The range contained more rows than the analysis cap — aggregates cover
+   *  the EARLIEST portion of the window and are labeled partial. */
+  "analysis_truncated",
 ] as const;
 
 export type ConfidenceReason = (typeof CONFIDENCE_REASONS)[number];
