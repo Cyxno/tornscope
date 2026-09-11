@@ -1,19 +1,23 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { env as publicEnv } from "$env/dynamic/public";
-  import type { NotificationsStatusResponse } from "@tornscope/shared";
-  import { NOTIFICATION_CATEGORIES } from "@tornscope/shared";
+  import type { NotificationsStatusResponse, NotificationHistoryResponse } from "@tornscope/shared";
+  import { DELIVERY_REASON_LABELS, NOTIFICATION_GROUPS, NOTIFICATION_TYPES, type DeliveryReason } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
   import { me } from "$lib/state.svelte";
+  import { formatClock } from "$lib/reltime";
   import StateMessage from "./StateMessage.svelte";
 
   /**
-   * Push notification settings (per browser/device + per-profile prefs).
-   * Browser support, permission state and VAPID configuration are detected;
-   * unsupported browsers get a graceful note instead of a broken panel.
+   * Notification settings — the user-control surface for the canonical type
+   * registry (packages/shared/src/notifications.ts). Grouped per-type
+   * toggles with inline thresholds, quiet hours with an honest deferral
+   * policy, device management, a real test push, and the delivery history
+   * ledger that explains what fired — and what didn't, and why.
    */
 
   let status = $state<NotificationsStatusResponse | null>(null);
+  let history = $state<NotificationHistoryResponse | null>(null);
   type PushEnv =
     | { kind: "unsupported" }
     | { kind: "insecure" }
@@ -29,6 +33,7 @@
 
   const caps = $derived(me.data?.capabilities ?? null);
   const canToggle = $derived(me.data?.isDemo !== true);
+  const timezone = $derived(me.data?.timezone ?? "UTC");
   // Operator-configured browser-facing origin (PUBLIC_BASE_URL), offered on
   // insecure contexts ONLY when it is a valid HTTPS address — the product
   // never assumes a domain. Empty when unset (e.g. pure localhost setups).
@@ -37,12 +42,14 @@
     return /^https:\/\/[^\s/$.?#].[^\s]*$/i.test(value) ? value : "";
   });
 
+  function capabilityBlocked(requires: string | null): boolean {
+    if (!requires) return false;
+    const value = (caps as Record<string, boolean> | null)?.[requires as keyof typeof caps];
+    return value === false;
+  }
+
   function detectSupport(): void {
     if (typeof window === "undefined") return;
-    // Web Push (service workers) requires a SECURE CONTEXT: HTTPS, or
-    // localhost as a development exception. A LAN IP over plain HTTP is NOT
-    // secure — Firefox/Chrome will not expose PushManager there. Collapsing
-    // that into "unsupported" used to mislead Firefox users.
     // Secure-context FIRST: on an insecure origin (LAN HTTP) Firefox does
     // not expose PushManager/Notification at all, so capability checks
     // would misreport a working browser as "unsupported".
@@ -60,9 +67,8 @@
   }
 
   function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
-    const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
-    const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
-    const raw = atob(base64);
+    const padding = "=".repeat((4 - (base64String.length % 4)) % 8);
+    const raw = atob(base64String);
     const buffer = new ArrayBuffer(raw.length);
     const output = new Uint8Array(buffer);
     for (let i = 0; i < raw.length; i++) output[i] = raw.charCodeAt(i);
@@ -74,6 +80,11 @@
       status = await endpoints.notificationsStatus(currentEndpoint ?? undefined);
     } catch {
       status = null;
+    }
+    if (me.data?.isDemo) {
+      history = await endpoints.notificationsHistory().catch(() => null);
+    } else {
+      history = await endpoints.notificationsHistory().catch(() => null);
     }
   }
 
@@ -161,6 +172,7 @@
       notice = result.sent
         ? { tone: "ok", text: "Test notification sent — check this device." }
         : { tone: "err", text: "The notification could not be delivered." };
+      await refresh();
     } catch (err) {
       notice = { tone: "err", text: err instanceof ApiClientError ? err.message : (err as Error).message };
     } finally {
@@ -168,11 +180,21 @@
     }
   }
 
-  async function toggleCategory(id: string, value: boolean): Promise<void> {
+  async function toggleType(id: string, value: boolean): Promise<void> {
     if (!status) return;
     const categories = { ...status.preferences.categories, [id]: value };
     try {
       const prefs = await endpoints.notificationsUpdatePreferences({ categories });
+      if (status) status = { ...status, preferences: prefs };
+    } catch (err) {
+      notice = { tone: "err", text: err instanceof ApiClientError ? err.message : (err as Error).message };
+    }
+  }
+
+  async function setConfig(key: string, value: number): Promise<void> {
+    if (!status) return;
+    try {
+      const prefs = await endpoints.notificationsUpdatePreferences({ typeConfig: { [key]: value } });
       if (status) status = { ...status, preferences: prefs };
     } catch (err) {
       notice = { tone: "err", text: err instanceof ApiClientError ? err.message : (err as Error).message };
@@ -199,15 +221,30 @@
     }
   }
 
+  async function setBypassCritical(value: boolean): Promise<void> {
+    if (!status) return;
+    try {
+      const prefs = await endpoints.notificationsUpdatePreferences({ bypassCritical: value });
+      if (status) status = { ...status, preferences: prefs };
+    } catch (err) {
+      notice = { tone: "err", text: err instanceof ApiClientError ? err.message : (err as Error).message };
+    }
+  }
+
+  function minutesToTime(min: number): string {
+    return `${String(Math.floor(min / 60)).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`;
+  }
+
   onMount(async () => {
     detectSupport();
-    if (support.kind === "unsupported" || support.kind === "insecure") return;
-    try {
-      const reg = await ensureServiceWorker();
-      const sub = await reg.pushManager.getSubscription();
-      if (sub) currentEndpoint = sub.endpoint;
-    } catch {
-      // SW registration issues surface through the enable flow.
+    if (support.kind !== "unsupported" && support.kind !== "insecure") {
+      try {
+        const reg = await ensureServiceWorker();
+        const sub = await reg.pushManager.getSubscription();
+        if (sub) currentEndpoint = sub.endpoint;
+      } catch {
+        // SW registration issues surface through the enable flow.
+      }
     }
     await refresh();
   });
@@ -244,7 +281,8 @@
         {/if}
       </p>
       <p class="mt-1 text-xs text-fg-faint">
-        Push notification subscriptions are stored by the TornScope server so it can send alerts to this device.
+        Every alert below fires on a state change — never repeatedly while a condition holds — and is
+        delivered to every enabled device exactly once.
       </p>
     </div>
   </div>
@@ -309,30 +347,150 @@
   {/if}
 
   {#if status}
-    <details class="rounded-xl border border-border bg-bg-raise px-4 py-3">
+    <details class="rounded-xl border border-border bg-bg-raise px-4 py-3" open>
       <summary class="cursor-pointer select-none text-[11px] font-semibold uppercase tracking-[0.14em] text-fg-faint transition-colors hover:text-fg-muted">
-        Notification categories
+        Alert types
       </summary>
-      <div class="mt-3 grid gap-x-6 gap-y-2 text-[13px] sm:grid-cols-2">
-        {#each NOTIFICATION_CATEGORIES as category (category.id)}
-          {@const capabilityOk = !caps || caps[category.requires as keyof typeof caps] !== false || caps[category.requires as keyof typeof caps] === undefined}
-          <label class="flex items-center justify-between gap-3" class:opacity-50={!capabilityOk}>
-            <span class="text-fg-muted">
-              {category.label}
-              {#if !capabilityOk}
-                <span class="text-[10px] uppercase tracking-wide text-fg-faint">Unavailable with current API permissions</span>
-              {/if}
-            </span>
-            <input
-              type="checkbox"
-              checked={status.preferences.categories[category.id] ?? category.default}
-              disabled={!capabilityOk}
-              onchange={(e) => void toggleCategory(category.id, (e.currentTarget as HTMLInputElement).checked)}
-              class="h-4 w-4 accent-teal-400"
-            />
-          </label>
-        {/each}
+
+      <!-- Quiet hours -->
+      <div class="mt-3 space-y-2 text-[13px]">
+        <p class="font-medium text-fg">
+          Quiet hours
+          <span class="ml-1 text-xs font-normal text-fg-faint">({timezone})</span>
+        </p>
+        <div class="flex flex-wrap items-center gap-2">
+          <input
+            type="time"
+            aria-label="Quiet hours start"
+            class="rounded-lg border border-border bg-bg-raise px-2 py-1 text-xs text-fg"
+            value={status.preferences.quietStartMin !== null ? minutesToTime(status.preferences.quietStartMin) : ""}
+            onchange={(e) => {
+              const v = (e.currentTarget as HTMLInputElement).value;
+              if (!v) return void setQuietHours(null, null);
+              const [h, m] = v.split(":").map(Number);
+              void setQuietHours(h! * 60 + m!, status!.preferences.quietEndMin ?? 420);
+            }}
+          />
+          <span class="text-fg-faint">→</span>
+          <input
+            type="time"
+            aria-label="Quiet hours end"
+            class="rounded-lg border border-border bg-bg-raise px-2 py-1 text-xs text-fg"
+            value={status.preferences.quietEndMin !== null ? minutesToTime(status.preferences.quietEndMin) : ""}
+            onchange={(e) => {
+              const v = (e.currentTarget as HTMLInputElement).value;
+              if (!v) return void setQuietHours(null, null);
+              const [h, m] = v.split(":").map(Number);
+              void setQuietHours(status!.preferences.quietStartMin ?? 1380, h! * 60 + m!);
+            }}
+          />
+          {#if status.preferences.quietStartMin !== null}
+            <button class="text-xs text-fg-faint hover:text-fg" onclick={() => void setQuietHours(null, null)}>clear</button>
+          {/if}
+        </div>
+        <p class="text-xs text-fg-faint">
+          While quiet hours are active, alerts wait and are delivered when they end. Deferred alerts that are
+          no longer useful by then (an "energy full" from the night before) are skipped instead of delivered stale.
+        </p>
+        <label class="flex items-center justify-between gap-3 pt-1">
+          <span class="text-fg-muted">
+            Critical system alerts during quiet hours
+            <span class="block text-xs text-fg-faint">Only TornScope's own "access lost" alert qualifies — never game events.</span>
+          </span>
+          <input
+            type="checkbox"
+            checked={status.preferences.bypassCritical}
+            onchange={(e) => void setBypassCritical((e.currentTarget as HTMLInputElement).checked)}
+            class="h-4 w-4 accent-teal-400"
+          />
+        </label>
       </div>
+
+      <!-- Grouped type toggles -->
+      {#each NOTIFICATION_GROUPS as group (group.id)}
+        <div class="mt-4 border-t border-border pt-3">
+          <p class="text-[11px] font-semibold uppercase tracking-[0.12em] text-fg-muted">{group.label}</p>
+          <p class="text-xs text-fg-faint">{group.description}</p>
+          <div class="mt-2 grid gap-x-6 gap-y-2 text-[13px] lg:grid-cols-2">
+            {#each NOTIFICATION_TYPES.filter((t) => t.group === group.id) as t (t.id)}
+              {@const blocked = capabilityBlocked(t.requires)}
+              <div class="flex items-start justify-between gap-3 py-0.5" class:opacity-50={blocked}>
+                <div class="min-w-0">
+                  <span class="text-fg-muted">{t.label}</span>
+                  <span class="block text-xs text-fg-faint">
+                    {#if blocked}
+                      Unavailable — your API key lacks {t.requires} access
+                    {:else}
+                      {t.description}
+                    {/if}
+                  </span>
+                  {#if !blocked && t.config.length > 0 && status.preferences.categories[t.id]}
+                    <span class="mt-1 flex flex-wrap items-center gap-2">
+                      {#if t.config.includes("nearFullThreshold")}
+                        <label class="flex items-center gap-1 text-xs text-fg-faint">
+                          Threshold
+                          <input
+                            type="number" min="1" max="1000"
+                            class="w-20 rounded-lg border border-border bg-bg-raise px-2 py-0.5 text-xs text-fg"
+                            value={status.preferences.typeConfig.nearFullThreshold}
+                            onchange={(e) => void setConfig("nearFullThreshold", Number((e.currentTarget as HTMLInputElement).value) || 135)}
+                          />
+                        </label>
+                      {/if}
+                      {#if t.config.includes("cashThreshold")}
+                        <label class="flex items-center gap-1 text-xs text-fg-faint">
+                          Min $
+                          <input
+                            type="number" min="0" step="1_000_000"
+                            class="w-28 rounded-lg border border-border bg-bg-raise px-2 py-0.5 text-xs text-fg"
+                            value={status.preferences.typeConfig.cashThreshold}
+                            onchange={(e) => void setConfig("cashThreshold", Number((e.currentTarget as HTMLInputElement).value) || 50000000)}
+                          />
+                        </label>
+                      {/if}
+                      {#if t.config.includes("networthThreshold")}
+                        <label class="flex items-center gap-1 text-xs text-fg-faint">
+                          Min Δ $
+                          <input
+                            type="number" min="0" step="1_000_000"
+                            class="w-28 rounded-lg border border-border bg-bg-raise px-2 py-0.5 text-xs text-fg"
+                            value={status.preferences.typeConfig.networthThreshold}
+                            onchange={(e) => void setConfig("networthThreshold", Number((e.currentTarget as HTMLInputElement).value) || 100000000)}
+                          />
+                        </label>
+                      {/if}
+                      {#if t.config.includes("summaryTimeMin")}
+                        <label class="flex items-center gap-1 text-xs text-fg-faint">
+                          At
+                          <input
+                            type="time"
+                            class="rounded-lg border border-border bg-bg-raise px-2 py-0.5 text-xs text-fg"
+                            value={minutesToTime(status.preferences.typeConfig.summaryTimeMin)}
+                            onchange={(e) => {
+                              const v = (e.currentTarget as HTMLInputElement).value;
+                              if (!v) return;
+                              const [h, m] = v.split(":").map(Number);
+                              void setConfig("summaryTimeMin", h! * 60 + m!);
+                            }}
+                          />
+                        </label>
+                      {/if}
+                    </span>
+                  {/if}
+                </div>
+                <input
+                  type="checkbox"
+                  aria-label="{t.label} notifications"
+                  checked={status.preferences.categories[t.id] ?? t.defaultEnabled}
+                  disabled={blocked}
+                  onchange={(e) => void toggleType(t.id, (e.currentTarget as HTMLInputElement).checked)}
+                  class="mt-1 h-4 w-4 shrink-0 accent-teal-400"
+                />
+              </div>
+            {/each}
+          </div>
+        </div>
+      {/each}
 
       <div class="mt-4 space-y-2 border-t border-border pt-3 text-[13px]">
         <label class="flex items-center justify-between gap-3">
@@ -348,42 +506,43 @@
         </label>
         <p class="text-xs text-fg-faint">Default off — notifications stay generic on lock screens.</p>
       </div>
-
-      <div class="mt-4 space-y-2 border-t border-border pt-3 text-[13px]">
-        <p class="text-fg-muted">Quiet hours <span class="text-xs text-fg-faint">(non-critical alerts are held)</span></p>
-        <div class="flex flex-wrap items-center gap-2">
-          <input
-            type="time"
-            class="rounded-lg border border-border bg-bg-raise px-2 py-1 text-xs text-fg"
-            value={status.preferences.quietStartMin !== null
-              ? `${String(Math.floor(status.preferences.quietStartMin / 60)).padStart(2, "0")}:${String(status.preferences.quietStartMin % 60).padStart(2, "0")}`
-              : ""}
-            onchange={(e) => {
-              const v = (e.currentTarget as HTMLInputElement).value;
-              if (!v) return void setQuietHours(null, null);
-              const [h, m] = v.split(":").map(Number);
-              void setQuietHours(h! * 60 + m!, status!.preferences.quietEndMin ?? 420);
-            }}
-          />
-          <span class="text-fg-faint">–</span>
-          <input
-            type="time"
-            class="rounded-lg border border-border bg-bg-raise px-2 py-1 text-xs text-fg"
-            value={status.preferences.quietEndMin !== null
-              ? `${String(Math.floor(status.preferences.quietEndMin / 60)).padStart(2, "0")}:${String(status.preferences.quietEndMin % 60).padStart(2, "0")}`
-              : ""}
-            onchange={(e) => {
-              const v = (e.currentTarget as HTMLInputElement).value;
-              if (!v) return void setQuietHours(null, null);
-              const [h, m] = v.split(":").map(Number);
-              void setQuietHours(status!.preferences.quietStartMin ?? 1380, h! * 60 + m!);
-            }}
-          />
-          {#if status.preferences.quietStartMin !== null}
-            <button class="text-xs text-fg-faint hover:text-fg" onclick={() => void setQuietHours(null, null)}>clear</button>
-          {/if}
-        </div>
-      </div>
     </details>
+  {/if}
+
+  <!-- Delivery history -->
+  {#if history && history.entries.length > 0}
+    <div>
+      <p class="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-fg-faint">Recent deliveries</p>
+      <ul class="divide-y divide-border overflow-hidden rounded-xl border border-border">
+        {#each history.entries.slice(0, 12) as entry (entry.id)}
+          <li class="bg-surface px-4 py-2.5 text-[13px]">
+            <details>
+              <summary class="flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 select-none">
+                <span class="font-mono text-xs text-fg-faint">{formatClock(entry.occurredAt)}</span>
+                <span class="min-w-0 flex-1 truncate text-fg">{entry.title}</span>
+                <span class="text-xs {entry.status === 'delivered' || entry.status === 'sent' ? 'text-positive' : entry.status === 'failed' || entry.status === 'expired' ? 'text-negative' : 'text-fg-faint'}">
+                  {entry.status}
+                  {#if entry.reason}
+                    · {DELIVERY_REASON_LABELS[entry.reason as DeliveryReason] ?? entry.reason}
+                  {/if}
+                </span>
+              </summary>
+              <div class="mt-2 space-y-1 text-xs text-fg-faint">
+                <p>{entry.body}</p>
+                <p>Fact provenance: {entry.provenance}. Fired at {formatClock(entry.occurredAt)} ({timezone}).</p>
+                {#each entry.deliveries as d (d.device ?? "")}
+                  <p>
+                    → {d.device ?? "Device"}: {d.status}{d.reason ? ` (${DELIVERY_REASON_LABELS[d.reason as DeliveryReason] ?? d.reason})` : ""}{d.sentAt ? ` · ${formatClock(d.sentAt)}` : ""}{d.attempts > 1 ? ` · ${d.attempts} attempts` : ""}
+                  </p>
+                {/each}
+              </div>
+            </details>
+          </li>
+        {/each}
+      </ul>
+      <p class="mt-1.5 text-xs text-fg-faint">Delivery history is kept for 90 days.</p>
+    </div>
+  {:else if history}
+    <StateMessage state="empty" compact title="No deliveries yet" hint="Alerts you receive (or that are deferred or skipped) appear here with the reason." />
   {/if}
 </div>
