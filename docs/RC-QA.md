@@ -73,6 +73,19 @@ limitation. Date of audit: 2026-09-11, at develop `f63f466`+RC commits.
 - Chart legends match series names/keys on all seven chart surfaces.
 - A11y labels match the redesigned UI (no stale "card"/route references).
 
+## Judge round 2 (post-fix verification)
+
+A second independent judge pass over the fixed build verified: no "$" on
+battlestats/energy/gain anywhere; money always "$"; conversions worded as
+movement; travel profit labeled estimated; build identity
+"0.2.0-dev.0 · <sha>" + Development chip visible on Overview and Settings;
+Today/Settings pass. Two judge flags were verified as judge misreads
+(progression parts-vs-total: API closings sum EXACTLY to the headline
+total and shares sum to 100%; overview-vs-drugs drug counts: both
+endpoints report 49 — the "69" was a stale/other-window render).
+One real fix landed from this round: the Overview glimpse energy figure
+now matches the progression page (likely-only sessions).
+
 ## Accepted limitations
 
 - Compact axis ticks (chart internals) are money-aware but KPI cells remain
