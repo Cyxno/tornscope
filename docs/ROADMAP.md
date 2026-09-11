@@ -228,12 +228,34 @@ added alongside the existing suites.
 justified, operational health visibility without exposing user data.
 
 ### 9. Release/dev workflow hardening — *issue: `chore(v0.2): release & dev workflow hardening`* · labels: `v0.2` `enhancement`
-CI requirements on main/develop, a release checklist, a migration rehearsal
-checklist, backup/restore verification, and a single source of truth for the
-displayed version/environment (builds on the existing `PUBLIC_ENV_LABEL`
-marker — see [ENVIRONMENTS.md](ENVIRONMENTS.md)).
 
----
+**Status: Complete.** Implemented on `develop` — see
+[RC-QA.md](RC-QA.md), [V0.2-RELEASE-CHECKLIST.md](V0.2-RELEASE-CHECKLIST.md)
+and [CHANGELOG-v0.2.md](CHANGELOG-v0.2.md).
+
+- Single version source: root package.json (workspace packages synced,
+  enforced by test); build identity (version · short SHA · environment)
+  exposed on `/`, `/api/health`, the nav rail and Settings.
+- `scripts/release-preflight.sh`: deterministic PASS/FAIL gate (git state,
+  version coherence, migration inventory, dev-domain/TODO leak checks,
+  compose validity, full gates).
+- CI audited: lockfile install, migrations, seed, lint/typecheck/
+  svelte-check, DB-backed test assertion, build, compose validation, full
+  Docker smoke job. Branch protection cannot be configured from this
+  server — documented as an operator step in the release checklist.
+- Full RC content QA: two exhaustive source audits + fixes (currency
+  formatters on battlestats/energy, sign semantics, zero-vs-unavailable,
+  raw enum/slug leaks, terminology, pluralization, dead routes); contract
+  tests lock the guarantees in. See docs/RC-QA.md.
+- Upgrade rehearsal re-run to current develop: PASS (clean apply,
+  idempotent, no row loss); clean-install reproof PASS; backup/restore
+  drill documented in the release checklist.
+
+- [x] Version coherence proven by test
+- [x] Release preflight script; deploy guards verified (main-only prod)
+- [x] 0.1.x→0.2 rehearsal + clean install PASS on final develop
+- [x] Full content/semantic QA with regression contracts
+- [x] Dev deploy verified incl. on-screen build identity
 
 ## NICE TO HAVE
 
