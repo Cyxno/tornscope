@@ -381,9 +381,14 @@ export async function getProgressionGlimpse(userId: string, from: number, to: nu
   }
   const ledger = buildEnergyLedger(bars.filter((o) => o.t >= from), [], []);
   const sessions = detectTrainingSessions(ledger, statSeries).filter((s) => s.startedAt >= from && s.startedAt <= to);
+  // Same definition as the full getProgression summary: only "likely"
+  // sessions (decline + observed gain) count as energy trained — a possible
+  // burst stays unattributed on every surface, not just the main page.
   return {
     battlestatGain: prog.deltaTotal,
-    energyTrained: sessions.reduce((sum, s) => sum + (s.energySpent ?? 0), 0),
+    energyTrained: sessions
+      .filter((s) => s.inference === "likely")
+      .reduce((sum, s) => sum + (s.energySpent ?? 0), 0),
     sessions: sessions.length,
     likelyJumps: 0, // jump detection needs drug events — full getProgression only
   };

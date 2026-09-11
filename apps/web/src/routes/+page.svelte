@@ -334,7 +334,7 @@
               <p class="section-label mb-2">Economic effect</p>
               <dl class="space-y-1 text-[13px]">
                 <div class="flex items-baseline justify-between gap-3"><dt class="text-fg-muted">True income</dt><dd class="tnum font-medium text-positive">{formatKpiValue(todaySummary.economicEffect.trueIncome, formatSignedMoneyCompact)}</dd></div>
-                <div class="flex items-baseline justify-between gap-3"><dt class="text-fg-muted">True expenses</dt><dd class="tnum font-medium text-negative">{formatKpiValue(todaySummary.economicEffect.trueExpense, formatSignedMoneyCompact)}</dd></div>
+                <div class="flex items-baseline justify-between gap-3"><dt class="text-fg-muted">True expenses</dt><dd class="tnum font-medium text-negative">{formatKpiValue(todaySummary.economicEffect.trueExpense, formatMoneyCompact)}</dd></div>
                 <div class="flex items-baseline justify-between gap-3"><dt class="text-fg">Economic net</dt><dd class="tnum font-semibold {todaySummary.economicEffect.net.value === null ? 'text-fg-faint' : todaySummary.economicEffect.net.value >= 0 ? 'text-positive' : 'text-negative'}">{formatKpiValue(todaySummary.economicEffect.net, formatSignedMoneyCompact)}</dd></div>
               </dl>
               <p class="mt-1.5 text-[11px] text-fg-faint">Conversions are excluded — they are movement, not earnings.</p>

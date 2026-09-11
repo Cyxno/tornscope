@@ -244,8 +244,10 @@
                       <span class="text-fg">{row.label} <span class="text-[11px] text-fg-faint">{row.quantity} item{row.quantity === 1 ? "" : "s"}</span></span>
                       <span class="tnum text-xs text-fg-muted">
                         {formatMoneyCompact(row.spend)} spend
-                        {#if row.estimatedValue !== null}
+                        {#if row.estimatedValue !== null && row.estimatedValue > 0}
                           · {formatMoneyCompact(row.estimatedValue)} est. value
+                        {:else if row.spend > 0}
+                          · est. value unknown
                         {/if}
                       </span>
                     </div>

@@ -95,7 +95,7 @@ describe("demo UX", () => {
 
 describe("xanax personal-cost semantics", () => {
   it("labels the consumption value as NOT personal spend and sponsored cost as $0", () => {
-    expect(welcomeDrugsPage()).toContain("Estimated consumption value");
+    expect(welcomeDrugsPage()).toContain("Est. Xanax consumption"); // Xanax-specific: the filter may include other substances (RC judge finding)
     expect(welcomeDrugsPage()).toContain("Personal cost $0");
     expect(welcomeDrugsPage()).toContain("Opening inventory — origin unknown");
     expect(welcomeDrugsPage()).not.toContain('label="Estimated spend"');

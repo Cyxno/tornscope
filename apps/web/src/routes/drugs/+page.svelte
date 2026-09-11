@@ -187,12 +187,12 @@
         <dd class="tnum mt-1 text-[22px] font-semibold {data.overall.overdoses > 0 ? 'text-negative' : 'text-fg'}">{histBlocked ? "—" : data.overall.overdoses}</dd>
       </div>
       <div class="md:px-5">
-        <dt class="text-[11px] font-medium text-fg-faint" title={xanaxValueTooltip}>Estimated consumption value</dt>
+        <dt class="text-[11px] font-medium text-fg-faint" title={xanaxValueTooltip}>Est. Xanax consumption</dt>
         <dd class="tnum mt-1 text-[22px] font-semibold text-fg">{histBlocked ? "—" : data.xanaxFunding.values.consumption !== null ? formatMoneyCompact(data.xanaxFunding.values.consumption) : "—"}</dd>
         <dd class="mt-0.5 text-[11px] text-warning">estimated</dd>
       </div>
       <div class="md:pl-5">
-        <dt class="text-[11px] font-medium text-fg-faint" title="Current catalog market price per Xanax — an estimated consumption value, not your purchase cost.">Avg value / use</dt>
+        <dt class="text-[11px] font-medium text-fg-faint" title="Current catalog market price per Xanax — an estimated consumption value, not your purchase cost.">Avg Xanax value / use</dt>
         <dd class="tnum mt-1 text-[22px] font-semibold text-fg">{histBlocked ? "—" : data.xanaxFunding.values.unitPrice !== null ? formatMoneyCompact(data.xanaxFunding.values.unitPrice) : "—"}</dd>
       </div>
     </dl>
