@@ -133,9 +133,12 @@ export async function maybeRunDailyMaintenance(): Promise<MaintenanceResult | nu
       guestRetentionDays: Number(process.env.GUEST_PROFILE_RETENTION_DAYS ?? 60),
       revokedSessionRetentionDays: 7,
     });
-    // Push notification retention: delivery ledger + dead subscriptions 30d.
+    // Push notification retention: delivery ledger + dead subscriptions 30d;
+    // logical events (the history users see) 90d.
     const notifCutoff = new Date(now - 30 * 86_400_000);
+    const eventCutoff = new Date(now - 90 * 86_400_000);
     await db.notificationDelivery.deleteMany({ where: { sentAt: { lt: notifCutoff } } }).catch(() => undefined);
+    await db.notificationEvent.deleteMany({ where: { createdAt: { lt: eventCutoff } } }).catch(() => undefined);
     await db.pushSubscription.deleteMany({ where: { revokedAt: { lt: notifCutoff } } }).catch(() => undefined);
     logger.info({ guestsDeleted: result.guestsDeleted, sessionsDeleted: result.sessionsDeleted }, "maintenance cleanup ran");
     return result;

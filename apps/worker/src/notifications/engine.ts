@@ -3,31 +3,65 @@ import { getPrismaClient, EncryptionService, encryptionFromEnv } from "@tornscop
 import {
   checkPushEndpoint,
   classifyAttentionEvent,
-  CATEGORY_IMPORTANCE,
-  DEFAULT_CATEGORY_STATE,
-  type NotificationImportance,
+  DEFAULT_TYPE_TOGGLES,
+  decideQuietHours,
+  diffTimerTransitions,
+  notificationType,
+  normalizeTypeToggles,
+  normalizeTypeConfig,
+  type LiveTimerState,
+  type QuietHoursSettings,
+  type ResolvedTypeConfig,
 } from "@tornscope/shared";
+import { localMinutesInZone, nextWallClockOccurrence } from "@tornscope/shared";
 import { env, logger } from "../env.js";
+import {
+  evaluateSystemProducer,
+  evaluateEnergyProducer,
+  evaluateProgressionProducer,
+  evaluateEconomyProducer,
+  evaluateDailySummaryProducer,
+} from "./producers.js";
 
 /**
  * Central notification engine (runs inside the existing worker process).
  *
+ * ARCHITECTURE (docs/NOTIFICATIONS.md):
+ *   producers (thin, state-transition driven)
+ *     → ingest(): ONE canonical path — registry lookup, preference toggle,
+ *       capability gate, freshness gate, profile-level dedupe
+ *       (NotificationEvent.userId+dedupeKey unique), quiet-hours decision
+ *       (deliver / DEFER with expiry / suppress with machine reason)
+ *     → per-device deliveries (pending → sent | failed→bounded retry |
+ *       invalid_subscription + revoke on 404/410)
+ *
  * Sources, evaluated at most every MIN_EVALUATE_SECONDS:
- * 1. TIMER TRANSITIONS — one live Torn call per user ONLY when a tracked
+ * 1. DEFERRED FLUSH — deferred events whose quiet hours ended; stale ones
+ *    expire instead of delivering useless morning alerts.
+ * 2. RETRY — bounded backoff for transient push failures.
+ * 3. TIMER TRANSITIONS — one live Torn call per user ONLY when a tracked
  *    timer can have changed (nextEligibleAt), never a per-minute poll.
- * 2. TIMELINE ATTENTION — only TimelineEvents inserted AFTER the last
+ *    (Energy/nerve are NOT timers — they are owned by the bars producer.)
+ * 4. TIMELINE ATTENTION — only TimelineEvents inserted AFTER the last
  *    evaluated id AND after the activation boundary (enabledAt), so
  *    backfills and history imports can never flood.
+ * 5. BARS / SYSTEM / PROGRESSION / ECONOMY / DAILY SUMMARY producers —
+ *    each with its own first-observation suppression and age guards
+ *    (see producers.ts).
  *
- * Delivery is deduplicated by the NotificationDelivery unique constraint
- * (subscriptionId + eventKey + notificationType); a worker restart cannot
- * resend. 404/410 push responses revoke the dead subscription.
+ * Demo profiles are never evaluated and never push.
  */
 
 const MIN_EVALUATE_SECONDS = 120;
 const IDLE_RECHECK_SECONDS = 600;
 const TIMER_GRACE_SECONDS = 45;
 const MAX_EVENTS_PER_TICK = 20;
+/** Bounded retry backoff (minutes) for transient push failures. */
+export const RETRY_BACKOFF_MINUTES = [5, 25, 125];
+/** Bars snapshots older than this never drive energy notifications. */
+export const BARS_MAX_AGE_SECONDS = 15 * 60;
+/** Source events older than this are never notified, even if newly seen. */
+export const SOURCE_MAX_AGE_SECONDS = 6 * 3600;
 
 let webpushReady = false;
 let lastRunAt = 0;
@@ -54,113 +88,301 @@ function decryptor(): EncryptionService {
   return encryption;
 }
 
-export interface NotificationEvent {
-  category: string;
-  importance: NotificationImportance;
+/** A notification draft produced by ANY producer. Privacy-safe bodies only. */
+export interface NotificationDraft {
+  type: string;
+  /** Deterministic profile-level identity of the logical event. */
+  dedupeKey: string;
+  /** When the underlying fact happened (epoch sec) — never "now" for facts. */
+  occurredAt: number;
   title: string;
   body: string;
-  eventKey: string;
-  clickPath: string;
+  sensitiveBody?: string | null;
+  clickPath?: string;
+  provenance?: "exact" | "derived" | "estimated" | "inferred";
+  /** Explicit user action (test push): bypasses quiet hours deferral. */
+  explicit?: boolean;
 }
 
-/** In-worker delivery (mirrors the API's test path incl. revoke handling). */
-async function deliver(
+export interface IngestContext {
+  userId: string;
+  timezone: string;
+  toggles: Record<string, boolean>;
+  sensitiveDetails: boolean;
+  quiet: QuietHoursSettings;
+  enabledAtSec: number;
+  capabilities: Record<string, boolean> | null;
+  config: ResolvedTypeConfig;
+}
+
+export type IngestOutcome = "created" | "duplicate" | "dropped_disabled" | "dropped_capability" | "dropped_stale";
+
+/**
+ * THE canonical ingest path. Everything a user ever receives (or silently
+ * doesn't) flows through here, so reasons and dedupe behave identically for
+ * every producer.
+ */
+export async function ingest(userId: string, draft: NotificationDraft, ctx: IngestContext): Promise<IngestOutcome> {
+  const db = getPrismaClient();
+  const meta = notificationType(draft.type);
+  if (!meta) return "dropped_disabled";
+
+  // 1. User toggle (explicit choice — nothing recorded: the user decided).
+  if (!draft.explicit && ctx.toggles[meta.id] !== true) return "dropped_disabled";
+
+  // 2. Activation boundary: no notification for facts observed before push
+  //    was enabled (or long-stale source events).
+  const nowSec = Math.floor(Date.now() / 1000);
+  if (draft.occurredAt < ctx.enabledAtSec - 60) return "dropped_stale";
+  if (!draft.explicit && nowSec - draft.occurredAt > SOURCE_MAX_AGE_SECONDS) return "dropped_stale";
+
+  // 3. Capability gate — recorded (rare, explainable), never silent.
+  if (!draft.explicit && meta.requires && ctx.capabilities?.[meta.requires as keyof typeof ctx.capabilities] === false) {
+    await db.notificationEvent.create({
+      data: {
+        userId, type: meta.id, dedupeKey: draft.dedupeKey, occurredAt: new Date(draft.occurredAt * 1000),
+        title: draft.title, body: draft.body, clickPath: draft.clickPath ?? meta.clickPath,
+        provenance: draft.provenance ?? meta.provenance, status: "suppressed", reason: "missing_capability",
+      },
+    }).catch(() => undefined);
+    return "dropped_capability";
+  }
+
+  // 4. Profile-level dedupe: one logical event, ever, regardless of devices,
+  //    ticks or restarts. The unique constraint is the source of truth.
+  let event;
+  try {
+    event = await db.notificationEvent.create({
+      data: {
+        userId, type: meta.id, dedupeKey: draft.dedupeKey, occurredAt: new Date(draft.occurredAt * 1000),
+        title: draft.title, body: draft.explicit ? draft.body : (ctx.sensitiveDetails && draft.sensitiveBody ? draft.sensitiveBody : draft.body),
+        clickPath: draft.clickPath ?? meta.clickPath, provenance: draft.provenance ?? meta.provenance,
+      },
+    });
+  } catch {
+    return "duplicate";
+  }
+
+  // 5. Quiet hours: deliver / DEFER (with expiry) / suppress — never silently
+  //    drop. Explicit user actions (test) are never deferred.
+  const nowLocal = localMinutesInZone(nowSec, ctx.timezone);
+  const quietEndSec = ctx.quiet.endMin !== null ? nextWallClockOccurrence(ctx.quiet.endMin, ctx.timezone, nowSec) : null;
+  const decision = decideQuietHours(meta, ctx.quiet, nowLocal, { quietEndSec, explicit: draft.explicit });
+  if (decision.action === "defer") {
+    await db.notificationEvent.update({
+      where: { id: event.id },
+      data: {
+        status: "deferred",
+        deliverAt: new Date(decision.deliverAtSec * 1000),
+        expiresAt: new Date((draft.occurredAt + meta.maxDeferralAgeSeconds) * 1000),
+      },
+    });
+    return "created";
+  }
+  if (decision.action === "suppress") {
+    await db.notificationEvent.update({ where: { id: event.id }, data: { status: "suppressed", reason: decision.reason } });
+    return "created";
+  }
+
+  await deliverEvent(userId, event.id, { ...draft, title: event.title, body: event.body, clickPath: event.clickPath });
+  return "created";
+}
+
+/**
+ * Deliver one logical event to every active subscription. Per-device ledger
+ * rows record the real outcome; transient failures get bounded retries.
+ */
+export async function deliverEvent(
   userId: string,
-  event: NotificationEvent,
-  sensitiveDetails: boolean,
-  quietMinutes: { start: number | null; end: number | null; timezone: string }
-): Promise<{ sent: number; revoked: number; skipped: number }> {
+  eventId: string,
+  draft: NotificationDraft
+): Promise<{ sent: number; revoked: number; failed: number }> {
   const db = getPrismaClient();
   const subs = await db.pushSubscription.findMany({
     where: { userId, revokedAt: null },
     select: { id: true, endpoint: true, p256dh: true, auth: true },
   });
-  if (subs.length === 0) return { sent: 0, revoked: 0, skipped: 0 };
+  return deliverToSubscriptions(userId, eventId, draft, subs);
+}
 
-  // Quiet hours (user timezone): non-critical events are dropped (v1 keeps
-  // this conservative — the transition diff will not regenerate them).
-  if (event.importance !== "critical" && quietMinutes.start !== null && quietMinutes.end !== null) {
-    const nowLocal = localMinutes(quietMinutes.timezone);
-    const inQuiet =
-      quietMinutes.start < quietMinutes.end
-        ? nowLocal >= quietMinutes.start && nowLocal < quietMinutes.end
-        : nowLocal >= quietMinutes.start || nowLocal < quietMinutes.end;
-    if (inQuiet) {
-      logger.debug({ userId, category: event.category }, "notification suppressed by quiet hours");
-      return { sent: 0, revoked: 0, skipped: subs.length };
-    }
-  }
-
-  const body = sensitiveDetails ? event.body : event.body; // body selection happens at classification time
-  void body;
+/** Delivery fan-out shared by first delivery, deferral flush and retries. */
+async function deliverToSubscriptions(
+  userId: string,
+  eventId: string,
+  draft: NotificationDraft,
+  subs: Array<{ id: string; endpoint: string; p256dh: string; auth: string }>
+): Promise<{ sent: number; revoked: number; failed: number }> {
+  const db = getPrismaClient();
+  const meta = notificationType(draft.type);
   const payload = JSON.stringify({
-    title: event.title,
-    body: event.body,
-    url: event.clickPath,
-    tag: `${event.category}:${event.eventKey}`,
+    title: draft.title,
+    body: draft.body,
+    url: draft.clickPath ?? meta?.clickPath ?? "/today",
+    tag: `${draft.type}:${draft.dedupeKey}`,
     icon: "/icons/tornscope-notifications-192.png",
     badge: "/icons/tornscope-badge-monochrome.png",
   });
 
   let sent = 0;
   let revoked = 0;
+  let failed = 0;
   for (const sub of subs) {
-    // Dedup ledger: the unique constraint makes restarts/resends idempotent.
+    // Per-device dedupe: the unique constraint makes retries idempotent.
+    let deliveryId: string;
     try {
-      await db.notificationDelivery.create({
-        data: { userId, subscriptionId: sub.id, eventKey: event.eventKey, notificationType: event.category },
+      const row = await db.notificationDelivery.create({
+        data: {
+          userId,
+          subscriptionId: sub.id,
+          eventKey: draft.dedupeKey,
+          notificationType: draft.type,
+          eventId,
+          status: "pending",
+          attempts: 0,
+        },
+        select: { id: true },
       });
+      deliveryId = row.id;
     } catch {
-      continue; // already delivered to this device
+      continue; // already delivered/attempted for this device
     }
-    try {
-      // SSRF guard (defense in depth — endpoints are validated at subscribe
-      // time): a stored endpoint pointing at loopback/private space is never
-      // legitimate, so revoke it instead of POSTing into the network.
-      if (!checkPushEndpoint(sub.endpoint).allowed) {
-        await db.pushSubscription.update({ where: { id: sub.id }, data: { revokedAt: new Date() } }).catch(() => undefined);
-        revoked += 1;
+    const outcome = await sendToSubscriptionRow(sub, payload);
+    if (outcome === "sent") {
+      await db.notificationDelivery.update({
+        where: { id: deliveryId },
+        data: { status: "sent", sentAt: new Date() },
+      });
+      sent += 1;
+    } else if (outcome === "gone") {
+      await db.notificationDelivery.update({
+        where: { id: deliveryId },
+        data: { status: "invalid_subscription", reason: "invalid_subscription" },
+      });
+      await db.pushSubscription.update({ where: { id: sub.id }, data: { revokedAt: new Date() } }).catch(() => undefined);
+      revoked += 1;
+    } else {
+      await db.notificationDelivery.update({
+        where: { id: deliveryId },
+        data: { status: "failed", attempts: 1, nextAttemptAt: new Date(Date.now() + RETRY_BACKOFF_MINUTES[0]! * 60_000) },
+      });
+      failed += 1;
+    }
+  }
+
+  await db.notificationEvent.update({
+    where: { id: eventId },
+    data: {
+      status: sent > 0 ? "delivered" : subs.length === 0 ? "suppressed" : "failed",
+      reason: subs.length === 0 ? "device_disabled" : null,
+    },
+  }).catch(() => undefined);
+  return { sent, revoked, failed };
+}
+
+async function sendToSubscriptionRow(
+  sub: { endpoint: string; p256dh: string; auth: string },
+  payload: string
+): Promise<"sent" | "gone" | "error"> {
+  // SSRF guard (defense in depth — endpoints are validated at subscribe
+  // time): a stored endpoint pointing at loopback/private space is never
+  // legitimate, so revoke it instead of POSTing into the network.
+  if (!checkPushEndpoint(sub.endpoint).allowed) return "gone";
+  try {
+    const wp = webpushClient();
+    await wp.sendNotification({ endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } }, payload);
+    return "sent";
+  } catch (err) {
+    const status = (err as { statusCode?: number }).statusCode;
+    if (status === 404 || status === 410) return "gone";
+    logger.warn({ status, err: (err as Error).message }, "push delivery failed");
+    return "error";
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Ticks: deferral flush + bounded retry                                       */
+/* -------------------------------------------------------------------------- */
+
+/** Deliver due deferred events; expire stale ones instead of sending them. */
+export async function flushDeferredForUser(userId: string, ctx: IngestContext): Promise<void> {
+  const db = getPrismaClient();
+  const now = new Date();
+  const due = await db.notificationEvent.findMany({
+    where: { userId, status: "deferred", deliverAt: { lte: now } },
+    orderBy: { occurredAt: "asc" },
+    take: MAX_EVENTS_PER_TICK,
+  });
+  for (const event of due) {
+    if (event.expiresAt !== null && event.expiresAt < now) {
+      await db.notificationEvent.update({ where: { id: event.id }, data: { status: "expired", reason: "expired" } }).catch(() => undefined);
+      continue;
+    }
+    await deliverEvent(userId, event.id, {
+      type: event.type,
+      dedupeKey: event.dedupeKey,
+      occurredAt: Math.floor(event.occurredAt.getTime() / 1000),
+      title: event.title,
+      body: event.body,
+      clickPath: event.clickPath,
+    });
+  }
+  void ctx;
+}
+
+/** Bounded retries for events whose every device attempt failed. */
+export async function retryFailedForUser(userId: string): Promise<void> {
+  const db = getPrismaClient();
+  const now = new Date();
+  const events = await db.notificationEvent.findMany({
+    where: { userId, status: "failed" },
+    orderBy: { occurredAt: "asc" },
+    take: MAX_EVENTS_PER_TICK,
+  });
+  for (const event of events) {
+    const pending = await db.notificationDelivery.findMany({
+      where: { eventId: event.id, status: "failed", nextAttemptAt: { lte: now }, attempts: { lt: RETRY_BACKOFF_MINUTES.length } },
+      include: { subscription: true },
+    });
+    let anySent = false;
+    for (const delivery of pending) {
+      if (delivery.subscription.revokedAt !== null) {
+        await db.notificationDelivery.update({ where: { id: delivery.id }, data: { status: "invalid_subscription", reason: "device_disabled" } });
         continue;
       }
-      const wp = webpushClient();
-      await wp.sendNotification({ endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } }, payload);
-      sent += 1;
-    } catch (err) {
-      const status = (err as { statusCode?: number }).statusCode;
-      if (status === 404 || status === 410) {
-        await db.pushSubscription.update({ where: { id: sub.id }, data: { revokedAt: new Date() } }).catch(() => undefined);
-        revoked += 1;
+      const payload = JSON.stringify({
+        title: event.title, body: event.body, url: event.clickPath,
+        tag: `${event.type}:${event.dedupeKey}`,
+        icon: "/icons/tornscope-notifications-192.png",
+        badge: "/icons/tornscope-badge-monochrome.png",
+      });
+      const outcome = await sendToSubscriptionRow(delivery.subscription, payload);
+      if (outcome === "sent") {
+        await db.notificationDelivery.update({
+          where: { id: delivery.id },
+          data: { status: "sent", sentAt: new Date(), attempts: { increment: 1 }, nextAttemptAt: null },
+        });
+        anySent = true;
+      } else if (outcome === "gone") {
+        await db.notificationDelivery.update({ where: { id: delivery.id }, data: { status: "invalid_subscription", reason: "invalid_subscription" } });
+        await db.pushSubscription.update({ where: { id: delivery.subscriptionId }, data: { revokedAt: new Date() } }).catch(() => undefined);
       } else {
-        logger.warn({ userId, status, err: (err as Error).message }, "push delivery failed");
+        const attempts = delivery.attempts + 1;
+        const next = RETRY_BACKOFF_MINUTES[attempts];
+        await db.notificationDelivery.update({
+          where: { id: delivery.id },
+          data: { attempts, nextAttemptAt: next ? new Date(Date.now() + next * 60_000) : null, lastError: "transient" },
+        });
       }
     }
-  }
-  return { sent, revoked, skipped: 0 };
-}
-
-function localMinutes(timezone: string): number {
-  try {
-    const parts = new Intl.DateTimeFormat("en-US", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: timezone }).format(new Date());
-    const [h, m] = parts.split(":").map((v) => Number(v));
-    return h! * 60 + m!;
-  } catch {
-    const d = new Date();
-    return d.getUTCHours() * 60 + d.getUTCMinutes();
+    if (anySent) {
+      await db.notificationEvent.update({ where: { id: event.id }, data: { status: "delivered", reason: null } }).catch(() => undefined);
+    }
   }
 }
 
-interface LiveTimerState {
-  cooldownDrugEndsAt?: number | null;
-  cooldownMedicalEndsAt?: number | null;
-  cooldownBoosterEndsAt?: number | null;
-  travelLandsAt?: number | null;
-  hospitalizedUntil?: number | null;
-  jailedUntil?: number | null;
-  educationEndsAt?: number | null;
-  bankMaturesAt?: number | null;
-  energyFullAt?: number | null;
-  nerveFullAt?: number | null;
-}
+/* -------------------------------------------------------------------------- */
+/* Per-user evaluation                                                         */
+/* -------------------------------------------------------------------------- */
 
 /** One live Torn call for all timer sources (single /user selection set). */
 async function fetchLiveTimers(userId: string, tornBaseUrl: string, minIntervalMs: number): Promise<LiveTimerState | null> {
@@ -196,64 +418,34 @@ async function fetchLiveTimers(userId: string, tornBaseUrl: string, minIntervalM
     bankMaturesAt: typeof body.money?.city_bank?.until === "number" && body.money.city_bank.until > now ? body.money.city_bank.until : null,
     energyFullAt: toTs(body.bars?.energy?.fulltime),
     nerveFullAt: toTs(body.bars?.nerve?.fulltime),
-    ...(minIntervalMs > 0 ? {} : {}),
   };
-}
-
-interface TimerRule {
-  key: keyof LiveTimerState;
-  category: string;
-  label: string;
-  landedLabel: string;
-}
-
-const TIMER_RULES: TimerRule[] = [
-  { key: "travelLandsAt", category: "travel", label: "Traveling", landedLabel: "Travel landed", },
-  { key: "hospitalizedUntil", category: "hospital_jail", label: "Hospitalized", landedLabel: "You have been released from hospital." },
-  { key: "jailedUntil", category: "hospital_jail", label: "Jailed", landedLabel: "You have been released from jail." },
-  { key: "cooldownDrugEndsAt", category: "cooldowns", label: "Drug cooldown", landedLabel: "Your drug cooldown is ready." },
-  { key: "cooldownMedicalEndsAt", category: "cooldowns", label: "Medical cooldown", landedLabel: "Your medical cooldown is ready." },
-  { key: "cooldownBoosterEndsAt", category: "cooldowns", label: "Booster cooldown", landedLabel: "Your booster cooldown is ready." },
-  { key: "educationEndsAt", category: "education", label: "Education", landedLabel: "Your education course has completed." },
-  { key: "bankMaturesAt", category: "bank", label: "Bank investment", landedLabel: "Your bank investment has matured." },
-  { key: "energyFullAt", category: "energy_nerve", label: "Energy", landedLabel: "Your energy is full." },
-  { key: "nerveFullAt", category: "energy_nerve", label: "Nerve", landedLabel: "Your nerve is full." },
-];
-
-/** Detect active → ready transitions between the previous and new snapshots. */
-function diffTimers(previous: LiveTimerState | null, current: LiveTimerState, nowSec: number): { events: NotificationEvent[]; nextEligibleAt: number | null } {
-  const events: NotificationEvent[] = [];
-  let nextEligibleAt: number | null = null;
-  for (const rule of TIMER_RULES) {
-    const prevEnd = previous?.[rule.key] ?? null;
-    const curEnd = current[rule.key] ?? null;
-    // transition: previously active (end in the future at that time) and now
-    // no longer active (ended).
-    if (prevEnd !== null && curEnd === null && prevEnd <= nowSec + TIMER_GRACE_SECONDS) {
-      events.push({
-        category: rule.category,
-        importance: CATEGORY_IMPORTANCE[rule.category] ?? "important",
-        title: rule.label,
-        body: rule.landedLabel,
-        eventKey: `${rule.key}:ended:${prevEnd}`,
-        clickPath: rule.category === "travel" ? "/travel" : rule.category === "bank" ? "/economy" : "/today",
-      });
-    }
-    if (curEnd !== null && curEnd > nowSec) {
-      const eligible = curEnd + TIMER_GRACE_SECONDS;
-      if (nextEligibleAt === null || eligible < nextEligibleAt) nextEligibleAt = eligible;
-    }
-  }
-  return { events, nextEligibleAt };
 }
 
 async function evaluateUser(userId: string, timezone: string): Promise<void> {
   const db = getPrismaClient();
   const prefs = await db.notificationPreference.findUnique({ where: { userId } });
   if (!prefs) return;
-  const categories = { ...DEFAULT_CATEGORY_STATE, ...(prefs.categories as Record<string, boolean> | null) };
-  const importanceOf = (category: string): NotificationImportance => CATEGORY_IMPORTANCE[category] ?? "important";
-  const enabled = (category: string): boolean => categories[category] === true;
+  const [credential] = await Promise.all([
+    db.apiCredential.findFirst({ where: { userId, revokedAt: null }, select: { capabilities: true, accessLevel: true } }),
+  ]);
+  const { hasCompleteCapabilityShape, normalizeCapabilitiesWithFallback } = await import("@tornscope/shared");
+  const capabilities = credential && hasCompleteCapabilityShape(credential.capabilities)
+    ? (normalizeCapabilitiesWithFallback(credential.capabilities, credential.accessLevel) as Record<string, boolean> | null)
+    : null;
+
+  const ctx: IngestContext = {
+    userId,
+    timezone,
+    toggles: normalizeTypeToggles({ ...DEFAULT_TYPE_TOGGLES, ...(prefs.categories as Record<string, boolean> | null) }),
+    sensitiveDetails: prefs.sensitiveDetails,
+    quiet: { startMin: prefs.quietStartMin, endMin: prefs.quietEndMin, bypassCritical: prefs.bypassCritical },
+    enabledAtSec: Math.floor(prefs.enabledAt.getTime() / 1000),
+    capabilities,
+    config: normalizeTypeConfig(prefs.typeConfig),
+  };
+
+  await flushDeferredForUser(userId, ctx);
+  await retryFailedForUser(userId);
 
   // ---- Timeline attention: only rows beyond the cursor AND after activation
   const state = await db.notificationState.findUnique({ where: { userId } });
@@ -270,20 +462,20 @@ async function evaluateUser(userId: string, timezone: string): Promise<void> {
       where: { userId, seq: { gt: lastSeq }, occurredAt: { gte: new Date(prefs.enabledAt.getTime() * 1000 - 60_000) } },
       orderBy: { id: "asc" },
       take: MAX_EVENTS_PER_TICK,
-      select: { id: true, title: true, seq: true },
+      select: { id: true, title: true, seq: true, occurredAt: true },
     });
     for (const row of rows) {
       const cls = classifyAttentionEvent(row.title);
-      if (cls !== null && enabled(cls.category)) {
-        await deliver(userId, {
-          category: cls.category,
-          importance: cls.importance,
-          title: cls.title,
-          body: prefs.sensitiveDetails && cls.sensitiveBody ? cls.sensitiveBody : cls.body,
-          eventKey: cls.eventKey,
-          clickPath: cls.clickPath,
-        }, prefs.sensitiveDetails, { start: prefs.quietStartMin, end: prefs.quietEndMin, timezone });
-      }
+      if (cls === null) continue;
+      await ingest(userId, {
+        type: cls.type,
+        dedupeKey: cls.eventKey,
+        occurredAt: Math.floor(row.occurredAt.getTime() / 1000),
+        title: cls.title,
+        body: cls.body,
+        sensitiveBody: cls.sensitiveBody,
+        clickPath: cls.clickPath,
+      }, ctx);
     }
     if (rows.length === MAX_EVENTS_PER_TICK) {
       // More rows pending: advance to the last processed row only.
@@ -305,14 +497,16 @@ async function evaluateUser(userId: string, timezone: string): Promise<void> {
     if (current !== null) {
       const previous = (state.previousState ?? null) as LiveTimerState | null;
       const nowSec = Math.floor(Date.now() / 1000);
-      const { events, nextEligibleAt } = diffTimers(previous, current, nowSec);
+      const { events, nextEligibleAt } = diffTimerTransitions(previous, current, nowSec, TIMER_GRACE_SECONDS);
       for (const event of events) {
-        if (!enabled(event.category)) continue;
-        event.importance = importanceOf(event.category);
-        // Privacy default: bodies are transition-safe (no amounts). Timer
-        // bodies never contain sensitive material, so sensitiveDetails only
-        // affects timeline events today.
-        await deliver(userId, event, prefs.sensitiveDetails, { start: prefs.quietStartMin, end: prefs.quietEndMin, timezone });
+        await ingest(userId, {
+          type: event.type,
+          dedupeKey: event.eventKey,
+          occurredAt: nowSec,
+          title: event.title,
+          body: event.body,
+          clickPath: event.clickPath,
+        }, ctx);
       }
       await db.notificationState.update({
         where: { userId },
@@ -328,6 +522,22 @@ async function evaluateUser(userId: string, timezone: string): Promise<void> {
       });
     }
   }
+
+  // ---- Stored-data producers (bars energy, system, progression, economy) --
+  // Each owns its NotificationState.systemState slice and persists it via
+  // updateSystemState; first observation initializes state without notifying.
+  const updateSystemState = async (patch: Record<string, unknown>): Promise<void> => {
+    const current = (await db.notificationState.findUnique({ where: { userId }, select: { systemState: true } }))?.systemState ?? {};
+    await db.notificationState.update({
+      where: { userId },
+      data: { systemState: { ...(current as Record<string, unknown>), ...patch } as never },
+    }).catch(() => undefined);
+  };
+  await evaluateEnergyProducer(ctx, (state?.systemState ?? null) as Record<string, unknown> | null, updateSystemState, BARS_MAX_AGE_SECONDS);
+  await evaluateSystemProducer(ctx, (state?.systemState ?? null) as Record<string, unknown> | null, updateSystemState);
+  await evaluateProgressionProducer(ctx, (state?.systemState ?? null) as Record<string, unknown> | null, updateSystemState);
+  await evaluateEconomyProducer(ctx, (state?.systemState ?? null) as Record<string, unknown> | null, updateSystemState);
+  await evaluateDailySummaryProducer(ctx, updateSystemState);
 }
 
 /**
@@ -340,6 +550,7 @@ export async function evaluateNotifications(): Promise<void> {
   const now = Date.now();
   if (now - lastRunAt < MIN_EVALUATE_SECONDS * 1000) return;
   lastRunAt = now;
+  const counters = { users: 0, failed: 0 };
   try {
     const db = getPrismaClient();
     const users = await db.pushSubscription.findMany({
@@ -350,10 +561,13 @@ export async function evaluateNotifications(): Promise<void> {
     for (const { userId } of users) {
       const user = await db.user.findUnique({ where: { id: userId }, select: { isDemo: true, timezone: true } });
       if (!user || user.isDemo) continue;
-      await evaluateUser(userId, user.timezone).catch((err: Error) =>
-        logger.warn({ userId, err: err.message }, "notification evaluation failed")
-      );
+      counters.users += 1;
+      await evaluateUser(userId, user.timezone).catch((err: Error) => {
+        counters.failed += 1;
+        logger.warn({ userId, err: err.message }, "notification evaluation failed");
+      });
     }
+    logger.info({ users: counters.users, failed: counters.failed }, "notification tick complete");
   } catch (err) {
     logger.warn({ err: (err as Error).message }, "notification evaluation tick failed");
   }

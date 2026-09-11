@@ -972,6 +972,87 @@ async function main(): Promise<void> {
     },
   });
 
+  /* --------------------- synthetic notification history -------------------- */
+  // Demo-visible delivery ledger: exercises sent / deferred / suppressed /
+  // expired / test rows in Settings. The notification worker NEVER evaluates
+  // demo profiles, so these rows can never produce a real Web Push.
+  const notifDefaults = { energy_full: false, travel_arrival: true, drug_cooldown: true, trades: true, mail: true };
+  await db.notificationPreference.create({
+    data: {
+      userId: user.id,
+      categories: notifDefaults,
+      quietStartMin: 22 * 60 + 30,
+      quietEndMin: 7 * 60 + 30,
+      bypassCritical: true,
+      typeConfig: { nearFullThreshold: 135 },
+      enabledAt: new Date((now - 30 * DAY) * 1000),
+    },
+  });
+
+  const demoDevices: Array<{ id: string }> = [];
+  for (const [i, ua] of ["iPhone · Safari (demo)", "Desktop · Chrome (demo)"].entries()) {
+    const device = await db.pushSubscription.create({
+      data: {
+        userId: user.id,
+        endpoint: `https://demo.push.example/tornscope-demo-${i}-${now}`,
+        p256dh: "demo-p256dh-not-a-real-key",
+        auth: "demo-auth-not-a-real-key",
+        userAgent: ua,
+        createdAt: new Date((now - 20 * DAY) * 1000),
+        lastSeenAt: new Date((now - 3600) * 1000),
+      },
+    });
+    demoDevices.push(device);
+  }
+
+  const demoEvents: Array<{
+    type: string; dedupeKey: string; ageSec: number; title: string; body: string;
+    status: string; reason?: string; clickPath?: string; provenance?: string;
+    sentTo?: number;
+  }> = [
+    { type: "energy_full", dedupeKey: `energy:full:${now - 3 * 3600}`, ageSec: 3 * 3600, title: "Energy full", body: "Your energy bar is full.", status: "delivered", clickPath: "/today", sentTo: 2 },
+    { type: "travel_arrival", dedupeKey: `travelLandsAt:ended:${now - 26 * 3600}`, ageSec: 26 * 3600, title: "Travel landed", body: "Travel landed — welcome home.", status: "delivered", clickPath: "/travel", sentTo: 2 },
+    { type: "daily_summary_ready", dedupeKey: `daily-summary:${new Date((now - DAY) * 1000).toISOString().slice(0, 10)}`, ageSec: DAY + 3600, title: "Daily summary ready", body: "Your TornScope daily summary is prepared.", status: "delivered", provenance: "derived", sentTo: 2 },
+    // Deferred overnight, then expired: energy full from 23:40 is useless at 07:30.
+    { type: "energy_full", dedupeKey: `energy:full:${now - 9 * 3600}`, ageSec: 9 * 3600, title: "Energy full", body: "Your energy bar is full.", status: "expired", reason: "expired", clickPath: "/today" },
+    { type: "major_cash_movement", dedupeKey: "cash:money_logs:demo-large-out", ageSec: 7 * 3600, title: "Large outgoing payment", body: "A payment of $82.4m was recorded (faction).", status: "suppressed", reason: "quiet_hours", clickPath: "/money" },
+    { type: "capability_lost", dedupeKey: `capability:lost:money_logs:${now - 5 * DAY}`, ageSec: 5 * DAY, title: "Torn access was removed", body: "Wallet history stopped syncing. Your existing history is retained; new data is no longer collected.", status: "delivered", clickPath: "/settings", sentTo: 1 },
+    { type: "test", dedupeKey: `test:${now - 2 * DAY}`, ageSec: 2 * DAY, title: "TornScope test", body: "Push notifications are working on this device.", status: "delivered", sentTo: 1 },
+  ];
+
+  for (const e of demoEvents) {
+    const occurredAt = new Date((now - e.ageSec) * 1000);
+    const event = await db.notificationEvent.create({
+      data: {
+        userId: user.id,
+        type: e.type,
+        dedupeKey: e.dedupeKey,
+        occurredAt,
+        title: e.title,
+        body: e.body,
+        clickPath: e.clickPath ?? "/today",
+        provenance: e.provenance ?? "exact",
+        status: e.status,
+        reason: e.reason ?? null,
+      },
+    });
+    const targets = e.sentTo ?? 0;
+    for (let i = 0; i < targets; i++) {
+      await db.notificationDelivery.create({
+        data: {
+          userId: user.id,
+          subscriptionId: demoDevices[i % demoDevices.length]!.id,
+          eventKey: e.dedupeKey,
+          notificationType: e.type,
+          eventId: event.id,
+          status: e.status === "delivered" ? "sent" : e.status,
+          reason: e.reason ?? null,
+          sentAt: occurredAt,
+        },
+      });
+    }
+  }
+
   const counts = {
     crimes: crimeRows.length,
     rankedWars: warRows.length,
@@ -983,6 +1064,7 @@ async function main(): Promise<void> {
     money: moneyRows.length,
     networth: nwRows.length,
     timeline: timelineRows.length + tornEventRows.length,
+    notifications: demoEvents.length,
   };
   console.log(`Demo seed complete for user ${user.id}:`, JSON.stringify(counts));
   console.log("All rows are marked source='demo' for the isDemo=true user - never mixed with real players.");
