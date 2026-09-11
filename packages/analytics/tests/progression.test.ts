@@ -119,6 +119,16 @@ describe("energy ledger", () => {
     expect(ledger.reconciliation.observedDelta).toBeNull();
   });
 
+  it("14b. truncated fetch: a capped row cap degrades reconciliation to partial", () => {
+    const points = bars([[T0, 10], [T0 + 300, 30]]);
+    expect(buildEnergyLedger(points, []).reconciliation.quality).toBe("full");
+    // Same observations, but the fetch dropped history before the range
+    // start — the opening is not the true opening, so full is a false claim.
+    expect(buildEnergyLedger(points, [], [], { truncated: true }).reconciliation.quality).toBe("partial");
+    // Truncation never upgrades an unavailable reconciliation.
+    expect(buildEnergyLedger(bars([[T0, 50]]), [], [], { truncated: true }).reconciliation.quality).toBe("unavailable");
+  });
+
   it("16→17. empty bar history stays unavailable; flat bars are a real zero", () => {
     expect(buildEnergyLedger([], []).reconciliation.quality).toBe("unavailable");
     const flat = buildEnergyLedger(bars([[T0, 100], [T0 + 600, 100], [T0 + 1200, 100]]), []);

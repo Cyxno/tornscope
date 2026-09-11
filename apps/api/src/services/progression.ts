@@ -97,15 +97,18 @@ export async function getProgression(userId: string, rangeInput: DateRangeInput)
   const logsConfidence = resourceConfidence(availCtx, "drugs" as SyncResource, { range: { from, to } });
 
   const [barsRows, statRows, refillRows, drugRows, consumptionRows, combatRows, levelRows] = await Promise.all([
+    // Descending fetch + reverse: when the row cap cuts a long range it must
+    // drop the OLDEST observations, never the most recent ones — a stale
+    // closing value presented as current would be silent dishonesty.
     db.barsSnapshot.findMany({
       where: { userId, capturedAt: { gte: new Date(fetchFrom * 1000), lte: new Date(to * 1000) } },
-      orderBy: { capturedAt: "asc" },
+      orderBy: { capturedAt: "desc" },
       take: BARS_MAX_ROWS,
       select: { capturedAt: true, energyCurrent: true, energyMaximum: true, happyCurrent: true, happyMaximum: true },
     }),
     db.personalStatSnapshot.findMany({
       where: { userId, capturedAt: { gte: new Date(fetchFrom * 1000), lte: new Date(to * 1000) } },
-      orderBy: { capturedAt: "asc" },
+      orderBy: { capturedAt: "desc" },
       take: STATS_MAX_ROWS,
       select: { capturedAt: true, stats: true },
     }),
@@ -136,6 +139,8 @@ export async function getProgression(userId: string, rangeInput: DateRangeInput)
   ]);
 
   /* ----------------------------- build inputs ----------------------------- */
+  barsRows.reverse();
+  statRows.reverse();
   const bars = toEnergyObservations(barsRows);
   const statRowsShaped = statRows.map((r) => ({ capturedAt: sec(r.capturedAt), stats: r.stats }));
   const statSeries: BattlestatPoint[] = buildBattlestatSeries(statRowsShaped);
@@ -183,7 +188,10 @@ export async function getProgression(userId: string, rangeInput: DateRangeInput)
   /* --------------------------- energy analysis ---------------------------- */
   const rangeBars = bars.filter((o) => o.t >= from && o.t <= to);
   const covered = rangeBars.length >= 2;
-  const ledger = buildEnergyLedger(rangeBars, gains.filter((g) => g.t >= from), competing);
+  // Row cap hit → history before the range start was dropped, the ledger's
+  // opening is not the true opening: reconciliation is explicitly "partial".
+  const barsTruncated = barsRows.length >= BARS_MAX_ROWS;
+  const ledger = buildEnergyLedger(rangeBars, gains.filter((g) => g.t >= from), competing, { truncated: barsTruncated });
 
   /* -------------------------- battlestat analysis ------------------------- */
   const rangeStats = statSeries.filter((p) => p.t >= from && p.t <= to);
@@ -342,7 +350,7 @@ export async function getProgressionGlimpse(userId: string, from: number, to: nu
   const [barsRows, statRows] = await Promise.all([
     db.barsSnapshot.findMany({
       where: { userId, capturedAt: { gte: new Date(windowFrom * 1000), lte: new Date(to * 1000) } },
-      orderBy: { capturedAt: "asc" },
+      orderBy: { capturedAt: "desc" },
       take: BARS_MAX_ROWS,
       select: { capturedAt: true, energyCurrent: true, energyMaximum: true, happyCurrent: true, happyMaximum: true },
     }),
@@ -354,6 +362,7 @@ export async function getProgressionGlimpse(userId: string, from: number, to: nu
       select: { capturedAt: true, stats: true },
     }),
   ]);
+  barsRows.reverse();
   const statSeries = buildBattlestatSeries(statRows.map((r) => ({ capturedAt: sec(r.capturedAt), stats: r.stats })));
   const prog = battlestatProgression(statSeries, from, to);
   const bars = toEnergyObservations(barsRows);

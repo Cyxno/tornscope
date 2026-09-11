@@ -32,7 +32,7 @@ import { writeFileSync, mkdirSync } from "node:fs";
 const BASE = process.env.BASE_URL ?? "http://127.0.0.1:5273";
 const OUT = argFlag("--out") ?? "/tmp/tornscope-ui-check";
 const WIDTHS = (process.env.WIDTHS ?? "390,768,1280").split(",").map(Number);
-const ROUTES = (process.env.ROUTES ?? "/,/today,/money,/drugs,/travel,/crimes,/combat,/faction,/timeline,/sync,/settings,/welcome").split(",");
+const ROUTES = (process.env.ROUTES ?? "/,/today,/money,/drugs,/travel,/crimes,/combat,/faction,/progression,/timeline,/sync,/settings,/welcome").split(",");
 const EXE = process.env.PLAYWRIGHT_CHROMIUM ?? "/root/.cache/ms-playwright/chromium_headless_shell-1148/chrome-linux/headless_shell";
 
 function argFlag(name) {

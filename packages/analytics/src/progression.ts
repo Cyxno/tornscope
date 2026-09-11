@@ -191,11 +191,16 @@ const isWithin = (t: number, from: number, to: number): boolean => t > from && t
  * Derive the energy ledger from bar observations + known gain events.
  * Snapshots must be sorted by t. Gains inside a decline interval net against
  * the observed drop first (a refill mid-training is gain + bigger spend).
+ *
+ * `opts.truncated` marks a fetch whose row cap cut history before the
+ * requested range start: the opening balance is then not the true opening,
+ * so reconciliation degrades to "partial" instead of claiming "full".
  */
 export function buildEnergyLedger(
   observations: readonly EnergyObservation[],
   gains: readonly EnergyGainEvent[],
-  competing: readonly CompetingWindow[] = []
+  competing: readonly CompetingWindow[] = [],
+  opts: { truncated?: boolean } = {}
 ): EnergyLedgerResult {
   const spendIntervals: EnergyLedgerResult["spendIntervals"] = [];
   const cleanRegenRates: number[] = [];
@@ -287,7 +292,7 @@ export function buildEnergyLedger(
       opening: first ? first.energyCurrent : null,
       closing: last ? last.energyCurrent : null,
       observedDelta: sorted.length >= 2 && first && last ? last.energyCurrent - first.energyCurrent : null,
-      quality: sorted.length >= 2 ? "full" : "unavailable",
+      quality: sorted.length >= 2 ? (opts.truncated ? "partial" : "full") : "unavailable",
     },
     spendIntervals,
     cadenceSeconds: cadence,
@@ -386,14 +391,12 @@ export function detectTrainingSessions(
     let gains: Record<BattlestatKey, number> | null = null;
     if (adjacent && !bracketShared && s0 && s1) {
       const g = {} as Record<BattlestatKey, number>;
-      let any = false;
       for (const key of BATTLESTAT_KEYS) {
         const a = s0[key];
         const b = s1[key];
         g[key] = a !== null && b !== null ? Math.max(0, b - a) : 0;
-        if (a !== null && b !== null && b !== a) any = true;
       }
-      gains = any ? g : g; // zero-gain brackets stay (energy with no gain)
+      gains = g; // zero-gain brackets stay (energy with no gain)
     }
 
     const totalGain = gains ? BATTLESTAT_KEYS.reduce((s, k) => s + gains![k], 0) : null;
