@@ -67,4 +67,24 @@ export const env = {
   /** Owner binding stays enabled until explicitly disabled post-migration. */
   /** Abandoned anonymous profiles older than this are cleaned up. */
   guestRetentionDays: Number(process.env.GUEST_PROFILE_RETENTION_DAYS ?? 60),
+  /**
+   * Hosted abuse limits (roadmap #8). Centralized, env-tunable so a
+   * self-hoster can loosen them; defaults suit a public beta. Security
+   * BASICS (auth, CSRF, SSRF, isolation) never depend on these.
+   */
+  hosted: {
+    /** Active sessions allowed per profile; oldest (by last-seen) are
+     *  revoked beyond this when a new session is created. */
+    maxSessionsPerProfile: clampInt(process.env.HOSTED_MAX_SESSIONS_PER_PROFILE, 10, 1, 50),
+    /** Anonymous profile creations per IP per hour. */
+    profileCreationsPerIpPerHour: clampInt(process.env.HOSTED_PROFILE_CREATIONS_PER_IP_PER_HOUR, 20, 1, 500),
+    /** Active push devices per profile. */
+    maxPushDevices: clampInt(process.env.HOSTED_MAX_PUSH_DEVICES, 10, 1, 25),
+  },
 } as const;
+
+function clampInt(raw: string | undefined, fallback: number, min: number, max: number): number {
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(parsed)));
+}

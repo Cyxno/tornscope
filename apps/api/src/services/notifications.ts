@@ -25,8 +25,10 @@ import type { SessionUser } from "../auth.js";
  * internal addresses; the structural guard also runs before every send.
  */
 
-/** Maximum concurrently-active push devices per profile (device-farm guard). */
-export const MAX_ACTIVE_SUBSCRIPTIONS = 10;
+/** Maximum concurrently-active push devices per profile (device-farm guard).
+ *  Env-tunable (HOSTED_MAX_PUSH_DEVICES, clamped 1–25; default 10) — the
+ *  limit is always enforced with a clear error, never a silent eviction. */
+export const MAX_ACTIVE_SUBSCRIPTIONS = env.hosted.maxPushDevices;
 
 export function pushConfigured(): boolean {
   return env.vapidPublicKey !== "" && env.vapidPrivateKey !== "";

@@ -138,8 +138,9 @@ async function userForSession(
   return user;
 }
 
-/** Max NEW anonymous profiles one IP may create per hour (session abuse guard). */
-const PROFILE_CREATION_LIMIT = 20;
+/** Max NEW anonymous profiles one IP may create per hour (session abuse
+ *  guard). Env-tunable for self-hosters; default suits a public beta. */
+const PROFILE_CREATION_LIMIT = env.hosted.profileCreationsPerIpPerHour;
 const profileCreationHits = new Map<string, number[]>();
 
 export class ProfileCreationRateLimited extends Error {
@@ -226,6 +227,7 @@ async function createAnonymousSession(db: ReturnType<typeof getPrismaClient>, re
     const suffix = randomBytes(3).toString("hex");
     const user = await db.user.create({ data: { displayName: `Guest ${suffix}`, role: "user" } });
     const token = newSessionToken();
+    await enforceSessionCap(db, user.id);
     await db.userSession.create({ data: { userId: user.id, tokenHash: hashToken(token) } });
     reply.header("Set-Cookie", serializeSessionCookie(token, requestIsSecure(req), SESSION_TTL_SECONDS));
     (req as unknown as { sessionProfileId?: string }).sessionProfileId = user.id;
@@ -315,6 +317,30 @@ export function assertSameOrigin(req: FastifyRequest): void {
 /** Revoke every session of a profile (used by profile deletion). */
 export async function revokeSessionsFor(db: ReturnType<typeof getPrismaClient>, userId: string): Promise<void> {
   await db.userSession.updateMany({ where: { userId }, data: { revokedAt: new Date() } });
+}
+
+/**
+ * Hosted bound on concurrent sessions per profile (env:
+ * HOSTED_MAX_SESSIONS_PER_PROFILE, default 10). Called BEFORE inserting a
+ * new session: the stalest active sessions (by last-seen) are revoked to
+ * make room, so a runaway session farm cannot accumulate and legit recent
+ * devices stay alive. New-session wins over stale ones by construction.
+ */
+export async function enforceSessionCap(db: ReturnType<typeof getPrismaClient>, userId: string): Promise<void> {
+  const cap = env.hosted.maxSessionsPerProfile;
+  const active = await db.userSession.findMany({
+    where: { userId, revokedAt: null },
+    orderBy: { lastSeenAt: "asc" },
+    select: { id: true },
+  });
+  // After adding the incoming session there must be at most `cap`.
+  const excess = active.length - (cap - 1);
+  if (excess <= 0) return;
+  const stalest = active.slice(0, excess);
+  await db.userSession.updateMany({
+    where: { id: { in: stalest.map((s) => s.id) } },
+    data: { revokedAt: new Date() },
+  });
 }
 
 /**
