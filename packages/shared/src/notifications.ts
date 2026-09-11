@@ -199,7 +199,7 @@ export const NOTIFICATION_TYPES: NotificationTypeMeta[] = [
     id: "bank_matured", label: "Bank maturity", group: "account", defaultEnabled: true,
     description: "A city-bank investment reached its maturity date.",
     urgency: "normal", quietHours: "defer", maxDeferralAgeSeconds: 24 * 3600,
-    requires: "canReadUserMoney", clickPath: "/economy", provenance: "exact", config: [],
+    requires: "canReadUserMoney", clickPath: "/money", provenance: "exact", config: [],
   },
   /* ---- Economy ------------------------------------------------------------- */
   {
@@ -212,7 +212,7 @@ export const NOTIFICATION_TYPES: NotificationTypeMeta[] = [
     id: "networth_movement", label: "Large net-worth change", group: "economy", defaultEnabled: false,
     description: "An official net-worth snapshot differed from the previous one by more than your threshold. Not a profit figure.",
     urgency: "normal", quietHours: "defer", maxDeferralAgeSeconds: 12 * 3600,
-    requires: "canReadUserNetworth", clickPath: "/economy", provenance: "derived", config: ["networthThreshold"],
+    requires: "canReadUserNetworth", clickPath: "/money", provenance: "derived", config: ["networthThreshold"],
   },
   /* ---- System --------------------------------------------------------------- */
   {
@@ -595,7 +595,7 @@ export function classifyAttentionEvent(title: string): AttentionClassification |
       body: "Your bank investment has ended — collect your funds.",
       sensitiveBody: null,
       eventKey: `bank:${t}`,
-      clickPath: "/economy",
+      clickPath: "/money",
     };
   }
 
@@ -647,7 +647,7 @@ export const TIMER_RULES: TimerRule[] = [
   { key: "cooldownMedicalEndsAt", type: "medical_cooldown", label: "Medical cooldown", readyLabel: "Your medical cooldown is ready." },
   { key: "cooldownBoosterEndsAt", type: "booster_cooldown", label: "Booster cooldown", readyLabel: "Your booster cooldown is ready." },
   { key: "educationEndsAt", type: "education_complete", label: "Education", readyLabel: "Your education course has completed." },
-  { key: "bankMaturesAt", type: "bank_matured", label: "Bank investment", readyLabel: "Your bank investment has matured.", clickPath: "/economy" },
+  { key: "bankMaturesAt", type: "bank_matured", label: "Bank investment", readyLabel: "Your bank investment has matured.", clickPath: "/money" },
   { key: "nerveFullAt", type: "nerve_full", label: "Nerve full", readyLabel: "Your nerve is full." },
 ];
 

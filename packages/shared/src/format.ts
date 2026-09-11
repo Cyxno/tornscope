@@ -31,6 +31,29 @@ export function formatSignedMoneyCompact(value: number | null | undefined): stri
 }
 
 /**
+ * Compact number WITHOUT a currency symbol — battlestats, energy, happy,
+ * counts. Torn units are unit-less numbers; a "$" on battlestats or energy
+ * is wrong currency semantics (RC unit audit, roadmap #9).
+ */
+export function formatNumberCompact(value: number | null | undefined): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  const abs = Math.abs(value);
+  const sign = value < 0 ? "-" : "";
+  if (abs >= 1e12) return `${sign}${(abs / 1e12).toFixed(2)}t`;
+  if (abs >= 1e9) return `${sign}${(abs / 1e9).toFixed(2)}b`;
+  if (abs >= 1e6) return `${sign}${(abs / 1e6).toFixed(2)}m`;
+  if (abs >= 1e4) return `${sign}${(abs / 1e3).toFixed(1)}k`;
+  return `${sign}${abs.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+}
+
+/** Signed compact number, e.g. +12.4m / -532.1k — non-money KPI cells. */
+export function formatSignedNumberCompact(value: number | null | undefined): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  const prefix = value > 0 ? "+" : "";
+  return `${prefix}${formatNumberCompact(value)}`;
+}
+
+/**
  * European/Dutch date formatting for ALL user-facing dates. Internal
  * timestamps stay unix seconds / ISO; only rendering is formatted here so
  * every page shows the same style.
