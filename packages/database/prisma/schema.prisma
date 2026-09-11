@@ -55,7 +55,10 @@ model User {
   id          String   @id @default(cuid())
   email       String?  @unique
   displayName String
-  role        String   @default("owner")
+  /// Default "user": every runtime creation path passes an explicit role,
+  /// and a DEFAULT of "owner" would silently mint owners from any future
+  /// user.create that forgets the field (fail-safe, not fail-privileged).
+  role        String   @default("user")
   isDemo      Boolean  @default(false)
   timezone    String   @default("UTC")
   currency    String   @default("USD")

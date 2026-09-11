@@ -25,8 +25,10 @@ export type DateRangePreset = (typeof DATE_RANGE_PRESETS)[number];
 
 export const DateRangeSchema = z.object({
   preset: z.enum(DATE_RANGE_PRESETS).default("30d"),
-  from: z.coerce.number().int().positive().optional(),
-  to: z.coerce.number().int().positive().optional(),
+  // ≤ 2100-01-01: absurd epochs (1e300 etc.) must be a clean 400, never an
+  // Invalid Date bubbling into a 500. from>to resolves to an empty window.
+  from: z.coerce.number().int().positive().max(4102444800).optional(),
+  to: z.coerce.number().int().positive().max(4102444800).optional(),
 });
 export type DateRangeInput = z.infer<typeof DateRangeSchema>;
 

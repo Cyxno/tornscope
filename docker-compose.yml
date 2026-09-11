@@ -51,6 +51,13 @@ services:
       args:
         GIT_SHA: ${GIT_SHA:-dev}
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
     environment:
       NODE_ENV: production
       DATABASE_URL: postgresql://${POSTGRES_USER:-tornscope}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-tornscope}?schema=public
@@ -91,6 +98,13 @@ services:
       args:
         GIT_SHA: ${GIT_SHA:-dev}
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
     environment:
       NODE_ENV: production
       DATABASE_URL: postgresql://${POSTGRES_USER:-tornscope}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-tornscope}?schema=public
@@ -116,6 +130,13 @@ services:
         API_BASE_URL: http://api:3000
         GIT_SHA: ${GIT_SHA:-dev}
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
     environment:
       NODE_ENV: production
       PORT: 5173
