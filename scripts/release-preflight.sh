@@ -100,7 +100,9 @@ pnpm --filter @tornscope/web exec svelte-check --tsconfig ./tsconfig.json >/dev/
 
 if [[ $QUICK -eq 0 ]]; then
   if [[ -n "${TEST_DATABASE_URL:-}" ]]; then
-    pnpm test >/dev/null 2>&1 && ok "full test suite" || fail "test suite failed"
+    # Bounded workers: unbounded parallelism can exhaust local Postgres
+    # connections (CI runners are small enough not to hit this).
+    pnpm vitest run --maxWorkers="${PREFLIGHT_TEST_WORKERS:-4}" >/dev/null 2>&1 && ok "full test suite" || fail "test suite failed"
   else
     fail "TEST_DATABASE_URL not set — DB-backed tests cannot run (set it and re-run)"
   fi
