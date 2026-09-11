@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { DailySummaryResponse, DailyHighlight } from "@tornscope/shared";
-  import { formatDate, formatKpiValue, formatMoneyCompact, formatSignedMoney, formatSignedMoneyCompact } from "@tornscope/shared";
+  import { formatDate, formatKpiValue, formatMoneyCompact, formatNumberCompact, formatSignedMoney, formatSignedMoneyCompact } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
   import { me } from "$lib/state.svelte";
   import { confidenceTitle } from "$lib/confidence";
@@ -117,7 +117,11 @@
   });
 
   function highlightCopy(h: DailyHighlight): { text: string; hint?: string } {
-    const amount = h.amount !== null ? formatSignedMoneyCompact(h.amount) : null;
+    // Sign policy: cash flows and NW deltas are signed movements; rehab,
+    // consumption and conversion values are positive MAGNITUDES — a "+" on
+    // those would read as a gain (RC unit audit).
+    const signed = h.kind === "large_cash_in" || h.kind === "large_cash_out" || h.kind === "networth_move" || h.kind === "travel_profit";
+    const amount = h.amount !== null ? (signed ? formatSignedMoneyCompact(h.amount) : formatMoneyCompact(h.amount)) : null;
     switch (h.kind) {
       case "large_cash_in":
         return { text: `Large cash inflow — ${h.label}`, hint: amount ?? undefined };
@@ -149,7 +153,7 @@
   const toneClass = { neutral: "text-fg", positive: "text-positive", negative: "text-negative", accent: "text-accent" };
 
   function netWorthWord(coverage: "full" | "partial" | "none"): string {
-    return coverage === "full" ? "Net Worth Change" : coverage === "partial" ? "Tracked period change" : "Net Worth Change";
+    return coverage === "full" ? "Net worth change" : coverage === "partial" ? "Tracked period change" : "Net worth change";
   }
 </script>
 
@@ -363,10 +367,10 @@
           </div>
           <p class="mt-3 flex flex-wrap items-baseline gap-x-3">
             <span class="tnum text-3xl font-semibold {summary.progression.battlestatGain.value !== null && summary.progression.battlestatGain.value < 0 ? 'text-negative' : 'text-fg'}">
-              {summary.progression.battlestatGain.value !== null ? `+${formatMoneyCompact(summary.progression.battlestatGain.value)}` : "—"}
+              {summary.progression.battlestatGain.value !== null ? (summary.progression.battlestatGain.value < 0 ? "" : "+") + formatNumberCompact(summary.progression.battlestatGain.value) : "—"}
             </span>
             <span class="text-xs text-fg-faint">
-              battlestats · {formatKpiValue(summary.progression.energyTrained)} energy · {summary.progression.sessions} inferred session{summary.progression.sessions === 1 ? "" : "s"}
+              battlestats · {formatKpiValue(summary.progression.energyTrained, formatNumberCompact)} energy · {summary.progression.sessions} inferred session{summary.progression.sessions === 1 ? "" : "s"}
             </span>
           </p>
         </div>

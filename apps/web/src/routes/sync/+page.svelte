@@ -54,11 +54,13 @@
     active: "Active",
     source_exhausted: "No older rows",
     access_denied: "Access denied",
+    capability_denied: "Permission needed",
     failed: "Retrying",
   };
 
   function categoryStatusLabel(status: string): string {
-    return CATEGORY_STATUS_LABELS[status] ?? status;
+    // Unknown future codes get a humanized fallback, never the raw enum.
+    return CATEGORY_STATUS_LABELS[status] ?? humanLabel(status);
   }
 
   function categoryStatusStyle(status: string): string {
@@ -138,7 +140,7 @@
     notice = null;
     try {
       await endpoints.syncRun(resource, force);
-      notice = `Sync for ${resource} queued — the worker picks it up within a minute.`;
+      notice = `Sync for ${RESOURCE_LABELS[resource as keyof typeof RESOURCE_LABELS] ?? humanLabel(resource)} queued — the worker picks it up within a minute.`;
       setTimeout(() => void load(), 1500);
     } catch (err) {
       notice = err instanceof ApiClientError ? err.message : (err as Error).message;
@@ -156,9 +158,9 @@
       notice = r.queued
         ? `Retry for ${resource} queued — the worker picks it up within a minute.`
         : r.refused === "running"
-          ? `${resource} is already syncing.`
+          ? `${RESOURCE_LABELS[resource as keyof typeof RESOURCE_LABELS] ?? humanLabel(resource)} is already syncing.`
           : r.refused === "parked"
-            ? `${resource} needs a permission change in Torn — retrying cannot help until then.`
+            ? `${RESOURCE_LABELS[resource as keyof typeof RESOURCE_LABELS] ?? humanLabel(resource)} needs a permission change in Torn — retrying cannot help until then.`
             : `${resource} cannot be retried right now.`;
       setTimeout(() => void load(), 1500);
     } catch (err) {

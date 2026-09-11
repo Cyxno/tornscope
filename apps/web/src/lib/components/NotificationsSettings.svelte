@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { env as publicEnv } from "$env/dynamic/public";
   import type { NotificationsStatusResponse, NotificationHistoryResponse } from "@tornscope/shared";
-  import { DELIVERY_REASON_LABELS, NOTIFICATION_GROUPS, NOTIFICATION_TYPES, type DeliveryReason } from "@tornscope/shared";
+  import { CAPABILITY_LABELS, DELIVERY_REASON_LABELS, DELIVERY_STATUSES, NOTIFICATION_GROUPS, NOTIFICATION_TYPES, type DeliveryReason, type DeliveryStatus } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
   import { me } from "$lib/state.svelte";
   import { formatClock } from "$lib/reltime";
@@ -231,6 +231,18 @@
     }
   }
 
+  const DELIVERY_STATUS_LABELS: Record<string, string> = {
+    sent: "sent",
+    pending: "pending",
+    failed: "failed",
+    invalid_subscription: "subscription expired",
+    suppressed: "suppressed",
+  };
+
+  function humanizeStatus(status: string): string {
+    return status.replaceAll("_", " ");
+  }
+
   function minutesToTime(min: number): string {
     return `${String(Math.floor(min / 60)).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`;
   }
@@ -333,7 +345,7 @@
           <li class="flex items-center justify-between gap-3">
             <span class="min-w-0 truncate">
               {#if device.current}<span class="font-medium text-fg">This browser</span>{:else}{device.userAgent?.slice(0, 60) ?? "Device"}{/if}
-              <span class="text-fg-faint">· since {new Date(device.createdAt * 1000).toLocaleDateString("en-US")}</span>
+              <span class="text-fg-faint">· since {new Date(device.createdAt * 1000).toLocaleDateString("en-GB")}</span>
             </span>
             {#if !device.current}
               <button class="shrink-0 text-fg-faint underline decoration-border underline-offset-2 transition-colors hover:text-negative" onclick={() => void disableDevice(device.id)}>
@@ -419,7 +431,7 @@
                   <span class="text-fg-muted">{t.label}</span>
                   <span class="block text-xs text-fg-faint">
                     {#if blocked}
-                      Unavailable — your API key lacks {t.requires} access
+                      Unavailable — your API key lacks {t.requires ? CAPABILITY_LABELS[t.requires as keyof typeof CAPABILITY_LABELS]?.label ?? "a required permission" : "a required permission"}
                     {:else}
                       {t.description}
                     {/if}
@@ -532,7 +544,7 @@
                 <p>Fact provenance: {entry.provenance}. Fired at {formatClock(entry.occurredAt)} ({timezone}).</p>
                 {#each entry.deliveries as d (d.device ?? "")}
                   <p>
-                    → {d.device ?? "Device"}: {d.status}{d.reason ? ` (${DELIVERY_REASON_LABELS[d.reason as DeliveryReason] ?? d.reason})` : ""}{d.sentAt ? ` · ${formatClock(d.sentAt)}` : ""}{d.attempts > 1 ? ` · ${d.attempts} attempts` : ""}
+                    → {d.device ?? "Device"}: {d.status.includes("_") ? DELIVERY_STATUS_LABELS[d.status as DeliveryStatus] ?? humanizeStatus(d.status) : d.status}{d.reason ? ` (${DELIVERY_REASON_LABELS[d.reason as DeliveryReason] ?? d.reason})` : ""}{d.sentAt ? ` · ${formatClock(d.sentAt)}` : ""}{d.attempts > 1 ? ` · ${d.attempts} attempts` : ""}
                   </p>
                 {/each}
               </div>

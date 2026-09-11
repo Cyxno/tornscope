@@ -8,8 +8,8 @@
     <h2 class="font-display text-3xl font-medium leading-snug text-fg">On the roadmap.</h2>
     <p class="text-sm leading-relaxed text-fg-muted">{description}</p>
     <p class="text-[13px] leading-relaxed text-fg-faint">
-      The database schema and sync foundation for this module already exist. It lights up automatically once the
-      corresponding sync jobs land — no placeholder analytics, ever.
+      Data collection for this module already runs in the background — analytics switch on automatically as
+      history accumulates.
     </p>
   </div>
 </div>

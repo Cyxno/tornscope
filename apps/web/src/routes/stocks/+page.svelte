@@ -4,4 +4,4 @@
 
 <svelte:head><title>Stocks · TornScope</title></svelte:head>
 
-<ComingSoon title="Stocks" description="Portfolio snapshots, dividend income and benefit tracking. The networth snapshot model already stores the stock_market category." />
+<ComingSoon title="Stocks" description="Portfolio snapshots, dividend income and benefit tracking — the wealth snapshot collector already records stock holdings." />

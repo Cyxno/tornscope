@@ -2,9 +2,9 @@
   import type { ProgressionResponse } from "@tornscope/shared";
   import {
     formatKpiValue,
+    formatNumberCompact,
+    formatSignedNumberCompact,
     periodLabel,
-    formatMoneyCompact,
-    formatSignedMoneyCompact,
     formatDateTime,
     formatDate,
   } from "@tornscope/shared";
@@ -176,9 +176,9 @@
       <p class="mt-3 max-w-4xl font-display text-lg leading-relaxed text-fg sm:text-xl">
         {#if progression.summary.totalDelta.value !== null}
           Your battlestats grew by
-          <span class="tnum font-semibold {progression.summary.totalDelta.value >= 0 ? 'text-positive' : 'text-negative'}">{formatSignedMoneyCompact(progression.summary.totalDelta.value)}</span>
-          across {period.toLowerCase()}
-          {#if progression.summary.gainPerDay.value !== null}— about {formatMoneyCompact(progression.summary.gainPerDay.value)} per day{/if}.
+          <span class="tnum font-semibold {progression.summary.totalDelta.value >= 0 ? 'text-positive' : 'text-negative'}">{formatSignedNumberCompact(progression.summary.totalDelta.value)}</span>
+          across {period === "All" ? "all time" : period}
+          {#if progression.summary.gainPerDay.value !== null}— about {formatNumberCompact(progression.summary.gainPerDay.value)} per day{/if}.
         {:else if progression.battlestats.trackedSince !== null}
           Battlestat history is still accumulating — nothing in this range yet.
         {:else}
@@ -187,7 +187,7 @@
       </p>
       <p class="mt-2 max-w-4xl text-sm leading-relaxed text-fg-muted">
         {#if progression.energy.covered}
-          {formatMoneyCompact(progression.summary.energyTrained.value ?? 0)} of energy went into {progression.summary.sessions} inferred training session{progression.summary.sessions === 1 ? "" : "s"}
+          {progression.summary.energyTrained.value !== null ? formatNumberCompact(progression.summary.energyTrained.value) : "—"} of energy went into {progression.summary.sessions} inferred training session{progression.summary.sessions === 1 ? "" : "s"}
           {#if progression.summary.likelyJumps > 0}, including {progression.summary.likelyJumps} likely happy jump{progression.summary.likelyJumps === 1 ? "" : "s"}{/if}.
         {:else}
           Energy analytics begin with the first bar snapshot — Torn only exposes bars live, so TornScope records them from now on.
@@ -221,7 +221,7 @@
                     {source.category}
                     <ProvenanceBadge level={source.provenance} />
                   </span>
-                  <span class="tnum font-medium text-positive">+{formatMoneyCompact(source.amount)}</span>
+                  <span class="tnum font-medium text-positive">+{formatNumberCompact(source.amount)}</span>
                 </li>
               {/each}
               {#if progression.energy.sources.length === 0}
@@ -230,7 +230,7 @@
             </ul>
             {#if progression.energy.potentialRegen !== null}
               <p class="mt-4 text-[11px] leading-relaxed text-fg-faint">
-                Potential natural regeneration while full: ~{formatMoneyCompact(progression.energy.potentialRegen)} (estimated from your observed regen rate of {progression.energy.regenPerHour !== null ? progression.energy.regenPerHour.toFixed(1) : "—"} per hour — never counted as banked energy).
+                Potential natural regeneration while full: ~{formatNumberCompact(progression.energy.potentialRegen)} (estimated from your observed regen rate of {progression.energy.regenPerHour !== null ? progression.energy.regenPerHour.toFixed(1) : "—"} per hour — never counted as banked energy).
               </p>
             {/if}
           </Panel>
@@ -247,7 +247,7 @@
                     {use.category}
                     <ProvenanceBadge level={use.provenance} />
                   </span>
-                  <span class="tnum font-medium text-negative">-{formatMoneyCompact(use.amount)}</span>
+                  <span class="tnum font-medium text-negative">-{formatNumberCompact(use.amount)}</span>
                 </li>
               {/each}
               {#if progression.energy.uses.length === 0}
@@ -263,16 +263,16 @@
         <Panel title="Energy reconciliation" caption="Opening plus known gains plus derived regeneration, against what the bars actually show">
           <div class="grid grid-cols-2 gap-px overflow-hidden rounded-tile border border-border bg-border md:grid-cols-5">
             <div class="bg-surface p-4"><p class="text-[11px] font-medium text-fg-faint">Opening energy</p><p class="tnum mt-1 text-lg font-semibold text-fg">{progression.energy.reconciliation.opening !== null ? progression.energy.reconciliation.opening : "—"}</p></div>
-            <div class="bg-surface p-4"><p class="text-[11px] font-medium text-fg-faint">Known gains</p><p class="tnum mt-1 text-lg font-semibold text-positive">{progression.energy.sources.filter((s) => s.category !== "Natural regen (derived)").reduce((sum, s) => sum + s.amount, 0) !== 0 ? `+${formatMoneyCompact(progression.energy.sources.filter((s) => s.category !== "Natural regen (derived)").reduce((sum, s) => sum + s.amount, 0))}` : "0"}</p></div>
-            <div class="bg-surface p-4"><p class="text-[11px] font-medium text-fg-faint">Derived regen</p><p class="tnum mt-1 text-lg font-semibold text-positive">{progression.energy.derivedRegen !== null ? `+${formatMoneyCompact(progression.energy.derivedRegen)}` : "—"}</p></div>
-            <div class="bg-surface p-4"><p class="text-[11px] font-medium text-fg-faint">Observed declines</p><p class="tnum mt-1 text-lg font-semibold text-negative">{progression.energy.uses.reduce((sum, u) => sum + u.amount, 0) !== 0 ? `-${formatMoneyCompact(progression.energy.uses.reduce((sum, u) => sum + u.amount, 0))}` : "0"}</p></div>
+            <div class="bg-surface p-4"><p class="text-[11px] font-medium text-fg-faint">Known gains</p><p class="tnum mt-1 text-lg font-semibold text-positive">{progression.energy.sources.filter((s) => s.category !== "Natural regen (derived)").reduce((sum, s) => sum + s.amount, 0) !== 0 ? `+${formatNumberCompact(progression.energy.sources.filter((s) => s.category !== "Natural regen (derived)").reduce((sum, s) => sum + s.amount, 0))}` : "0"}</p></div>
+            <div class="bg-surface p-4"><p class="text-[11px] font-medium text-fg-faint">Derived regen</p><p class="tnum mt-1 text-lg font-semibold text-positive">{progression.energy.derivedRegen !== null ? `+${formatNumberCompact(progression.energy.derivedRegen)}` : "—"}</p></div>
+            <div class="bg-surface p-4"><p class="text-[11px] font-medium text-fg-faint">Observed declines</p><p class="tnum mt-1 text-lg font-semibold text-negative">{progression.energy.uses.reduce((sum, u) => sum + u.amount, 0) !== 0 ? `-${formatNumberCompact(progression.energy.uses.reduce((sum, u) => sum + u.amount, 0))}` : "0"}</p></div>
             <div class="bg-surface p-4"><p class="text-[11px] font-medium text-fg-faint">Closing energy</p><p class="tnum mt-1 text-lg font-semibold text-fg">{progression.energy.reconciliation.closing !== null ? progression.energy.reconciliation.closing : "—"}</p></div>
           </div>
           <div class="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-fg-faint">
             <span class="{energyQualityChip.cls} chip !px-1.5 !text-[9px] !uppercase">{energyQualityChip.label}</span>
             {#if capTimeSentence}<span>{capTimeSentence}.</span>{/if}
             {#if progression.energy.absorbedOvershoot !== null}
-              <span title="Known gains (mostly the Xanax estimate) that never materialized as observed energy — usually a cap interaction">{formatMoneyCompact(progression.energy.absorbedOvershoot)} of known gains never showed up in the bars (cap interaction) — surfaced, not silently dropped.</span>
+              <span title="Known gains (mostly the Xanax estimate) that never materialized as observed energy — usually a cap interaction">{formatNumberCompact(progression.energy.absorbedOvershoot)} of known gains never showed up in the bars (cap interaction) — surfaced, not silently dropped.</span>
             {/if}
           </div>
         </Panel>
@@ -296,10 +296,10 @@
         />
       {:else}
         <div class="grid grid-cols-2 gap-px overflow-hidden rounded-card border border-border bg-border shadow-panel md:grid-cols-4">
-          <Stat label="Total battlestats" value={formatKpiValue(progression.summary.totalBattlestats, formatMoneyCompact)} provenance="exact" tone="accent" confidence={progression.battlestats.confidence} confidenceTooltip={confidenceTitle(progression.battlestats.confidence)} />
-          <Stat label="{period} change" value={progression.summary.totalDelta.value !== null ? formatSignedMoneyCompact(progression.summary.totalDelta.value) : "—"} provenance="derived" confidence={progression.battlestats.confidence} tone={progression.summary.totalDelta.value === null ? "neutral" : progression.summary.totalDelta.value >= 0 ? "positive" : "negative"} sub={progression.battlestats.changePct !== null ? `${progression.battlestats.changePct >= 0 ? "+" : ""}${progression.battlestats.changePct.toFixed(2)}%` : null} />
-          <Stat label="Gain per day" value={formatKpiValue(progression.summary.gainPerDay, formatMoneyCompact)} provenance="derived" confidence={progression.battlestats.confidence} />
-          <Stat label="Awards {period}" value={progression.profile.awardsDelta !== null ? formatSignedMoneyCompact(progression.profile.awardsDelta) : "—"} provenance="derived" confidence={progression.battlestats.confidence} sub={progression.profile.awards !== null ? `${progression.profile.awards} total` : null} />
+          <Stat label="Total battlestats" value={formatKpiValue(progression.summary.totalBattlestats, formatNumberCompact)} provenance="exact" tone="accent" confidence={progression.battlestats.confidence} confidenceTooltip={confidenceTitle(progression.battlestats.confidence)} />
+          <Stat label="{period} change" value={progression.summary.totalDelta.value !== null ? formatSignedNumberCompact(progression.summary.totalDelta.value) : "—"} provenance="derived" confidence={progression.battlestats.confidence} tone={progression.summary.totalDelta.value === null ? "neutral" : progression.summary.totalDelta.value >= 0 ? "positive" : "negative"} sub={progression.battlestats.changePct !== null ? `${progression.battlestats.changePct >= 0 ? "+" : ""}${progression.battlestats.changePct.toFixed(2)}%` : null} />
+          <Stat label="Gain per day" value={formatKpiValue(progression.summary.gainPerDay, formatNumberCompact)} provenance="derived" confidence={progression.battlestats.confidence} />
+          <Stat label="Awards {period}" value={progression.profile.awardsDelta !== null ? formatSignedNumberCompact(progression.profile.awardsDelta) : "—"} provenance="derived" confidence={progression.battlestats.confidence} sub={progression.profile.awards !== null ? `${progression.profile.awards} total` : null} />
         </div>
 
         <Panel title="Stat history" caption="Every point is a real Torn observation — nothing is interpolated">
@@ -358,9 +358,9 @@
                     {@const share = progression.battlestats.distribution.find((d) => d.key === stat.key)?.share ?? null}
                     <tr>
                       <td class="text-fg">{stat.label}</td>
-                      <td class="tnum text-right text-fg-muted">{stat.closing !== null ? formatMoneyCompact(stat.closing) : "—"}</td>
+                      <td class="tnum text-right text-fg-muted">{stat.closing !== null ? formatNumberCompact(stat.closing) : "—"}</td>
                       <td class="tnum text-right text-fg-faint">{share !== null ? `${Math.round(share * 100)}%` : "—"}</td>
-                      <td class="tnum text-right font-medium {stat.delta === null ? 'text-fg-faint' : stat.delta >= 0 ? 'text-positive' : 'text-negative'}">{stat.delta !== null ? formatSignedMoneyCompact(stat.delta) : "—"}</td>
+                      <td class="tnum text-right font-medium {stat.delta === null ? 'text-fg-faint' : stat.delta >= 0 ? 'text-positive' : 'text-negative'}">{stat.delta !== null ? formatSignedNumberCompact(stat.delta) : "—"}</td>
                     </tr>
                   {/each}
                 </tbody>
@@ -374,7 +374,7 @@
               <ul class="space-y-2.5 text-[13px]">
                 {#each milestones.slice(0, 8) as m (m.kind + m.threshold + m.crossedBetween[0])}
                   <li class="flex items-baseline justify-between gap-3">
-                    <span class="text-fg">{m.label} crossed {formatMoneyCompact(m.threshold)}</span>
+                    <span class="text-fg">{m.label} crossed {formatNumberCompact(m.threshold)}</span>
                     <span class="tnum text-[11px] text-fg-faint" title="Crossed between these two observations">{formatDate(m.crossedBetween[0])} → {formatDate(m.crossedBetween[1])}</span>
                   </li>
                 {/each}
@@ -400,7 +400,7 @@
         <div class="grid grid-cols-2 gap-px overflow-hidden rounded-card border border-border bg-border shadow-panel md:grid-cols-4">
           <Stat label="Gain per energy (median)" value={progression.training.medianGainPerEnergy !== null ? progression.training.medianGainPerEnergy.toFixed(1) : "—"} provenance="estimated" confidence={progression.training.confidence} title="Observed battlestat gain divided by attributed training energy — an estimate, not an exact gym figure" />
           <Stat label="Training days" value={String(progression.training.daysTrained)} provenance="estimated" confidence={progression.training.confidence} sub={`${progression.summary.sessions} session${progression.summary.sessions === 1 ? "" : "s"}`} />
-          <Stat label="Energy trained" value={formatKpiValue(progression.summary.energyTrained, formatMoneyCompact)} provenance="estimated" confidence={progression.training.confidence} sub={progression.training.avgEnergyPerTrainingDay !== null ? `${formatMoneyCompact(progression.training.avgEnergyPerTrainingDay)} per training day` : null} />
+          <Stat label="Energy trained" value={formatKpiValue(progression.summary.energyTrained, formatNumberCompact)} provenance="estimated" confidence={progression.training.confidence} sub={progression.training.avgEnergyPerTrainingDay !== null ? `${formatNumberCompact(progression.training.avgEnergyPerTrainingDay)} per training day` : null} />
           <Stat label="Happy jumps" value={String(progression.happyJumps.jumps.length)} provenance="estimated" confidence={progression.happyJumps.confidence} sub={`${progression.summary.likelyJumps} likely`} />
         </div>
 
@@ -442,8 +442,8 @@
                 {#each progression.training.sessions.slice().reverse().slice(0, 12) as session (session.startedAt)}
                   <tr>
                     <td class="tnum whitespace-nowrap text-xs text-fg-faint">{formatDateTime(session.startedAt)} → {formatDateTime(session.endedAt).slice(-5)}</td>
-                    <td class="tnum text-right {session.energySpent !== null ? 'text-negative' : 'text-fg-faint'}">{session.energySpent !== null ? formatMoneyCompact(session.energySpent) : "—"}</td>
-                    <td class="tnum text-right {session.totalGain !== null && session.totalGain > 0 ? 'text-positive' : 'text-fg-faint'}">{session.totalGain !== null ? `+${formatMoneyCompact(session.totalGain)}` : "—"}</td>
+                    <td class="tnum text-right {session.energySpent !== null ? 'text-negative' : 'text-fg-faint'}">{session.energySpent !== null ? formatNumberCompact(session.energySpent) : "—"}</td>
+                    <td class="tnum text-right {session.totalGain !== null && session.totalGain > 0 ? 'text-positive' : 'text-fg-faint'}">{session.totalGain !== null ? `+${formatNumberCompact(session.totalGain)}` : "—"}</td>
                     <td class="tnum text-right text-fg-muted">{session.gainPerEnergy !== null ? session.gainPerEnergy.toFixed(1) : "—"}</td>
                     <td>
                       {#if session.primaryStat === "mixed"}
@@ -483,7 +483,7 @@
                 <div class="min-w-0">
                   <p class="text-[13px] font-semibold text-fg">
                     {formatDate(jump.trainedFrom)}
-                    <span class="ml-2 font-normal text-fg-muted">Likely Happy Jump</span>
+                    <span class="ml-2 font-normal text-fg-muted">Likely happy jump</span>
                     <span class="ml-2 chip {jump.confidence === 'likely' ? 'chip-positive' : 'chip-warning'} !px-1.5 !text-[9px] !uppercase">{jump.confidence}</span>
                   </p>
                   <p class="mt-1 text-[11.5px] text-fg-faint">
@@ -491,15 +491,15 @@
                     {jump.xanaxCount > 0 ? `${jump.xanaxCount}× Xanax` : "—"}
                     {jump.ecstasyCount > 0 ? "· Ecstasy" : ""}
                     {jump.refillUsed ? "· Refill" : ""}
-                    · Training {jump.energySpent !== null ? `${formatMoneyCompact(jump.energySpent)} E` : "—"}
-                    · Observed gain {jump.totalGain !== null ? `+${formatMoneyCompact(jump.totalGain)}` : "—"}{jump.primaryStat === "mixed" ? " (mixed)" : jump.primaryStat ? ` ${jump.primaryStat.toUpperCase()}` : ""}
+                    · Training {jump.energySpent !== null ? `${formatNumberCompact(jump.energySpent)} E` : "—"}
+                    · Observed gain {jump.totalGain !== null ? `+${formatNumberCompact(jump.totalGain)}` : "—"}{jump.primaryStat === "mixed" ? " (mixed)" : jump.primaryStat ? ` ${jump.primaryStat.toUpperCase()}` : ""}
                   </p>
                 </div>
                 <span class="text-fg-faint transition-transform group-open:rotate-180">▾</span>
               </summary>
               <div class="grid gap-px overflow-hidden border-t border-border bg-border sm:grid-cols-4">
-                <div class="bg-surface p-4"><p class="text-[11px] font-medium text-fg-faint">Energy used</p><p class="tnum mt-1 text-lg font-semibold text-negative">{jump.energySpent !== null ? formatMoneyCompact(jump.energySpent) : "—"}</p></div>
-                <div class="bg-surface p-4"><p class="text-[11px] font-medium text-fg-faint">Observed gain</p><p class="tnum mt-1 text-lg font-semibold text-positive">{jump.totalGain !== null ? `+${formatMoneyCompact(jump.totalGain)}` : "—"}</p></div>
+                <div class="bg-surface p-4"><p class="text-[11px] font-medium text-fg-faint">Energy used</p><p class="tnum mt-1 text-lg font-semibold text-negative">{jump.energySpent !== null ? formatNumberCompact(jump.energySpent) : "—"}</p></div>
+                <div class="bg-surface p-4"><p class="text-[11px] font-medium text-fg-faint">Observed gain</p><p class="tnum mt-1 text-lg font-semibold text-positive">{jump.totalGain !== null ? `+${formatNumberCompact(jump.totalGain)}` : "—"}</p></div>
                 <div class="bg-surface p-4"><p class="text-[11px] font-medium text-fg-faint">Gain per energy</p><p class="tnum mt-1 text-lg font-semibold text-fg">{jump.gainPerEnergy !== null ? jump.gainPerEnergy.toFixed(1) : "—"}</p></div>
                 <div class="bg-surface p-4"><p class="text-[11px] font-medium text-fg-faint">Peak observed happy</p><p class="tnum mt-1 text-lg font-semibold text-fg">{jump.peakHappyObserved !== null ? jump.peakHappyObserved : "—"}</p></div>
               </div>

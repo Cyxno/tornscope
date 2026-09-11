@@ -205,7 +205,7 @@
     {#if summary.respectGained !== null || summary.respectLost !== null}
       <p class="rounded-tile border border-border bg-surface px-5 py-3 text-xs text-fg-muted">
         <span class="font-medium text-fg">Respect ({period}):</span>
-        +{summary.respectGained ?? 0} gained · {summary.respectLost ?? 0} lost — exact, from Torn's attack records.
+        {summary.respectGained !== null ? `+${summary.respectGained} gained` : "gained —"} · {summary.respectLost !== null ? `${summary.respectLost} lost` : "lost —"} — exact, from Torn's attack records.
       </p>
     {/if}
 

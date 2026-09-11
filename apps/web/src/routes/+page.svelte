@@ -2,6 +2,7 @@
   import type { DashboardResponse, TodayResponse, DailySummaryResponse } from "@tornscope/shared";
   import {
     formatMoneyCompact,
+    formatNumberCompact,
     formatKpiValue,
     periodLabel,
     formatDate,
@@ -17,7 +18,7 @@
   import Chart from "$lib/components/Chart.svelte";
   import SegmentedDateRange from "$lib/components/SegmentedDateRange.svelte";
   import StateMessage from "$lib/components/StateMessage.svelte";
-  import { C, TOOLTIP, GRID, timeAxis, valueAxis, dayLabel, hourLabel, tealArea, MOTION } from "$lib/charts";
+  import { C, TOOLTIP, GRID, timeAxis, valueAxis, moneyValueAxis, moneyTooltipValue, dayLabel, hourLabel, tealArea, MOTION } from "$lib/charts";
 
   /**
    * Overview — "the record". Composition, not a card grid:
@@ -86,10 +87,10 @@
     const interval = data.range.interval;
     return {
       ...MOTION,
-      tooltip: { ...TOOLTIP, trigger: "axis" },
+      tooltip: { ...TOOLTIP, trigger: "axis", valueFormatter: moneyTooltipValue() },
       grid: { ...GRID, top: 8, bottom: 0 },
       xAxis: timeAxis(data.networthSeries.map((p) => (interval === "hour" ? hourLabel(p.t) : dayLabel(p.t)))),
-      yAxis: { ...valueAxis(), splitNumber: 4 },
+      yAxis: { ...moneyValueAxis(), splitNumber: 4 },
       series: [
         {
           name: "Net worth",
@@ -122,7 +123,7 @@
   {#if loading && !data}
     <StateMessage state="loading" />
   {:else if error}
-    <StateMessage state="error" title="Could not load your dashboard" hint={error} action={{ label: "Retry", run: () => (reloadToken += 1) }} />
+    <StateMessage state="error" title="Could not load Overview" hint={error} action={{ label: "Retry", run: () => (reloadToken += 1) }} />
   {:else if data}
     <!-- ── 1 · Masthead: greeting + range, data health quiet at the right ── -->
     <header class="flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
@@ -266,7 +267,7 @@
       </div>
 
       {#if !todaySummary}
-        <p class="mt-4 text-[13px] text-fg-faint">The day's recap appears after the first sync — see <a href="/sync" class="text-link">Sync Status</a>.</p>
+        <p class="mt-4 text-[13px] text-fg-faint">The day's recap appears after the first sync — see <a href="/sync" class="text-link">Sync status</a>.</p>
       {:else}
         <div class="mt-5 grid grid-cols-1 gap-10 lg:grid-cols-5">
           <!-- Why it moved: signed diverging bars -->
@@ -325,7 +326,7 @@
               <p class="section-label mb-2">Cash movement</p>
               <dl class="space-y-1 text-[13px]">
                 <div class="flex items-baseline justify-between gap-3"><dt class="text-fg-muted">Received</dt><dd class="tnum font-medium text-positive">{formatKpiValue(todaySummary.cashFlow.received, formatSignedMoneyCompact)}</dd></div>
-                <div class="flex items-baseline justify-between gap-3"><dt class="text-fg-muted">Spent</dt><dd class="tnum font-medium text-negative">{formatKpiValue(todaySummary.cashFlow.spent, formatSignedMoneyCompact)}</dd></div>
+                <div class="flex items-baseline justify-between gap-3"><dt class="text-fg-muted">Spent</dt><dd class="tnum font-medium text-negative">{formatKpiValue(todaySummary.cashFlow.spent, formatMoneyCompact)}</dd></div>
                 <div class="flex items-baseline justify-between gap-3"><dt class="text-fg">Net movement</dt><dd class="tnum font-semibold {todaySummary.cashFlow.net.value === null ? 'text-fg-faint' : todaySummary.cashFlow.net.value >= 0 ? 'text-positive' : 'text-negative'}">{formatKpiValue(todaySummary.cashFlow.net, formatSignedMoneyCompact)}</dd></div>
               </dl>
             </div>
@@ -399,7 +400,7 @@
             <span class="block text-[13px] font-medium text-fg group-hover:text-accent">Crimes</span>
             <span class="block text-xs text-fg-faint">
               {#if logsBlocked}Unavailable with current permissions{:else if !data.crimes}No attempts in this range{:else}
-                {data.crimes.attempts} attempts · {data.crimes.successRate !== null ? Math.round(data.crimes.successRate * 100) + "% success" : "rate —"}
+                {data.crimes.attempts} attempt{data.crimes.attempts === 1 ? "" : "s"} · {data.crimes.successRate !== null ? Math.round(data.crimes.successRate * 100) + "% success" : "rate —"}
               {/if}
             </span>
           </span>
@@ -423,8 +424,8 @@
             <span class="block text-[13px] font-medium text-fg group-hover:text-accent">Training</span>
             <span class="block text-xs text-fg-faint">
               {#if data.progression.battlestatGain.value === null}No stat history in this range{:else}
-                +{formatMoneyCompact(data.progression.battlestatGain.value)} battlestats in range
-                {#if data.progression.energyTrained.value !== null}· {formatMoneyCompact(data.progression.energyTrained.value)} energy trained{/if}
+                +{formatNumberCompact(data.progression.battlestatGain.value)} battlestats in range
+                {#if data.progression.energyTrained.value !== null}· {formatNumberCompact(data.progression.energyTrained.value)} energy trained{/if}
               {/if}
             </span>
           </span>

@@ -180,7 +180,7 @@
       <div class="md:px-5">
         <dt class="text-[11px] font-medium text-fg-faint">Xanax / day</dt>
         <dd class="tnum mt-1 text-[22px] font-semibold text-fg">{histBlocked ? "—" : data.overall.xanaxPerDay !== null ? data.overall.xanaxPerDay : "—"}</dd>
-        <dd class="mt-0.5 text-[11px] text-fg-faint">{data.overall.coveredDays !== null ? `${data.xanaxFunding.used} used · ${data.overall.coveredDays} covered days` : ""}</dd>
+        <dd class="mt-0.5 text-[11px] text-fg-faint">{data.overall.coveredDays !== null ? `${data.xanaxFunding.used} used · ${data.overall.coveredDays} covered day${data.overall.coveredDays === 1 ? "" : "s"}` : ""}</dd>
       </div>
       <div class="md:px-5">
         <dt class="text-[11px] font-medium text-fg-faint">Overdoses</dt>
@@ -224,7 +224,7 @@
                 <div style="width: {seg.share}%; background: {seg.color}" title="{seg.label}: {seg.count}"></div>
               {/each}
             </div>
-            <p class="mt-1.5 text-[11px] text-fg-faint">{data.xanaxFunding.used} uses in range · proven sources first, unknowns last</p>
+            <p class="mt-1.5 text-[11px] text-fg-faint">{data.xanaxFunding.used} use{data.xanaxFunding.used === 1 ? "" : "s"} in range · proven sources first, unknowns last</p>
           </div>
         {/if}
 

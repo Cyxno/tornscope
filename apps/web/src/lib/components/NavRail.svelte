@@ -4,6 +4,9 @@
   import { me } from "$lib/state.svelte";
   import { NAV_GROUPS, isActivePath } from "$lib/nav";
   import Icon from "./Icon.svelte";
+  import { build, loadBuildIdentity } from "$lib/build.svelte";
+
+  loadBuildIdentity();
 
   /**
    * Desktop navigation rail (Option B shell). The nav leaves the top bar
@@ -36,6 +39,11 @@
       >{envLabel}</span>
     </span>
   </a>
+
+  <!-- Build identity: never let a deployment be anonymous on-screen. -->
+  {#if build.text}
+    <p class="hidden px-5 pb-2 text-[9.5px] font-medium tracking-wide text-fg-faint xl:block" title="Deployed build">{build.text}</p>
+  {/if}
 
   <!-- Grouped navigation -->
   <nav class="flex-1 overflow-y-auto py-4" aria-label="Primary">

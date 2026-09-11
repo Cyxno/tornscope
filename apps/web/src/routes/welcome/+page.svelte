@@ -551,7 +551,7 @@
               {#if moduleAvailability(detected.capabilities).some((m) => !m.available)}
                 · {moduleAvailability(detected.capabilities).filter((m) => !m.available).length} partial/unavailable
               {:else}
-                · full supported analytics available
+                · all supported analytics available
               {/if}
             {:else}
               —

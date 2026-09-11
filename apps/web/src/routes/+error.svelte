@@ -10,6 +10,6 @@
     {page.error?.message ?? "An unexpected error occurred"}
   </p>
   <a href="/" class="btn mt-2">
-    Back to the dashboard
+    Back to Overview
   </a>
 </div>

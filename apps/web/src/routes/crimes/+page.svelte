@@ -9,7 +9,7 @@
   import SegmentedDateRange from "$lib/components/SegmentedDateRange.svelte";
   import StateMessage from "$lib/components/StateMessage.svelte";
   import { availabilityMessage, availabilityHasData } from "$lib/capabilities";
-  import { C, TOOLTIP, LEGEND, GRID, timeAxis, valueAxis, dayLabel } from "$lib/charts";
+  import { C, TOOLTIP, LEGEND, GRID, timeAxis, valueAxis, moneyValueAxis, moneyTooltipValue, dayLabel } from "$lib/charts";
 
   let summary = $state<CrimesSummaryResponse | null>(null);
   let timeline = $state<CrimesTimelineResponse | null>(null);
@@ -63,10 +63,10 @@
   const valueOption = $derived.by(() => {
     if (!summary || summary.dailySeries.length === 0) return null;
     return {
-      tooltip: { ...TOOLTIP, trigger: "axis" },
+      tooltip: { ...TOOLTIP, trigger: "axis", valueFormatter: moneyTooltipValue() },
       grid: GRID,
       xAxis: timeAxis(summary.dailySeries.map((p) => dayLabel(p.t))),
-      yAxis: valueAxis(),
+      yAxis: moneyValueAxis(),
       series: [
         {
           name: "Crime value",

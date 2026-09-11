@@ -423,7 +423,7 @@ export async function evaluateEconomyProducer(
           title: delta > 0 ? "Net worth increased" : "Net worth decreased",
           body: `Net worth changed by ${delta > 0 ? "+" : "−"}${pretty} since the previous snapshot. This is a snapshot delta, not a profit figure.`,
           sensitiveBody: null,
-          clickPath: "/economy",
+          clickPath: "/money",
           provenance: "derived",
         }, ctx);
       }

@@ -2,12 +2,18 @@
   import type { ApiKeyStatusResponse, ApiKeyValidationResponse, KeyCapabilitiesDto, MeResponse } from "@tornscope/shared";
   import { branding, CAPABILITY_KEYS, FEATURE_REQUIREMENTS, capabilityLevel, capabilitySetName } from "@tornscope/shared";
   import { onMount } from "svelte";
+  import { env as publicEnv } from "$env/dynamic/public";
   import { endpoints, ApiClientError } from "$lib/api";
+  import { build, loadBuildIdentity } from "$lib/build.svelte";
   import { formatRelative } from "$lib/reltime";
   import PageHeader from "$lib/components/PageHeader.svelte";
   import Panel from "$lib/components/Panel.svelte";
 import NotificationsSettings from "$lib/components/NotificationsSettings.svelte";
   import StateMessage from "$lib/components/StateMessage.svelte";
+
+  const envLabel = publicEnv.PUBLIC_ENV_LABEL?.trim() || "Public Beta";
+
+  loadBuildIdentity();
 
   let status = $state<ApiKeyStatusResponse | null>(null);
   let me = $state<MeResponse | null>(null);
@@ -553,6 +559,9 @@ import NotificationsSettings from "$lib/components/NotificationsSettings.svelte"
       <p class="text-[12px] text-fg-faint">
         TornScope is an independent community project — not operated, endorsed, or hosted by Torn.
       </p>
+      {#if build.text}
+        <p class="text-[11px] font-mono text-fg-faint" title="Deployed build">Build {build.text} · {envLabel}</p>
+      {/if}
     </div>
   </Panel>
 </div>

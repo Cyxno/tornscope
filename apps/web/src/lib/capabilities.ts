@@ -38,7 +38,7 @@ export function availabilityMessage(
     };
   }
   if (av.state === "stale_permission") {
-    const refreshed = av.lastRefreshedAt ? new Date(av.lastRefreshedAt * 1000).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : null;
+    const refreshed = av.lastRefreshedAt ? new Date(av.lastRefreshedAt * 1000).toLocaleDateString("en-GB", { year: "numeric", month: "short", day: "numeric" }) : null;
     return {
       state: "stale",
       title: "Historical data available — not refreshing",

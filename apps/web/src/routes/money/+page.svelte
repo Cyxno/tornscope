@@ -13,7 +13,7 @@
   import StateMessage from "$lib/components/StateMessage.svelte";
   import ProvenanceBadge from "$lib/components/ProvenanceBadge.svelte";
   import { availabilityMessage, availabilityHasData } from "$lib/capabilities";
-  import { C, TOOLTIP, LEGEND, GRID, timeAxis, valueAxis, dayLabel, tealArea, MOTION, CHART_SURFACE } from "$lib/charts";
+  import { C, TOOLTIP, LEGEND, GRID, timeAxis, valueAxis, moneyValueAxis, moneyTooltipValue, dayLabel, tealArea, MOTION, CHART_SURFACE } from "$lib/charts";
 
   let economy = $state<EconomySummaryResponse | null>(null);
   let events = $state<Paginated<MoneyEventDto> | null>(null);
@@ -100,7 +100,7 @@
     if (cash.income.value === null || cash.expenses.value === null) {
       lead = "Cash flow isn't available for this range yet — nothing is estimated to fill the gap.";
     } else {
-      lead = `Across ${period.toLowerCase()}, ${formatMoneyCompact(cash.income.value)} entered your wallet and ${formatMoneyCompact(cash.expenses.value)} left it.`;
+      lead = `Across ${period === "All" ? "all time" : period}, ${formatMoneyCompact(cash.income.value)} entered your wallet and ${formatMoneyCompact(cash.expenses.value)} left it.`;
       if (cash.expenses.value > 0) {
         if (cash.assetOutflow >= cash.trueExpense) sentences.push("Most of the outflow was asset conversion rather than true expense.");
         else sentences.push("Most of the outflow was true expense — value that left for good.");
@@ -108,7 +108,7 @@
     }
     if (ecoEffect && ecoEffect.income.value !== null && ecoEffect.expenses.value !== null) {
       sentences.push(
-        `Economic effect — earned ${formatMoneyCompact(ecoEffect.income.value)} against ${formatMoneyCompact(ecoEffect.expenses.value)} spent for good, a net of ${formatSignedMoneyCompact(ecoEffect.net.value ?? 0)}.`
+        `Economic effect — earned ${formatMoneyCompact(ecoEffect.income.value)} against ${formatMoneyCompact(ecoEffect.expenses.value)} spent for good, a net of ${ecoEffect.net.value !== null ? formatSignedMoneyCompact(ecoEffect.net.value) : "—"}.`
       );
     }
     if (wallet && wallet.quality !== "unavailable" && wallet.closingWallet !== null && wallet.openingWallet !== null) {
@@ -146,7 +146,7 @@
     drug: "Drugs consumed",
     booster: "Boosters",
     medical: "Medical items",
-    happy_jump: "Happy items",
+    happy_jump: "Happy Items",
     energy: "Energy drinks",
     candy: "Candy",
     temporary: "Temporary items",
@@ -213,7 +213,7 @@
   function donutOption(slices: Array<{ name: string; value: number; color: string }>, name: string) {
     return {
       ...MOTION,
-      tooltip: { ...TOOLTIP, trigger: "item", formatter: "{b}: {c} ({d}%)" },
+      tooltip: { ...TOOLTIP, trigger: "item", formatter: (p: { name?: string; value?: number; percent?: number }) => `${p.name}: ${formatMoneyCompact(p.value ?? 0)} (${p.percent}%)` },
       series: [
         {
           name,
@@ -239,10 +239,10 @@
     if (series.length === 0) return null;
     return {
       ...MOTION,
-      tooltip: { ...TOOLTIP, trigger: "axis" },
+      tooltip: { ...TOOLTIP, trigger: "axis", valueFormatter: moneyTooltipValue() },
       grid: { ...GRID, top: 20 },
       xAxis: timeAxis(series.map((p) => dayLabel(p.t))),
-      yAxis: valueAxis(),
+      yAxis: moneyValueAxis(),
       series: [
         {
           name: "Cumulative net cash movement",
@@ -262,11 +262,11 @@
     if (series.length === 0) return null;
     return {
       ...MOTION,
-      tooltip: { ...TOOLTIP, trigger: "axis" },
+      tooltip: { ...TOOLTIP, trigger: "axis", valueFormatter: moneyTooltipValue() },
       legend: { ...LEGEND, data: ["Cash received", "Cash spent"], top: 0, right: 0 },
       grid: GRID,
       xAxis: timeAxis(series.map((p) => dayLabel(p.t)), { boundaryGap: true }),
-      yAxis: valueAxis(),
+      yAxis: moneyValueAxis(),
       series: [
         { name: "Cash received", type: "bar", data: series.map((p) => p.income), barMaxWidth: 12, itemStyle: { color: C.positive, borderRadius: [3, 3, 0, 0] } },
         { name: "Cash spent", type: "bar", data: series.map((p) => -p.expenses), barMaxWidth: 12, itemStyle: { color: C.negative, borderRadius: [3, 3, 0, 0] } },
@@ -275,8 +275,6 @@
   });
 
   const conversionBarTop = $derived(economy?.conversions.byPair[0]?.amount || 1);
-  const movementAmount = (m: { amount: number; role: string }): string =>
-    m.role === "income" || m.role === "conversion_in" || m.role === "transfer" ? `+${formatMoneyCompact(m.amount)}` : `-${formatMoneyCompact(m.amount)}`;
 </script>
 
 <svelte:head><title>Economy · TornScope</title></svelte:head>
@@ -682,7 +680,7 @@
                 </ul>
                 {#if economy.consumption.valueUnknownCount > 0}
                   <p class="mt-4 text-[11px] text-fg-faint">
-                    {economy.consumption.valueUnknownCount} use{economy.consumption.valueUnknownCount === 1 ? "" : "s"} without a known price are counted as uses but add nothing to Consumed Value — never an invented price.
+                    {economy.consumption.valueUnknownCount} use{economy.consumption.valueUnknownCount === 1 ? "" : "s"} without a known price {economy.consumption.valueUnknownCount === 1 ? "is" : "are"} counted as use{economy.consumption.valueUnknownCount === 1 ? "" : "s"} but add{economy.consumption.valueUnknownCount === 1 ? "s" : ""} nothing to Consumed Value — never an invented price.
                   </p>
                 {/if}
               {/if}
@@ -901,7 +899,7 @@
         <select bind:value={category} class="input !h-8 w-40">
           <option value="">All categories</option>
           {#each MONEY_CATEGORIES as cat (cat)}
-            <option value={cat}>{cat}</option>
+            <option value={cat}>{humanLabel(cat)}</option>
           {/each}
         </select>
         <select bind:value={direction} class="input !h-8 w-32">

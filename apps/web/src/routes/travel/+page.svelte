@@ -9,7 +9,7 @@
   import SegmentedDateRange from "$lib/components/SegmentedDateRange.svelte";
   import StateMessage from "$lib/components/StateMessage.svelte";
   import { availabilityMessage, availabilityHasData } from "$lib/capabilities";
-  import { C, TOOLTIP, GRID, timeAxis, valueAxis, dayLabel, MOTION } from "$lib/charts";
+  import { C, TOOLTIP, GRID, timeAxis, valueAxis, moneyValueAxis, moneyTooltipValue, dayLabel, MOTION } from "$lib/charts";
 
   let summary = $state<TravelSummaryResponse | null>(null);
   let history = $state<Paginated<TravelTripDto> | null>(null);
@@ -77,10 +77,10 @@
     if (!summary || summary.profitSeries.length === 0) return null;
     return {
       ...MOTION,
-      tooltip: { ...TOOLTIP, trigger: "axis" },
+      tooltip: { ...TOOLTIP, trigger: "axis", valueFormatter: moneyTooltipValue() },
       grid: GRID,
       xAxis: timeAxis(summary.profitSeries.map((p) => dayLabel(p.t)), { boundaryGap: true }),
-      yAxis: valueAxis(),
+      yAxis: moneyValueAxis(),
       series: [{ name: "Estimated profit", type: "bar", data: summary.profitSeries.map((p) => p.profit), barMaxWidth: 12, itemStyle: { color: C.accentStrong, borderRadius: 3 } }],
     };
   });

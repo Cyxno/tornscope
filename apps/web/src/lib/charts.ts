@@ -1,3 +1,5 @@
+import { formatMoneyCompact } from "@tornscope/shared";
+
 /**
  * Shared ECharts theme + option fragments — the one chart language.
  * Pages compose these; they never restate axis/tooltip/legend styling.
@@ -82,6 +84,20 @@ export function timeAxis(data: (number | string)[], opts: { boundaryGap?: boolea
     axisLine: AXIS_LINE,
     axisTick: { show: false },
   };
+}
+
+/** Money value axis: ticks carry the "$" so axis units match the KPI
+ *  cells beside the chart (RC unit audit). */
+export function moneyValueAxis(): Record<string, unknown> {
+  return {
+    ...valueAxis(),
+    axisLabel: { ...AXIS_LABEL, formatter: (v: number) => formatMoneyCompact(v) },
+  };
+}
+
+/** Axis tooltip formatter for money series ("Net worth: $849.3m"). */
+export function moneyTooltipValue(): (v: unknown) => string {
+  return (v: unknown) => (typeof v === "number" ? formatMoneyCompact(v) : String(v));
 }
 
 export function valueAxis(): Record<string, unknown> {
