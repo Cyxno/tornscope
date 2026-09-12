@@ -19,6 +19,11 @@
   let error = $state<string | null>(null);
   let reloadToken = $state(0);
 
+  /** Whole numbers stay whole ("0 lost"); fractions keep two decimals. */
+  function respect(value: number): string {
+    return Number.isInteger(value) ? String(value) : value.toFixed(2);
+  }
+
   // Permission gate: combat comes from the attacks endpoint.
   const histAv = $derived(summary?.availability?.history);
   const histBlocked = $derived(histAv !== undefined && !availabilityHasData(histAv));
@@ -212,7 +217,7 @@
     {#if summary.respectGained !== null || summary.respectLost !== null}
       <p class="rounded-tile border border-border bg-surface px-5 py-3 text-xs text-fg-muted">
         <span class="font-medium text-fg">Respect ({period}):</span>
-        {summary.respectGained !== null ? `+${summary.respectGained.toFixed(2)} gained` : "gained —"} · {summary.respectLost !== null ? `${summary.respectLost.toFixed(2)} lost` : "lost —"} — exact, from Torn's attack records.
+        {summary.respectGained !== null ? `+${respect(summary.respectGained)} gained` : "gained —"} · {summary.respectLost !== null ? `${respect(summary.respectLost)} lost` : "lost —"} — exact, from Torn's attack records.
       </p>
     {/if}
 
