@@ -14,7 +14,7 @@ import {
 } from "../src/index.js";
 
 const FULL_SELECTIONS = {
-  user: ["basic", "profile", "bars", "cooldowns", "education", "travel", "money", "log", "attacks", "networth", "events", "personalstats"],
+  user: ["basic", "profile", "bars", "cooldowns", "education", "travel", "money", "log", "attacks", "networth", "events", "personalstats", "merits", "stocks"],
   faction: ["basic", "members", "rankedwars", "chains", "crimes", "armorynews", "balance", "log"],
 };
 

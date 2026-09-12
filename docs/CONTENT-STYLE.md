@@ -72,6 +72,27 @@ product-finish program. Source contracts live in
 - Raw enum values (`stale_permission`, `capability_denied`, …) never render;
   map them through `syncHealth.ts` copy tables.
 
+## Merits & stocks terminology
+
+| Term | Use for | Never use |
+|------|---------|-----------|
+| Merit ranks / "7 / 10" | invested levels (exact) | "level 7 of 10" in tight rows |
+| Cap | maximum ranks (TornScope-maintained) | "max" alone; never claim maxed without a cap |
+| Stock benefit | the recurring reward per stock | "dividend", "bonus payout" |
+| Benefit block | the share threshold + reward | "benefit tier" |
+| Shares owned | position size (plain number) | shares rendered as money |
+| Benefit reached / active | threshold met | "unlocked" |
+| Est. reward value | one payout's value | raw "reward" as money when unvalued |
+| Est. annual benefit | value × payouts/year | "annual ROI" |
+| Est. yield | annual benefit / required shares' current value (%) | "return" |
+| Est. payback | capital / daily benefit (days) | exact ROI phrasing |
+
+- Estimates always carry "Est."/"~" and the assumption ("at the current
+  catalog price", "at current prices").
+- Unvalued rewards render their description (or "—"), never "$0".
+- Benefit copy states the exclusion: benefit-only economics, stock price
+  movement excluded, never investment advice.
+
 ## States vocabulary
 
 - Empty (no activity in range): name the range, offer the action.
