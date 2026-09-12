@@ -137,6 +137,8 @@ import NotificationsSettings from "$lib/components/NotificationsSettings.svelte"
 
   const CAP_LABELS: Partial<Record<string, string>> = {
     canReadUserBasic: "Basic account access",
+    canReadUserMerits: "User Merits",
+    canReadUserStocks: "User Stocks",
     canReadUserBars: "User Bars",
     canReadUserCooldowns: "User Cooldowns",
     canReadUserEducation: "User Education",

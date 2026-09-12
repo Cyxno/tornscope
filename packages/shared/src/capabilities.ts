@@ -139,9 +139,11 @@ export const FEATURE_REQUIREMENTS: FeatureRequirement[] = [
   {
     feature: "stocks_benefits",
     label: "Stock benefits",
+    // Benefits ride on the same minimal-access stocks selection as
+    // holdings; reward valuation uses the public item catalog, not User
+    // Money — so there is no partial tier here.
     requires: ["canReadUserStocks"],
-    optional: ["canReadUserMoney"],
-    partial: true,
+    partial: false,
   },
   { feature: "money_cash_flow", label: "Cash flow", requires: ["canReadUserLogs"], partial: false },
   {

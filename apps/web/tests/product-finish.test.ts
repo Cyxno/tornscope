@@ -54,6 +54,26 @@ describe("PF-007: conditional inline tails keep punctuation attached", () => {
   });
 });
 
+describe("PF-026: Settings capability labels never leak raw keys", () => {
+  it("the local label map covers every capability key", () => {
+    const settings = read("routes/settings/+page.svelte");
+    const keys = [
+      "canReadUserBasic", "canReadUserMerits", "canReadUserStocks", "canReadUserBars",
+      "canReadUserCooldowns", "canReadUserEducation", "canReadUserTravel", "canReadUserMoney",
+      "canReadUserLogs", "canReadUserAttacks", "canReadUserNetworth", "canReadUserEvents",
+      "canReadUserPersonalStats", "canReadFactionBasic", "canReadFactionMembers",
+      "canReadFactionRankedWars", "canReadFactionChains", "canReadFactionCrimes",
+      "canReadFactionArmoryNews", "canReadFactionBalance", "canReadFactionLogs",
+    ];
+    for (const key of keys) {
+      expect(settings).toContain(`${key}:`);
+    }
+    // The fallback `?? k` must stay unreachable in practice — a new capability
+    // key without a label here would render a raw identifier in the matrix.
+    expect(settings).not.toContain("canReadUserMerits: \"canReadUserMerits\"");
+  });
+});
+
 describe("PF-006: in-app navigation never full-page-reloads", () => {
   const files = [
     "routes/+page.svelte",
