@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { prefersReducedMotion } from "$lib/appearance-state.svelte";
+  import { appearanceSignature, prefersReducedMotion } from "$lib/appearance-state.svelte";
 
   /**
    * Reusable ECharts wrapper: initializes once, applies option updates,
@@ -57,12 +57,17 @@
     return opt;
   }
 
+  let lastSignature = "";
   $effect(() => {
     // Track both the option and the appearance state (theme/palette/motion)
-    // so mounted charts restyle live when personalization changes.
-    void prefersReducedMotion();
+    // so mounted charts restyle live when personalization changes. An
+    // appearance change forces a FULL option replace: merging color changes
+    // into the previous option can leave series unrendered (observed as a
+    // vanished line after a live theme switch).
+    const signature = appearanceSignature();
     const current = $state.snapshot(option);
-    if (chart) chart.setOption(withMotion(current), { notMerge: false });
+    if (chart) chart.setOption(withMotion(current), { notMerge: signature !== lastSignature });
+    lastSignature = signature;
   });
 </script>
 

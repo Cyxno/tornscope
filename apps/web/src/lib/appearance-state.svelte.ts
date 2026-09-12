@@ -40,6 +40,11 @@ const reducedMotionDerived = $derived(
   appearance.motion === "reduced" ? true : appearance.motion === "full" ? false : systemReducedMatches
 );
 
+/** Stable signature of everything that should force a chart repaint. */
+export function appearanceSignature(): string {
+  return [resolvedThemeDerived, appearance.accent, appearance.palette, appearance.density, appearance.motion].join(":");
+}
+
 export function prefersReducedMotion(): boolean {
   return reducedMotionDerived;
 }
