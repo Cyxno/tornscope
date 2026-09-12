@@ -195,7 +195,7 @@
               {#if row.timing?.kind === "ready"}
                 <span class="text-positive">ready to collect</span>
               {:else if row.timing?.kind === "derived" && row.timing.daysRemaining !== null}
-                <span class="tnum text-fg-muted">in ~{daysLabel(row.timing.daysRemaining)}</span>
+                <span class="tnum text-fg-muted">in {daysLabel(row.timing.daysRemaining)}</span>
               {:else}
                 <span class="text-fg-faint">timing unavailable</span>
               {/if}
@@ -277,7 +277,7 @@
                       {#if row.timing?.kind === "ready"}
                         <span class="text-positive">ready</span>
                       {:else if row.timing?.kind === "derived" && row.timing.daysRemaining !== null}
-                        <span class="tnum text-fg-muted">in ~{daysLabel(row.timing.daysRemaining)}</span>
+                        <span class="tnum text-fg-muted">in {daysLabel(row.timing.daysRemaining)}</span>
                       {:else}
                         <span class="text-fg-faint">unavailable</span>
                       {/if}
@@ -327,7 +327,7 @@
                           </div>
                           <div>
                             <dt class="text-fg-faint" title={PAYBACK_HELP}>Est. payback</dt>
-                            <dd class="tnum text-fg">{row.estimatedPaybackDays !== null ? `~${daysLabel(row.estimatedPaybackDays)}` : "—"}</dd>
+                            <dd class="tnum text-fg">{row.estimatedPaybackDays !== null ? `${daysLabel(row.estimatedPaybackDays)}` : "—"}</dd>
                           </div>
                         </dl>
                         <p class="mt-2.5 text-[11px] leading-relaxed text-fg-faint">
