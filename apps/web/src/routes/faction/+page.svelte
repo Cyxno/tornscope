@@ -127,7 +127,7 @@
       state={basicMsg.state}
       title={basicMsg.title}
       hint={`${basicMsg.hint} Faction permissions differ from personal ones — your key needs the Faction selections (ask your faction leader to enable API access).`}
-      action={{ label: "Review API access in Settings", run: () => void goto("/settings") }}
+      action={{ label: "Review API access in Settings", run: () => void goto("/settings?tab=api") }}
     />
   {:else if overview}
     {#if blockedForTab}
@@ -135,7 +135,7 @@
         state={blockedForTab.state}
         title={blockedForTab.title}
         hint={blockedForTab.hint}
-        action={{ label: "Review API access in Settings", run: () => void goto("/settings") }}
+        action={{ label: "Review API access in Settings", run: () => void goto("/settings?tab=api") }}
       />
     {/if}
     <div class="flex flex-wrap gap-1 rounded-full border border-border bg-surface p-1">

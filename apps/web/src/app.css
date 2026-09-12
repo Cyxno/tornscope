@@ -16,31 +16,28 @@
  * - panels use .card (or the Panel component), chips use .chip, buttons use .btn-*
  * - tables use .tsv-table; inputs use .input
  */
-@theme {
-  /* Surfaces — neutral graphite, zero blue cast, four elevation steps */
-  --color-bg: #0a0a0c;
-  --color-bg-raise: #0f0f12;
-  --color-surface: #141417;
-  --color-surface-2: #1a1a1f;
-  --color-surface-3: #212128;
-  --color-border: #232329;
-  --color-border-strong: #34343c;
-
-  /* Text — warm off-white hierarchy (fg-faint ≥ 4.5:1 on bg for small labels) */
-  --color-fg: #f4f4f1;
-  --color-fg-muted: #a2a2ab;
-  --color-fg-faint: #7d7d87;
-
-  /* Accent — restrained teal */
-  --color-accent: #2dd4bf;
-  --color-accent-strong: #14b8a6;
-  --color-accent-deep: #0d9488;
-
-  /* Semantic values */
-  --color-positive: #3fd68f;
-  --color-negative: #f87171;
-  --color-warning: #f0b24a;
-  --color-info: #a78bfa;
+@theme inline {
+  /* Colors resolve at RUNTIME from the --ds-* variables below, so
+     [data-theme]/[data-accent] on <html> can restyle the whole product
+     without touching utilities. Non-color tokens (fonts, radii, controls)
+     stay static here. */
+  --color-bg: var(--ds-bg);
+  --color-bg-raise: var(--ds-bg-raise);
+  --color-surface: var(--ds-surface);
+  --color-surface-2: var(--ds-surface-2);
+  --color-surface-3: var(--ds-surface-3);
+  --color-border: var(--ds-border);
+  --color-border-strong: var(--ds-border-strong);
+  --color-fg: var(--ds-fg);
+  --color-fg-muted: var(--ds-fg-muted);
+  --color-fg-faint: var(--ds-fg-faint);
+  --color-accent: var(--ds-accent);
+  --color-accent-strong: var(--ds-accent-strong);
+  --color-accent-deep: var(--ds-accent-deep);
+  --color-positive: var(--ds-positive);
+  --color-negative: var(--ds-negative);
+  --color-warning: var(--ds-warning);
+  --color-info: var(--ds-info);
 
   /* Typography */
   --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -54,8 +51,192 @@
   /* Controls & rhythm */
   --control-height-sm: 30px;
   --control-height: 34px;
-  --shadow-panel: 0 1px 2px rgb(0 0 0 / 0.2), 0 12px 32px -20px rgb(0 0 0 / 0.45);
-  --shadow-pop: 0 24px 64px -24px rgb(0 0 0 / 0.65);
+  --shadow-panel: var(--ds-shadow-panel);
+  --shadow-pop: var(--ds-shadow-pop);
+}
+
+/* ═══════════════ Runtime theme variables ═══════════════
+   Dark is the product default (The Ledger, warm graphite).
+   Light is an intentional design, not an inversion — warm paper canvas,
+   panels LIFT lighter than the canvas, borders stay quiet but visible. */
+
+:root,
+[data-theme="dark"] {
+  --ds-bg: #0a0a0c;
+  --ds-bg-raise: #0f0f12;
+  --ds-surface: #141417;
+  --ds-surface-2: #1a1a1f;
+  --ds-surface-3: #212128;
+  --ds-border: #232329;
+  --ds-border-strong: #34343c;
+  --ds-fg: #f4f4f1;
+  --ds-fg-muted: #a2a2ab;
+  --ds-fg-faint: #7d7d87;
+  --ds-positive: #3fd68f;
+  --ds-negative: #f87171;
+  --ds-warning: #f0b24a;
+  --ds-info: #a78bfa;
+  --ds-shadow-panel: 0 1px 2px rgb(0 0 0 / 0.2), 0 12px 32px -20px rgb(0 0 0 / 0.45);
+  --ds-shadow-pop: 0 24px 64px -24px rgb(0 0 0 / 0.65);
+  --ds-table-row-hover: rgb(26 26 31 / 0.5);
+  --ds-table-rule: rgb(35 35 41 / 0.55);
+  --ds-skeleton-stop: #232329;
+  color-scheme: dark;
+}
+
+[data-theme="light"] {
+  --ds-bg: #f4f3ee;
+  --ds-bg-raise: #edece5;
+  --ds-surface: #fbfaf6;
+  --ds-surface-2: #f1f0e9;
+  --ds-surface-3: #e9e8e0;
+  --ds-border: #dfded4;
+  --ds-border-strong: #c6c5b9;
+  --ds-fg: #26251f;
+  --ds-fg-muted: #5b5a50;
+  --ds-fg-faint: #83826f;
+  --ds-positive: #178a4e;
+  --ds-negative: #c53f3f;
+  --ds-warning: #9a6a10;
+  --ds-info: #6d4fd0;
+  --ds-shadow-panel: 0 1px 2px rgb(38 37 31 / 0.06), 0 12px 32px -22px rgb(38 37 31 / 0.25);
+  --ds-shadow-pop: 0 24px 64px -28px rgb(38 37 31 / 0.35);
+  --ds-table-row-hover: rgb(237 236 229 / 0.6);
+  --ds-table-rule: rgb(223 222 212 / 0.7);
+  --ds-skeleton-stop: #dfded4;
+  color-scheme: light;
+}
+
+/* ═══════════════ Accent presets ═══════════════
+   Accents restyle the interactive/highlight layer ONLY — positive, negative,
+   warning and info above are semantic and never change with the accent.
+   Every preset carries distinct dark/light values (contrast-tuned), exposed
+   as --ds-accent-rgb so component alphas keep working. */
+
+:root,
+[data-theme="dark"] {
+  --ds-accent-rgb: 45 212 191;
+  --ds-accent: rgb(var(--ds-accent-rgb));
+  --ds-accent-strong: #14b8a6;
+  --ds-accent-deep: #0d9488;
+}
+[data-theme="light"] {
+  --ds-accent-rgb: 13 148 136;
+  --ds-accent: rgb(var(--ds-accent-rgb));
+  --ds-accent-strong: #0f766e;
+  --ds-accent-deep: #115e59;
+}
+
+[data-accent="blue"] {
+  --ds-accent-rgb: 96 165 250;
+  --ds-accent: rgb(var(--ds-accent-rgb));
+  --ds-accent-strong: #3b82f6;
+  --ds-accent-deep: #2563eb;
+}
+[data-accent="blue"][data-theme="light"] {
+  --ds-accent-rgb: 37 99 235;
+  --ds-accent: rgb(var(--ds-accent-rgb));
+  --ds-accent-strong: #1d4ed8;
+  --ds-accent-deep: #1e40af;
+}
+
+[data-accent="indigo"] {
+  --ds-accent-rgb: 129 140 248;
+  --ds-accent: rgb(var(--ds-accent-rgb));
+  --ds-accent-strong: #6366f1;
+  --ds-accent-deep: #4f46e5;
+}
+[data-accent="indigo"][data-theme="light"] {
+  --ds-accent-rgb: 79 70 229;
+  --ds-accent: rgb(var(--ds-accent-rgb));
+  --ds-accent-strong: #4338ca;
+  --ds-accent-deep: #3730a3;
+}
+
+[data-accent="violet"] {
+  --ds-accent-rgb: 167 139 250;
+  --ds-accent: rgb(var(--ds-accent-rgb));
+  --ds-accent-strong: #8b5cf6;
+  --ds-accent-deep: #7c3aed;
+}
+[data-accent="violet"][data-theme="light"] {
+  --ds-accent-rgb: 124 58 237;
+  --ds-accent: rgb(var(--ds-accent-rgb));
+  --ds-accent-strong: #6d28d9;
+  --ds-accent-deep: #5b21b6;
+}
+
+[data-accent="emerald"] {
+  --ds-accent-rgb: 52 211 153;
+  --ds-accent: rgb(var(--ds-accent-rgb));
+  --ds-accent-strong: #10b981;
+  --ds-accent-deep: #059669;
+}
+[data-accent="emerald"][data-theme="light"] {
+  --ds-accent-rgb: 5 150 105;
+  --ds-accent: rgb(var(--ds-accent-rgb));
+  --ds-accent-strong: #047857;
+  --ds-accent-deep: #065f46;
+}
+
+[data-accent="amber"] {
+  --ds-accent-rgb: 251 191 36;
+  --ds-accent: rgb(var(--ds-accent-rgb));
+  --ds-accent-strong: #f59e0b;
+  --ds-accent-deep: #d97706;
+}
+[data-accent="amber"][data-theme="light"] {
+  --ds-accent-rgb: 180 83 9;
+  --ds-accent: rgb(var(--ds-accent-rgb));
+  --ds-accent-strong: #92400e;
+  --ds-accent-deep: #78350f;
+}
+
+[data-accent="rose"] {
+  --ds-accent-rgb: 251 113 133;
+  --ds-accent: rgb(var(--ds-accent-rgb));
+  --ds-accent-strong: #f43f5e;
+  --ds-accent-deep: #e11d48;
+}
+[data-accent="rose"][data-theme="light"] {
+  --ds-accent-rgb: 225 29 72;
+  --ds-accent: rgb(var(--ds-accent-rgb));
+  --ds-accent-strong: #be123c;
+  --ds-accent-deep: #9f1239;
+}
+
+/* ═══════════════ Density ═══════════════
+   Compact tightens rows, tables and control heights — never below usable
+   tap-target size on touch screens (control heights restored ≥ 640px). */
+
+:root {
+  --row-pad-y: 0.55rem;
+  --table-head-pad-y: 0.4rem;
+}
+[data-density="compact"] {
+  --row-pad-y: 0.3rem;
+  --table-head-pad-y: 0.22rem;
+}
+
+[data-density="compact"] .tsv-table tbody td {
+  padding-top: var(--row-pad-y);
+  padding-bottom: var(--row-pad-y);
+}
+[data-density="compact"] .tsv-table thead th {
+  padding-top: var(--table-head-pad-y);
+  padding-bottom: var(--table-head-pad-y);
+}
+@media (min-width: 640px) {
+  [data-density="compact"] .input,
+  [data-density="compact"] .btn {
+    height: 30px;
+  }
+  [data-density="compact"] .btn-sm {
+    height: 26px;
+  }
+  [data-density="compact"] .chip {
+    line-height: 1.25rem;
+  }
 }
 
 /* Content column: dense on desktop, comfortable on mobile */
@@ -131,8 +312,8 @@ body {
 /* Ambient page glow — extremely subtle teal, replaces hard section lines */
 .app-backdrop {
   background:
-    radial-gradient(1100px 480px at 18% -12%, rgb(45 212 191 / 0.045), transparent 62%),
-    radial-gradient(900px 420px at 88% -8%, rgb(160 160 255 / 0.02), transparent 55%);
+    radial-gradient(1100px 480px at 18% -12%, rgb(var(--ds-accent-rgb) / 0.05), transparent 62%),
+    radial-gradient(900px 420px at 88% -8%, rgb(var(--ds-accent-rgb) / 0.02), transparent 55%);
 }
 
 /* Focus visibility — one tokenized ring everywhere */
@@ -143,7 +324,7 @@ body {
 }
 
 ::selection {
-  background: rgb(45 212 191 / 0.22);
+  background: rgb(var(--ds-accent-rgb) / 0.22);
 }
 
 @layer components {
@@ -185,12 +366,12 @@ body {
     color: var(--color-bg);
   }
   .btn-accent {
-    border-color: rgb(45 212 191 / 0.35);
-    background: rgb(45 212 191 / 0.08);
+    border-color: rgb(var(--ds-accent-rgb) / 0.35);
+    background: rgb(var(--ds-accent-rgb) / 0.08);
     color: var(--color-accent);
   }
   .btn-accent:hover {
-    border-color: rgb(45 212 191 / 0.6);
+    border-color: rgb(var(--ds-accent-rgb) / 0.6);
     color: var(--color-accent);
   }
   .btn-danger {
@@ -244,8 +425,8 @@ body {
     color: var(--color-warning);
   }
   .chip-accent {
-    border-color: rgb(45 212 191 / 0.3);
-    background: rgb(45 212 191 / 0.08);
+    border-color: rgb(var(--ds-accent-rgb) / 0.3);
+    background: rgb(var(--ds-accent-rgb) / 0.08);
     color: var(--color-accent);
   }
   .chip-info {
@@ -315,8 +496,8 @@ body {
     padding-right: 0.25rem;
   }
   .tsv-table tbody td {
-    padding: 0.55rem 1rem 0.55rem 0;
-    border-bottom: 1px solid rgb(35 35 41 / 0.55);
+    padding: var(--row-pad-y) 1rem var(--row-pad-y) 0;
+    border-bottom: 1px solid var(--ds-table-rule);
     vertical-align: top;
   }
   .tsv-table tbody tr:last-child td {
@@ -326,7 +507,7 @@ body {
     transition: background-color 100ms ease;
   }
   .tsv-table tbody tr:hover {
-    background: rgb(26 26 31 / 0.5);
+    background: var(--ds-table-row-hover);
   }
 
   /* ---- Link with quiet affordance ---- */
@@ -369,7 +550,7 @@ body {
   }
 }
 .skeleton {
-  background: linear-gradient(90deg, var(--color-surface-2) 25%, #232329 45%, var(--color-surface-2) 65%);
+  background: linear-gradient(90deg, var(--color-surface-2) 25%, var(--ds-skeleton-stop) 45%, var(--color-surface-2) 65%);
   background-size: 800px 100%;
   animation: shimmer 1.6s linear infinite;
   border-radius: 10px;

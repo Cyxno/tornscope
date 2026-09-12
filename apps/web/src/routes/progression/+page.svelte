@@ -21,7 +21,7 @@
   import ProvenanceBadge from "$lib/components/ProvenanceBadge.svelte";
   import { availabilityMessage, availabilityHasData } from "$lib/capabilities";
   import { confidenceTitle } from "$lib/confidence";
-  import { C, TOOLTIP, LEGEND, GRID, timeAxis, valueAxis, dayLabel, MOTION } from "$lib/charts";
+  import { C, ct, TOOLTIP, LEGEND, GRID, timeAxis, valueAxis, dayLabel, MOTION } from "$lib/charts";
 
   let progression = $state<ProgressionResponse | null>(null);
   let loading = $state(true);
@@ -62,13 +62,17 @@
 
   /* --------------------------- battlestat chart --------------------------- */
   type StatKey = "strength" | "defense" | "speed" | "dexterity";
-  const STAT_META: Array<{ key: StatKey; label: string; color: string }> = [
-    { key: "strength", label: "Strength", color: "#f87171" },
-    { key: "defense", label: "Defense", color: "#60a5fa" },
-    { key: "speed", label: "Speed", color: "#4ade80" },
-    { key: "dexterity", label: "Dexterity", color: "#c084fc" },
-  ];
-  let visibleStats = $state<Set<StatKey>>(new Set(STAT_META.map((s) => s.key)));
+  // Identity colors are theme-tuned but stable across chart palettes —
+  // series identity must survive palette switching.
+  const STAT_META: Array<{ key: StatKey; label: string; color: string }> = $derived([
+    { key: "strength", label: "Strength", color: ct().battlestats.strength },
+    { key: "defense", label: "Defense", color: ct().battlestats.defense },
+    { key: "speed", label: "Speed", color: ct().battlestats.speed },
+    { key: "dexterity", label: "Dexterity", color: ct().battlestats.dexterity },
+  ]);
+  // Keys are static (only colors are theme-derived); capture once, no warning.
+  const STAT_KEYS: StatKey[] = ["strength", "defense", "speed", "dexterity"];
+  let visibleStats = $state<Set<StatKey>>(new Set(STAT_KEYS));
   let chartMode = $state<"absolute" | "growth">("absolute");
 
   function toggleStat(key: StatKey) {
@@ -208,7 +212,7 @@
           state={availabilityMessage(energyAv).state}
           title={availabilityMessage(energyAv).title}
           hint={availabilityMessage(energyAv).hint}
-          action={{ label: "Review API access in Settings", run: () => void goto("/settings") }}
+          action={{ label: "Review API access in Settings", run: () => void goto("/settings?tab=api") }}
         />
       {:else if !progression.energy.covered}
         <StateMessage
@@ -297,7 +301,7 @@
           state={availabilityMessage(statAv).state}
           title={availabilityMessage(statAv).title}
           hint={availabilityMessage(statAv).hint}
-          action={{ label: "Review API access in Settings", run: () => void goto("/settings") }}
+          action={{ label: "Review API access in Settings", run: () => void goto("/settings?tab=api") }}
         />
       {:else}
         <div class="grid grid-cols-2 gap-px overflow-hidden rounded-card border border-border bg-border shadow-panel md:grid-cols-4">

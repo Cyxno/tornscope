@@ -12,7 +12,7 @@
   import SegmentedDateRange from "$lib/components/SegmentedDateRange.svelte";
   import StateMessage from "$lib/components/StateMessage.svelte";
   import { availabilityMessage, availabilityHasData } from "$lib/capabilities";
-  import { C, TOOLTIP, LEGEND, GRID, timeAxis, countAxis, dayLabel, MOTION, CHART_SURFACE } from "$lib/charts";
+  import { C, ct, TOOLTIP, LEGEND, GRID, timeAxis, countAxis, dayLabel, MOTION, surface, accentRgba } from "$lib/charts";
 
   let data = $state<DrugsSummaryResponse | null>(null);
   let loading = $state(true);
@@ -75,7 +75,7 @@
       grid: { ...GRID, bottom: 34 },
       dataZoom: [
         { type: "inside" },
-        { type: "slider", height: 16, bottom: 4, borderColor: C.axisLine, backgroundColor: "transparent", fillerColor: "rgba(45,212,191,0.08)", handleStyle: { color: C.accent }, textStyle: { color: C.labelFaint } },
+        { type: "slider", height: 16, bottom: 4, borderColor: C.axisLine, backgroundColor: "transparent", fillerColor: accentRgba(0.08), handleStyle: { color: C.accent }, textStyle: { color: C.labelFaint } },
       ],
       xAxis: timeAxis(data.dailySeries.map((p) => dayLabel(p.t)), { boundaryGap: true }),
       yAxis: countAxis(),
@@ -90,7 +90,7 @@
     if (!data) return null;
     const rows = data.byDrug.filter((d) => d.uses > 0);
     if (rows.length === 0) return null;
-    const palette = [C.accent, C.violet ?? "#a78bfa", C.positive, C.warning, C.pink ?? "#f472b6", "#818cf8", C.accentStrong, "#94a3b8", "#c084fc", "#5eead4", "#fca5a5"];
+    const palette = ct().palette;
     return {
       ...MOTION,
       tooltip: { ...TOOLTIP, trigger: "item", formatter: "{b}: {c} uses ({d}%)" },
@@ -101,7 +101,7 @@
           radius: ["58%", "82%"],
           center: ["34%", "50%"],
           label: { show: false },
-          itemStyle: { borderRadius: 4, borderColor: CHART_SURFACE, borderWidth: 2 },
+          itemStyle: { borderRadius: 4, borderColor: surface(), borderWidth: 2 },
           data: rows.map((d, i) => ({ name: d.drug, value: d.uses, itemStyle: { color: palette[i % palette.length] } })),
         },
       ],
@@ -210,7 +210,7 @@
         state={availabilityMessage(histAv).state}
         title={availabilityMessage(histAv).title}
         hint={availabilityMessage(histAv).hint}
-        action={{ label: "Review API access in Settings", run: () => void goto("/settings") }}
+        action={{ label: "Review API access in Settings", run: () => void goto("/settings?tab=api") }}
       />
     {/if}
 

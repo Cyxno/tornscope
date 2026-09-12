@@ -67,7 +67,7 @@
       yAxis: { type: "value", minInterval: 1, axisLabel: { color: C.label, fontSize: 10.5 }, splitLine: { lineStyle: { color: C.splitLine } }, axisLine: { show: false } },
       series: [
         { name: "Outgoing (I attacked)", type: "bar", stack: "attacks", data: summary.dailySeries.map((p) => p.made), barMaxWidth: 12, itemStyle: { color: C.accent, borderRadius: [3, 3, 0, 0] } },
-        { name: "Incoming (attacked me)", type: "bar", stack: "attacks", data: summary.dailySeries.map((p) => p.received), barMaxWidth: 12, itemStyle: { color: C.violet ?? "#a78bfa", borderRadius: [3, 3, 0, 0] } },
+        { name: "Incoming (attacked me)", type: "bar", stack: "attacks", data: summary.dailySeries.map((p) => p.received), barMaxWidth: 12, itemStyle: { color: C.violet, borderRadius: [3, 3, 0, 0] } },
       ],
     };
   });
@@ -115,7 +115,7 @@
         state={histMsg!.state}
         title={histMsg!.title}
         hint={histMsg!.hint}
-        action={{ label: "Review API access in Settings", run: () => void goto("/settings") }}
+        action={{ label: "Review API access in Settings", run: () => void goto("/settings?tab=api") }}
       />
     {:else}
     {#if summary.coverage.trackingSince !== null}

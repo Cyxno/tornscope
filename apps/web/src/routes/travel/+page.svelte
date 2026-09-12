@@ -56,7 +56,7 @@
   /** Friendly haul categories. Xanax is first-class: a major travel
    * commodity must not hide in Other. */
   const CATEGORY_LABELS: Record<string, string> = { flower: "Flowers", plushie: "Plushies", xanax: "Xanax", other: "Other" };
-  const CATEGORY_COLOR: Record<string, string> = { plushie: C.warning, flower: C.pink, xanax: C.violet, other: C.accent };
+  const getCategoryColor = (key: string): string => ({ plushie: C.warning, flower: C.pink, xanax: C.violet, other: C.accent })[key] ?? C.accent;
 
   /** Destination ranking rows: the primary visual. Signed bars share the
    * scale of the largest absolute estimated profit. */
@@ -74,7 +74,7 @@
     return summary.itemsByCategory.map((r) => ({
       ...r,
       label: CATEGORY_LABELS[r.category] ?? r.category,
-      color: CATEGORY_COLOR[r.category] ?? C.accent,
+      color: getCategoryColor(r.category),
       width: Math.max(3, (r.quantity / max) * 100),
     }));
   });
@@ -125,7 +125,7 @@
         state={availabilityMessage(histAv).state}
         title={availabilityMessage(histAv).title}
         hint={availabilityMessage(histAv).hint}
-        action={{ label: "Review API access in Settings", run: () => void goto("/settings") }}
+        action={{ label: "Review API access in Settings", run: () => void goto("/settings?tab=api") }}
       />
     {:else}
       {#if staleMsg}

@@ -16,7 +16,7 @@
   import StateMessage from "$lib/components/StateMessage.svelte";
   import ProvenanceBadge from "$lib/components/ProvenanceBadge.svelte";
   import { availabilityMessage, availabilityHasData } from "$lib/capabilities";
-  import { C, TOOLTIP, LEGEND, GRID, timeAxis, valueAxis, moneyValueAxis, moneyTooltipValue, dayLabel, tealArea, MOTION, CHART_SURFACE } from "$lib/charts";
+  import { C, ct, TOOLTIP, LEGEND, GRID, timeAxis, valueAxis, moneyValueAxis, moneyTooltipValue, dayLabel, tealArea, MOTION, surface } from "$lib/charts";
 
   let economy = $state<EconomySummaryResponse | null>(null);
   let events = $state<Paginated<MoneyEventDto> | null>(null);
@@ -236,16 +236,18 @@
   const estimatedContributors = $derived((economy?.explanation.contributors ?? []).filter((c) => c.certainty === "estimated"));
   const residualContributors = $derived((economy?.explanation.contributors ?? []).filter((c) => c.certainty === "unexplained"));
 
-  /** Distinct pie palettes: inflow (greens/teals) vs outflow (reds/ambers). */
-  const INFLOW_PALETTE = ["#2dd4bf", "#14b8a6", "#3fd68f", "#5eead4", "#8fd6c0", "#a7f3d0"];
-  const OUTFLOW_PALETTE = ["#f87171", "#fb923c", "#f0b24a", "#e879a0", "#d4a5a5", "#c084fc"];
+  /** Distinct pie ramps: inflow (greens/teals) vs outflow (reds/ambers) —
+   *  theme- and palette-aware via the shared chart theme. */
+  const INFLOW_PALETTE = $derived(ct().inflowRamp);
+  const OUTFLOW_PALETTE = $derived(ct().outflowRamp);
+  const OTHERS_COLOR = $derived(ct().theme === "light" ? "#83826f" : "#6e6e78");
   const DONUT_TOP_N = 5;
 
   /**
    * Slice categories into top-N + "Everything else", with the EXACT colors
    * the donut uses so the external legend always matches the graphic.
    */
-  function donutSlices(rows: Array<{ category: string; total: number }>, palette: string[], labeler: (category: string) => string) {
+  function donutSlices(rows: Array<{ category: string; total: number }>, palette: string[], labeler: (category: string) => string, othersColor?: string) {
     const total = rows.reduce((s, r) => s + r.total, 0) || 1;
     const top = rows.slice(0, DONUT_TOP_N);
     const rest = rows.slice(DONUT_TOP_N);
@@ -259,7 +261,7 @@
       slices.push({
         name: `Everything else (${rest.length})`,
         value: rest.reduce((s, r) => s + r.total, 0),
-        color: "#4b5563",
+        color: othersColor ?? "#6e6e78",
         share: rest.reduce((s, r) => s + r.total, 0) / total,
       });
     }
@@ -279,15 +281,15 @@
           center: ["50%", "50%"],
           label: { show: false },
           labelLine: { show: false },
-          itemStyle: { borderRadius: 4, borderColor: CHART_SURFACE, borderWidth: 2 },
+          itemStyle: { borderRadius: 4, borderColor: surface(), borderWidth: 2 },
           data: slices.map((s) => ({ name: s.name, value: s.value, itemStyle: { color: s.color } })),
         },
       ],
     };
   }
 
-  const receivedSlices = $derived(donutSlices(economy?.cashFlow.incomeByCategory ?? [], INFLOW_PALETTE, incomeLabel));
-  const spentSlices = $derived(donutSlices(economy?.cashFlow.expensesByCategory ?? [], OUTFLOW_PALETTE, expenseLabel));
+  const receivedSlices = $derived(donutSlices(economy?.cashFlow.incomeByCategory ?? [], INFLOW_PALETTE, incomeLabel, OTHERS_COLOR));
+  const spentSlices = $derived(donutSlices(economy?.cashFlow.expensesByCategory ?? [], OUTFLOW_PALETTE, expenseLabel, OTHERS_COLOR));
   const receivedDonut = $derived(receivedSlices.length > 0 ? donutOption(receivedSlices, "Cash received") : null);
   const spentDonut = $derived(spentSlices.length > 0 ? donutOption(spentSlices, "Cash spent") : null);
 
@@ -386,7 +388,7 @@
             state={availabilityMessage(cashAv).state}
             title={availabilityMessage(cashAv).title}
             hint={availabilityMessage(cashAv).hint}
-            action={{ label: "Review API access in Settings", run: () => void goto("/settings") }}
+            action={{ label: "Review API access in Settings", run: () => void goto("/settings?tab=api") }}
           />
         {:else}
           {#if cashStale}
@@ -759,7 +761,7 @@
                 state={availabilityMessage(nwAv).state}
                 title={availabilityMessage(nwAv).title}
                 hint={nwAv.state === "unavailable_permission" ? "Your current API key does not include User Networth — grant it in Torn to track wealth history." : availabilityMessage(nwAv).hint}
-                action={{ label: "Review API access in Settings", run: () => void goto("/settings") }}
+                action={{ label: "Review API access in Settings", run: () => void goto("/settings?tab=api") }}
               />
             {:else}
               <div class="grid grid-cols-2 gap-px overflow-hidden rounded-card border border-border bg-border shadow-panel md:grid-cols-4">

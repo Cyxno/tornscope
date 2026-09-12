@@ -10,6 +10,7 @@
   import Panel from "$lib/components/Panel.svelte";
 import NotificationsSettings from "$lib/components/NotificationsSettings.svelte";
   import StateMessage from "$lib/components/StateMessage.svelte";
+  import AppearanceTab from "$lib/components/settings/AppearanceTab.svelte";
 
   const envLabel = publicEnv.PUBLIC_ENV_LABEL?.trim() || "Public Beta";
 
@@ -159,7 +160,56 @@ import NotificationsSettings from "$lib/components/NotificationsSettings.svelte"
     canReadFactionLogs: "Faction Logs",
   };
 
-  const caps = $derived((status?.capabilities ?? me?.capabilities ?? null) as KeyCapabilitiesDto | null);
+  /* ── Tabbed IA: deep-linkable via ?tab= ─────────────────────────────── */
+  const TABS = [
+    { id: "general", label: "General" },
+    { id: "appearance", label: "Appearance" },
+    { id: "notifications", label: "Notifications" },
+    { id: "api", label: "API & Data" },
+    { id: "devices", label: "Devices" },
+    { id: "advanced", label: "Advanced" },
+  ] as const;
+  type TabId = (typeof TABS)[number]["id"];
+  const TAB_IDS = TABS.map((t) => t.id);
+  let activeTab = $state<TabId>("general");
+
+  $effect(() => {
+    // Initialize once from the URL; invalid values fall back to General.
+    const raw = new URLSearchParams(window.location.search).get("tab");
+    if (raw && (TAB_IDS as string[]).includes(raw)) activeTab = raw as TabId;
+  });
+
+  /* ── Default date range (General tab, browser-local like appearance) ── */
+  const DEFAULT_RANGES = [
+    { value: "1d", label: "1D" },
+    { value: "7d", label: "7D" },
+    { value: "14d", label: "14D" },
+    { value: "30d", label: "30D" },
+    { value: "90d", label: "90D" },
+  ] as const;
+  type DefaultRange = (typeof DEFAULT_RANGES)[number]["value"];
+  const RANGE_KEY = "tornscope.defaultRange.v1";
+  let defaultRange = $state<DefaultRange>("30d");
+  $effect(() => {
+    try {
+      const raw = window.localStorage.getItem(RANGE_KEY);
+      if (raw && DEFAULT_RANGES.some((r) => r.value === raw)) defaultRange = raw as DefaultRange;
+    } catch { /* storage unavailable */ }
+  });
+  function setDefaultRange(next: DefaultRange): void {
+    defaultRange = next;
+    try { window.localStorage.setItem(RANGE_KEY, next); } catch { /* storage unavailable */ }
+  }
+
+    function switchTab(next: TabId) {
+    activeTab = next;
+    const url = new URL(window.location.href);
+    if (next === "general") url.searchParams.delete("tab");
+    else url.searchParams.set("tab", next);
+    window.history.pushState({}, "", url);
+  }
+
+    const caps = $derived((status?.capabilities ?? me?.capabilities ?? null) as KeyCapabilitiesDto | null);
 
   /** Rows of the feature matrix: what each TornScope feature needs, whether
    * it works, and WHICH permission is missing when it doesn't. */
@@ -224,8 +274,24 @@ import NotificationsSettings from "$lib/components/NotificationsSettings.svelte"
   <PageHeader
     eyebrow="System"
     title="Settings"
-    description="Your connection to Torn — encrypted at rest, never exposed to the browser again after submission."
+    description="Your connection to Torn — preferences, appearance, alerts and the data connection behind every page."
   />
+
+  <!-- Tab rail: horizontally scrollable on phones, segmented on wider screens -->
+  <nav aria-label="Settings sections" class="-mx-4 overflow-x-auto px-4 pb-1 md:mx-0 md:overflow-visible md:px-0">
+    <div class="flex gap-1 rounded-full border border-border bg-surface p-1 md:w-fit" role="tablist">
+      {#each TABS as t (t.id)}
+        <button
+          role="tab"
+          aria-selected={activeTab === t.id}
+          class="shrink-0 rounded-full px-3.5 py-1.5 text-xs font-medium transition-all {activeTab === t.id ? 'bg-fg font-semibold text-bg' : 'text-fg-muted hover:text-fg'}"
+          onclick={() => switchTab(t.id)}
+        >
+          {t.label}
+        </button>
+      {/each}
+    </div>
+  </nav>
 
   {#if message}
     <div class="rounded-tile border px-4 py-2.5 text-[13px] {message.tone === 'ok' ? 'border-positive/25 bg-positive/5 text-positive' : message.tone === 'warn' ? 'border-warning/25 bg-warning/5 text-warning' : 'border-negative/25 bg-negative/5 text-negative'}">
@@ -233,6 +299,65 @@ import NotificationsSettings from "$lib/components/NotificationsSettings.svelte"
     </div>
   {/if}
 
+  {#if activeTab === "general"}
+    <Panel title="Profile" caption="The Torn identity this browser is linked to">
+      <dl class="grid grid-cols-2 gap-x-8 gap-y-5 md:grid-cols-3">
+        <div>
+          <dt class="text-[11px] font-medium text-fg-faint">Player</dt>
+          <dd class="mt-1 text-fg">{status?.tornName ? `${status.tornName} [${status.tornId}]` : "—"}</dd>
+        </div>
+        <div>
+          <dt class="text-[11px] font-medium text-fg-faint">Timezone</dt>
+          <dd class="mt-1 text-fg">{me?.timezone ?? "UTC"}</dd>
+        </div>
+        <div>
+          <dt class="text-[11px] font-medium text-fg-faint">Currency</dt>
+          <dd class="mt-1 text-fg">Torn dollars ($)</dd>
+        </div>
+        <div>
+          <dt class="text-[11px] font-medium text-fg-faint">Market prices</dt>
+          <dd class="mt-1 text-fg">Torn item catalog (estimated)</dd>
+        </div>
+      </dl>
+    </Panel>
+    <Panel title="Default date range" caption="The range analytics pages open with">
+      <div class="flex flex-wrap gap-2" role="group" aria-label="Default date range">
+        {#each DEFAULT_RANGES as r (r.value)}
+          <button
+            class="chip cursor-pointer {defaultRange === r.value ? 'chip-accent font-semibold' : 'chip-quiet'}"
+            aria-pressed={defaultRange === r.value}
+            onclick={() => setDefaultRange(r.value)}
+          >
+            {r.label}
+          </button>
+        {/each}
+      </div>
+      <p class="mt-3 text-[11px] text-fg-faint">Stored in this browser. Pages remember their own range changes as you use them.</p>
+    </Panel>
+  {:else if activeTab === "appearance"}
+    <Panel title="Appearance" caption="Applies immediately, stored in this browser">
+      <AppearanceTab />
+    </Panel>
+  {:else if activeTab === "notifications"}
+    <Panel title="Notifications" caption="TornScope alerts on this device — timers, Torn attention events, OC">
+      <NotificationsSettings />
+    </Panel>
+  {:else if activeTab === "devices"}
+    <Panel title="Browser sessions" caption="Browsers signed in to this profile">
+      <p class="text-[13px] text-fg-muted">
+        <span class="tnum font-medium text-fg">{me?.activeSessions ?? 1}</span>
+        active session{(me?.activeSessions ?? 1) === 1 ? "" : "s"}.
+        {#if (me?.activeSessions ?? 1) > 1}
+          <button class="ml-2 text-xs underline decoration-border underline-offset-2 transition-colors hover:text-accent disabled:opacity-40" disabled={signingOutOthers} onclick={() => void signOutOthers()}>
+            {signingOutOthers ? "Signing out…" : "Sign out other browsers"}
+          </button>
+        {/if}
+      </p>
+    </Panel>
+    <Panel title="Notification devices" caption="Devices registered to receive TornScope push alerts">
+      <NotificationsSettings section="devices" />
+    </Panel>
+  {:else if activeTab === "api"}
   <Panel title="Torn API key" caption="Validated against Torn, encrypted with AES-256-GCM, decrypted only for outgoing requests">
     {#if loading}
       <StateMessage state="loading" />
@@ -379,6 +504,77 @@ import NotificationsSettings from "$lib/components/NotificationsSettings.svelte"
     </div>
   </Panel>
 
+  <!-- Compact capability summary (details live in Advanced) -->
+  <Panel title="Capabilities" caption="What your key can power — the full feature matrix lives in Advanced">
+    {#if loading}
+      <StateMessage state="loading" />
+    {:else if caps}
+      <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs">
+        <span class="chip {capabilityMode === 'Full' ? 'chip-positive' : capabilityMode === 'Limited' ? 'chip-accent' : 'chip-info'}">
+          {capabilityMode === "Custom" ? "Custom capability set" : (`${capabilityMode} preset`)}
+        </span>
+        <span class="text-fg-muted">
+          <span class="tnum font-medium text-positive">{matrixCounts.available}</span> fully available
+          <span class="mx-1 text-border-strong">·</span>
+          <span class="tnum font-medium text-warning">{matrixCounts.partial}</span> partial
+          <span class="mx-1 text-border-strong">·</span>
+          <span class="tnum font-medium text-fg-faint">{matrixCounts.unavailable}</span> unavailable
+          <span class="text-fg-faint"> of {matrixCounts.total} features</span>
+        </span>
+      </div>
+    {:else}
+      <p class="text-[13px] text-fg-muted">Connect an API key to see what it can power.</p>
+    {/if}
+  </Panel>
+
+  <Panel title="Privacy & security" caption="What TornScope stores, and where">
+    <ul class="max-w-2xl space-y-1.5 text-[13px] leading-relaxed text-fg-muted">
+      <li>• Your Torn API key is stored <span class="text-fg">encrypted server-side</span> (AES-256-GCM) and is never sent back to the browser.</li>
+      <li>• Your browser stores only an <span class="text-fg">opaque session identifier</span> — never the API key.</li>
+      <li>• Personal analytics are isolated per browser profile; other visitors cannot read your data.</li>
+      <li>• Torn API keys are read-only and cannot perform in-game actions. Broader permissions can expose more private Torn data — including detailed activity/log history — so choosing a limited key reduces exposure.</li>
+      <li>• Connecting your key from a new browser links that browser to your existing profile; the stored key is never replaced silently and history is never imported twice.</li>
+      <li>• Disconnecting the key stops all Torn syncing; collected history is kept unless you delete it.</li>
+      <li>• Deleting this TornScope profile removes that profile's stored data permanently.</li>
+      <li>• Clearing this site's cookies detaches the browser from its profile; a valid API key for the same Torn account can link this browser to the existing profile again.</li>
+    </ul>
+  </Panel>
+
+  <Panel title="Your data" caption="What happens when you disconnect">
+    <p class="max-w-2xl text-[13px] leading-relaxed text-fg-muted">
+      Your historical TornScope data remains stored on the TornScope server when you disconnect your API key.
+      Syncing simply pauses; reconnecting the same Torn identity continues building on the history you already have.
+    </p>
+  </Panel>
+
+  <!-- ── Danger zone: destructive account actions, clearly separated ── -->
+  <section aria-labelledby="danger-zone" class="rounded-card border border-negative/30 bg-negative/5 p-5">
+    <h2 id="danger-zone" class="section-label !text-negative">Danger zone</h2>
+      <Panel title="Delete this TornScope profile" caption="Destructive and irreversible — different from disconnecting">
+    <p class="max-w-2xl text-[13px] leading-relaxed text-fg-muted">
+      Removes the TornScope profile linked to this browser: the encrypted API key, sync state, settings and all personal
+      analytics collected for it. Other profiles are never affected. Other browsers linked to the same profile must
+      disconnect separately.
+    </p>
+    <div class="mt-4 flex items-center gap-3">
+      <button
+        class="btn btn-sm {deletingProfile ? '!border-negative bg-negative font-semibold text-bg' : 'btn-danger'}"
+        onclick={() => void deleteProfile()}
+      >
+        {deletingProfile ? "Click again to permanently delete" : "Delete this TornScope profile"}
+      </button>
+      {#if deletingProfile}
+        <button class="text-xs text-fg-faint hover:text-fg" onclick={() => (deletingProfile = false)}>cancel</button>
+      {/if}
+    </div>
+  </Panel>
+
+  </section>
+
+  {/if}
+
+  {#if activeTab === "advanced"}
+
   <Panel
     title="Feature access"
     caption={caps ? `Derived from your key's actual permissions (${status?.accessType ?? "detected"}) — never from a manually chosen level` : "Connect a key to see what it can power"}>
@@ -456,65 +652,6 @@ import NotificationsSettings from "$lib/components/NotificationsSettings.svelte"
     {/if}
   </Panel>
 
-  <Panel title="Privacy & security" caption="What TornScope stores, and where">
-    <ul class="max-w-2xl space-y-1.5 text-[13px] leading-relaxed text-fg-muted">
-      <li>• Your Torn API key is stored <span class="text-fg">encrypted server-side</span> (AES-256-GCM) and is never sent back to the browser.</li>
-      <li>• Your browser stores only an <span class="text-fg">opaque session identifier</span> — never the API key.</li>
-      <li>• Personal analytics are isolated per browser profile; other visitors cannot read your data.</li>
-      <li>• Torn API keys are read-only and cannot perform in-game actions. Broader permissions can expose more private Torn data — including detailed activity/log history — so choosing a limited key reduces exposure.</li>
-      <li>• Connecting your key from a new browser links that browser to your existing profile; the stored key is never replaced silently and history is never imported twice.</li>
-      <li>• Disconnecting the key stops all Torn syncing; collected history is kept unless you delete it.</li>
-      <li>• Deleting this TornScope profile removes that profile's stored data permanently.</li>
-      <li>• Clearing this site's cookies detaches the browser from its profile; a valid API key for the same Torn account can link this browser to the existing profile again.</li>
-    </ul>
-  </Panel>
-
-  <Panel title="Notifications" caption="TornScope alerts on this device — timers, Torn attention events, OC">
-    <NotificationsSettings />
-  </Panel>
-
-  <Panel title="Display defaults" caption="Timezone, currency and price basis used across TornScope">
-    <dl class="grid grid-cols-1 gap-x-8 gap-y-5 md:grid-cols-3">
-      <div>
-        <dt class="text-[11px] font-medium text-fg-faint">Timezone</dt>
-        <dd class="mt-1 text-fg">UTC</dd>
-      </div>
-      <div>
-        <dt class="text-[11px] font-medium text-fg-faint">Currency</dt>
-        <dd class="mt-1 text-fg">Torn dollars ($)</dd>
-      </div>
-      <div>
-        <dt class="text-[11px] font-medium text-fg-faint">Market prices</dt>
-        <dd class="mt-1 text-fg">Torn item catalog (estimated)</dd>
-      </div>
-    </dl>
-  </Panel>
-
-  <Panel title="Delete this TornScope profile" caption="Destructive and irreversible — different from disconnecting">
-    <p class="max-w-2xl text-[13px] leading-relaxed text-fg-muted">
-      Removes the TornScope profile linked to this browser: the encrypted API key, sync state, settings and all personal
-      analytics collected for it. Other profiles are never affected. Other browsers linked to the same profile must
-      disconnect separately.
-    </p>
-    <div class="mt-4 flex items-center gap-3">
-      <button
-        class="btn btn-sm {deletingProfile ? '!border-negative bg-negative font-semibold text-bg' : 'btn-danger'}"
-        onclick={() => void deleteProfile()}
-      >
-        {deletingProfile ? "Click again to permanently delete" : "Delete this TornScope profile"}
-      </button>
-      {#if deletingProfile}
-        <button class="text-xs text-fg-faint hover:text-fg" onclick={() => (deletingProfile = false)}>cancel</button>
-      {/if}
-    </div>
-  </Panel>
-
-  <Panel title="Your data" caption="What happens when you disconnect">
-    <p class="max-w-2xl text-[13px] leading-relaxed text-fg-muted">
-      Your historical TornScope data remains stored on the TornScope server when you disconnect your API key.
-      Syncing simply pauses; reconnecting the same Torn identity continues building on the history you already have.
-    </p>
-  </Panel>
 
   <Panel title="About TornScope" caption="Release status, maintainer and independence">
     <dl class="grid grid-cols-1 gap-x-8 gap-y-5 md:grid-cols-3">
@@ -566,4 +703,5 @@ import NotificationsSettings from "$lib/components/NotificationsSettings.svelte"
       {/if}
     </div>
   </Panel>
+  {/if}
 </div>

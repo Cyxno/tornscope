@@ -112,7 +112,7 @@
         state={histMsg!.state}
         title={histMsg!.title}
         hint={histMsg!.hint}
-        action={{ label: "Review API access in Settings", run: () => void goto("/settings") }}
+        action={{ label: "Review API access in Settings", run: () => void goto("/settings?tab=api") }}
       />
     {:else}
     {#if summary.coverage.trackingSince !== null}

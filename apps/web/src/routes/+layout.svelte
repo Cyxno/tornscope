@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { initAppearance } from "$lib/appearance-state.svelte";
   import "@fontsource-variable/inter";
   import "@fontsource-variable/newsreader";
   import "@fontsource-variable/newsreader/wght-italic.css";
@@ -12,6 +13,8 @@
   import { me, refreshMe } from "$lib/state.svelte";
   import { endpoints } from "$lib/api";
   import { env as publicEnv } from "$env/dynamic/public";
+
+  initAppearance();
 
   // Footer status label mirrors the header chip: production shows "Public
   // Beta"; non-production deployments set PUBLIC_ENV_LABEL (e.g. "Development")

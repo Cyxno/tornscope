@@ -1,49 +1,190 @@
 import { formatMoneyCompact } from "@tornscope/shared";
+import { appearance, resolvedTheme, prefersReducedMotion } from "$lib/appearance-state.svelte";
+import { CATEGORICAL, RAMPS, BATTLESTATS } from "$lib/chart-palettes";
+import type { ChartPalette, ResolvedTheme } from "$lib/appearance.svelte";
 
 /**
  * Shared ECharts theme + option fragments — the one chart language.
  * Pages compose these; they never restate axis/tooltip/legend styling.
+ *
+ * THEME INTEGRATION: `C`, `TOOLTIP`, `LEGEND`, `AXIS_*` and `SPLIT_LINE`
+ * resolve through getters that read the reactive appearance state, so option
+ * builders inside $derived re-run when the user changes theme/accent/palette
+ * and mounted charts update live (Chart.svelte re-applies options). Always
+ * read chart colors through these getters — never hardcode hex values in
+ * pages. Semantic positive/negative/warning are per-theme constants and are
+ * deliberately NOT affected by the accent preference.
  */
 
-/** Keep in sync with --color-surface in app.css (donut hole / tooltip). */
-export const CHART_SURFACE = "#141417";
+/** Keep in sync with --ds-surface in app.css (donut hole / tooltip). */
+export function surface(): string {
+  return resolvedTheme() === "light" ? "#fbfaf6" : "#141417";
+}
 
-export const C = {
-  accent: "#2dd4bf",
-  accentStrong: "#14b8a6",
-  positive: "#3fd68f",
-  negative: "#f87171",
-  warning: "#f0b24a",
-  violet: "#a78bfa",
-  pink: "#f472b6",
-  label: "#8f8f99",
-  labelFaint: "#7d7d87",
-  axisLine: "#232329",
-  splitLine: "#1b1b20",
-  tooltipBg: "#141417",
-  tooltipBorder: "#34343c",
-  tooltipText: "#f4f4f1",
+/** Canvas-safe accent family per preference — keep in sync with the
+ *  [data-accent] blocks in app.css (CSS holds the same values). */
+const ACCENT_FAMILIES: Record<
+  string,
+  { dark: { main: string; strong: string; deep: string; rgb: string }; light: { main: string; strong: string; deep: string; rgb: string } }
+> = {
+  teal: {
+    dark: { main: "#2dd4bf", strong: "#14b8a6", deep: "#0d9488", rgb: "45 212 191" },
+    light: { main: "#0d9488", strong: "#0f766e", deep: "#115e59", rgb: "13 148 136" },
+  },
+  blue: {
+    dark: { main: "#60a5fa", strong: "#3b82f6", deep: "#2563eb", rgb: "96 165 250" },
+    light: { main: "#2563eb", strong: "#1d4ed8", deep: "#1e40af", rgb: "37 99 235" },
+  },
+  indigo: {
+    dark: { main: "#818cf8", strong: "#6366f1", deep: "#4f46e5", rgb: "129 140 248" },
+    light: { main: "#4f46e5", strong: "#4338ca", deep: "#3730a3", rgb: "79 70 229" },
+  },
+  violet: {
+    dark: { main: "#a78bfa", strong: "#8b5cf6", deep: "#7c3aed", rgb: "167 139 250" },
+    light: { main: "#7c3aed", strong: "#6d28d9", deep: "#5b21b6", rgb: "124 58 237" },
+  },
+  emerald: {
+    dark: { main: "#34d399", strong: "#10b981", deep: "#059669", rgb: "52 211 153" },
+    light: { main: "#059669", strong: "#047857", deep: "#065f46", rgb: "5 150 105" },
+  },
+  amber: {
+    dark: { main: "#fbbf24", strong: "#f59e0b", deep: "#d97706", rgb: "251 191 36" },
+    light: { main: "#b45309", strong: "#92400e", deep: "#78350f", rgb: "180 83 9" },
+  },
+  rose: {
+    dark: { main: "#fb7185", strong: "#f43f5e", deep: "#e11d48", rgb: "251 113 133" },
+    light: { main: "#e11d48", strong: "#be123c", deep: "#9f1239", rgb: "225 29 72" },
+  },
 };
 
-export const AXIS_LABEL = { color: C.label, fontSize: 10.5, fontFamily: "Inter Variable" };
-export const AXIS_LINE = { lineStyle: { color: C.axisLine } };
-export const SPLIT_LINE = { lineStyle: { color: C.splitLine } };
+function accentFamily() {
+  const mode: ResolvedTheme = resolvedTheme() === "light" ? "light" : "dark";
+  return ACCENT_FAMILIES[appearance.accent]?.[mode] ?? ACCENT_FAMILIES.teal[mode];
+}
+
+/** Accent as an "r, g, b" triplet string for rgba() composition. */
+function accentRgb(): string {
+  return accentFamily().rgb;
+}
+
+/** Preview helpers for the Appearance tab (reactive to theme). */
+export function palettePreview(id: ChartPalette): string[] {
+  const mode: ResolvedTheme = resolvedTheme() === "light" ? "light" : "dark";
+  return [...CATEGORICAL[id][mode]];
+}
+export function palettePreviewFor(id: ChartPalette, theme: ResolvedTheme): string[] {
+  return [...CATEGORICAL[id][theme]];
+}
+export function accentPreviewFor(id: string, theme: ResolvedTheme): string {
+  return ACCENT_FAMILIES[id]?.[theme].main ?? ACCENT_FAMILIES.teal[theme].main;
+}
+
+export function accentPreviewHex(id: string): string {
+  const mode: ResolvedTheme = resolvedTheme() === "light" ? "light" : "dark";
+  return ACCENT_FAMILIES[id]?.[mode].main ?? ACCENT_FAMILIES.teal[mode].main;
+}
+
+export function accentRgba(alpha: number): string {
+  return `rgb(${accentRgb()} / ${alpha})`;
+}
+
+export interface ChartTheme {
+  theme: ResolvedTheme;
+  accent: string;
+  accentRgb: string;
+  accentStrong: string;
+  accentDeep: string;
+  positive: string;
+  negative: string;
+  warning: string;
+  info: string;
+  violet: string;
+  pink: string;
+  label: string;
+  labelFaint: string;
+  axisLine: string;
+  splitLine: string;
+  tooltipBg: string;
+  tooltipBorder: string;
+  tooltipText: string;
+  surface: string;
+  /** Categorical series colors for the selected palette + theme. */
+  palette: string[];
+  battlestats: { strength: string; defense: string; speed: string; dexterity: string };
+  inflowRamp: string[];
+  outflowRamp: string[];
+}
+
+/** The one chart theme. Call inside $derived so options track appearance. */
+export function ct(): ChartTheme {
+  const light = resolvedTheme() === "light";
+  const mode = light ? "light" : "dark";
+  return {
+    theme: resolvedTheme(),
+    accent: accentFamily().main,
+    accentRgb: accentRgb(),
+    accentStrong: accentFamily().strong,
+    accentDeep: accentFamily().deep,
+    positive: light ? "#178a4e" : "#3fd68f",
+    negative: light ? "#c53f3f" : "#f87171",
+    warning: light ? "#9a6a10" : "#f0b24a",
+    info: light ? "#6d4fd0" : "#a78bfa",
+    violet: light ? "#6d28d9" : "#a78bfa",
+    pink: light ? "#be185d" : "#f472b6",
+    label: light ? "#5b5a50" : "#8f8f99",
+    labelFaint: light ? "#83826f" : "#7d7d87",
+    axisLine: light ? "#dfded4" : "#232329",
+    splitLine: light ? "#e9e8e0" : "#1b1b20",
+    tooltipBg: light ? "#fbfaf6" : "#141417",
+    tooltipBorder: light ? "#c6c5b9" : "#34343c",
+    tooltipText: light ? "#26251f" : "#f4f4f1",
+    surface: surface(),
+    palette: CATEGORICAL[appearance.palette][mode],
+    battlestats: BATTLESTATS[resolvedTheme()],
+    inflowRamp: RAMPS[appearance.palette][mode].inflow,
+    outflowRamp: RAMPS[appearance.palette][mode].outflow,
+  };
+}
+
+/* Compatibility constants: getters resolve against the LIVE chart theme so
+   existing `C.accent`-style call sites are theme/palette reactive. */
+export const C = {
+  get accent() { return ct().accent; },
+  get accentStrong() { return ct().accentStrong; },
+  get accentDeep() { return ct().accentDeep; },
+  get positive() { return ct().positive; },
+  get negative() { return ct().negative; },
+  get warning() { return ct().warning; },
+  get violet() { return ct().violet; },
+  get pink() { return ct().pink; },
+  get label() { return ct().label; },
+  get labelFaint() { return ct().labelFaint; },
+  get axisLine() { return ct().axisLine; },
+  get splitLine() { return ct().splitLine; },
+  get tooltipBg() { return ct().tooltipBg; },
+  get tooltipBorder() { return ct().tooltipBorder; },
+  get tooltipText() { return ct().tooltipText; },
+};
+
+export const AXIS_LABEL = { get color() { return ct().label; }, fontSize: 10.5, fontFamily: "Inter Variable" };
+export const AXIS_LINE = { get lineStyle() { return { color: ct().axisLine }; } };
+export const SPLIT_LINE = { get lineStyle() { return { color: ct().splitLine }; } };
 
 export const TOOLTIP = {
-  backgroundColor: C.tooltipBg,
-  borderColor: C.tooltipBorder,
+  get backgroundColor() { return ct().tooltipBg; },
+  get borderColor() { return ct().tooltipBorder; },
   borderRadius: 10,
   padding: [8, 12],
   // Keep the tooltip inside the chart box: the chart container clips its
   // overflow (mobile page-width safety), so an unconfined tooltip would
   // be cut off at the panel edge on narrow screens.
   confine: true,
-  textStyle: { color: C.tooltipText, fontSize: 11.5, fontFamily: "Inter Variable" },
-  extraCssText: "box-shadow: 0 12px 32px -12px rgba(0,0,0,.6);",
+  get textStyle() { return { color: ct().tooltipText, fontSize: 11.5, fontFamily: "Inter Variable" }; },
+  get extraCssText() { return `box-shadow: 0 12px 32px -12px ${resolvedTheme() === "light" ? "rgba(38,37,31,.25)" : "rgba(0,0,0,.6)"};`; },
 };
 
 export const LEGEND = {
-  textStyle: { color: C.label, fontSize: 11, fontFamily: "Inter Variable" },
+  get textStyle() { return { color: ct().label, fontSize: 11, fontFamily: "Inter Variable" }; },
   itemWidth: 14,
   itemHeight: 8,
   icon: "roundRect",
@@ -51,12 +192,21 @@ export const LEGEND = {
 
 export const GRID = { left: 10, right: 16, top: 32, bottom: 10, containLabel: true };
 
-/** Calm default motion: short, once. The Chart wrapper disables it entirely
- * under prefers-reduced-motion. */
-export const MOTION = { animation: true, animationDuration: 320, animationDurationUpdate: 200 };
+/** Motion: resolved from the motion preference (system/reduced/full). */
+export function motionEnabled(): boolean {
+  return !prefersReducedMotion;
+}
 
-/** Teal gradient area fill for hero line charts. */
+/** Short, once. Disabled entirely under reduced motion. */
+export const MOTION = {
+  get animation() { return motionEnabled(); },
+  get animationDuration() { return motionEnabled() ? 320 : 0; },
+  get animationDurationUpdate() { return motionEnabled() ? 200 : 0; },
+};
+
+/** Accent gradient area fill for hero line charts. */
 export function tealArea(): Record<string, unknown> {
+  const rgb = accentRgb();
   return {
     color: {
       type: "linear",
@@ -65,12 +215,13 @@ export function tealArea(): Record<string, unknown> {
       x2: 0,
       y2: 1,
       colorStops: [
-        { offset: 0, color: "rgba(45,212,191,0.2)" },
-        { offset: 1, color: "rgba(45,212,191,0)" },
+        { offset: 0, color: `rgb(${rgb} / 0.2)` },
+        { offset: 1, color: `rgb(${rgb} / 0)` },
       ],
     },
   };
 }
+export const accentArea = tealArea;
 
 export function timeAxis(data: (number | string)[], opts: { boundaryGap?: boolean } = {}): Record<string, unknown> {
   return {
@@ -140,5 +291,5 @@ export function dayLabel(t: number): string {
 export function hourLabel(t: number): string {
   const d = new Date(t * 1000);
   const p = (n: number) => String(n).padStart(2, "0");
-  return `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
+  return p(d.getUTCHours()) + ":" + p(d.getUTCMinutes());
 }

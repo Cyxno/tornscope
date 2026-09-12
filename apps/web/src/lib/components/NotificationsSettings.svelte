@@ -260,6 +260,16 @@
     }
     await refresh();
   });
+  /**
+   * section: which slice renders. "full" (default) = everything (legacy
+   * single-panel usage); "preferences" = alerts/quiet hours/history for the
+   * Notifications tab; "devices" = device registration + device list for the
+   * Devices tab.
+   */
+  let { section = "full" }: { section?: "full" | "preferences" | "devices" } = $props();
+  // $derived keeps these reactive if a caller ever toggles sections dynamically.
+  const showPreferences = $derived(section === "full" || section === "preferences");
+  const showDevices = $derived(section === "full" || section === "devices");
 </script>
 
 <div class="space-y-4">
@@ -337,9 +347,9 @@
     {/if}
   </div>
 
-  {#if status && status.devices.length > 0}
+  {#if showDevices && status && status.devices.length > 0}
     <div>
-      <p class="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-fg-faint">Devices</p>
+      <p class="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-fg-faint">Registered devices</p>
       <ul class="space-y-1 text-xs text-fg-muted">
         {#each status.devices as device (device.id)}
           <li class="flex items-center justify-between gap-3">
@@ -358,7 +368,7 @@
     </div>
   {/if}
 
-  {#if status}
+  {#if showPreferences && status}
     <details class="rounded-xl border border-border bg-bg-raise px-4 py-3" open>
       <summary class="cursor-pointer select-none text-[11px] font-semibold uppercase tracking-[0.14em] text-fg-faint transition-colors hover:text-fg-muted">
         Alert types
@@ -528,7 +538,7 @@
   {/if}
 
   <!-- Delivery history -->
-  {#if history && history.entries.length > 0}
+  {#if showPreferences && history && history.entries.length > 0}
     <div>
       <p class="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-fg-faint">Recent deliveries</p>
       <ul class="divide-y divide-border overflow-hidden rounded-xl border border-border">

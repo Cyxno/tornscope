@@ -16,7 +16,19 @@ export const DATE_PRESETS: Array<{ value: DateRangePreset; label: string }> = [
   { value: "all", label: "All" },
 ];
 
-export const dateRange = $state<{ preset: DateRangePreset; from?: number; to?: number }>({ preset: "30d" });
+/** Browser-local default range preference (Settings › General). Read once
+ *  at module load; in-session range changes are never persisted back. */
+function storedDefaultPreset(): DateRangePreset {
+  if (typeof window === "undefined") return "30d";
+  try {
+    const raw = window.localStorage.getItem("tornscope.defaultRange.v1");
+    return DATE_PRESETS.some((p) => p.value === raw) ? (raw as DateRangePreset) : "30d";
+  } catch {
+    return "30d";
+  }
+}
+
+export const dateRange = $state<{ preset: DateRangePreset; from?: number; to?: number }>({ preset: storedDefaultPreset() });
 
 export interface MeState {
   loaded: boolean;

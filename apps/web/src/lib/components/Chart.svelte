@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { prefersReducedMotion } from "$lib/appearance-state.svelte";
 
   /**
    * Reusable ECharts wrapper: initializes once, applies option updates,
@@ -49,13 +50,17 @@
     };
   });
 
-  // Honor prefers-reduced-motion: charts render instantly, no transitions.
+  // Honor the motion preference: reduced renders charts instantly, no
+  // transitions (system mode tracks prefers-reduced-motion).
   function withMotion(opt: Record<string, unknown>): Record<string, unknown> {
-    if (typeof window === "undefined" || !window.matchMedia("(prefers-reduced-motion: reduce)").matches) return opt;
-    return { ...opt, animation: false, animationDurationUpdate: 0 };
+    if (prefersReducedMotion()) return { ...opt, animation: false, animationDurationUpdate: 0 };
+    return opt;
   }
 
   $effect(() => {
+    // Track both the option and the appearance state (theme/palette/motion)
+    // so mounted charts restyle live when personalization changes.
+    void prefersReducedMotion();
     const current = $state.snapshot(option);
     if (chart) chart.setOption(withMotion(current), { notMerge: false });
   });

@@ -1,14 +1,36 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en" data-theme="dark">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="color-scheme" content="dark" />
-    <meta name="theme-color" content="#131316" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#0a0a0c" />
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" type="image/png" href="/favicon.png" sizes="16x16" />
     <link rel="apple-touch-icon" href="/icons/tornscope-180.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
+    <script>
+      // Pre-paint appearance bootstrap — must run before the stylesheet so
+      // the first paint already matches the stored preference (no flash).
+      // Keep the storage key and fallbacks in sync with
+      // src/lib/appearance.svelte.ts.
+      (function () {
+        try {
+          var s = JSON.parse(localStorage.getItem("tornscope.appearance.v1") || "{}");
+          var theme = s.theme === "light" || s.theme === "dark" ? s.theme : "system";
+          var dark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+          var de = document.documentElement;
+          de.dataset.theme = dark ? "dark" : "light";
+          var accents = ["teal", "blue", "indigo", "violet", "emerald", "amber", "rose"];
+          de.dataset.accent = accents.indexOf(s.accent) !== -1 ? s.accent : "teal";
+          de.dataset.density = s.density === "compact" ? "compact" : "comfortable";
+          de.dataset.motion = s.motion === "reduced" || s.motion === "full" ? s.motion : "system";
+          de.style.colorScheme = dark ? "dark" : "light";
+        } catch (e) {
+          /* storage unavailable — dark defaults already set */
+        }
+      })();
+    </script>
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover" class="bg-bg text-fg antialiased">

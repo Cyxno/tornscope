@@ -140,7 +140,7 @@
       state="permission"
       title="Timeline unavailable with current API permissions"
       hint="Your current API key provides neither User Logs nor User Events — grant either in Torn to build your timeline."
-      action={{ label: "Review API access in Settings", run: () => void goto("/settings") }}
+      action={{ label: "Review API access in Settings", run: () => void goto("/settings?tab=api") }}
     />
   {:else if events && events.items.length === 0}
     <StateMessage state="empty" title="Quiet in this range" hint={me.data?.isDemo ? "Synthetic example data — the demo dataset has no timeline entries here." : "No timeline entries match. Widen the date range or wait for the next sync."} />
