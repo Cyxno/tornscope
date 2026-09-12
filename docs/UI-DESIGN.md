@@ -270,3 +270,28 @@ The v0.2 rule: **sections, not boxes.**
 5. New chart: build options from `$lib/charts.ts` fragments; never restate
    axis/tooltip styling inline.
 6. Keep `packages/ui/src/index.ts` in sync with `app.css` tokens.
+
+## Product-finish addendum (v0.2 bug bash, build 6611af7)
+
+Rules added from real-browser defects (docs/PRODUCT-FINISH-ISSUES.md):
+
+- **Chart-panel pairing width rule.** Donut+legend groups need ~210px
+  min-content per column. The "Cash received vs spent" / "Received vs spent
+  mix" row therefore only sits side by side at `min-[1500px]`; below that it
+  stacks full-width. Do not add side-by-side chart panels that each embed a
+  two-column legend below ~1500px.
+- **Count + share must never be visually joinable.** Anywhere a count and a
+  percentage sit adjacent ("4 uses · 5%"), separate them with a unit word and
+  a separator so they cannot read as one number ("45%").
+- **Range/lens state is URL state** on Economy (`?range=&lens=`), restored on
+  load, reflected via `history.replaceState` — pages are shareable and
+  refresh-stable.
+- **Chips that look interactive must act.** The at-a-glance lens chips are
+  buttons (select + scroll); text that carries no action uses plain text
+  styling, not chip styling.
+- **Live-only resources** (no Torn-side history, e.g. net worth) read as
+  "live collection — Torn keeps no history" in the Sync coverage table —
+  never "COMPLETE + not walked yet".
+- **Float hygiene.** Any float interpolated into copy goes through a
+  formatter (`toFixed(2)`, compact money); raw `${value}` of a computed float
+  is how "+471.93000000000023" reached the screen.

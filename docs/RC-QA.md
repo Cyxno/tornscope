@@ -152,3 +152,58 @@ compose env consistency, single version source). No regression found.
   share critical env across api/worker (VAPID-class bug guard), sandbox
   options uniform, single version source.
 - Suite totals at audit time: **1010 tests / 84 files**, all green.
+
+---
+
+## Product-finish pass (v0.2, September 2026) — bug bash and RC reassessment
+
+A dedicated product-finish program (real-browser bug bash against deployed
+dev, build `37cf3d10`) re-audited everything the earlier RC QA covered, with
+the bar lowered from "technically correct" to "feels finished". Full findings
+and per-issue status: [PRODUCT-FINISH-ISSUES.md](PRODUCT-FINISH-ISSUES.md).
+
+### What the bug bash found that screenshot QA had missed
+
+- Literal HTML rendered as text in the Economy wallet reconciliation
+  ("Opening wallet <span …>11-09-2026</span>") — visible only when both
+  snapshot anchors existed (1D range), invisible in every screenshot run
+  that used default 30D.
+- The Economy "Received vs spent mix" legend columns collided at 1280px —
+  readable at the 390/768 widths the visual sweep captured by default.
+- Provenance counts/shares read as wrong numbers ("8 10%" → "810%").
+- A raw float (+471.93000000000023) rendered in the Combat respect line.
+- A slow 30D response could overwrite fresh 1D data on every range-driven
+  page (no stale-response guard; only DailySummary had one).
+- Full-page reloads on "Today →" and every "Review API access in Settings"
+  action; demo-mode Today was a bare $0 wall; the welcome page claimed
+  "Public Beta" on the dev environment.
+
+### Fixes and guards
+
+23 issues fixed (5×P1, 13×P2, 5×P3) plus 2 accepted-for-beta with reasoning.
+Every defect class is now a source contract in
+`apps/web/tests/product-finish.test.ts`; the sub-$1 money rule has formatter
+unit tests. Economy range/lens state moved into the URL. Stale-response
+guards generalized to all eight range-driven pages via `lib/loadGuard.ts`.
+
+### Verification
+
+- Fresh throwaway DB + demo seed + serialized run: **1070 tests / 89 files,
+  all green** (incl. the new contracts). Note: the DB-backed suites are
+  order-dependent when run in parallel against one shared database — run
+  serialized (`--no-file-parallelism`) or with a per-run database.
+- lint: 0 errors (23 pre-existing warnings, none in touched files);
+  typecheck + svelte-check clean; web build OK.
+- 16-width responsive sweep (320→1920 × 12 routes): no overflow, console
+  errors or failed requests; manual review at 390/768/1280/1920.
+- Deployed-dev re-verification after rebuild: reconciliation dates render
+  styled, redirects live, SPA navigation confirmed via window-marker,
+  demo hint live, quiet-hours race fixed, offline refresh keeps last-known
+  data with an "Updated" marker.
+
+### RC verdict impact
+
+The previous RC-READY verdict was premature: real use surfaced five P1s and
+thirteen P2s that automation missed. With those fixed and contract-tested,
+v0.2 returns to RC candidate status — see the product-finish report for the
+current recommendation.
