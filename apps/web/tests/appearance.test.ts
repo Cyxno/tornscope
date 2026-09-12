@@ -27,14 +27,14 @@ describe("no-flash bootstrap (app.html)", () => {
   });
 
   it("resolves System via prefers-color-scheme and defaults to dark brand", () => {
-    const bootstrap = read("static/appearance-bootstrap.js");
+    const bootstrap = read("../static/appearance-bootstrap.js");
     expect(bootstrap).toContain('window.matchMedia("(prefers-color-scheme: dark)")');
     expect(bootstrap).toContain('s.theme === "light" || s.theme === "dark" ? s.theme : "system"');
     expect(html).toContain('data-theme="dark"');
   });
 
   it("applies accent, density and motion data attributes pre-paint", () => {
-    const bootstrap = read("static/appearance-bootstrap.js");
+    const bootstrap = read("../static/appearance-bootstrap.js");
     expect(bootstrap).toContain("de.dataset.accent");
     expect(bootstrap).toContain("de.dataset.density");
     expect(bootstrap).toContain("de.dataset.motion");

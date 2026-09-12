@@ -295,3 +295,19 @@ Rules added from real-browser defects (docs/PRODUCT-FINISH-ISSUES.md):
 - **Float hygiene.** Any float interpolated into copy goes through a
   formatter (`toFixed(2)`, compact money); raw `${value}` of a computed float
   is how "+471.93000000000023" reached the screen.
+
+## Theming & personalization (v0.2 settings epic)
+
+- Preferences: Theme (system/light/dark), Accent (7 presets), Chart palette
+  (5), Density (comfortable/compact), Motion (system/reduced/full).
+  Browser-local persistence + pre-paint bootstrap in
+  `static/appearance-bootstrap.js` — no flash, hydration-safe, CSP-compliant
+  (external file; inline scripts are blocked by script-src 'self').
+- Token flow: `@theme inline` maps color utilities onto runtime `--ds-*`
+  variables; `[data-theme]` and `[data-accent]` on `<html>` restyle the
+  product. See docs/APPEARANCE.md for the full contract.
+- Accent restyles the interactive layer only; semantic positive/negative/
+  warning/info are theme-scoped constants that accents never touch.
+- Chart colors come exclusively from `lib/charts.ts` (`ct()` + compatibility
+  getters) — pages never hardcode series colors. Battlestat identities and
+  positive/negative are stable across palettes.

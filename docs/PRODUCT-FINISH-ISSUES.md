@@ -44,3 +44,16 @@ confusion · P3 polish.
 - Mobile 390px: no horizontal overflow on audited routes, bottom nav + More sheet work, lens switcher works.
 - Charts: tooltips show correct label/unit/sign (verified "24/8 · Cash received $2.17m / Cash spent -$2.18m").
 - Quiet-hours "(UTC)" label reflects the profile timezone — correct, not a bug.
+
+---
+
+## Settings redesign & theming epic (builds 4ebb997 → 8be89a6+)
+
+Found during the settings/theming epic's own walkthroughs:
+
+| ID | Route | Issue | Severity | Status |
+|----|-------|-------|----------|--------|
+| TH-001 | all | Inline pre-paint theme bootstrap was blocked by CSP (script-src 'self'), so stored themes never applied before paint (flash) | P1 | FIXED — bootstrap moved to static/appearance-bootstrap.js |
+| TH-002 | Charts | Live theme switch merged color-only option updates and could leave series unrendered (net-worth line vanished in Light until reload) | P1 | FIXED — appearance signature forces full option replace in Chart.svelte |
+| TH-003 | Settings | Feature matrix + About mixed with daily preferences in one monolithic page | P2 | FIXED — six-tab IA (?tab= deep links) |
+| TH-004 | /stocks, /money, tests | Stale travel-golden fixture: time-of-day dependent failure (passes ~19:00 UTC, fails later; reproduces on the previously accepted SHA 8be89a6) | P2 | ACCEPTED FOR BETA — pre-existing test-infrastructure issue, documented for a focused follow-up |

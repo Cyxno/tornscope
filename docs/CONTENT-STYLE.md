@@ -72,6 +72,13 @@ product-finish program. Source contracts live in
 - Raw enum values (`stale_permission`, `capability_denied`, …) never render;
   map them through `syncHealth.ts` copy tables.
 
+## Appearance terminology
+
+Theme · System · Light · Dark · Accent · Chart palette · Interface density ·
+Motion. Use the option's own name as its button label; never invent styles
+like "Color Theme Mode" or "UI Compactness Level". Preferences state their
+scope plainly: "stored in this browser".
+
 ## Merits & stocks terminology
 
 | Term | Use for | Never use |
