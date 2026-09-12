@@ -25,6 +25,7 @@
   let category = $state<string>("");
   let query = $state<string>("");
   let expandedId = $state<number | null>(null);
+  let loadSeq = 0;
   let searchDebounce: ReturnType<typeof setTimeout> | undefined;
 
   $effect(() => {
@@ -48,22 +49,20 @@
     window.history.replaceState({}, "", url);
   }
 
-  const guard = $state<{ seq: number }>({ seq: 0 });
-
   async function load() {
-    const seq = ++guard.seq;
+    const seq = ++loadSeq;
     loading = true;
     error = null;
     try {
       const res = await endpoints.merits();
-      if (seq !== guard.seq) return;
+      if (seq !== loadSeq) return;
       data = res;
     } catch (err) {
-      if (seq !== guard.seq) return;
+      if (seq !== loadSeq) return;
       error = err instanceof ApiClientError ? err.message : (err as Error).message;
       data = null;
     } finally {
-      if (seq === guard.seq) loading = false;
+      if (seq === loadSeq) loading = false;
     }
   }
 

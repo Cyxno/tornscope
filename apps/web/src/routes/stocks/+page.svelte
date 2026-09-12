@@ -26,6 +26,7 @@
   let view = $state<"owned" | "all">("owned");
   let sort = $state<"position" | "closest" | "cost" | "annual" | "payback" | "name">("position");
   let expandedId = $state<number | null>(null);
+  let loadSeq = 0;
 
   $effect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -44,22 +45,20 @@
     window.history.replaceState({}, "", url);
   }
 
-  const guard = $state<{ seq: number }>({ seq: 0 });
-
   async function load() {
-    const seq = ++guard.seq;
+    const seq = ++loadSeq;
     loading = true;
     error = null;
     try {
       const res = await endpoints.stocks();
-      if (seq !== guard.seq) return;
+      if (seq !== loadSeq) return;
       data = res;
     } catch (err) {
-      if (seq !== guard.seq) return;
+      if (seq !== loadSeq) return;
       error = err instanceof ApiClientError ? err.message : (err as Error).message;
       data = null;
     } finally {
-      if (seq === guard.seq) loading = false;
+      if (seq === loadSeq) loading = false;
     }
   }
 
