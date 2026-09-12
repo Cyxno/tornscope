@@ -147,13 +147,19 @@ describe("PF-010: Economy range/lens state lives in the URL", () => {
 
 describe("PF-017: stale routes redirect instead of rendering ComingSoon", () => {
   it.each([
-    ["routes/stocks/+page.ts", "/money"],
     ["routes/faction/ranked-wars/+page.ts", "/faction"],
     ["routes/faction/organized-crimes/+page.ts", "/faction"],
   ])("%s forwards to %s", (file, target) => {
     const src = read(file);
     expect(src).toContain("redirect(308");
     expect(src).toContain(`"${target}"`);
+  });
+
+  it("/stocks is now a real feature page (no ComingSoon, no redirect)", () => {
+    const page = read("routes/stocks/+page.svelte");
+    expect(page).toContain("Stocks · TornScope");
+    expect(page).not.toContain("ComingSoon");
+    expect(() => read("routes/stocks/+page.ts")).toThrow();
   });
 
   it("no route page renders the ComingSoon component", () => {

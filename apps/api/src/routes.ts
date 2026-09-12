@@ -29,6 +29,8 @@ import { getFactionOverview, getFactionRankedWars, getFactionMembers, getFaction
 import { getTimeline } from "./services/timeline.js";
 import { getDashboard } from "./services/dashboard.js";
 import { getToday } from "./services/today.js";
+import { getMerits } from "./services/merits.js";
+import { getStocks } from "./services/stocks.js";
 import { getDailySummary } from "./services/dailySummary.js";
 import { getMe, getApiKeyStatus, saveApiKey, validateApiKey, linkProfile, deleteApiKey, setDemoView, deleteProfile, signOutOtherSessions } from "./services/me.js";
 import { deleteEmptyProfile } from "@tornscope/database";
@@ -141,6 +143,18 @@ export function registerRoutes(app: FastifyInstance): void {
   app.get("/api/today", async (req) => {
     const user = currentUser(req);
     return getToday(user);
+  });
+
+  // Merits: live merits + official catalog enrichment (see services/merits.ts).
+  app.get("/api/merits", async (req) => {
+    const user = currentUser(req);
+    return getMerits(user);
+  });
+
+  // Stocks: holdings, benefit blocks, valuations (see services/stocks.ts).
+  app.get("/api/stocks", async (req) => {
+    const user = currentUser(req);
+    return getStocks(user);
   });
 
   // Daily Summary: one calendar day (user timezone) — GET /api/daily-summary?date=YYYY-MM-DD

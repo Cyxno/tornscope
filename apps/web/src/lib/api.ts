@@ -17,6 +17,8 @@ import type {
   EconomySummaryResponse,
   ProgressionResponse,
   MeResponse,
+  MeritsResponse,
+  StocksResponse,
   MoneyEventDto,
   MoneySummaryResponse,
   NetworthResponse,
@@ -138,6 +140,8 @@ export function rangeQuery(range: QueryRange, extra: Record<string, string> = {}
 
 export const endpoints = {
   me: () => api.get<MeResponse>("/me"),
+  merits: () => api.get<MeritsResponse>("/merits"),
+  stocks: () => api.get<StocksResponse>("/stocks"),
   today: () => api.get<TodayResponse>("/today"),
   dailySummary: (date?: string) => api.get<DailySummaryResponse>(`/daily-summary${date ? `?date=${encodeURIComponent(date)}` : ""}`),
   dashboard: (range: QueryRange) => api.get<DashboardResponse>(`/dashboard?${rangeQuery(range)}`),

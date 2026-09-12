@@ -11,3 +11,5 @@ export * from "./networth.js";
 export * from "./timeline.js";
 export * from "./xanax.js";
 export * from "./progression.js";
+export * from "./merits.js";
+export * from "./stocks.js";

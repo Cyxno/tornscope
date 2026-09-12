@@ -296,6 +296,7 @@
 
   const caps = $derived(me.data?.capabilities ?? null);
   const modules = $derived(moduleAvailability(caps ?? {
+    canReadUserMerits: false, canReadUserStocks: false,
     canReadUserBasic: false, canReadUserBars: false, canReadUserCooldowns: false, canReadUserEducation: false,
     canReadUserTravel: false, canReadUserMoney: false, canReadUserLogs: false, canReadUserAttacks: false,
     canReadUserNetworth: false, canReadUserEvents: false, canReadUserPersonalStats: false,

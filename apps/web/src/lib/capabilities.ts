@@ -60,6 +60,7 @@ export function availabilityHasData(av: FeatureAvailabilityDto): boolean {
 /** Modules the key can power — used for the post-connect summary. */
 export function moduleSummaries(caps: KeyCapabilitiesDto | null) {
   return moduleAvailability(caps ?? {
+    canReadUserMerits: false, canReadUserStocks: false,
     canReadUserBasic: false, canReadUserBars: false, canReadUserCooldowns: false, canReadUserEducation: false,
     canReadUserTravel: false, canReadUserMoney: false, canReadUserLogs: false, canReadUserAttacks: false,
     canReadUserNetworth: false, canReadUserEvents: false, canReadUserPersonalStats: false,

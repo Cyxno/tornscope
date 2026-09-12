@@ -295,6 +295,73 @@ export const TornItemSchema = loose({
 });
 export type TornItem = z.infer<typeof TornItemSchema>;
 
+/* ------------------------------------------------------------------------ */
+/* Merits & stocks (v2 user + torn selections; spec 6.13.5)                  */
+/* ------------------------------------------------------------------------ */
+
+/** One invested merit from /user/merits: merit id + exact level. */
+export const UserMeritUpgradeSchema = loose({
+  id: z.number(),
+  level: z.number(),
+});
+export type UserMeritUpgrade = z.infer<typeof UserMeritUpgradeSchema>;
+
+/** /user/merits — ranks are exact; available/used are exact point counts. */
+export const UserMeritsSchema = loose({
+  merits: loose({
+    upgrades: z.array(UserMeritUpgradeSchema),
+    available: z.number().optional(),
+    used: z.number().optional(),
+    medals: z.number().optional(),
+    honors: z.number().optional(),
+  }),
+});
+export type UserMerits = z.infer<typeof UserMeritsSchema>;
+
+/** Official merit catalog entry from /torn/merits (public). */
+export const TornMeritSchema = loose({
+  id: z.number(),
+  name: z.string(),
+  description: z.string(),
+});
+export type TornMerit = z.infer<typeof TornMeritSchema>;
+
+/** Per-user bonus state on an owned stock (/user/stocks). */
+export const UserStockBonusSchema = loose({
+  available: z.boolean(),
+  increment: z.number(),
+  progress: z.number(),
+  frequency: z.number(),
+});
+export type UserStockBonus = z.infer<typeof UserStockBonusSchema>;
+
+export const UserStockSchema = loose({
+  id: z.number(),
+  shares: z.number(),
+  bonus: UserStockBonusSchema,
+  transactions: z.array(loose({})).optional(),
+});
+export type UserStock = z.infer<typeof UserStockSchema>;
+
+/** Public catalog entry from /torn/stocks — ONE benefit per stock (the
+ *  bonus is a single object in the spec, proving single-block semantics). */
+export const TornStockBonusSchema = loose({
+  passive: z.boolean(),
+  frequency: z.number(),
+  requirement: z.number(),
+  description: z.string(),
+});
+export type TornStockBonus = z.infer<typeof TornStockBonusSchema>;
+
+export const TornStockSchema = loose({
+  id: z.number(),
+  name: z.string(),
+  acronym: z.string(),
+  market: loose({ price: z.number() }),
+  bonus: TornStockBonusSchema.nullable().optional(),
+});
+export type TornStock = z.infer<typeof TornStockSchema>;
+
 export const TornLogCategorySchema = loose({
   id: z.number(),
   title: z.string(),
@@ -723,4 +790,38 @@ export class TornEndpoints {
       z.object({ logTypes: z.array(TornLogTypeSchema) }).transform((r) => r.logTypes)
     );
   }
+
+  /** Invested merits + exact point counts (/user/merits, minimal access). */
+  userMerits(): Promise<UserMerits> {
+    return this.client.get("/user/merits", {}, UserMeritsSchema);
+  }
+
+  /** Official merit catalog: id → name/description (/torn/merits, public). */
+  tornMeritsCatalog(): Promise<TornMerit[]> {
+    return this.client.get(
+      "/torn/merits",
+      {},
+      z.object({ merits: z.array(TornMeritSchema) }).transform((r) => r.merits)
+    );
+  }
+
+  /** Owned stocks with per-user bonus state (/user/stocks, minimal access). */
+  userStocks(): Promise<{ stocks: UserStock[] }> {
+    return this.client.get(
+      "/user/stocks",
+      {},
+      z.object({ stocks: z.array(UserStockSchema) })
+    );
+  }
+
+  /** Public stock catalog: price + benefit definition (/torn/stocks). */
+  tornStocks(): Promise<TornStock[]> {
+    return this.client.get(
+      "/torn/stocks",
+      {},
+      z.object({ stocks: z.array(TornStockSchema) }).transform((r) => r.stocks)
+    );
+  }
+
+
 }

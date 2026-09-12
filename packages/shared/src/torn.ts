@@ -204,6 +204,8 @@ export const LOG_CATEGORY_ROUTES = {
 
 export interface KeyCapabilities {
   canReadUserBasic: boolean;
+  canReadUserMerits: boolean;
+  canReadUserStocks: boolean;
   canReadUserBars: boolean;
   canReadUserCooldowns: boolean;
   canReadUserEducation: boolean;
@@ -227,6 +229,8 @@ export interface KeyCapabilities {
 /** All capability keys, in a stable order for iteration/UI. */
 export const CAPABILITY_KEYS = [
   "canReadUserBasic",
+  "canReadUserMerits",
+  "canReadUserStocks",
   "canReadUserBars",
   "canReadUserCooldowns",
   "canReadUserEducation",
@@ -322,6 +326,10 @@ export function deriveKeyCapabilities(selections: KeySelections | null | undefin
   const fromFaction = (name: string): boolean => (faction ? faction.includes(name) : factionAll);
   return {
     canReadUserBasic: fromUser(['profile', 'basic'], 1),
+    // Merits and stocks are minimal-access (level 1) user selections; Full
+    // keys list them explicitly in selections.user (verified live).
+    canReadUserMerits: fromUser(['merits'], 1),
+    canReadUserStocks: fromUser(['stocks'], 1),
     canReadUserBars: fromUser(['bars'], 2),
     canReadUserCooldowns: fromUser(['cooldowns'], 2),
     canReadUserEducation: fromUser(['education'], 2),

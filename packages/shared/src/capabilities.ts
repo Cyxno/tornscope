@@ -47,7 +47,10 @@ export type TornScopeFeature =
   | "progression_battlestats"
   | "progression_energy"
   | "progression_training"
-  | "progression_happy_jumps";
+  | "progression_happy_jumps"
+  | "merits_overview"
+  | "stocks_holdings"
+  | "stocks_benefits";
 
 export interface FeatureRequirement {
   feature: TornScopeFeature;
@@ -119,6 +122,25 @@ export const FEATURE_REQUIREMENTS: FeatureRequirement[] = [
     label: "Happy-jump analysis",
     requires: ["canReadUserLogs"],
     optional: ["canReadUserBars"],
+    partial: true,
+  },
+  {
+    feature: "merits_overview",
+    label: "Merits",
+    requires: ["canReadUserMerits"],
+    partial: false,
+  },
+  {
+    feature: "stocks_holdings",
+    label: "Stock holdings",
+    requires: ["canReadUserStocks"],
+    partial: false,
+  },
+  {
+    feature: "stocks_benefits",
+    label: "Stock benefits",
+    requires: ["canReadUserStocks"],
+    optional: ["canReadUserMoney"],
     partial: true,
   },
   { feature: "money_cash_flow", label: "Cash flow", requires: ["canReadUserLogs"], partial: false },
@@ -200,6 +222,8 @@ export interface FeatureDataInfo {
 /** Friendly names for capability keys (used in every explanation). */
 export const CAPABILITY_LABELS: Record<CapabilityKey, { label: string; selections: string[]; access: string }> = {
   canReadUserBasic: { label: "Basic account access", selections: ["user: basic/profile"], access: "Public" },
+  canReadUserMerits: { label: "User Merits", selections: ["user: merits"], access: "Minimal" },
+  canReadUserStocks: { label: "User Stocks", selections: ["user: stocks"], access: "Minimal" },
   canReadUserBars: { label: "User Bars", selections: ["user: bars"], access: "Minimal" },
   canReadUserCooldowns: { label: "User Cooldowns", selections: ["user: cooldowns"], access: "Minimal" },
   canReadUserEducation: { label: "User Education", selections: ["user: education"], access: "Minimal" },
@@ -405,6 +429,8 @@ export function summarizeKeyAccess(
  *   labels faction features "requires faction selections".
  */
 export const LIMITED_PRESET: KeyCapabilities = {
+  canReadUserMerits: true,
+  canReadUserStocks: true,
   canReadUserBasic: true,
   canReadUserBars: true,
   canReadUserCooldowns: true,
@@ -427,6 +453,8 @@ export const LIMITED_PRESET: KeyCapabilities = {
 };
 
 export const FULL_PRESET: KeyCapabilities = {
+  canReadUserMerits: true,
+  canReadUserStocks: true,
   canReadUserBasic: true,
   canReadUserBars: true,
   canReadUserCooldowns: true,

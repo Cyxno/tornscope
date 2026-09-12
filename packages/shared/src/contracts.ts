@@ -219,6 +219,8 @@ export const SyncResourceSchema = z.enum(SYNC_RESOURCES);
 
 export const KeyCapabilitiesSchema = z.object({
   canReadUserBasic: z.boolean(),
+  canReadUserMerits: z.boolean(),
+  canReadUserStocks: z.boolean(),
   canReadUserBars: z.boolean(),
   canReadUserCooldowns: z.boolean(),
   canReadUserEducation: z.boolean(),
@@ -2047,3 +2049,114 @@ export const ProgressionResponseSchema = z.object({
   }),
 });
 export type ProgressionResponse = z.infer<typeof ProgressionResponseSchema>;
+
+/* -------------------------------------------------------------------------- */
+/* Merits & Stocks (v0.2 feature completion)                                   */
+/* -------------------------------------------------------------------------- */
+
+export const MeritRowDtoSchema = z.object({
+  id: z.number(),
+  name: z.string().nullable(),
+  description: z.string().nullable(),
+  category: z.string().nullable(),
+  /** Exact rank; null = untouched (never in upgrades). */
+  level: z.number().nullable(),
+  /** TornScope-maintained cap; null = not maintained (never claims maxed). */
+  maxLevel: z.number().nullable(),
+  remaining: z.number().nullable(),
+  owned: z.boolean(),
+  state: z.enum(["maxed", "partial", "owned", "untouched"]),
+  /** Exact level exceeds the maintained cap — catalog needs an update. */
+  catalogMismatch: z.boolean(),
+});
+
+export const MeritSummaryDtoSchema = z.object({
+  used: z.number(),
+  available: z.number().nullable(),
+  medals: z.number().nullable(),
+  honors: z.number().nullable(),
+  ownedCount: z.number(),
+  maxedCount: z.number(),
+  partialCount: z.number(),
+  untouchedCount: z.number(),
+  /** Invested merits whose cap TornScope does not maintain. */
+  capUnknownCount: z.number(),
+  byCategory: z.array(z.object({ category: z.string(), points: z.number() })),
+});
+
+export const MeritsResponseSchema = z.object({
+  summary: MeritSummaryDtoSchema,
+  merits: z.array(MeritRowDtoSchema),
+  availability: FeatureAvailabilitySchema,
+  /** When the official catalog could not be fetched, names come back null. */
+  catalogDegraded: z.boolean(),
+});
+
+export type MeritRowDto = z.infer<typeof MeritRowDtoSchema>;
+export type MeritSummaryDto = z.infer<typeof MeritSummaryDtoSchema>;
+export type MeritsResponse = z.infer<typeof MeritsResponseSchema>;
+
+export const StockRewardDtoSchema = z.object({
+  kind: z.enum(["fixed_cash", "item", "points", "bar_refill", "non_monetary", "unvalued"]),
+  description: z.string(),
+  cash: z.number().nullable(),
+  quantity: z.number().nullable(),
+  itemName: z.string().nullable(),
+  points: z.number().nullable(),
+  /** Estimated (or exact-cash) value of ONE payout; null = not valuated. */
+  valuePerPayout: z.number().nullable(),
+  valueIsExact: z.boolean(),
+});
+
+export const PayoutTimingDtoSchema = z.object({
+  kind: z.enum(["ready", "derived", "unavailable"]),
+  daysRemaining: z.number().nullable(),
+  basis: z.string(),
+});
+
+export const StockRowDtoSchema = z.object({
+  id: z.number(),
+  name: z.string(),
+  acronym: z.string(),
+  owned: z.boolean(),
+  shares: z.number().nullable(),
+  positionValue: z.number().nullable(),
+  benefitDescription: z.string().nullable(),
+  benefitRequirement: z.number().nullable(),
+  benefitFrequencyDays: z.number().nullable(),
+  benefitPassive: z.boolean().nullable(),
+  reward: StockRewardDtoSchema.nullable(),
+  benefitReached: z.boolean(),
+  timing: PayoutTimingDtoSchema.nullable(),
+  missingShares: z.number().nullable(),
+  estimatedCostToBenefit: z.number().nullable(),
+  estimatedAnnualValue: z.number().nullable(),
+  estimatedYieldPct: z.number().nullable(),
+  estimatedPaybackDays: z.number().nullable(),
+  yieldCapitalBasis: z.number().nullable(),
+  priceCapturedAt: z.number().nullable(),
+});
+
+export const StockSummaryDtoSchema = z.object({
+  /** Owned positions only; null without prices. Estimated at current price. */
+  portfolioValue: z.number().nullable(),
+  stocksOwned: z.number(),
+  activeBenefits: z.number(),
+  /** Sum of valued rewards' annualized value; unvalued rewards excluded and
+   *  disclosed via unvaluedBenefitCount. */
+  estimatedAnnualBenefit: z.number().nullable(),
+  unvaluedBenefitCount: z.number(),
+});
+
+export const StocksResponseSchema = z.object({
+  summary: StockSummaryDtoSchema,
+  rows: z.array(StockRowDtoSchema),
+  availability: FeatureAvailabilitySchema,
+  priceCapturedAt: z.number().nullable(),
+  /** Items whose catalog lookup failed (they render as unvalued rewards). */
+  unvaluedItemNames: z.array(z.string()),
+});
+
+export type StockRowDto = z.infer<typeof StockRowDtoSchema>;
+export type StocksResponse = z.infer<typeof StocksResponseSchema>;
+export type StockSummaryDto = z.infer<typeof StockSummaryDtoSchema>;

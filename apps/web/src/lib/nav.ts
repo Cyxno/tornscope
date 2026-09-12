@@ -27,7 +27,9 @@ export const NAV_GROUPS: Array<{ id: NavItem["group"]; label: string; items: Nav
     label: "Analytics",
     items: [
       { href: "/money", label: "Economy", icon: "economy", group: "analytics" },
+      { href: "/stocks", label: "Stocks", icon: "stocks", group: "analytics" },
       { href: "/progression", label: "Progression", icon: "progression", group: "analytics" },
+      { href: "/merits", label: "Merits", icon: "merits", group: "analytics" },
       { href: "/drugs", label: "Drugs", icon: "drugs", group: "analytics" },
       { href: "/travel", label: "Travel", icon: "travel", group: "analytics" },
     ],
