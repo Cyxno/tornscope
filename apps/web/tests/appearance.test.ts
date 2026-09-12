@@ -18,25 +18,27 @@ const read = (p: string) => readFileSync(join(__dirname, "../src", p), "utf8");
 describe("no-flash bootstrap (app.html)", () => {
   const html = read("app.html");
 
-  it("reads the persisted appearance before the stylesheet applies", () => {
-    expect(html).toContain('<script>');
-    expect(html).toContain('localStorage.getItem("tornscope.appearance.v1")');
-    const scriptStart = html.indexOf("<script>");
+  it("loads the bootstrap from a CSP-safe static file before the head content", () => {
+    expect(html).toContain('<script src="/appearance-bootstrap.js"></script>');
+    const scriptStart = html.indexOf('<script src="/appearance-bootstrap.js"');
     const styleStart = html.indexOf("%sveltekit.head%");
     expect(scriptStart).toBeGreaterThan(-1);
     expect(scriptStart).toBeLessThan(styleStart);
   });
 
   it("resolves System via prefers-color-scheme and defaults to dark brand", () => {
-    expect(html).toContain('window.matchMedia("(prefers-color-scheme: dark)")');
+    const bootstrap = read("static/appearance-bootstrap.js");
+    expect(bootstrap).toContain('window.matchMedia("(prefers-color-scheme: dark)")');
+    expect(bootstrap).toContain('s.theme === "light" || s.theme === "dark" ? s.theme : "system"');
     expect(html).toContain('data-theme="dark"');
-    expect(html).toContain('s.theme === "light" || s.theme === "dark" ? s.theme : "system"');
   });
 
   it("applies accent, density and motion data attributes pre-paint", () => {
-    expect(html).toContain("de.dataset.accent");
-    expect(html).toContain("de.dataset.density");
-    expect(html).toContain("de.dataset.motion");
+    const bootstrap = read("static/appearance-bootstrap.js");
+    expect(bootstrap).toContain("de.dataset.accent");
+    expect(bootstrap).toContain("de.dataset.density");
+    expect(bootstrap).toContain("de.dataset.motion");
+    expect(bootstrap).toContain('localStorage.getItem("tornscope.appearance.v1")');
   });
 });
 

@@ -18,6 +18,8 @@ import {
  * appearance changes (e.g. chart options).
  */
 
+const STORAGE_KEY = "tornscope.appearance.v1";
+
 export const appearance: Appearance = $state(
   browser ? loadStoredAppearance(window.localStorage) : { ...DEFAULT_APPEARANCE }
 );
@@ -69,6 +71,12 @@ export function initAppearance(): void {
   });
   window.matchMedia("(prefers-reduced-motion: reduce)").addEventListener("change", (e) => {
     systemReducedMatches = e.matches;
+  });
+  // Other tabs of the same browser update this tab live as well.
+  window.addEventListener("storage", (e) => {
+    if (e.key !== STORAGE_KEY) return;
+    Object.assign(appearance, loadStoredAppearance(window.localStorage));
+    applyToDocument();
   });
   applyToDocument();
 }
