@@ -230,7 +230,7 @@
     rehab: "Rehabilitation visits",
     money_logs: "Income & expense ledger entries",
     events: "Torn events for your timeline",
-    faction_basic: "Legacy faction snapshots",
+    faction_basic: "Faction snapshots (older format)",
     faction: "Faction profile, members & bank balance",
     ranked_wars: "Ranked war history (permanent)",
     chains: "Faction chain history",
@@ -283,6 +283,9 @@
     const day = (ts: number | null | undefined): string => (ts ? formatDate(ts) : "—");
     return COVERAGE_RESOURCES.map((resource) => {
       const row = health!.resources.find((r) => r.resource === resource);
+      // Live-only resource: Torn exposes no net-worth history, so there is no
+      // backward walk and "not walked yet" would contradict "COMPLETE".
+      const liveOnly = resource === "networth" && !row?.sourceEarliestAt;
       return {
         resource,
         requestedStart,
@@ -290,13 +293,15 @@
         storedSince: day(row?.storedEarliestAt),
         storedUntil: day(row?.storedLatestAt),
         stopReason: row?.stopReason ?? null,
+        liveOnly,
         confidence: row?.confidence ?? null,
         coverageTooltip: coverageTitle(row?.confidence?.coverage, (ts) => (ts ? formatDate(ts) : "—")),
       };
     });
   });
 
-  function stopReasonLabel(reason: string | null): string {
+  function stopReasonLabel(reason: string | null, liveOnly = false): string {
+    if (liveOnly) return "live collection — Torn keeps no history";
     switch (reason) {
       case "history_boundary_reached":
         return "history boundary reached";
@@ -315,7 +320,8 @@
     }
   }
 
-  function stopReasonStyle(reason: string | null): string {
+  function stopReasonStyle(reason: string | null, liveOnly = false): string {
+    if (liveOnly) return "chip";
     if (reason === "history_boundary_reached" || reason === "source_exhausted") return "chip-positive";
     if (reason === null) return "";
     return "chip-warning";
@@ -580,10 +586,10 @@
                 <td class="tnum text-fg-muted">{row.storedSince}</td>
                 <td class="tnum text-fg-muted">{row.storedUntil}</td>
                 <td class="">
-                  <ConfidenceBadge meta={row.confidence} showComplete tooltip={confidenceTitle(row.confidence, row.coverageTooltip)} />
+                  <ConfidenceBadge meta={row.confidence} showComplete tooltip={confidenceTitle(row.confidence, row.liveOnly ? "Live collection only — Torn provides no net-worth history, so coverage starts when TornScope first ran." : row.coverageTooltip)} />
                 </td>
                 <td class="">
-                  <span class={`chip ${stopReasonStyle(row.stopReason)}`}>{stopReasonLabel(row.stopReason)}</span>
+                  <span class={`chip ${stopReasonStyle(row.stopReason, row.liveOnly)}`}>{stopReasonLabel(row.stopReason, row.liveOnly)}</span>
                 </td>
               </tr>
             {/each}

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { createLoadGuard } from "$lib/loadGuard";
+  import { goto } from "$app/navigation";
   import type { ProgressionResponse } from "@tornscope/shared";
   import {
     formatKpiValue,
@@ -26,15 +28,20 @@
   let error = $state<string | null>(null);
   let reloadToken = $state(0);
 
+  const guard = createLoadGuard();
   async function load() {
+    const seq = guard.begin();
     error = null;
     try {
       const range = { preset: dateRange.preset, from: dateRange.from, to: dateRange.to };
-      progression = await endpoints.progression(range);
+      const res = await endpoints.progression(range);
+      if (!guard.isCurrent(seq)) return; // a newer range superseded this response
+      progression = res;
     } catch (err) {
+      if (!guard.isCurrent(seq)) return;
       error = err instanceof ApiClientError ? err.message : (err as Error).message;
     } finally {
-      loading = false;
+      if (guard.isCurrent(seq)) loading = false;
     }
   }
 
@@ -169,7 +176,7 @@
         <h2 id="prog-masthead" class="section-label !tracking-[0.12em]">{period} in training</h2>
         <div class="flex flex-wrap items-center gap-2">
           <span class="chip chip-quiet !border-border !text-[10px]" title="Battlestat values recorded by Torn, hourly">exact</span>
-          <span class="chip chip-quiet !border-border !text-[10px]" title="Computed deterministically from exact observations">derived</span>
+          <span class="chip chip-quiet !border-border !text-[10px]" title="Computed directly from exact observations">derived</span>
           <span class="chip chip-quiet !border-border !text-[10px]" title="Pattern-based conclusion — evidence always shown">inferred</span>
         </div>
       </div>
@@ -177,8 +184,7 @@
         {#if progression.summary.totalDelta.value !== null}
           Your battlestats grew by
           <span class="tnum font-semibold {progression.summary.totalDelta.value >= 0 ? 'text-positive' : 'text-negative'}">{formatSignedNumberCompact(progression.summary.totalDelta.value)}</span>
-          across {period === "All" ? "all time" : period}
-          {#if progression.summary.gainPerDay.value !== null}— about {formatNumberCompact(progression.summary.gainPerDay.value)} per day{/if}.
+          across {period === "All" ? "all time" : period}{#if progression.summary.gainPerDay.value !== null} — about {formatNumberCompact(progression.summary.gainPerDay.value)} per day{/if}.
         {:else if progression.battlestats.trackedSince !== null}
           Battlestat history is still accumulating — nothing in this range yet.
         {:else}
@@ -187,8 +193,7 @@
       </p>
       <p class="mt-2 max-w-4xl text-sm leading-relaxed text-fg-muted">
         {#if progression.energy.covered}
-          {progression.summary.energyTrained.value !== null ? formatNumberCompact(progression.summary.energyTrained.value) : "—"} of energy went into {progression.summary.sessions} inferred training session{progression.summary.sessions === 1 ? "" : "s"}
-          {#if progression.summary.likelyJumps > 0}, including {progression.summary.likelyJumps} likely happy jump{progression.summary.likelyJumps === 1 ? "" : "s"}{/if}.
+          {progression.summary.energyTrained.value !== null ? formatNumberCompact(progression.summary.energyTrained.value) : "—"} of energy went into {progression.summary.sessions} inferred training session{progression.summary.sessions === 1 ? "" : "s"}{#if progression.summary.likelyJumps > 0}, including {progression.summary.likelyJumps} likely happy jump{progression.summary.likelyJumps === 1 ? "" : "s"}{/if}.
         {:else}
           Energy analytics begin with the first bar snapshot — Torn only exposes bars live, so TornScope records them from now on.
         {/if}
@@ -203,7 +208,7 @@
           state={availabilityMessage(energyAv).state}
           title={availabilityMessage(energyAv).title}
           hint={availabilityMessage(energyAv).hint}
-          action={{ label: "Review API access in Settings", run: () => (window.location.href = "/settings") }}
+          action={{ label: "Review API access in Settings", run: () => void goto("/settings") }}
         />
       {:else if !progression.energy.covered}
         <StateMessage
@@ -292,7 +297,7 @@
           state={availabilityMessage(statAv).state}
           title={availabilityMessage(statAv).title}
           hint={availabilityMessage(statAv).hint}
-          action={{ label: "Review API access in Settings", run: () => (window.location.href = "/settings") }}
+          action={{ label: "Review API access in Settings", run: () => void goto("/settings") }}
         />
       {:else}
         <div class="grid grid-cols-2 gap-px overflow-hidden rounded-card border border-border bg-border shadow-panel md:grid-cols-4">
@@ -367,7 +372,7 @@
               </table>
             </div>
           </Panel>
-          <Panel title="Milestones" caption="Deterministic threshold crossings — the window is shown when the exact moment is not known">
+          <Panel title="Milestones" caption="Threshold crossings from exact observations — the window is shown when the exact moment is not known">
             {#if milestones.length === 0 && levelChanges.length === 0}
               <StateMessage state="empty" compact title="No milestone crossings in this range" />
             {:else}
@@ -472,7 +477,7 @@
 
     <!-- ═══ D · Happy jumps ═══ -->
     <section class="space-y-5">
-      <h2 class="section-label text-[12px]"><span class="mr-2 text-accent">D</span> Happy jumps — inferred, with the evidence in the open</h2>
+      <h2 class="section-label text-[12px]"><span class="mr-2 text-accent">D</span> Happy jumps — inferred, evidence on request</h2>
       {#if progression.happyJumps.jumps.length === 0}
         <StateMessage state="empty" title="No happy jumps inferred in this range" hint="A jump needs a large training burst plus preparation evidence (Xanax cluster, Ecstasy, refill) — Torn has no direct happy-jump record." />
       {:else}

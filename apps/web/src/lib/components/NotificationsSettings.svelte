@@ -380,7 +380,11 @@
               const v = (e.currentTarget as HTMLInputElement).value;
               if (!v) return void setQuietHours(null, null);
               const [h, m] = v.split(":").map(Number);
-              void setQuietHours(h! * 60 + m!, status!.preferences.quietEndMin ?? 420);
+              // Read the sibling input's live value — the other field may have
+              // been edited since the last save (status is stale mid-race).
+              const endVal = (document.querySelector('input[aria-label="Quiet hours end"]') as HTMLInputElement | null)?.value;
+              const [eh, em] = endVal ? endVal.split(":").map(Number) : [];
+              void setQuietHours(h! * 60 + m!, eh !== undefined ? eh! * 60 + (em ?? 0) : status!.preferences.quietEndMin ?? 420);
             }}
           />
           <span class="text-fg-faint">→</span>
@@ -393,7 +397,9 @@
               const v = (e.currentTarget as HTMLInputElement).value;
               if (!v) return void setQuietHours(null, null);
               const [h, m] = v.split(":").map(Number);
-              void setQuietHours(status!.preferences.quietStartMin ?? 1380, h! * 60 + m!);
+              const startVal = (document.querySelector('input[aria-label="Quiet hours start"]') as HTMLInputElement | null)?.value;
+              const [sh, sm] = startVal ? startVal.split(":").map(Number) : [];
+              void setQuietHours(sh !== undefined ? sh! * 60 + (sm ?? 0) : status!.preferences.quietStartMin ?? 1380, h! * 60 + m!);
             }}
           />
           {#if status.preferences.quietStartMin !== null}

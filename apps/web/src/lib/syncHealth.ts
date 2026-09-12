@@ -67,7 +67,7 @@ export function operationalTitle(meta: SyncOperationalMetaDto | null | undefined
 /** Incident copy — never raw codes, never raw error payloads. */
 export const INCIDENT_KIND_COPY: Record<SyncIncidentDto["kind"], string> = {
   sync_failures: "Sync failures",
-  stale_recovered: "Recovered stale worker run",
+  stale_recovered: "Interrupted sync resumed",
   capability_denied: "Permission denied",
 };
 
@@ -80,7 +80,7 @@ export const INCIDENT_REASON_COPY: Record<SyncOperationReasonDto, string> = {
   network_error: "network error",
   capability_denied: "permission missing",
   key_invalid: "API key rejected",
-  worker_interrupted: "worker interrupted",
+  worker_interrupted: "run was interrupted",
   category_failure: "category failures",
   repeated_failures: "repeated failures",
   unknown_error: "unknown error",

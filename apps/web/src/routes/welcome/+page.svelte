@@ -1,5 +1,6 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
+  import { env as publicEnv } from "$env/dynamic/public";
   import { onMount } from "svelte";
   import { endpoints, ApiClientError } from "$lib/api";
   import type { ApiKeyStatusResponse, ApiKeyValidationResponse, ExistingProfileInfo, KeyCapabilitiesDto, SyncResource } from "@tornscope/shared";
@@ -26,6 +27,7 @@
   // 1 = key form · 2 = detected access · 3 = existing-profile link ·
   // 4 = import progress · 5 = generic saving spinner
   let step = $state(1);
+  const envLabel = publicEnv.PUBLIC_ENV_LABEL?.trim() || "Beta";
 
   // Detected access (step 2) — validated live against Torn WITHOUT storing
   // anything, so the access summary is shown BEFORE the first sync starts.
@@ -80,6 +82,8 @@
           return "Too many attempts — wait a moment, then try again.";
         case "torn_unavailable":
           return "Torn's API isn't answering right now — try again in a minute.";
+        case "validation_error":
+          return "A Torn API key is letters and numbers only, usually 16 characters — check the key and try again.";
         default:
           return err.message;
       }
@@ -342,8 +346,8 @@
         </a>
         <span
           class="chip chip-accent !text-[10px] font-semibold uppercase tracking-[0.14em]"
-          title="TornScope is in public beta"
-        >Public Beta</span>
+          title={envLabel === "Beta" ? "TornScope is in public beta" : `${envLabel} environment — not the public beta`}
+        >{envLabel}</span>
       </div>
       <h1 class="font-display text-5xl font-medium leading-tight text-fg">
         A private record of<br />your <span class="italic text-accent">Torn life</span>.
@@ -352,8 +356,9 @@
         {branding.tagline} — continuously collected and normalized on the TornScope server, from the very first sync onward.
       </p>
       <p class="mx-auto max-w-md text-xs leading-relaxed text-fg-faint">
-        TornScope is in public beta ({branding.publicVersion}): historical tracking and analytics are actively
-        being refined, and you may see occasional fixes along the way.
+        {envLabel === "Beta"
+          ? `TornScope is in public beta (${branding.publicVersion}): historical tracking and analytics are actively being refined, and you may see occasional fixes along the way.`
+          : `This is a ${envLabel.toLowerCase()} environment for testing upcoming TornScope work — the public beta is the polished experience.`}
       </p>
     </div>
 

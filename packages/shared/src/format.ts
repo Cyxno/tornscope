@@ -1,4 +1,6 @@
-/** Format an amount of Torn dollars compactly, e.g. $12.4m / $1.25b. */
+/** Format an amount of Torn dollars compactly, e.g. $12.4m / $1.25b.
+ *  Nonzero amounts under a dollar show cents — "$0" for a nonzero value
+ *  would read as an actual zero (product-finish audit PF-018). */
 export function formatMoneyCompact(value: number | null | undefined): string {
   if (value === null || value === undefined || Number.isNaN(value)) return "—";
   const abs = Math.abs(value);
@@ -7,7 +9,10 @@ export function formatMoneyCompact(value: number | null | undefined): string {
   if (abs >= 1e9) return `${sign}$${(abs / 1e9).toFixed(2)}b`;
   if (abs >= 1e6) return `${sign}$${(abs / 1e6).toFixed(2)}m`;
   if (abs >= 1e4) return `${sign}$${(abs / 1e3).toFixed(1)}k`;
-  return `${sign}$${abs.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+  if (abs >= 1 || Math.round(abs * 100) === 0) {
+    return `${sign}$${abs.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+  }
+  return `${sign}$${abs.toFixed(2)}`;
 }
 
 /** Full money formatting, e.g. $1,234,567. */

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { goto } from "$app/navigation";
   import type { DashboardResponse, TodayResponse, DailySummaryResponse } from "@tornscope/shared";
   import {
     formatMoneyCompact,
@@ -154,7 +155,7 @@
     </header>
 
     <!-- ── 2 · Live now: one sentence, ticks not boxes ── -->
-    <LiveNow today={today} ocs={myOcs} onOpenToday={() => (window.location.href = "/today")} />
+    <LiveNow today={today} ocs={myOcs} onOpenToday={() => void goto("/today")} />
 
     <!-- ── 3 · Net-worth hero: numeral + integrated chart on open canvas ── -->
     <section class="section-rule" aria-label="Net worth">
@@ -282,8 +283,7 @@
               {/if}
             </p>
             <p class="mt-1 text-[11px] text-fg-faint">
-              Likely contributors — recorded movements, not causes
-              {#if todaySummary.netWorth.coverage === "partial"} · covers the tracked portion only{/if}.
+              Likely contributors — recorded movements, not causes{#if todaySummary.netWorth.coverage === "partial"} · covers the tracked portion only{/if}.
             </p>
             <ul class="mt-4 space-y-2.5">
               {#each drivers as driver (driver.kind + driver.label)}

@@ -1,3 +1,4 @@
+import { browser } from "$app/environment";
 import { formatBuildIdentity, resolveBuildIdentity } from "@tornscope/shared";
 
 /**
@@ -10,7 +11,9 @@ export const build = $state({ text: "" });
 
 let requested = false;
 export function loadBuildIdentity(fetcher: typeof fetch = fetch): void {
-  if (requested || build.text) return;
+  // Browser-only: the relative /api/health URL has no meaning during SSR,
+  // and the client re-runs this after hydration.
+  if (!browser || requested || build.text) return;
   requested = true;
   fetcher("/api/health")
     .then((r) => (r.ok ? r.json() : null))

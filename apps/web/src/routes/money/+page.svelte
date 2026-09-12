@@ -1,9 +1,12 @@
 <script lang="ts">
-  import type { EconomySummaryResponse, MoneyEventDto, Paginated } from "@tornscope/shared";
+  import { goto } from "$app/navigation";
+  import type { DateRangePreset, EconomySummaryResponse, MoneyEventDto, Paginated } from "@tornscope/shared";
   import { MONEY_CATEGORIES, formatMoneyCompact, formatMoneyFull, formatDateTime, formatKpiValue, periodLabel, formatSignedMoney, formatSignedMoneyCompact, formatDate } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
   import { incomeLabel, expenseLabel, humanLabel } from "@tornscope/shared";
-  import { dateRange } from "$lib/state.svelte";
+  import { tick } from "svelte";
+  import { createLoadGuard } from "$lib/loadGuard";
+  import { dateRange, DATE_PRESETS, setPreset, setCustomRange } from "$lib/state.svelte";
   import PageHeader from "$lib/components/PageHeader.svelte";
   import Panel from "$lib/components/Panel.svelte";
   import Stat from "$lib/components/Stat.svelte";
@@ -27,17 +30,25 @@
   let direction = $state("");
   let search = $state("");
 
+  const summaryGuard = createLoadGuard();
+  const eventsGuard = createLoadGuard();
+
   async function loadSummary() {
+    const seq = summaryGuard.begin();
     error = null;
     try {
       const range = { preset: dateRange.preset, from: dateRange.from, to: dateRange.to };
-      economy = await endpoints.economy(range);
+      const res = await endpoints.economy(range);
+      if (!summaryGuard.isCurrent(seq)) return; // a newer range superseded this response
+      economy = res;
     } catch (err) {
+      if (!summaryGuard.isCurrent(seq)) return;
       error = err instanceof ApiClientError ? err.message : (err as Error).message;
     }
   }
 
   async function loadEvents(append = false) {
+    const seq = eventsGuard.begin();
     eventsLoading = true;
     eventsError = null;
     try {
@@ -45,12 +56,16 @@
         { preset: dateRange.preset, from: dateRange.from, to: dateRange.to },
         { limit: 50, category: category || undefined, direction: direction || undefined, search: search || undefined }
       );
+      if (!eventsGuard.isCurrent(seq)) return; // a newer range superseded this response
       events = append && events ? { items: [...events.items, ...result.items], nextCursor: result.nextCursor } : result;
     } catch (err) {
+      if (!eventsGuard.isCurrent(seq)) return;
       eventsError = err instanceof ApiClientError ? err.message : (err as Error).message;
     } finally {
-      eventsLoading = false;
-      loading = false;
+      if (eventsGuard.isCurrent(seq)) {
+        eventsLoading = false;
+        loading = false;
+      }
     }
   }
 
@@ -80,6 +95,48 @@
     { id: "networth", label: "Net worth" },
   ];
   let activeLens = $state("cash");
+
+  /** At-a-glance lens chips: select the lens (mobile/tablet) and scroll to it (desktop shows all). */
+  function jumpToLens(id: string) {
+    activeLens = id;
+    void tick().then(() => {
+      document.getElementById(`lens-panel-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+
+  /* ------------- URL ↔ view state (shareable range/lens links) ------------ */
+  // Restore from the URL once on arrival.
+  $effect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const r = params.get("range");
+    if (r && DATE_PRESETS.some((p) => p.value === r)) setPreset(r as DateRangePreset);
+    else if (r === "custom") {
+      const from = Number(params.get("from"));
+      const to = Number(params.get("to"));
+      if (Number.isFinite(from) && Number.isFinite(to) && to > 0) setCustomRange(from, to);
+    }
+    const lens = params.get("lens");
+    if (lens && LENSES.some((l) => l.id === lens)) activeLens = lens;
+  });
+  // Reflect changes into the URL without SPA navigation.
+  $effect(() => {
+    const preset = dateRange.preset;
+    const from = dateRange.from;
+    const to = dateRange.to;
+    const lens = activeLens;
+    const url = new URL(window.location.href);
+    url.searchParams.set("range", preset);
+    if (preset === "custom" && from !== undefined && to !== undefined) {
+      url.searchParams.set("from", String(from));
+      url.searchParams.set("to", String(to));
+    } else {
+      url.searchParams.delete("from");
+      url.searchParams.delete("to");
+    }
+    if (lens !== "cash") url.searchParams.set("lens", lens);
+    else url.searchParams.delete("lens");
+    window.history.replaceState({}, "", url);
+  });
 
   // Permission-aware sections: unavailable data must never render as zeros.
   const cashAv = $derived(economy?.availability?.cashFlow);
@@ -300,10 +357,10 @@
       <div class="flex flex-wrap items-center justify-between gap-2">
         <h2 id="economy-editorial" class="section-label !tracking-[0.12em]">{period} at a glance</h2>
         <div class="flex flex-wrap items-center gap-2">
-          <span class="chip chip-quiet !border-border !text-[10px]" title="Money that moved through the wallet">cash movement</span>
-          <span class="chip chip-quiet !border-border !text-[10px]" title="Value changing form — not gain or loss">conversion</span>
-          <span class="chip chip-quiet !border-border !text-[10px]" title="Value gained or lost">economic effect</span>
-          <span class="chip chip-quiet !border-border !text-[10px]" title="Official Torn snapshot delta — not profit">net worth</span>
+            <button class="chip chip-quiet cursor-pointer !border-border !text-[10px]" title="Money that moved through the wallet" onclick={() => jumpToLens("cash")}>cash movement</button>
+            <button class="chip chip-quiet cursor-pointer !border-border !text-[10px]" title="Value changing form — not gain or loss" onclick={() => jumpToLens("conversions")}>conversion</button>
+            <button class="chip chip-quiet cursor-pointer !border-border !text-[10px]" title="Value gained or lost" onclick={() => jumpToLens("effect")}>economic effect</button>
+            <button class="chip chip-quiet cursor-pointer !border-border !text-[10px]" title="Official Torn snapshot delta — not profit" onclick={() => jumpToLens("networth")}>net worth</button>
         </div>
       </div>
       {#if editorial.lead}
@@ -329,7 +386,7 @@
             state={availabilityMessage(cashAv).state}
             title={availabilityMessage(cashAv).title}
             hint={availabilityMessage(cashAv).hint}
-            action={{ label: "Review API access in Settings", run: () => (window.location.href = "/settings") }}
+            action={{ label: "Review API access in Settings", run: () => void goto("/settings") }}
           />
         {:else}
           {#if cashStale}
@@ -358,7 +415,9 @@
               <Stat label="Unclassified rows" value={String(economy.cashFlow.unclassifiedCount)} provenance="exact" confidence={economy.confidence?.cashFlow} sub={economy.cashFlow.unclassifiedCount > 0 ? "recorded, not yet interpretable" : "every row classified"} />
             </div>
 
-            <section class="grid gap-6 lg:grid-cols-2">
+            <!-- Donut legends need ~210px min-content per column; two chart panels only
+                 genuinely fit side by side on very wide screens. -->
+            <section class="grid gap-6 min-[1500px]:grid-cols-2">
               <Panel title="Cash received vs spent" caption="Per-bucket cash movement in both directions — cash flow, not income" flush>
                 {#if !flowOption}
                   <StateMessage state="empty" compact title="No flow to show" />
@@ -700,7 +759,7 @@
                 state={availabilityMessage(nwAv).state}
                 title={availabilityMessage(nwAv).title}
                 hint={nwAv.state === "unavailable_permission" ? "Your current API key does not include User Networth — grant it in Torn to track wealth history." : availabilityMessage(nwAv).hint}
-                action={{ label: "Review API access in Settings", run: () => (window.location.href = "/settings") }}
+                action={{ label: "Review API access in Settings", run: () => void goto("/settings") }}
               />
             {:else}
               <div class="grid grid-cols-2 gap-px overflow-hidden rounded-card border border-border bg-border shadow-panel md:grid-cols-4">
@@ -806,7 +865,7 @@
             <StateMessage state="loading" skeleton="strip" />
           {:else if wallet.quality === "unavailable" || wallet.openingWallet === null || wallet.closingWallet === null}
             <p class="text-xs leading-relaxed text-fg-muted">
-              Wallet reconciliation needs net worth snapshots at both ends of this range. Missing anchors render as “—”, never as $0.
+              Wallet reconciliation needs net worth snapshots at both ends of this range — pick a shorter range that starts after tracking began, and the full bridge appears here.
             </p>
             <dl class="mt-4 space-y-1.5 text-[13px]">
               <div class="flex items-baseline justify-between gap-3"><dt class="text-fg-muted">Opening wallet</dt><dd class="tnum text-fg-faint">—</dd></div>
@@ -819,14 +878,14 @@
           {:else}
             <dl class="space-y-1.5 text-[13px]">
               <div class="flex items-baseline justify-between gap-3">
-                <dt class="text-fg-muted">Opening wallet {wallet.openingSnapshotAt !== null ? `<span class="text-[10px] text-fg-faint">${formatDate(wallet.openingSnapshotAt)}</span>` : ""}</dt>
+                <dt class="text-fg-muted">Opening wallet{#if wallet.openingSnapshotAt !== null}<span class="ml-1.5 text-[10px] text-fg-faint">{formatDate(wallet.openingSnapshotAt)}</span>{/if}</dt>
                 <dd class="tnum text-fg">{formatMoneyCompact(wallet.openingWallet)}</dd>
               </div>
               <div class="flex items-baseline justify-between gap-3"><dt class="text-fg-muted">Recorded inflows</dt><dd class="tnum text-positive">+{formatMoneyCompact(wallet.recordedInflows)}</dd></div>
               <div class="flex items-baseline justify-between gap-3"><dt class="text-fg-muted">Recorded outflows</dt><dd class="tnum text-negative">-{formatMoneyCompact(wallet.recordedOutflows)}</dd></div>
               <div class="flex items-baseline justify-between gap-3"><dt class="text-fg-muted">Expected closing</dt><dd class="tnum text-fg">{wallet.expectedClosingWallet !== null ? formatMoneyCompact(wallet.expectedClosingWallet) : "—"}</dd></div>
               <div class="flex items-baseline justify-between gap-3">
-                <dt class="text-fg-muted">Actual closing {wallet.closingSnapshotAt !== null ? `<span class="text-[10px] text-fg-faint">${formatDate(wallet.closingSnapshotAt)}</span>` : ""}</dt>
+                <dt class="text-fg-muted">Actual closing{#if wallet.closingSnapshotAt !== null}<span class="ml-1.5 text-[10px] text-fg-faint">{formatDate(wallet.closingSnapshotAt)}</span>{/if}</dt>
                 <dd class="tnum font-medium text-fg">{formatMoneyCompact(wallet.closingWallet)}</dd>
               </div>
               <div class="flex items-baseline justify-between gap-3 border-t border-border pt-1.5">

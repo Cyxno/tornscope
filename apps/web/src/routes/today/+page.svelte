@@ -312,7 +312,9 @@
                 <span class="tnum text-xl font-semibold text-accent">
                   <Countdown seconds={remainingSeconds(serverNowMs, travel.landsAt)} style="clock" />
                 </span>
-                <span class="tnum text-xs text-fg-faint">at {formatDateTimeInZone(travel.landsAt, timeZone)}</span>
+                {#if flightProgress === null}
+                  <span class="tnum text-xs text-fg-faint">at {formatDateTimeInZone(travel.landsAt, timeZone)}</span>
+                {/if}
               </div>
               {#if flightProgress !== null}
                 <div class="mt-2 h-1 overflow-hidden rounded-full bg-surface-2">

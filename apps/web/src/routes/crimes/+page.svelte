@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { createLoadGuard } from "$lib/loadGuard";
+  import { goto } from "$app/navigation";
   import type { CrimesSummaryResponse, CrimesTimelineResponse } from "@tornscope/shared";
   import { formatMoneyCompact, formatDateTime, formatSignedMoney, formatSignedMoneyCompact, periodLabel, formatDate } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
@@ -22,17 +24,22 @@
   const histBlocked = $derived(histAv !== undefined && !availabilityHasData(histAv));
   const histMsg = $derived(histAv ? availabilityMessage(histAv) : null);
 
+  const guard = createLoadGuard();
   async function load() {
+    const seq = guard.begin();
     loading = true;
     error = null;
     try {
       const range = { preset: dateRange.preset, from: dateRange.from, to: dateRange.to };
-      summary = await endpoints.crimesSummary(range);
-      timeline = await endpoints.crimesTimeline(range);
+      const [s, t] = await Promise.all([endpoints.crimesSummary(range), endpoints.crimesTimeline(range)]);
+      if (!guard.isCurrent(seq)) return; // a newer range superseded this response
+      summary = s;
+      timeline = t;
     } catch (err) {
+      if (!guard.isCurrent(seq)) return;
       error = err instanceof ApiClientError ? err.message : (err as Error).message;
     } finally {
-      loading = false;
+      if (guard.isCurrent(seq)) loading = false;
     }
   }
 
@@ -105,7 +112,7 @@
         state={histMsg!.state}
         title={histMsg!.title}
         hint={histMsg!.hint}
-        action={{ label: "Review API access in Settings", run: () => (window.location.href = "/settings") }}
+        action={{ label: "Review API access in Settings", run: () => void goto("/settings") }}
       />
     {:else}
     {#if summary.coverage.trackingSince !== null}

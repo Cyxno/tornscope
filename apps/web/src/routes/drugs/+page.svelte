@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { createLoadGuard } from "$lib/loadGuard";
+  import { goto } from "$app/navigation";
   import type { DrugsSummaryResponse } from "@tornscope/shared";
   import { TORN_DRUG_NAMES, formatMoneyCompact, formatDateTime, formatDate } from "@tornscope/shared";
   import { formatRelative } from "$lib/reltime";
@@ -38,15 +40,20 @@
     return `Market value of all Xanax used at current catalog prices — a consumption value, NOT personal spend (sponsored Xanax costs you $0).${refreshed}`;
   });
 
+  const guard = createLoadGuard();
   async function load() {
+    const seq = guard.begin();
     loading = true;
     error = null;
     try {
-      data = await endpoints.drugsSummary({ preset: dateRange.preset, from: dateRange.from, to: dateRange.to }, selectAll ? null : selected);
+      const res = await endpoints.drugsSummary({ preset: dateRange.preset, from: dateRange.from, to: dateRange.to }, selectAll ? null : selected);
+      if (!guard.isCurrent(seq)) return; // a newer range superseded this response
+      data = res;
     } catch (err) {
+      if (!guard.isCurrent(seq)) return;
       error = err instanceof ApiClientError ? err.message : (err as Error).message;
     } finally {
-      loading = false;
+      if (guard.isCurrent(seq)) loading = false;
     }
   }
 
@@ -203,7 +210,7 @@
         state={availabilityMessage(histAv).state}
         title={availabilityMessage(histAv).title}
         hint={availabilityMessage(histAv).hint}
-        action={{ label: "Review API access in Settings", run: () => (window.location.href = "/settings") }}
+        action={{ label: "Review API access in Settings", run: () => void goto("/settings") }}
       />
     {/if}
 
@@ -237,7 +244,7 @@
                   <span class="h-2.5 w-2.5 rounded-sm" style="background: {seg.color}" aria-hidden="true"></span>
                   {seg.label}
                 </span>
-                <span class="tnum text-[15px] font-semibold text-fg">{seg.count}<span class="ml-1.5 text-[11px] font-normal text-fg-faint">{Math.round(seg.share)}%</span></span>
+                <span class="tnum text-[15px] font-semibold text-fg">{seg.count} use{seg.count === 1 ? "" : "s"}<span class="ml-2 text-[11px] font-normal text-fg-faint">· {Math.round(seg.share)}%</span></span>
               </div>
               <p class="mt-1 pl-[18px] text-xs leading-relaxed text-fg-muted">
                 {#if seg.key === "faction"}

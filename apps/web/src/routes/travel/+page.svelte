@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { createLoadGuard } from "$lib/loadGuard";
+  import { goto } from "$app/navigation";
   import type { TravelSummaryResponse, TravelTripDto, Paginated } from "@tornscope/shared";
   import { formatMoneyCompact, formatDateTime, formatDuration, formatKpiValue, formatDate, formatSignedMoneyCompact } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
@@ -25,18 +27,22 @@
     expanded = next;
   }
 
+  const guard = createLoadGuard();
   async function load() {
+    const seq = guard.begin();
     loading = true;
     error = null;
     try {
       const range = { preset: dateRange.preset, from: dateRange.from, to: dateRange.to };
       const [s, h] = await Promise.all([endpoints.travelSummary(range), endpoints.travelHistory(range)]);
+      if (!guard.isCurrent(seq)) return; // a newer range superseded this response
       summary = s;
       history = h;
     } catch (err) {
+      if (!guard.isCurrent(seq)) return;
       error = err instanceof ApiClientError ? err.message : (err as Error).message;
     } finally {
-      loading = false;
+      if (guard.isCurrent(seq)) loading = false;
     }
   }
 
@@ -119,7 +125,7 @@
         state={availabilityMessage(histAv).state}
         title={availabilityMessage(histAv).title}
         hint={availabilityMessage(histAv).hint}
-        action={{ label: "Review API access in Settings", run: () => (window.location.href = "/settings") }}
+        action={{ label: "Review API access in Settings", run: () => void goto("/settings") }}
       />
     {:else}
       {#if staleMsg}

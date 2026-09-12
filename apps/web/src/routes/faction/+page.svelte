@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { createLoadGuard } from "$lib/loadGuard";
+  import { goto } from "$app/navigation";
   import type { FactionOverviewResponse, FactionRankedWarsResponse, FactionMembersResponse, FactionOcsResponse, FactionLedgerResponse, FactionOcRow } from "@tornscope/shared";
   import { formatMoneyCompact, formatDateTime, formatSignedMoney, formatDate, formatDecimal, ocParticipationState, OC_PARTICIPATION_LABELS, OC_PARTICIPATION_HINTS, userInAnyKnownOc } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
@@ -22,20 +24,35 @@
   let error = $state<string | null>(null);
   let reloadToken = $state(0);
 
+  const guard = createLoadGuard();
   async function load() {
+    const seq = guard.begin();
     loading = true;
     error = null;
     try {
       const range = { preset: dateRange.preset, from: dateRange.from, to: dateRange.to };
-      overview = await endpoints.factionOverview(range);
-      if (tab === "wars") wars = await endpoints.factionRankedWars(range);
-      if (tab === "members") members = await endpoints.factionMembers(range);
-      if (tab === "oc") ocs = await endpoints.factionOcs(range);
-      if (tab === "ledger") ledger = await endpoints.factionLedger(range);
+      const activeTab = tab;
+      const [ov, extra] = await Promise.all([
+        endpoints.factionOverview(range),
+        activeTab === "wars" ? endpoints.factionRankedWars(range)
+        : activeTab === "members" ? endpoints.factionMembers(range)
+        : activeTab === "oc" ? endpoints.factionOcs(range)
+        : activeTab === "ledger" ? endpoints.factionLedger(range)
+        : Promise.resolve(null),
+      ]);
+      if (!guard.isCurrent(seq)) return; // a newer range/tab superseded this response
+      overview = ov;
+      if (extra !== null) {
+        if (activeTab === "wars") wars = extra as typeof wars;
+        else if (activeTab === "members") members = extra as typeof members;
+        else if (activeTab === "oc") ocs = extra as typeof ocs;
+        else if (activeTab === "ledger") ledger = extra as typeof ledger;
+      }
     } catch (err) {
+      if (!guard.isCurrent(seq)) return;
       error = err instanceof ApiClientError ? err.message : (err as Error).message;
     } finally {
-      loading = false;
+      if (guard.isCurrent(seq)) loading = false;
     }
   }
 
@@ -110,7 +127,7 @@
       state={basicMsg.state}
       title={basicMsg.title}
       hint={`${basicMsg.hint} Faction permissions differ from personal ones — your key needs the Faction selections (ask your faction leader to enable API access).`}
-      action={{ label: "Review API access in Settings", run: () => (window.location.href = "/settings") }}
+      action={{ label: "Review API access in Settings", run: () => void goto("/settings") }}
     />
   {:else if overview}
     {#if blockedForTab}
@@ -118,7 +135,7 @@
         state={blockedForTab.state}
         title={blockedForTab.title}
         hint={blockedForTab.hint}
-        action={{ label: "Review API access in Settings", run: () => (window.location.href = "/settings") }}
+        action={{ label: "Review API access in Settings", run: () => void goto("/settings") }}
       />
     {/if}
     <div class="flex flex-wrap gap-1 rounded-full border border-border bg-surface p-1">

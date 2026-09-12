@@ -22,8 +22,16 @@
   let summary = $state<DailySummaryResponse | null>(null);
   let loading = $state(true);
   let error = $state<string | null>(null);
+  let invalidParam = $state(false);
   let reloadToken = $state(0);
   let loadSeq = 0;
+
+  /** A URL date must exist on the calendar — "2026-02-30" parses (rolls over)
+   *  but would render a day that never happened. */
+  function isRealDay(key: string): boolean {
+    const d = new Date(`${key}T00:00:00Z`);
+    return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === key;
+  }
 
   const timeZone = $derived(me.data?.timezone || "UTC");
   const todayKey = $derived.by(() => {
@@ -82,7 +90,10 @@
   // Initialize from the URL once.
   $effect(() => {
     const param = new URLSearchParams(window.location.search).get("date");
-    if (param && /^\d{4}-\d{2}-\d{2}$/.test(param)) date = param;
+    if (param && /^\d{4}-\d{2}-\d{2}$/.test(param)) {
+      if (isRealDay(param)) date = param;
+      else invalidParam = true;
+    }
   });
 
   const dayLabel = $derived.by(() => {
@@ -191,6 +202,18 @@
       {/if}
     </div>
   </div>
+
+  {#if invalidParam}
+    <div class="mt-4 rounded-tile border border-warning/30 bg-warning/5 p-4 text-sm text-warning">
+      That date doesn't exist — please pick a day with the date picker above.
+      <button class="ml-3 underline" onclick={() => { invalidParam = false; setDay(""); }}>Back to today</button>
+    </div>
+  {:else if me.data?.isDemo && summary?.ongoingDay && (summary?.cashFlow.received.value ?? 1) === 0 && (summary?.cashFlow.spent.value ?? 1) === 0}
+    <div class="mt-4 rounded-tile border border-border bg-surface-2 p-4 text-sm text-fg-muted">
+      The demo record covers recent history — today's demo day is still empty. Use ← to walk back through a
+      full day, or open <a class="text-link underline" href="/money">Economy</a> to explore the seeded story.
+    </div>
+  {/if}
 
   {#if loading && !summary}
     <div class="space-y-4" data-testid="skeleton" aria-busy="true">
@@ -379,7 +402,7 @@
 
     <!-- ── What moved today: ledger rows, no panel ── -->
     <div class="section-rule">
-      <p class="section-label">What moved — deterministic highlights, never causes</p>
+      <p class="section-label">What moved — recorded highlights, never causes</p>
       {#if summary.highlights.length === 0 || (summary.highlights.length === 1 && summary.highlights[0]?.kind === "quiet_day")}
         <p class="mt-3 text-sm text-fg-faint">A quiet day — nothing notable recorded.</p>
       {:else}

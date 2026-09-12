@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { createLoadGuard } from "$lib/loadGuard";
+  import { goto } from "$app/navigation";
   import type { CombatSummaryResponse, CombatTimelineResponse } from "@tornscope/shared";
   import { formatMoneyCompact, formatDateTime, formatKpiValue, periodLabel, formatDate, combatEventSemantics } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
@@ -22,17 +24,22 @@
   const histBlocked = $derived(histAv !== undefined && !availabilityHasData(histAv));
   const histMsg = $derived(histAv ? availabilityMessage(histAv) : null);
 
+  const guard = createLoadGuard();
   async function load() {
+    const seq = guard.begin();
     loading = true;
     error = null;
     try {
       const range = { preset: dateRange.preset, from: dateRange.from, to: dateRange.to };
-      summary = await endpoints.combatSummary(range);
-      timeline = await endpoints.combatTimeline(range);
+      const [s, t] = await Promise.all([endpoints.combatSummary(range), endpoints.combatTimeline(range)]);
+      if (!guard.isCurrent(seq)) return; // a newer range superseded this response
+      summary = s;
+      timeline = t;
     } catch (err) {
+      if (!guard.isCurrent(seq)) return;
       error = err instanceof ApiClientError ? err.message : (err as Error).message;
     } finally {
-      loading = false;
+      if (guard.isCurrent(seq)) loading = false;
     }
   }
 
@@ -103,7 +110,7 @@
         state={histMsg!.state}
         title={histMsg!.title}
         hint={histMsg!.hint}
-        action={{ label: "Review API access in Settings", run: () => (window.location.href = "/settings") }}
+        action={{ label: "Review API access in Settings", run: () => void goto("/settings") }}
       />
     {:else}
     {#if summary.coverage.trackingSince !== null}
@@ -205,7 +212,7 @@
     {#if summary.respectGained !== null || summary.respectLost !== null}
       <p class="rounded-tile border border-border bg-surface px-5 py-3 text-xs text-fg-muted">
         <span class="font-medium text-fg">Respect ({period}):</span>
-        {summary.respectGained !== null ? `+${summary.respectGained} gained` : "gained —"} · {summary.respectLost !== null ? `${summary.respectLost} lost` : "lost —"} — exact, from Torn's attack records.
+        {summary.respectGained !== null ? `+${summary.respectGained.toFixed(2)} gained` : "gained —"} · {summary.respectLost !== null ? `${summary.respectLost.toFixed(2)} lost` : "lost —"} — exact, from Torn's attack records.
       </p>
     {/if}
 

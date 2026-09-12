@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { createLoadGuard } from "$lib/loadGuard";
+  import { goto } from "$app/navigation";
   import type { TimelineEventDto, Paginated } from "@tornscope/shared";
   import { formatMoneyCompact } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
@@ -46,18 +48,24 @@
   let reloadToken = $state(0);
   let typeFilter = $state("");
 
+  const guard = createLoadGuard();
   async function load(reset = true) {
+    const seq = guard.begin();
     if (reset) loading = true;
     error = null;
     try {
       const range = { preset: dateRange.preset, from: dateRange.from, to: dateRange.to };
       const result = await endpoints.timeline(range, { limit: 50, cursor: reset ? undefined : (events?.nextCursor ?? undefined), type: typeFilter || undefined });
+      if (!guard.isCurrent(seq)) return; // a newer range/type superseded this response
       events = reset ? result : { items: [...(events?.items ?? []), ...result.items], nextCursor: result.nextCursor };
     } catch (err) {
+      if (!guard.isCurrent(seq)) return;
       error = err instanceof ApiClientError ? err.message : (err as Error).message;
     } finally {
-      loading = false;
-      loadingMore = false;
+      if (guard.isCurrent(seq)) {
+        loading = false;
+        loadingMore = false;
+      }
     }
   }
 
@@ -132,7 +140,7 @@
       state="permission"
       title="Timeline unavailable with current API permissions"
       hint="Your current API key provides neither User Logs nor User Events — grant either in Torn to build your timeline."
-      action={{ label: "Review API access in Settings", run: () => (window.location.href = "/settings") }}
+      action={{ label: "Review API access in Settings", run: () => void goto("/settings") }}
     />
   {:else if events && events.items.length === 0}
     <StateMessage state="empty" title="Quiet in this range" hint={me.data?.isDemo ? "Synthetic example data — the demo dataset has no timeline entries here." : "No timeline entries match. Widen the date range or wait for the next sync."} />
