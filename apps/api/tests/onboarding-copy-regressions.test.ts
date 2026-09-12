@@ -185,9 +185,12 @@ describe("public beta presentation", () => {
   });
 
   it("onboarding states the public beta status and expectations", () => {
-    expect(welcome).toContain("Public Beta");
-    expect(welcome).toContain("public beta");
-    expect(welcome).toContain("actively");
+    // The chip and status sentence are environment-aware (product-finish
+    // PF-013): a dev/staging onboarding must never pose as the public beta.
+    expect(welcome).toContain('envLabel === "Beta" ? "TornScope is in public beta"');
+    expect(welcome).toContain("TornScope is in public beta (${branding.publicVersion})");
+    expect(welcome).toContain("actively being refined");
+    expect(welcome).toContain("the public beta is the polished experience");
   });
 
   it("welcome offers the private-deployment contact path", () => {
