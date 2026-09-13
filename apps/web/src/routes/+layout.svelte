@@ -13,6 +13,8 @@
   import { me, refreshMe } from "$lib/state.svelte";
   import { endpoints } from "$lib/api";
   import { env as publicEnv } from "$env/dynamic/public";
+  import InstallHint from "$lib/components/InstallHint.svelte";
+  import { registerServiceWorker } from "$lib/pwa";
 
   initAppearance();
 
@@ -25,6 +27,10 @@
 
   onMount(() => {
     void refreshMe();
+    // The push-only service worker registers at startup (not only from the
+    // notification settings): an installed iOS web app must be able to
+    // subscribe right after install, and updates apply on next navigation.
+    void registerServiceWorker();
   });
 
   // First-run flow: without a connected Torn player, route to /welcome.
@@ -83,6 +89,12 @@
       {/if}
       {@render children()}
     </main>
+    <div class="page-shell mb-6 lg:mb-0 lg:pb-6">
+      <!-- Contextual install hint: iPhone/iPad browsers get the guided
+           Add to Home Screen flow, install-capable browsers get the native
+           prompt; hidden when installed or dismissed. -->
+      <InstallHint />
+    </div>
 
     <footer class="border-t border-border pb-16 lg:pb-0">
       <div class="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 px-4 py-5 text-xs text-fg-faint sm:px-6">

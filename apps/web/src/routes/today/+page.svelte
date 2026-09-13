@@ -37,12 +37,21 @@
   const timeZone = $derived(me.data?.timezone || "UTC");
   const serverNowMs = $derived(nowMs + offsetMs);
 
+  let staleRecheck: ReturnType<typeof setTimeout> | null = null;
+
   async function load() {
     refreshing = true;
     try {
       data = await endpoints.today();
       offsetMs = data.fetchedAt - Date.now();
       error = null;
+      // Stale-while-revalidate: the server answered instantly from the
+      // persisted last-known copy and is refreshing upstream right now —
+      // pick up the fresh payload shortly instead of waiting a full poll.
+      if (data.stale) {
+        if (staleRecheck) clearTimeout(staleRecheck);
+        staleRecheck = setTimeout(() => void load(), 4_000);
+      }
     } catch (err) {
       error = err instanceof ApiClientError ? err.message : (err as Error).message;
     } finally {
@@ -76,6 +85,7 @@
     return () => {
       clearInterval(ticker);
       stopPolling();
+      if (staleRecheck) clearTimeout(staleRecheck);
       document.removeEventListener("visibilitychange", onVisibility);
     };
   });
@@ -209,6 +219,9 @@
     <div class="flex items-center gap-3">
       {#if data}
         <span class="hidden text-xs text-fg-faint sm:inline">Updated {updatedAgo}</span>
+      {/if}
+      {#if data?.stale}
+        <span class="chip chip-warning !py-0 !text-[9px]" title="Showing your last known live status while a fresh Torn refresh runs in the background.">stale — refreshing</span>
       {/if}
       <button class="btn btn-sm" onclick={() => void load()} disabled={refreshing}>
         {refreshing ? "Refreshing…" : "Refresh"}

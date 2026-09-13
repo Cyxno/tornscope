@@ -4,7 +4,7 @@
   import { endpoints, ApiClientError } from "$lib/api";
   import { me } from "$lib/state.svelte";
   import { confidenceTitle } from "$lib/confidence";
-  import { formatRelative } from "$lib/reltime";
+  import { formatDateInZone, formatRelative } from "$lib/reltime";
   import ConfidenceBadge from "./ConfidenceBadge.svelte";
 
   /**
@@ -101,7 +101,7 @@
     if (key === todayKey) return "Today";
     const d = new Date(`${key}T00:00:00Z`);
     const weekday = d.toLocaleDateString("en-GB", { weekday: "long", timeZone: "UTC" });
-    return `${weekday} ${formatDate(summary?.range.from ?? Math.floor(d.getTime() / 1000))}`;
+    return `${weekday} ${formatDateInZone(Math.floor(d.getTime() / 1000), timeZone)}`;
   });
 
   /** Masthead split: the weekday is the display word; the date is metadata. */
@@ -112,7 +112,15 @@
     return d.toLocaleDateString("en-GB", { weekday: "long", timeZone: "UTC" });
   });
 
-  const displayDate = $derived(summary ? formatDate(summary.range.from) : "");
+  // The masthead date must resolve in the USER'S timezone (a local-midnight
+  // range.from can be the previous UTC date), and a valid selected day always
+  // shows its date — while the summary is in flight, fall back to the day key
+  // itself. Never renders an empty/dash date for a valid selection.
+  const displayDate = $derived.by(() => {
+    if (summary) return formatDateInZone(summary.range.from, timeZone);
+    const key = date || todayKey;
+    return formatDateInZone(Math.floor(new Date(`${key}T00:00:00Z`).getTime() / 1000), timeZone);
+  });
 
   /** Diverging driver bars scale to the day's largest absolute movement.
    * (Null coalescing uses the explicit `=== null` form: the copy-regression
@@ -174,7 +182,7 @@
     <div class="min-w-0">
       <h2 class="font-display text-[30px] font-medium leading-[1.05] text-fg sm:text-[36px]">{mastheadWeekday}</h2>
       <p class="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[13px] text-fg-muted">
-        <span class="tnum">{dayLabel === "Today" ? displayDate : displayDate}</span>
+        <span class="tnum">{displayDate}</span>
         {#if summary?.ongoingDay}
           <span class="chip chip-warning !py-0 !text-[9px]">day in progress</span>
         {/if}
@@ -189,10 +197,12 @@
         type="date"
         class="input !h-[30px] w-36 [color-scheme:dark]"
         max={todayKey}
-        value={date}
+        value={date || todayKey}
         onchange={(e) => {
           const v = (e.currentTarget as HTMLInputElement).value;
-          if (v) setDay(v);
+          // The picker always carries a concrete day; selecting today's own
+          // key normalizes back to the canonical "" (today) representation.
+          if (v) setDay(v === todayKey ? "" : v);
         }}
         aria-label="Pick a day"
       />
@@ -252,18 +262,20 @@
         </p>
       {/if}
 
-      <!-- Why it moved: diverging signed bars on the open canvas -->
+      <!-- Why it moved: the category reconciliation. Category deltas partition
+           the snapshot change exactly, so this sums to the hero number;
+           activity flows are annotations beneath it, never added into it. -->
       {#if (summary.netWorth.drivers ?? []).length > 0}
         <div class="mt-7">
           <p class="section-label">Why it moved</p>
-          <p class="mt-1 text-[11px] text-fg-faint">Likely contributors — recorded movements, not causes</p>
+          <p class="mt-1 text-[11px] text-fg-faint">Category movements — they add up to the change above</p>
           <ul class="mt-3 space-y-2.5">
             {#each summary.netWorth.drivers ?? [] as driver (driver.kind + driver.label)}
               {@const magnitude = driver.magnitude}
               <li class="grid grid-cols-[1fr_auto] items-baseline gap-x-4 gap-y-1 sm:grid-cols-[minmax(0,1fr)_180px_auto]">
                 <span class="min-w-0 truncate text-[13.5px] {driver.certainty === 'unexplained' ? 'text-warning' : 'text-fg-muted'}">
                   {driver.label}
-                  {#if driver.certainty === "estimated"}<span class="ml-1 text-[10px] uppercase tracking-wide text-fg-faint">est.</span>{/if}
+                  {#if driver.certainty === "estimated"}<span class="ml-1 text-[10px] uppercase tracking-wide text-fg-faint">incl. price moves</span>{/if}
                   {#if driver.certainty === "unexplained"}<span class="ml-1 text-[10px] uppercase tracking-wide text-warning">unexplained</span>{/if}
                 </span>
                 <span class="hidden items-center sm:flex" aria-hidden="true">
@@ -287,6 +299,15 @@
               </li>
             {/each}
           </ul>
+          {#if (summary.netWorth.activity ?? []).length > 0}
+            <p class="mt-4 text-[11px] uppercase tracking-[0.12em] text-fg-faint">Activity behind the moves</p>
+            <p class="mt-1.5 text-[12.5px] leading-relaxed text-fg-muted">
+              {#each summary.netWorth.activity ?? [] as a, i (a.kind + a.label)}
+                {#if i > 0} · {/if}{a.label} <span class="tnum {a.magnitude !== null && a.magnitude >= 0 ? 'text-positive' : 'text-negative'}">{a.magnitude === null ? "—" : formatSignedMoneyCompact(a.magnitude)}</span>{#if a.certainty === "estimated"}<span class="text-[10px] uppercase text-fg-faint"> est.</span>{/if}
+              {/each}
+              <span class="text-fg-faint"> — already included in the category rows above.</span>
+            </p>
+          {/if}
         </div>
       {/if}
     </div>
@@ -393,7 +414,7 @@
               {summary.progression.battlestatGain.value !== null ? (summary.progression.battlestatGain.value < 0 ? "" : "+") + formatNumberCompact(summary.progression.battlestatGain.value) : "—"}
             </span>
             <span class="text-xs text-fg-faint">
-              battlestats · {formatKpiValue(summary.progression.energyTrained, formatNumberCompact)} energy · {summary.progression.sessions} inferred session{summary.progression.sessions === 1 ? "" : "s"}
+              battlestats · {summary.progression.energyTrained.value !== null ? `~${formatNumberCompact(summary.progression.energyTrained.value)} E inferred` : formatKpiValue(summary.progression.energyTrained, formatNumberCompact)} · {summary.progression.sessions} inferred session{summary.progression.sessions === 1 ? "" : "s"}
             </span>
           </p>
         </div>

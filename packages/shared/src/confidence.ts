@@ -161,11 +161,19 @@ export function deriveDataConfidence(facts: ConfidenceFacts, range: ConfidenceRa
     return meta("unavailable", "never_synced");
   }
 
-  // 4. A walk is running right now: usable rows may already exist, but the
-  // dataset is still growing. With nothing stored yet there is no value to
-  // show at all — importing, never zero. (Demo's fabricated states never run.)
+  // 4. A run is in progress. IMPORTING is reserved for ranges a completed
+  // walk has not settled yet — it must never be a generic "sync busy" badge:
+  //   - nothing stored → genuinely nothing to show yet (importing);
+  //   - walk resource whose backward walk never finished → the range's
+  //     history may still grow (importing);
+  //   - otherwise (completed walk + routine incremental top-up) already
+  //     imported days are STABLE: fall through to the range-aware checks,
+  //     which still guard uncovered tails. A prior-complete day must not
+  //     flip back to Importing just because a top-up is running.
+  const firstWalkPending = facts.isWalkResource && facts.stopReason === null;
   if (facts.status === "running") {
-    return hasStoredData ? meta("partial", "backfill_in_progress") : meta("unavailable", "backfill_in_progress");
+    if (!hasStoredData) return meta("unavailable", "backfill_in_progress");
+    if (firstWalkPending) return meta("partial", "backfill_in_progress");
   }
 
   const walkIncomplete =
@@ -178,7 +186,9 @@ export function deriveDataConfidence(facts: ConfidenceFacts, range: ConfidenceRa
     return hasStoredData || !walkIncomplete ? meta("partial", "sync_error") : meta("unavailable", "sync_error");
   }
 
-  // 6. Bounded/incomplete history coverage.
+  // 6. Bounded/incomplete history coverage. A walk that never completed
+  // leaves historical coverage unprovable — importing for affected ranges,
+  // never a generic sync-status echo (see rule 4).
   if (walkIncomplete) {
     return meta("partial", facts.stopReason === null ? "backfill_in_progress" : "sync_incomplete");
   }

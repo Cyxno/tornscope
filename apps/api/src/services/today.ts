@@ -53,6 +53,7 @@ interface CacheEntry {
 }
 
 const cache = new Map<string, CacheEntry>();
+const refreshInFlight = new Map<string, Promise<TodayResponse>>();
 
 let educationCatalog: { fetchedAt: number; byCourseId: Map<number, { name: string; category: string }> } | null = null;
 
@@ -61,25 +62,98 @@ export function clearEducationCatalogCache(): void {
   educationCatalog = null;
 }
 
-/** GET /api/today — cached, single-flight per user. Demo users get
- * deterministic simulated live data instead of real Torn calls (a demo
- * account has no API key, and Today must never hang on "loading"). */
+/**
+ * GET /api/today — STALE-WHILE-REVALIDATE (real-user remediation: cold page
+ * loads used to block on 6-7 serialized upstream Torn calls).
+ *
+ * Order of preference:
+ *  1. fresh in-memory cache → returned immediately;
+ *  2. persisted last-known payload → returned IMMEDIATELY (marked `stale`
+ *     once older than the cache window) while a single-flight background
+ *     refresh revalidates — the UI shows real data plus a freshness marker
+ *     instead of a blocking skeleton;
+ *  3. nothing persisted (first ever load) → await the refresh, persist it.
+ *
+ * The persisted copy carries its original fetchedAt — stale data is never
+ * presented as current. Background failures never evict last-known. Demo
+ * users get deterministic simulated live data (no Torn, no persistence).
+ */
 export async function getToday(user: { id: string; isDemo: boolean }): Promise<TodayResponse> {
   const now = Date.now();
   const entry = cache.get(user.id);
   if (entry && entry.expiresAt > now) return entry.promise;
 
-  const promise = user.isDemo ? Promise.resolve(buildDemoToday()) : fetchToday(user.id);
-  cache.set(user.id, { expiresAt: now + CACHE_TTL_MS, promise });
-  try {
-    return await promise;
-  } catch (err) {
-    // Never cache failures — the next request retries immediately, and the
-    // single-flight entry already coalesced any burst that was waiting.
-    const current = cache.get(user.id);
-    if (current?.promise === promise) cache.delete(user.id);
-    throw err;
+  if (user.isDemo) {
+    const promise = Promise.resolve(buildDemoToday());
+    cache.set(user.id, { expiresAt: now + CACHE_TTL_MS, promise });
+    return promise;
   }
+
+  const lastKnown = await readLastKnown(user.id, now);
+  if (lastKnown) {
+    // Serve the persisted copy for this cache window; revalidate once in the
+    // background. The served promise is already resolved — a burst of cold
+    // requests is never queued behind the upstream fetch.
+    cache.set(user.id, { expiresAt: now + CACHE_TTL_MS, promise: Promise.resolve(lastKnown) });
+    startBackgroundRefresh(user);
+    return lastKnown;
+  }
+
+  const pending = refreshInFlight.get(user.id);
+  if (pending) return pending;
+
+  const refresh = startRefresh(user);
+  return refresh;
+}
+
+/** One upstream refresh at a time per user; success persists + repopulates
+ *  the in-memory cache, failure evicts the single-flight entry only. */
+function startRefresh(user: { id: string }): Promise<TodayResponse> {
+  const promise = fetchToday(user.id)
+    .then(async (res) => {
+      refreshInFlight.delete(user.id);
+      cache.set(user.id, { expiresAt: Date.now() + CACHE_TTL_MS, promise: Promise.resolve(res) });
+      await persistLastKnown(user.id, res).catch(() => undefined);
+      return res;
+    })
+    .catch((err) => {
+      refreshInFlight.delete(user.id);
+      throw err;
+    });
+  refreshInFlight.set(user.id, promise);
+  return promise;
+}
+
+/** Kick off a revalidation without ever surfacing its failure. */
+function startBackgroundRefresh(user: { id: string }): void {
+  if (refreshInFlight.has(user.id)) return;
+  void startRefresh(user).catch(() => undefined);
+}
+
+async function readLastKnown(userId: string, nowMs: number): Promise<TodayResponse | null> {
+  try {
+    const ctx = getApiContext();
+    const row = await ctx.db.todayLastKnown.findUnique({ where: { userId } });
+    if (!row) return null;
+    const payload = row.payload as TodayResponse;
+    // Stale the moment the copy is older than one cache window — never
+    // present old data as current.
+    return { ...payload, stale: nowMs - row.fetchedAt.getTime() > CACHE_TTL_MS };
+  } catch {
+    // Persistence is an optimization; live fetch semantics survive without it.
+    return null;
+  }
+}
+
+async function persistLastKnown(userId: string, payload: TodayResponse): Promise<void> {
+  const ctx = getApiContext();
+  const clean: TodayResponse = { ...payload };
+  delete (clean as { stale?: boolean }).stale;
+  await ctx.db.todayLastKnown.upsert({
+    where: { userId },
+    create: { userId, payload: clean as unknown as object, fetchedAt: new Date(payload.fetchedAt) },
+    update: { payload: clean as unknown as object, fetchedAt: new Date(payload.fetchedAt) },
+  });
 }
 
 /* -------------------------------------------------------------------------- */

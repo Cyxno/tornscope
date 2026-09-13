@@ -89,10 +89,14 @@ describe("daily summary UI (v0.2 item #2)", () => {
     expect(daily).toContain("not a profit figure");
   });
 
-  it("words net-worth drivers as contributors, never causes", () => {
-    expect(daily).toContain("Likely contributors — recorded movements, not causes");
-    expect(daily).toMatch(/contributor/i);
-    expect(daily).not.toMatch(/\bcaused\b/i);
+  it("presents net-worth drivers as an exact category reconciliation", () => {
+    // Real-user finding: the old "Unexplained" row was a double-count
+    // artifact. Drivers now sum to the change exactly; activity flows are
+    // separate annotations.
+    expect(daily).toContain("Category movements — they add up to the change above");
+    expect(daily).toContain("Activity behind the moves");
+    expect(daily).toContain("already included in the category rows above");
+    expect(daily).not.toContain("Likely contributors");
   });
 
   it("labels travel profit as estimated and xanax value as consumption", () => {

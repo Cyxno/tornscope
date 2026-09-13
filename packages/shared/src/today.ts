@@ -447,6 +447,10 @@ export const TodayResponseSchema = z.object({
   serverTime: z.number(),
   /** True when the payload is simulated demo live data, not a real account. */
   demo: z.boolean(),
+  /** True when this response is the persisted last-known payload, served
+   *  immediately while a fresh upstream refresh runs in the background
+   *  (stale-while-revalidate). Surfaces must show a freshness marker. */
+  stale: z.boolean().optional(),
   player: z.object({
     name: z.string().nullable(),
     level: z.number().nullable(),

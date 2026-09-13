@@ -29,6 +29,7 @@ describe("personalstats extraction (nested cat=all shape)", () => {
     drugs: { xanax: 10, ecstasy: 2, total: 12 },
     other: { refills: { energy: 5, nerve: 0 }, awards: 42 },
     items: { used: { candy: 100 } },
+    jobs: { stats: { total: 500, manual: 200, endurance: 100, intelligence: 200 }, trains_received: 3 },
     level: 42,
   };
 
@@ -36,7 +37,16 @@ describe("personalstats extraction (nested cat=all shape)", () => {
     const b = extractBattlestats(blob);
     expect(b).toEqual({ strength: 1000, defense: 900, speed: 800, dexterity: 700, total: 3400 });
     const c = extractStatCounters(blob);
-    expect(c).toEqual({ xanax: 10, ecstasy: 2, refillsEnergy: 5, candy: 100, awards: 42, level: 42 });
+    expect(c).toEqual({
+      xanax: 10,
+      ecstasy: 2,
+      refillsEnergy: 5,
+      candy: 100,
+      awards: 42,
+      level: 42,
+      jobStats: 500,
+      trainsReceived: 3,
+    });
   });
 
   it("stays null for unknown shapes — never guesses", () => {
@@ -95,13 +105,26 @@ describe("energy ledger", () => {
     expect(ledger.derivedRegen).toBe(0);
   });
 
-  it("10-11. gains inside a decline interval net out exactly once (no double count)", () => {
-    const gains: EnergyGainEvent[] = [{ t: T0 + 150, amount: 150, category: "refill", provenance: "exact" }];
-    const ledger = buildEnergyLedger(bars([[T0, 100], [T0 + 300, 80]]), gains);
-    // 100→80 while gaining 150: the full refill materialized and 170 was spent.
-    expect(ledger.observedSpent).toBe(170);
-    expect(ledger.knownGains).toBe(150);
-    expect(ledger.spendIntervals[0]?.amount).toBe(170);
+  it("10-11. gains inside a decline interval net out exactly once (cap-aware)", () => {
+    // Real-user finding shape: Xanax lands while the bar is near cap
+    // (105/150 → train to 5). Only the 45E of headroom can materialize;
+    // the remaining 105E is cap-ambiguous overshoot — never spend. The old
+    // model charged the full 150 on top of the observed drop (250E "trained")
+    // and produced the disputed 295/250 values.
+    const nearCap = buildEnergyLedger(bars([[T0, 105], [T0 + 300, 5]]), [
+      { t: T0 + 150, amount: 150, category: "xanax", provenance: "estimated" },
+    ]);
+    expect(nearCap.observedSpent).toBe(145);
+    expect(nearCap.knownGains).toBe(45);
+    expect(nearCap.absorbedOvershoot).toBe(105);
+    expect(nearCap.spendIntervals[0]?.amount).toBe(145);
+    expect(nearCap.spendIntervals[0]?.overshoot).toBe(105);
+
+    // Declines WITHOUT gains keep their plain observed drop (regen during a
+    // decline is not separable — the ledger stays a bounded inference).
+    const plain = buildEnergyLedger(bars([[T0, 100], [T0 + 300, 80]]), []);
+    expect(plain.observedSpent).toBe(20);
+    expect(plain.absorbedOvershoot).toBe(0);
   });
 
   it("13. cap interaction overshoot is surfaced, never silently dropped", () => {

@@ -107,6 +107,7 @@ production `_prisma_migrations` table). The complete v0.2 delta is:
 | `20260911180000_notification_events` | SAFE EXPAND | Notification platform v2 (roadmap #7): new `NotificationEvent` table (profile-level dedupe + quiet-hours deferral queue), nullable `NotificationDelivery` lifecycle columns (`eventId`, `reason`, `attempts`, `nextAttemptAt`, `lastError`), defaulted `NotificationPreference.bypassCritical` (true) + nullable `typeConfig`, nullable `NotificationState.systemState`. All additions: existing rows keep working unchanged. See docs/NOTIFICATIONS.md. |
 
 | `20260911200000_user_role_default_user` | SAFE DEFAULT CHANGE | `User.role` default flips `owner` → `user` (fail-safe: a future `user.create` without an explicit role can no longer silently mint an owner). All runtime paths already pass explicit roles; existing rows are untouched. See docs/HOSTED-SECURITY.md. |
+| `20260913180000_today_last_known` | SAFE EXPAND | New `TodayLastKnown` table (one cached live-status payload per profile) so `GET /api/today` can serve cold page loads immediately (stale-while-revalidate) instead of blocking on the serialized upstream Torn refresh. New standalone table only: no existing table, column, or row is touched; profile deletion cascades to the cached payload via FK `ON DELETE CASCADE`. |
 
 There are **no destructive, rename, type-rewrite or NOT NULL-tightening
 operations** in the v0.2 delta. `packages/database/tests/migration-safety.test.ts`

@@ -51,6 +51,7 @@ import { buildTrips } from "./economy.js";
 const MAX_TOP_CATEGORIES = 4;
 const LARGE_MOVEMENT_SHARE = 0.2;
 const LARGE_MOVEMENT_FLOOR = 50_000;
+const MAX_DRIVER_ROWS = 5;
 
 interface MoneyRowLike {
   occurredAt: Date;
@@ -310,7 +311,7 @@ export async function getDailySummary(
   });
 
   /* --------------------------- net worth drivers -------------------------- */
-  const drivers = buildNetworthDrivers({
+  const { drivers, activity: networthActivity } = buildNetworthDrivers({
     nwPeriod,
     economicNet: hasMoneyData ? sem.trueIncome - sem.trueExpense : null,
     consumptionValue: consumption.uses > 0 ? consumption.totalValue : null,
@@ -355,6 +356,7 @@ export async function getDailySummary(
       changePct: nwPeriod.changePct,
       coverage: nwPeriod.coverage,
       drivers,
+      activity: networthActivity,
       confidence: netWorthSection,
     },
     cashFlow,
@@ -427,20 +429,44 @@ function buildHighlights(input: {
   const { moneyEvents, sem } = input;
 
   if (input.moneyAvailability !== "unavailable" && moneyEvents.length > 0) {
-    // Largest single recorded movements (floor + share of the day's flow —
-    // deterministic; a quiet day's $60k outflow still qualifies, a busy
-    // day's $40k does not).
+    // Largest recorded TRUE cash movements, aggregated by category+direction.
+    // Two separate movements in the same category on one day are a single
+    // ledger story — emitting them as two identical rows reads as a
+    // duplication bug (real-user finding). Conversions are excluded here:
+    // they surface once in their own "Value converted" highlight lens.
     const flowMagnitude = Math.max(sem.cashInflow, sem.cashOutflow);
     const threshold = Math.max(LARGE_MOVEMENT_FLOOR, flowMagnitude * LARGE_MOVEMENT_SHARE);
-    const largest = [...moneyEvents].sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount)).slice(0, 2);
-    for (const e of largest) {
-      if (Math.abs(e.amount) < threshold) continue;
+    const flows = new Map<string, { direction: "in" | "out"; category: string; total: number; count: number; lastAt: number }>();
+    for (const e of moneyEvents) {
+      if (e.amount === 0) continue;
+      let kind: string;
+      try {
+        kind = classifyMoneySemantics(e);
+      } catch {
+        continue;
+      }
+      if (kind !== "true_income" && kind !== "true_expense") continue;
+      const key = `${e.direction}:${e.category}`;
+      const entry = flows.get(key) ?? { direction: e.amount > 0 ? "in" : "out", category: e.category, total: 0, count: 0, lastAt: 0 };
+      entry.total += e.amount;
+      entry.count += 1;
+      entry.lastAt = Math.max(entry.lastAt, e.occurredAt);
+      flows.set(key, entry);
+    }
+    // Deterministic order: magnitude desc, then recency, then category —
+    // never the DB's row order (two identical days must serialize identically).
+    const largest = [...flows.values()]
+      .sort((a, b) => Math.abs(b.total) - Math.abs(a.total) || b.lastAt - a.lastAt || a.category.localeCompare(b.category))
+      .slice(0, 2);
+    for (const f of largest) {
+      if (Math.abs(f.total) < threshold) continue;
+      const label = f.direction === "in" ? incomeLabel(f.category) : expenseLabel(f.category);
       collected.push({
-        kind: e.amount > 0 ? "large_cash_in" : "large_cash_out",
-        label: e.amount > 0 ? incomeLabel(e.category) : expenseLabel(e.category),
-        amount: e.amount,
-        occurredAt: e.occurredAt,
-        tone: e.amount > 0 ? "positive" : "negative",
+        kind: f.direction === "in" ? "large_cash_in" : "large_cash_out",
+        label: f.count > 1 ? `${label} ×${f.count}` : label,
+        amount: f.total,
+        occurredAt: f.lastAt,
+        tone: f.direction === "in" ? "positive" : "negative",
         priority: 3,
       });
     }
@@ -550,23 +576,38 @@ function buildHighlights(input: {
 }
 
 /* -------------------------------------------------------------------------- */
-/* "Why did net worth move?" — deterministic contributors, never causes        */
+/* "Why did net worth move?" — exact category reconciliation                   */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Real-user finding: a persistent $500k–$800k "Unexplained" row. Root cause
+ * was structural, not missing data — the old builder mixed TWO accounting
+ * views and then diffed them:
+ *   1. snapshot category deltas, which already partition the total change
+ *      exactly (wallet logs reconcile to the cent against them), and
+ *   2. activity flows (economic net, consumed value, travel profit) that are
+ *      SUBSETS of those same category moves.
+ * Adding (2) on top of (1) made residual ≈ −(activity flows) on most days.
+ *
+ * The drivers now carry ONLY the category partition: they sum to the net
+ * worth change exactly, smallest members folded into an aggregate row instead
+ * of being silently dropped. The activity flows move to `activity` —
+ * explanatory annotations, never reconciled against the delta.
+ */
 function buildNetworthDrivers(input: {
   nwPeriod: Awaited<ReturnType<typeof getNetworthPeriodForRange>>;
   economicNet: number | null;
   consumptionValue: number | null;
   travelProfit: number | null;
-}): NetworthDriver[] {
+}): { drivers: NetworthDriver[]; activity: NetworthDriver[] } {
   const { nwPeriod } = input;
-  if (nwPeriod.coverage === "none" || nwPeriod.change === null) return [];
+  if (nwPeriod.coverage === "none" || nwPeriod.change === null) return { drivers: [], activity: [] };
 
-  const drivers: NetworthDriver[] = [];
+  const categoryDrivers: NetworthDriver[] = [];
   for (const cat of nwPeriod.byCategory) {
     if (cat.change === null || cat.change === 0) continue;
     const kind: NetworthDriver["kind"] = cat.key === "cash" ? "cash_flow" : cat.key === "banks" ? "bank_move" : "inventory_move";
-    drivers.push({
+    categoryDrivers.push({
       kind,
       label: cat.label,
       magnitude: cat.change,
@@ -575,35 +616,43 @@ function buildNetworthDrivers(input: {
       certainty: kind === "cash_flow" ? "recorded" : "estimated",
     });
   }
+  categoryDrivers.sort((a, b) => Math.abs(b.magnitude ?? 0) - Math.abs(a.magnitude ?? 0));
+
+  // Keep the ledger readable without hiding rows: the five largest
+  // categories plus one honest aggregate for the remainder — the list still
+  // sums to the day's change exactly.
+  const drivers: NetworthDriver[] =
+    categoryDrivers.length > MAX_DRIVER_ROWS
+      ? [
+          ...categoryDrivers.slice(0, MAX_DRIVER_ROWS),
+          {
+            kind: "inventory_move",
+            label: "All other categories",
+            magnitude: categoryDrivers.slice(MAX_DRIVER_ROWS).reduce((s, d) => s + (d.magnitude ?? 0), 0),
+            certainty: "estimated",
+          },
+        ]
+      : categoryDrivers;
+
+  // Defensive: the partition is structural, so this stays empty in practice.
+  const partitionSum = categoryDrivers.reduce((s, d) => s + (d.magnitude ?? 0), 0);
+  const gap = nwPeriod.change - partitionSum;
+  if (Math.abs(gap) > 1) {
+    drivers.push({ kind: "residual", label: "Not explained by recorded activity", magnitude: gap, certainty: "unexplained" });
+  }
+
+  // Activity annotations — what the user DID inside those categories.
+  const activity: NetworthDriver[] = [];
   if (input.economicNet !== null && input.economicNet !== 0) {
-    drivers.push({ kind: "cash_flow", label: "Recorded net cash flow", magnitude: input.economicNet, certainty: "recorded" });
+    activity.push({ kind: "cash_flow", label: "Recorded net cash flow", magnitude: input.economicNet, certainty: "recorded" });
   }
   if (input.consumptionValue !== null && input.consumptionValue !== 0) {
-    drivers.push({ kind: "consumption", label: "Consumed value", magnitude: -input.consumptionValue, certainty: "estimated" });
+    activity.push({ kind: "consumption", label: "Consumed value", magnitude: -input.consumptionValue, certainty: "estimated" });
   }
   if (input.travelProfit !== null && input.travelProfit !== 0) {
-    drivers.push({ kind: "travel_profit", label: "Estimated travel profit", magnitude: input.travelProfit, certainty: "estimated" });
+    activity.push({ kind: "travel_profit", label: "Estimated travel profit", magnitude: input.travelProfit, certainty: "estimated" });
   }
-
-  // Honest residual: how much of the snapshot delta the drivers above do NOT
-  // explain (price moves, unvalued items, model limits). Only surfaced when
-  // it is material relative to the day's movement.
-  const explained = drivers.reduce((s, d) => s + (d.magnitude ?? 0), 0);
-  const residual = nwPeriod.change - explained;
-  const material = Math.abs(residual) > Math.max(10_000, Math.abs(nwPeriod.change) * 0.05);
-  drivers.push({
-    kind: "residual",
-    label: "Not explained by recorded activity",
-    magnitude: material ? residual : 0,
-    certainty: "unexplained",
-  });
-
-  const ranked = drivers
-    .filter((d) => d.kind !== "residual")
-    .sort((a, b) => Math.abs(b.magnitude ?? 0) - Math.abs(a.magnitude ?? 0))
-    .slice(0, 5);
-  const residualDriver = drivers.find((d) => d.kind === "residual")!;
-  return material ? [...ranked, residualDriver] : ranked;
+  return { drivers, activity };
 }
 
 /** Exposed for tests: the canonical label fallbacks used in highlights. */

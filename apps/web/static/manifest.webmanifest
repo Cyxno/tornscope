@@ -1,4 +1,5 @@
 {
+  "id": "/",
   "name": "TornScope",
   "short_name": "TornScope",
   "description": "A private record of your Torn life — analytics and history collected on your own server.",

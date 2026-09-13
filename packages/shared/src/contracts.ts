@@ -835,11 +835,11 @@ export const DailyHighlightSchema = z.object({
 export type DailyHighlight = z.infer<typeof DailyHighlightSchema>;
 
 /**
- * "Why did net worth move?" — a lightweight, deterministic contributor list.
- * This is NOT a reconciliation: magnitudes are recorded movements or catalog
- * estimates, and the frontend must present them as likely contributors, never
- * causes. `residual` with certainty "unexplained" reports what recorded
- * activity does not explain.
+ * "Why did net worth move?" — the EXACT category reconciliation. Category
+ * deltas partition the snapshot change precisely, so the list sums to the
+ * day's delta; the frontend must present it as a reconciliation, not a
+ * causal story. `residual` with certainty "unexplained" appears only when a
+ * structural gap is detected (expected: never).
  */
 export const NetworthDriverSchema = z.object({
   kind: z.enum(["cash_flow", "inventory_move", "bank_move", "consumption", "travel_profit", "residual"]),
@@ -875,6 +875,10 @@ export const DailySummaryResponseSchema = z.object({
     changePct: z.number().nullable(),
     coverage: NetworthCoverageSchema,
     drivers: z.array(NetworthDriverSchema).nullable(),
+    /** Activity flows behind the category moves (recorded net cash flow,
+     *  consumed value, travel profit). Annotations only — NOT part of the
+     *  driver reconciliation, which sums to the delta exactly. */
+    activity: z.array(NetworthDriverSchema).optional(),
     confidence: DataConfidenceMetaSchema,
   }),
   cashFlow: z.object({
@@ -1895,12 +1899,20 @@ export type InferenceStrength = z.infer<typeof InferenceStrengthSchema>;
 export const TrainingSessionSchema = z.object({
   startedAt: z.number(),
   endedAt: z.number(),
-  /** Observed energy declines inside the burst; null when bars are uncovered. */
+  /** Bounded energy inference for the burst; null when bars are uncovered.
+   *  Cap-aware (Xanax energy above the cap is excluded) and net of nothing —
+   *  regeneration during the burst is not separable, so UI must show "~". */
   energySpent: z.number().nullable(),
   energyKnown: z.boolean(),
   /** Observed battlestat gain bracketing the session; null when shared. */
   gains: z.record(ProgressionStatKeySchema, z.number()).nullable(),
+  /** Bracket delta net of exact job/company stat gains — the gym share. */
+  gymGain: z.number().nullable(),
   totalGain: z.number().nullable(),
+  /** Exact job/company stat points inside the bracket (non-gym). */
+  nonGymJobGain: z.number(),
+  /** Stat trains received inside the bracket (count only). */
+  friendTrains: z.number(),
   gainPerEnergy: z.number().nullable(),
   primaryStat: z.string().nullable(),
   inference: InferenceStrengthSchema,
@@ -1981,6 +1993,21 @@ export const ProgressionResponseSchema = z.object({
     deltaTotal: z.number().nullable(),
     changePct: z.number().nullable(),
     gainPerDay: z.number().nullable(),
+    /** "at_range_start" = true range change; "tracked_since" = baseline is
+     *  the first in-range snapshot (tracking began inside the range — the
+     *  change covers a shorter span than requested); null = no baseline. */
+    baselineKind: z.enum(["at_range_start", "tracked_since"]).nullable().optional(),
+    /** Observed baseline→closing span in days; gainPerDay needs >= 1. */
+    spanDays: z.number().nullable().optional(),
+    /** Exact attribution split of deltaTotal (gym vs job vs other). */
+    attribution: z
+      .object({
+        gym: z.number().nullable(),
+        job: z.number().nullable(),
+        other: z.number().nullable(),
+        friendTrains: z.number().nullable(),
+      })
+      .optional(),
     distribution: z.array(z.object({ key: ProgressionStatKeySchema, share: z.number().nullable() })),
     series: z.array(
       z.object({

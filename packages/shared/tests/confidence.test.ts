@@ -114,11 +114,23 @@ describe("deriveDataConfidence — partial coverage", () => {
     expect(meta.coverage.from).toBe(NOW - 180 * 86_400);
   });
 
-  it("backfill running with usable data → partial/backfill_in_progress", () => {
-    const meta = deriveDataConfidence(facts({ status: "running" }), fullRange, NOW);
+  it("first backward walk still running over stored data → partial/backfill_in_progress", () => {
+    // The range's history may still grow — a genuine IMPORTING state.
+    const meta = deriveDataConfidence(facts({ status: "running", stopReason: null }), fullRange, NOW);
     expect(meta.confidence).toBe("partial");
     expect(meta.reason).toBe("backfill_in_progress");
     expect(kpiAvailabilityFromConfidence(meta)).toBe("importing");
+  });
+
+  it("routine top-up running over a completed walk does NOT flip settled days to Importing", () => {
+    // Real-user finding: Today → Yesterday → Today showed IMPORTING for
+    // already-imported days whenever an incremental sync happened to run.
+    // A completed walk + stored coverage means the range is stable — the
+    // run is a refresh, not an import.
+    const meta = deriveDataConfidence(facts({ status: "running" }), fullRange, NOW);
+    expect(meta.confidence).toBe("complete");
+    expect(meta.reason).toBeNull();
+    expect(kpiAvailabilityFromConfidence(meta)).toBe("ok");
   });
 
   it("backfill running with no data yet → unavailable/backfill_in_progress (importing, not 0)", () => {

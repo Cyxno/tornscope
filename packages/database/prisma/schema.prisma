@@ -98,6 +98,7 @@ model User {
   notificationState    NotificationState?
   notificationDeliveries NotificationDelivery[]
   notificationEvents   NotificationEvent[]
+  todayLastKnown       TodayLastKnown?
 }
 
 /// The Torn player connected to a user.
@@ -144,6 +145,18 @@ model ApiCredential {
   revokedAt          DateTime?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// Last successful live-status payload (GET /api/today) per user. Cold loads
+/// are served from here IMMEDIATELY while a fresh Torn fetch runs in the
+/// background (stale-while-revalidate) — the persisted copy is always shown
+/// with its fetchedAt/stale markers, never as current data.
+model TodayLastKnown {
+  userId    String   @id
+  payload   Json
+  fetchedAt DateTime
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

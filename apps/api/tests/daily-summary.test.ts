@@ -277,7 +277,7 @@ suite("daily summary — happy paths", () => {
     const src = readFileSync(new URL("../../web/src/lib/components/DailySummary.svelte", import.meta.url), "utf8");
     expect(src).not.toMatch(/\bcaused by\b/i);
     expect(src).toContain("not a profit figure");
-    expect(src).toContain("recorded movements, not causes");
+    expect(src).toContain("they add up to the change above");
   });
 });
 

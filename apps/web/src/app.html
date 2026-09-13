@@ -9,6 +9,12 @@
     <link rel="icon" type="image/png" href="/favicon.png" sizes="16x16" />
     <link rel="apple-touch-icon" href="/icons/tornscope-180.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
+    <!-- iOS Home Screen web app: standalone display + status bar style + title.
+         Without these the installed app renders as a zoomed-out Safari page. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="TornScope" />
     <script src="/appearance-bootstrap.js"></script>
     %sveltekit.head%
   </head>

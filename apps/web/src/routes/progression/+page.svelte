@@ -185,7 +185,11 @@
         </div>
       </div>
       <p class="mt-3 max-w-4xl font-display text-lg leading-relaxed text-fg sm:text-xl">
-        {#if progression.summary.totalDelta.value !== null}
+        {#if progression.summary.totalDelta.value !== null && progression.battlestats.baselineKind === 'tracked_since'}
+          Battlestat tracking began {formatDate(progression.battlestats.trackedSince)} — inside this range — so the
+          <span class="tnum font-semibold {progression.summary.totalDelta.value >= 0 ? 'text-positive' : 'text-negative'}">{formatSignedNumberCompact(progression.summary.totalDelta.value)}</span>
+          change covers only the tracked portion, not a full {period === "All" ? "history" : period}.
+        {:else if progression.summary.totalDelta.value !== null}
           Your battlestats grew by
           <span class="tnum font-semibold {progression.summary.totalDelta.value >= 0 ? 'text-positive' : 'text-negative'}">{formatSignedNumberCompact(progression.summary.totalDelta.value)}</span>
           across {period === "All" ? "all time" : period}{#if progression.summary.gainPerDay.value !== null} — about {formatNumberCompact(progression.summary.gainPerDay.value)} per day{/if}.
@@ -197,7 +201,7 @@
       </p>
       <p class="mt-2 max-w-4xl text-sm leading-relaxed text-fg-muted">
         {#if progression.energy.covered}
-          {progression.summary.energyTrained.value !== null ? formatNumberCompact(progression.summary.energyTrained.value) : "—"} of energy went into {progression.summary.sessions} inferred training session{progression.summary.sessions === 1 ? "" : "s"}{#if progression.summary.likelyJumps > 0}, including {progression.summary.likelyJumps} likely happy jump{progression.summary.likelyJumps === 1 ? "" : "s"}{/if}.
+          {progression.summary.energyTrained.value !== null ? `~${formatNumberCompact(progression.summary.energyTrained.value)}` : "—"} of inferred training energy went into {progression.summary.sessions} inferred session{progression.summary.sessions === 1 ? "" : "s"}{#if progression.summary.likelyJumps > 0}, including {progression.summary.likelyJumps} likely happy jump{progression.summary.likelyJumps === 1 ? "" : "s"}{/if}.
         {:else}
           Energy analytics begin with the first bar snapshot — Torn only exposes bars live, so TornScope records them from now on.
         {/if}
@@ -306,10 +310,24 @@
       {:else}
         <div class="grid grid-cols-2 gap-px overflow-hidden rounded-card border border-border bg-border shadow-panel md:grid-cols-4">
           <Stat label="Total battlestats" value={formatKpiValue(progression.summary.totalBattlestats, formatNumberCompact)} provenance="exact" tone="accent" confidence={progression.battlestats.confidence} confidenceTooltip={confidenceTitle(progression.battlestats.confidence)} />
-          <Stat label="{period} change" value={progression.summary.totalDelta.value !== null ? formatSignedNumberCompact(progression.summary.totalDelta.value) : "—"} provenance="derived" confidence={progression.battlestats.confidence} tone={progression.summary.totalDelta.value === null ? "neutral" : progression.summary.totalDelta.value >= 0 ? "positive" : "negative"} sub={progression.battlestats.changePct !== null ? `${progression.battlestats.changePct >= 0 ? "+" : ""}${progression.battlestats.changePct.toFixed(2)}%` : null} />
-          <Stat label="Gain per day" value={formatKpiValue(progression.summary.gainPerDay, formatNumberCompact)} provenance="derived" confidence={progression.battlestats.confidence} />
+          <Stat label="{period} change" value={progression.summary.totalDelta.value !== null ? formatSignedNumberCompact(progression.summary.totalDelta.value) : progression.battlestats.trackedSince !== null ? "Not enough history yet" : "—"} provenance="derived" confidence={progression.battlestats.confidence} tone={progression.summary.totalDelta.value === null ? "neutral" : progression.summary.totalDelta.value >= 0 ? "positive" : "negative"} sub={progression.battlestats.changePct !== null ? `${progression.battlestats.changePct >= 0 ? "+" : ""}${progression.battlestats.changePct.toFixed(2)}%` : progression.battlestats.baselineKind === "tracked_since" ? "since tracking began" : null} />
+          <Stat label="Gain per day" value={formatKpiValue(progression.summary.gainPerDay, formatNumberCompact)} provenance="derived" confidence={progression.battlestats.confidence} sub={progression.summary.gainPerDay.value === null && progression.battlestats.spanDays != null && progression.battlestats.spanDays < 1 ? "less than a day of history" : progression.summary.gainPerDay.value === null && progression.summary.totalDelta.value === null ? "needs baseline history" : null} />
           <Stat label="Awards {period}" value={progression.profile.awardsDelta !== null ? formatSignedNumberCompact(progression.profile.awardsDelta) : "—"} provenance="derived" confidence={progression.battlestats.confidence} sub={progression.profile.awards !== null ? `${progression.profile.awards} total` : null} />
         </div>
+
+        <!-- Attribution: total change split into gym / job / other. Non-gym
+             sources must never be labeled gym gains (real-user finding #13). -->
+        {#if progression.battlestats.attribution && progression.summary.totalDelta.value !== null && progression.summary.totalDelta.value !== 0}
+          <div class="rounded-tile border border-border bg-surface px-5 py-3">
+            <p class="text-[11px] font-medium uppercase tracking-[0.12em] text-fg-faint">Attribution of the {period} change</p>
+            <p class="mt-1.5 flex flex-wrap items-baseline gap-x-4 gap-y-1 text-[13px]">
+              <span class="text-fg-muted">Gym-attributed <span class="tnum font-medium text-fg">{progression.battlestats.attribution.gym !== null ? `+${formatNumberCompact(progression.battlestats.attribution.gym)}` : "—"}</span></span>
+              <span class="text-fg-muted">Job/company <span class="tnum font-medium text-fg" title="Exact cumulative job stat counter delta — battlestats that grew outside the gym">{progression.battlestats.attribution.job !== null ? `+${formatNumberCompact(progression.battlestats.attribution.job)}` : "—"}</span></span>
+              <span class="text-fg-muted">Other/unattributed <span class="tnum font-medium text-fg" title="Friend-train stat amounts and movements no bracket can attribute">{progression.battlestats.attribution.other !== null ? `+${formatNumberCompact(progression.battlestats.attribution.other)}` : "—"}</span>{#if (progression.battlestats.attribution.friendTrains ?? 0) > 0}<span class="text-[10px] text-fg-faint"> · {progression.battlestats.attribution.friendTrains} stat trains received</span>{/if}</span>
+            </p>
+            <p class="mt-1 text-[11px] text-fg-faint">Total battlestat change is exact from snapshots; only the split is inferred. Job gains come from an exact Torn counter and are never counted as gym gains.</p>
+          </div>
+        {/if}
 
         <Panel title="Stat history" caption="Every point is a real Torn observation — nothing is interpolated">
           {#snippet actions()}
@@ -409,7 +427,7 @@
         <div class="grid grid-cols-2 gap-px overflow-hidden rounded-card border border-border bg-border shadow-panel md:grid-cols-4">
           <Stat label="Gain per energy (median)" value={progression.training.medianGainPerEnergy !== null ? progression.training.medianGainPerEnergy.toFixed(1) : "—"} provenance="estimated" confidence={progression.training.confidence} title="Observed battlestat gain divided by attributed training energy — an estimate, not an exact gym figure" />
           <Stat label="Training days" value={String(progression.training.daysTrained)} provenance="estimated" confidence={progression.training.confidence} sub={`${progression.summary.sessions} session${progression.summary.sessions === 1 ? "" : "s"}`} />
-          <Stat label="Energy trained" value={formatKpiValue(progression.summary.energyTrained, formatNumberCompact)} provenance="estimated" confidence={progression.training.confidence} sub={progression.training.avgEnergyPerTrainingDay !== null ? `${formatNumberCompact(progression.training.avgEnergyPerTrainingDay)} per training day` : null} />
+          <Stat label="Energy trained" value={progression.summary.energyTrained.value !== null ? `~${formatNumberCompact(progression.summary.energyTrained.value)}` : formatKpiValue(progression.summary.energyTrained, formatNumberCompact)} provenance="estimated" confidence={progression.training.confidence} sub={progression.training.avgEnergyPerTrainingDay !== null ? `~${formatNumberCompact(progression.training.avgEnergyPerTrainingDay)} per training day` : null} />
           <Stat label="Happy jumps" value={String(progression.happyJumps.jumps.length)} provenance="estimated" confidence={progression.happyJumps.confidence} sub={`${progression.summary.likelyJumps} likely`} />
         </div>
 
@@ -440,8 +458,8 @@
               <thead>
                 <tr>
                   <th>Window</th>
-                  <th class="text-right">Energy</th>
-                  <th class="text-right">Observed gain</th>
+                  <th class="text-right">Energy (inferred)</th>
+                  <th class="text-right">Gym gain</th>
                   <th class="text-right">Gain / E</th>
                   <th>Stat</th>
                   <th>Evidence</th>
@@ -451,8 +469,8 @@
                 {#each progression.training.sessions.slice().reverse().slice(0, 12) as session (session.startedAt)}
                   <tr>
                     <td class="tnum whitespace-nowrap text-xs text-fg-faint">{formatDateTime(session.startedAt)} → {formatDateTime(session.endedAt).slice(-5)}</td>
-                    <td class="tnum text-right {session.energySpent !== null ? 'text-negative' : 'text-fg-faint'}">{session.energySpent !== null ? formatNumberCompact(session.energySpent) : "—"}</td>
-                    <td class="tnum text-right {session.totalGain !== null && session.totalGain > 0 ? 'text-positive' : 'text-fg-faint'}">{session.totalGain !== null ? `+${formatNumberCompact(session.totalGain)}` : "—"}</td>
+                    <td class="tnum text-right {session.energySpent !== null ? 'text-negative' : 'text-fg-faint'}" title={session.energySpent !== null ? "Bounded inference: cap-affected Xanax energy is excluded and regeneration inside the burst is not separable" : undefined}>{session.energySpent !== null ? `~${formatNumberCompact(session.energySpent)}` : "—"}</td>
+                    <td class="tnum text-right {session.gymGain !== null && session.gymGain > 0 ? 'text-positive' : 'text-fg-faint'}" title={session.nonGymJobGain > 0 ? `+${formatNumberCompact(session.totalGain ?? 0)} observed, of which ${formatNumberCompact(session.nonGymJobGain)} was job/company gains — not gym` : session.friendTrains > 0 ? `${session.friendTrains} stat trains received in the bracket — gym share not separable` : undefined}>{session.gymGain !== null ? `+${formatNumberCompact(session.gymGain)}` : "—"}{#if session.nonGymJobGain > 0}<span class="ml-1 text-[10px] text-fg-faint" title="Job/company stat gains inside the bracket — excluded from gym attribution">{formatNumberCompact(session.nonGymJobGain)} job</span>{/if}</td>
                     <td class="tnum text-right text-fg-muted">{session.gainPerEnergy !== null ? session.gainPerEnergy.toFixed(1) : "—"}</td>
                     <td>
                       {#if session.primaryStat === "mixed"}
@@ -473,7 +491,7 @@
             </table>
           </div>
           <p class="mt-4 text-[11px] text-fg-faint">
-            Torn has no gym-training log: sessions are TornScope's inference from energy declines that no competing activity (like attacks) explains. "Observed gain" is the bracket delta, never an exact per-train figure.
+            Torn has no gym-training log: sessions are TornScope's inference from energy declines that no competing activity (like attacks) explains. Energy is a bounded estimate ("~") — cap-affected Xanax energy is excluded and regeneration inside a burst is not separable. Gain shows the gym-attributable share; exact job/company gains are listed separately and never counted as gym.
           </p>
         </Panel>
       {/if}

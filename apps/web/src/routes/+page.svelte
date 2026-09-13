@@ -36,18 +36,24 @@
   let error = $state<string | null>(null);
   let reloadToken = $state(0);
 
+  // DB-backed panels render as soon as the dashboard lands. The live-status
+  // call can wait on upstream Torn (first-ever load with no persisted
+  // last-known copy) — it fills in independently and must never hold the
+  // whole page hostage (real-user cold-load finding).
   async function load() {
     loading = true;
     error = null;
+    void endpoints
+      .today()
+      .then((res) => (today = res))
+      .catch(() => undefined);
     try {
-      const [dash, todayRes, summaryRes, ocsRes] = await Promise.all([
+      const [dash, summaryRes, ocsRes] = await Promise.all([
         endpoints.dashboard({ preset: dateRange.preset, from: dateRange.from, to: dateRange.to }),
-        endpoints.today().catch(() => null),
         endpoints.dailySummary().catch(() => null),
         endpoints.factionOcs({ preset: "30d" }).catch(() => null),
       ]);
       data = dash;
-      today = todayRes;
       todaySummary = summaryRes;
       myOcs = ocsRes?.ocs.filter((o) => o.myParticipation && o.state === "active") ?? null;
     } catch (err) {
@@ -283,7 +289,7 @@
               {/if}
             </p>
             <p class="mt-1 text-[11px] text-fg-faint">
-              Likely contributors — recorded movements, not causes{#if todaySummary.netWorth.coverage === "partial"} · covers the tracked portion only{/if}.
+              Category movements — they add up to the change above{#if todaySummary.netWorth.coverage === "partial"} · covers the tracked portion only{/if}.
             </p>
             <ul class="mt-4 space-y-2.5">
               {#each drivers as driver (driver.kind + driver.label)}

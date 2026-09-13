@@ -252,18 +252,29 @@ suite("data confidence — Overview & Economy integration", () => {
     expect(dash.confidence.cashFlow.coverage.from).not.toBeNull();
   });
 
-  it("backfill running → values may change: importing, not ok", async () => {
+  it("first backward walk running → importing, not ok; settled days survive a routine top-up", async () => {
+    // A walk whose backward pass never finished leaves history unsettled —
+    // genuine IMPORTING.
     await db.syncState.update({
       where: { userId_resource: { userId, resource: "money_logs" } },
-      data: { status: "running", lastStartedAt: new Date(), lastHeartbeatAt: new Date() },
+      data: { status: "running", stopReason: null, lastStartedAt: new Date(), lastHeartbeatAt: new Date() },
     });
     const range = { preset: "custom" as const, from: nowSec - 7 * DAY, to: nowSec - 60 };
-    const dash = await getDashboard(userId, range);
+    let dash = await getDashboard(userId, range);
     expect(dash.confidence.cashFlow.reason).toBe("backfill_in_progress");
     expect(dash.income.availability).toBe("importing");
+    // Real-user finding: with the walk COMPLETE, a routine incremental
+    // top-up must not flip already-imported days back to Importing.
     await db.syncState.update({
       where: { userId_resource: { userId, resource: "money_logs" } },
-      data: { status: "idle", lastStartedAt: null, lastHeartbeatAt: null },
+      data: { status: "running", stopReason: "history_boundary_reached" },
+    });
+    dash = await getDashboard(userId, range);
+    expect(dash.confidence.cashFlow.reason).not.toBe("backfill_in_progress");
+    expect(dash.income.availability).not.toBe("importing");
+    await db.syncState.update({
+      where: { userId_resource: { userId, resource: "money_logs" } },
+      data: { status: "idle", stopReason: "history_boundary_reached", lastStartedAt: null, lastHeartbeatAt: null },
     });
   });
 

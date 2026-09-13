@@ -42,6 +42,13 @@ export interface StatCounters {
   candy: number | null;
   awards: number | null;
   level: number | null;
+  /** Cumulative stat points gained from COMPANY/JOB activity (exact). The
+   *  observable non-gym battlestat source (e.g. Mining Corporation job
+   *  specials) — netted out of gym attribution. */
+  jobStats: number | null;
+  /** Cumulative stat trains RECEIVED from other players (exact count; the
+   *  stat amount per train is NOT observable). */
+  trainsReceived: number | null;
 }
 
 type UnknownRecord = Record<string, unknown>;
@@ -100,6 +107,8 @@ export function extractStatCounters(stats: unknown): Omit<StatCounters, "t"> {
     candy: pickPath(root, ["items", "used", "candy"]),
     awards: pickPath(root, ["other", "awards"]),
     level: pickPath(root, ["level"]),
+    jobStats: pickPath(root, ["jobs", "stats", "total"]),
+    trainsReceived: pickPath(root, ["jobs", "trains_received"]),
   };
 }
 
@@ -176,8 +185,9 @@ export interface EnergyLedgerSummary {
 }
 
 export interface EnergyLedgerResult extends EnergyLedgerSummary {
-  /** Per-interval spends with competing-evidence flags (session detection input). */
-  spendIntervals: Array<{ from: number; to: number; amount: number; competed: boolean }>;
+  /** Per-interval spends with competing-evidence flags (session detection input).
+   *  `overshoot` is the cap-ambiguous gain portion inside that interval. */
+  spendIntervals: Array<{ from: number; to: number; amount: number; competed: boolean; overshoot: number }>;
   /** Median seconds between observations (cadence; null when too few). */
   cadenceSeconds: number | null;
   /** True when every observation in range carries bars data. */
@@ -260,13 +270,23 @@ export function buildEnergyLedger(
         absorbedOvershoot += intervalGains - dE;
       }
     } else {
-      // Decline interval: known gains materialized fully, and the observed
-      // net decline on top of them is spend.
-      applyGains(intervalGains);
-      const spend = intervalGains + -dE;
+      // Decline interval. CAP-AWARE (real-user finding: "Training inferred
+      // −660" / "295 E" were inflated by gains that never existed): a known
+      // gain inside a decline can only materialize up to the headroom below
+      // the cap at the interval's start — a Xanax taken near cap largely
+      // cannot become observed energy. The unmaterialized remainder surfaces
+      // as cap-ambiguous overshoot, never as spend. Natural regeneration
+      // during a decline is NOT separately observable (bounded by the
+      // derived rate), so `spend` is a bounded inference, not an exact read.
+      const headroom = Math.max(0, a.energyMaximum - a.energyCurrent);
+      const effectiveGains = Math.min(intervalGains, headroom);
+      applyGains(effectiveGains);
+      const overshoot = intervalGains - effectiveGains;
+      absorbedOvershoot += overshoot;
+      const spend = effectiveGains + -dE;
       observedSpent += spend;
       const competed = competing.some((c) => c.from <= b.t && c.to >= a.t);
-      spendIntervals.push({ from: a.t, to: b.t, amount: spend, competed });
+      spendIntervals.push({ from: a.t, to: b.t, amount: spend, competed, overshoot });
     }
   }
 
@@ -324,12 +344,22 @@ export type StatKey = BattlestatKey | "mixed" | null;
 export interface TrainingSession {
   startedAt: number;
   endedAt: number;
-  /** Observed energy declines inside the burst (null when bars uncovered). */
+  /** Bounded energy inference for the burst (null when bars uncovered).
+   *  Cap-aware: Xanax energy that could not fit below the cap is excluded,
+   *  and regeneration during the burst is not separable — treat as "~". */
   energySpent: number | null;
   energyKnown: boolean;
   /** Observed battlestat gain bracketing the session; null when shared/absent. */
   gains: Record<BattlestatKey, number> | null;
+  /** Bracket delta net of observable non-gym sources (job/company stats).
+   *  The only figure gain-per-energy may divide by. */
+  gymGain: number | null;
   totalGain: number | null;
+  /** Exact job/company stat points inside the bracket (0 when none observable). */
+  nonGymJobGain: number;
+  /** Friend/job stat trains inside the bracket — count only; their stat
+   *  amount is unobservable, so gym attribution stays provisional. */
+  friendTrains: number;
   gainPerEnergy: number | null;
   primaryStat: StatKey;
   inference: InferenceStrength;
@@ -349,24 +379,33 @@ function median(values: number[]): number {
  * the hourly stat brackets, and grade inference strength. An interval with
  * competing evidence (attack window) is EXCLUDED from training attribution —
  * unexplained does not mean training.
+ *
+ * NON-GYM ATTRIBUTION (real-user finding #13): battlestats also grow from
+ * company/job activity (e.g. Mining Corporation job specials) and from stat
+ * trains received from other players. Job stat points are an exact
+ * cumulative counter and are netted out of the bracket; friend trains have
+ * no observable stat amount, so their presence keeps gym attribution
+ * provisional and disqualifies the session from gain-per-energy medians.
  */
 export function detectTrainingSessions(
   ledger: EnergyLedgerResult,
-  statSeries: readonly BattlestatPoint[]
+  statSeries: readonly BattlestatPoint[],
+  counters: readonly StatCounters[] = []
 ): TrainingSession[] {
   const usable = ledger.spendIntervals.filter((i) => i.amount >= SESSION_MIN_DROP && !i.competed);
   if (usable.length === 0 && statSeries.length === 0) return [];
 
   // Merge adjacent spend intervals into bursts.
-  const bursts: Array<{ from: number; to: number; energy: number }> = [];
+  const bursts: Array<{ from: number; to: number; energy: number; overshoot: number }> = [];
   const mergeGap = Math.max(SESSION_MERGE_GAP_SECONDS, (ledger.cadenceSeconds ?? SESSION_MERGE_GAP_SECONDS) * 2);
   for (const interval of usable) {
     const last = bursts[bursts.length - 1];
     if (last && interval.from - last.to <= mergeGap) {
       last.to = interval.to;
       last.energy += interval.amount;
+      last.overshoot += interval.overshoot;
     } else {
-      bursts.push({ from: interval.from, to: interval.to, energy: interval.amount });
+      bursts.push({ from: interval.from, to: interval.to, energy: interval.amount, overshoot: interval.overshoot });
     }
   }
 
@@ -388,6 +427,21 @@ export function detectTrainingSessions(
     const bracketShared =
       !adjacent || bursts.some((other) => other !== burst && other.from < (s1?.t ?? Infinity) && other.to > (s0?.t ?? -Infinity));
 
+    // Exact non-gym counters over the same bracket window.
+    const counterAt = (t: number, pick: (c: StatCounters) => number | null): number | null => {
+      let value: number | null = null;
+      for (const c of counters) {
+        if (c.t > t) break;
+        const v = pick(c);
+        if (v !== null) value = v;
+      }
+      return value;
+    };
+    const jobDelta =
+      s0 && s1 ? sumCounterDelta(counterAt(burst.to, (c) => c.jobStats), counterAt(burst.from, (c) => c.jobStats)) : null;
+    const trainsDelta =
+      s0 && s1 ? sumCounterDelta(counterAt(burst.to, (c) => c.trainsReceived), counterAt(burst.from, (c) => c.trainsReceived)) : null;
+
     let gains: Record<BattlestatKey, number> | null = null;
     if (adjacent && !bracketShared && s0 && s1) {
       const g = {} as Record<BattlestatKey, number>;
@@ -400,24 +454,38 @@ export function detectTrainingSessions(
     }
 
     const totalGain = gains ? BATTLESTAT_KEYS.reduce((s, k) => s + gains![k], 0) : null;
+    // Gym-attributable gain: the bracket delta minus the exact job/company
+    // portion. Clamped at 0 — the counter cannot attribute more than was
+    // observed. Friend-train stat amounts are unobservable and stay inside.
+    const nonGymJobGain = gains ? Math.min(Math.max(0, jobDelta ?? 0), totalGain ?? 0) : 0;
+    const friendTrains = gains ? Math.max(0, trainsDelta ?? 0) : 0;
+    const gymGain = gains ? Math.max(0, (totalGain ?? 0) - nonGymJobGain) : null;
     const energyKnown = burst.energy > 0;
+    // Gain/E divides ONLY gym-attributable gain, and only when the bracket
+    // carries no friend-train ambiguity (Phase 27: never divide mixed gains
+    // by gym energy — the metric would read falsely high).
     const gainPerEnergy =
-      totalGain !== null && totalGain > 0 && burst.energy >= SESSION_MIN_ENERGY_FOR_GAIN_PER_E ? totalGain / burst.energy : null;
+      gymGain !== null && gymGain > 0 && friendTrains === 0 && burst.energy >= SESSION_MIN_ENERGY_FOR_GAIN_PER_E
+        ? gymGain / burst.energy
+        : null;
 
-    // Primary stat only when one stat dominates the observed gain.
+    // Primary stat from the OBSERVED distribution when attribution is clean.
     let primaryStat: StatKey = null;
-    if (gains && totalGain && totalGain > 0) {
-      const top = [...BATTLESTAT_KEYS].sort((a, b) => gains[b] - gains[a])[0]!;
-      primaryStat = gains[top] / totalGain >= STAT_DOMINANCE_SHARE ? top : "mixed";
+    if (gains && gymGain !== null && gymGain > 0) {
+      const top = [...BATTLESTAT_KEYS].sort((a, b) => gains![b] - gains![a])[0]!;
+      primaryStat = gains![top] / (totalGain || 1) >= STAT_DOMINANCE_SHARE ? top : "mixed";
     }
 
     const evidence: string[] = [];
     if (energyKnown) evidence.push(`energy decreased by ${Math.round(burst.energy)} during the window`);
     if (gains && totalGain) evidence.push(`battlestats increased by ${Math.round(totalGain)} across the bracket`);
+    if (nonGymJobGain > 0) evidence.push(`${Math.round(nonGymJobGain)} stat points from job/company gains — excluded from gym attribution`);
+    if (friendTrains > 0) evidence.push(`${friendTrains} stat train${friendTrains === 1 ? "" : "s"} received in the bracket — gym share not separable`);
+    if (burst.overshoot > 0) evidence.push(`~${Math.round(burst.overshoot)} Xanax energy hit the cap (not counted as training)`);
     if (bracketShared && statSeries.length > 0) evidence.push("stat window shared with other activity — gain not attributable");
 
     const inference: InferenceStrength =
-      energyKnown && totalGain !== null && totalGain > 0 ? "likely" : "possible";
+      energyKnown && gymGain !== null && gymGain > 0 ? "likely" : "possible";
 
     sessions.push({
       startedAt: burst.from,
@@ -425,7 +493,10 @@ export function detectTrainingSessions(
       energySpent: energyKnown ? burst.energy : null,
       energyKnown,
       gains,
+      gymGain,
       totalGain,
+      nonGymJobGain,
+      friendTrains,
       gainPerEnergy,
       primaryStat,
       inference,
@@ -435,6 +506,11 @@ export function detectTrainingSessions(
   }
 
   return sessions.sort((a, b) => a.startedAt - b.startedAt || a.endedAt - b.endedAt);
+}
+
+/** Difference of a cumulative counter across a window (null-safe). */
+function sumCounterDelta(after: number | null, before: number | null): number | null {
+  return after !== null && before !== null ? after - before : null;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -581,6 +657,18 @@ export interface BattlestatProgression {
   deltaTotal: number | null;
   changePct: number | null;
   gainPerDay: number | null;
+  /** How the opening baseline was chosen:
+   *  - "at_range_start": latest snapshot at/before the range start (true
+   *    range change);
+   *  - "tracked_since": no snapshot exists at/before the range start, so the
+   *    earliest IN-RANGE snapshot anchors the change — the figure covers a
+   *    SHORTER span than requested and must be labeled "since tracking
+   *    began" (real-user finding: the mysterious 7d dash for newer history);
+   *  - null: no usable baseline at all — "Not enough history yet". */
+  baselineKind: "at_range_start" | "tracked_since" | null;
+  /** Actual observed span between baseline and closing, in days (null when
+   *  unmeasurable). gainPerDay is only derived when this is >= 1. */
+  spanDays: number | null;
   series: Array<{ t: number; strength: number | null; defense: number | null; speed: number | null; dexterity: number | null; total: number | null }>;
   distribution: Array<{ key: BattlestatKey; share: number | null }>;
 }
@@ -597,7 +685,22 @@ function lastAtOrBefore<T extends { t: number }>(series: readonly T[], t: number
 }
 
 export function battlestatProgression(series: readonly BattlestatPoint[], from: number, to: number): BattlestatProgression {
-  const baseline = lastAtOrBefore(series, from);
+  let baseline = lastAtOrBefore(series, from);
+  let baselineKind: BattlestatProgression["baselineKind"] = baseline ? "at_range_start" : null;
+  if (!baseline) {
+    // Tracking began inside the requested range. Fall back to the earliest
+    // in-range observation so the change is still shown — but labeled as a
+    // shorter "since tracking began" span, never a fabricated full-range
+    // figure. The dash is reserved for genuinely no history at all.
+    for (const p of series) {
+      if (p.t >= from && p.t <= to) {
+        baseline = p;
+        baselineKind = "tracked_since";
+        break;
+      }
+      if (p.t > to) break;
+    }
+  }
   const closing = lastAtOrBefore(series, to);
   const perStat = BATTLESTAT_KEYS.map((key) => {
     const a = baseline?.[key] ?? null;
@@ -616,6 +719,9 @@ export function battlestatProgression(series: readonly BattlestatPoint[], from: 
   const closingTotal = closing?.total ?? null;
   const deltaTotal = openingTotal !== null && closingTotal !== null ? closingTotal - openingTotal : null;
   const spanDays = baseline && closing ? (closing.t - baseline.t) / 86_400 : null;
+  // Annualizing to a day requires at least a day of observed span — below
+  // that the number would fabricate precision, so it stays null (the UI
+  // explains "less than a day of history" instead of a bare dash).
   const gainPerDay = deltaTotal !== null && spanDays !== null && spanDays >= 1 ? deltaTotal / spanDays : null;
   const distribution = BATTLESTAT_KEYS.map((key) => {
     const value = closing?.[key] ?? null;
@@ -630,6 +736,8 @@ export function battlestatProgression(series: readonly BattlestatPoint[], from: 
     changePct:
       openingTotal !== null && closingTotal !== null && openingTotal > 0 ? ((closingTotal - openingTotal) / openingTotal) * 100 : null,
     gainPerDay,
+    baselineKind,
+    spanDays,
     series: series.filter((p) => p.t >= from && p.t <= to),
     distribution,
   };

@@ -7,6 +7,7 @@
   import { me } from "$lib/state.svelte";
   import { formatClock } from "$lib/reltime";
   import StateMessage from "./StateMessage.svelte";
+  import { detectPushCapability, isIOS, isStandalone, type PushCapability } from "$lib/pwa";
 
   /**
    * Notification settings — the user-control surface for the canonical type
@@ -18,12 +19,10 @@
 
   let status = $state<NotificationsStatusResponse | null>(null);
   let history = $state<NotificationHistoryResponse | null>(null);
-  type PushEnv =
-    | { kind: "unsupported" }
-    | { kind: "insecure" }
-    | { kind: "sw-failed"; reason: string }
-    | { kind: "ok"; permission: NotificationPermission };
+  type PushEnv = PushCapability;
   let support = $state<PushEnv>({ kind: "unsupported" });
+  let iosEnv = $state(false);
+  let standaloneEnv = $state(false);
   let permission = $state<NotificationPermission | "default">("default");
   let swRegistration = $state<ServiceWorkerRegistration | null>(null);
   let busy = $state(false);
@@ -50,20 +49,11 @@
 
   function detectSupport(): void {
     if (typeof window === "undefined") return;
-    // Secure-context FIRST: on an insecure origin (LAN HTTP) Firefox does
-    // not expose PushManager/Notification at all, so capability checks
-    // would misreport a working browser as "unsupported".
-    if (!window.isSecureContext) {
-      support = { kind: "insecure" };
-      permission = "default";
-      return;
-    }
-    if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
-      support = { kind: "unsupported" };
-      return;
-    }
-    support = { kind: "ok", permission: Notification.permission };
-    permission = Notification.permission;
+    const detected = detectPushCapability();
+    support = detected.capability;
+    iosEnv = detected.ios;
+    standaloneEnv = detected.standalone;
+    permission = support.kind === "ok" ? support.permission : "default";
   }
 
   function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
@@ -249,13 +239,14 @@
 
   onMount(async () => {
     detectSupport();
-    if (support.kind !== "unsupported" && support.kind !== "insecure") {
+    if (support.kind === "ok") {
       try {
         const reg = await ensureServiceWorker();
         const sub = await reg.pushManager.getSubscription();
         if (sub) currentEndpoint = sub.endpoint;
-      } catch {
-        // SW registration issues surface through the enable flow.
+      } catch (err) {
+        // An honest registration failure beats a generic unsupported claim.
+        support = { kind: "sw-failed", reason: err instanceof Error ? err.message : "registration failed" };
       }
     }
     await refresh();
@@ -277,8 +268,14 @@
     <img src="/icons/tornscope-notifications-192.png" alt="" aria-hidden="true" class="h-16 w-16 shrink-0 rounded-xl" />
     <div class="min-w-0 text-[13px] leading-relaxed text-fg-muted">
       <p>
-        {#if support.kind === "unsupported"}
-          Push notifications are not supported in this browser.
+        {#if support.kind === "ios-needs-install"}
+          <span class="font-medium text-warning">On iPhone, install TornScope on your Home Screen first to enable notifications.</span>
+          Open TornScope in Safari, tap <span class="font-medium text-fg">Share</span> (the square with the arrow
+          pointing out), choose <span class="font-medium text-fg">Add to Home Screen</span>, then open TornScope
+          from the Home Screen icon and enable notifications here. Web Push on iOS only works from the installed
+          app — not from a browser tab (this includes Firefox and Chrome on iOS, which use Apple's web engine).
+        {:else if support.kind === "unsupported"}
+          Push notifications are not supported {#if iosEnv}for this iOS version — the Home Screen app needs iOS 16.4 or newer for Web Push{:else}in this browser{/if}.
         {:else if support.kind === "insecure"}
           <span class="font-medium text-warning">Push notifications require HTTPS.</span>
           Open TornScope through an HTTPS address to enable notifications — browsers only
@@ -317,6 +314,7 @@
 
   <div class="flex flex-wrap items-center gap-3">
     {#if support.kind === "ok" && status?.pushConfigured}
+      <!-- supported + not enabled / enabled are handled inside -->
       {#if status.devices.some((d) => d.current)}
         <button
           class="rounded-full border border-negative/30 px-4 py-1.5 text-xs font-medium text-negative transition-colors hover:bg-negative/10 disabled:opacity-40"

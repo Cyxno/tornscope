@@ -104,8 +104,11 @@ suite("energy golden", () => {
     const t0 = nowSec - 3600;
     // t0(10) → t1(60): regen +50.
     // t1(60) → t2(150): refill +90 inside → gains 90 applied, regen 0.
-    // t2(150) → t3(40): training decline −110 with Xanax(+150 est) inside
-    //                   → spend = 150 + 110 = 260 (likely session).
+    // t2(150) → t3(40): training decline −110 (bar was pinned at cap, no
+    //                   gains inside — plain 110E spend).
+    // t3(40) → t4(20): Xanax(+150 est) at t0+1000 with the bar at 40 —
+    //                   headroom 110: 110E materializes, 40E is cap
+    //                   overshoot, spend = 110 + 20 = 130.
     // t3(40) → t4(20): unknown drop −20 (<25, stays unattributed).
     const bars = [
       { t: t0, e: 10 }, { t: t0 + 300, e: 60 }, { t: t0 + 600, e: 150 },
@@ -144,18 +147,20 @@ suite("energy golden", () => {
     expect(rec.closing).toBe(20);
     expect(rec.opening! + sourcesTotal - usesTotal).toBe(rec.closing);
     // Exact attribution (verified against the ledger mechanics): the refill
-    // lands in a rise (90 exact), the Xanax estimate nets into the following
-    // decline (150 est.), natural regen contributes 50 — and the merged
-    // training burst carries all observed spend (280).
-    expect(sourcesTotal).toBe(290);
-    expect(prog.energy.sources).toContainEqual({ category: "Xanax (est.)", amount: 150, provenance: "estimated" });
+    // lands in a rise (90 exact); the Xanax estimate lands when the bar sits
+    // at 40 (headroom 110) — 110E applied, 40E cap overshoot; natural regen
+    // contributes 50. Under the old model the full 150E was charged on top
+    // of the observed drops (290 sources / 280 trained) — the inflated
+    // accounting the real-user walkthrough disputed.
+    expect(sourcesTotal).toBe(250);
     expect(prog.energy.sources).toContainEqual({ category: "Energy drinks", amount: 90, provenance: "exact" });
-    expect(prog.energy.absorbedOvershoot ?? 0).toBe(0);
+    expect(prog.energy.sources).toContainEqual({ category: "Xanax (est.)", amount: 110, provenance: "estimated" });
+    expect(prog.energy.absorbedOvershoot ?? 0).toBe(40);
     const trained = prog.training.sessions
       .filter((s) => s.inference === "likely")
       .reduce((sum, s) => sum + (s.energySpent ?? 0), 0);
-    expect(trained).toBe(280);
-    expect(usesTotal).toBe(280); // no unexplained residue in this fixture
+    expect(trained).toBe(240);
+    expect(usesTotal).toBe(240); // no unexplained residue in this fixture
     // Primary stat provenance: strength +500, others untouched.
     const strength = prog.battlestats.perStat.find((s) => s.key === "strength")!;
     expect(strength.delta).toBe(500);
