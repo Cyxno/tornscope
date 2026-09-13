@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { detectPushCapability, isIOS, isStandalone } from "../src/lib/pwa.ts";
+import { detectPushCapability, isIOS, isStandalone } from "../src/lib/pwa.js";
 
 /**
  * Real-user remediation (iOS findings #11/#12): the push capability state
