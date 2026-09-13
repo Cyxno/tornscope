@@ -352,7 +352,7 @@
         {#each status.devices as device (device.id)}
           <li class="flex items-center justify-between gap-3">
             <span class="min-w-0 truncate">
-              {#if device.current}<span class="font-medium text-fg">This browser</span>{:else}{device.userAgent?.slice(0, 60) ?? "Device"}{/if}
+              {#if device.current}<span class="font-medium text-fg">This browser</span>{:else}{device.label ?? device.userAgent?.slice(0, 40) ?? "Device"}{/if}
               <span class="text-fg-faint">· since {new Date(device.createdAt * 1000).toLocaleDateString("en-GB")}</span>
             </span>
             {#if !device.current}

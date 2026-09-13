@@ -81,7 +81,9 @@ function defaultPreferences(): NotificationPreferencesDto {
   };
 }
 
-/** GET /api/notifications — status for the Settings section. */
+/**
+ * GET /api/notifications — status for the Settings section.
+ */
 export async function getNotificationsStatus(user: SessionUser, currentEndpoint: string | null): Promise<NotificationsStatusResponse> {
   const db = getPrismaClient();
   const [devices, prefs] = await Promise.all([
@@ -97,6 +99,7 @@ export async function getNotificationsStatus(user: SessionUser, currentEndpoint:
     devices: devices.map((d) => ({
       id: d.id,
       userAgent: d.userAgent,
+      label: coarseDeviceLabel(d.userAgent),
       createdAt: Math.floor(d.createdAt.getTime() / 1000),
       lastSeenAt: Math.floor(d.lastSeenAt.getTime() / 1000),
       current: currentEndpoint !== null && d.endpoint === currentEndpoint,
@@ -115,6 +118,34 @@ export async function getNotificationsStatus(user: SessionUser, currentEndpoint:
   };
 }
 
+/**
+ * A coarse, human-readable device label from the stored user agent —
+ * "iPhone · iOS 17.5", "Android", "Mac · Safari" — so the Devices list never
+ * shows raw UA strings or an "Unknown device" where platform facts are
+ * available. Deliberately coarse: no model numbers, no fingerprinting beyond
+ * the UA the browser already sent with the subscription.
+ */
+export function coarseDeviceLabel(userAgent: string | null): string {
+  if (!userAgent) return "Device";
+  const ios = userAgent.match(/\b(iPhone|iPad|iPod)\b/i);
+  const android = /Android/i.test(userAgent);
+  const osVersion = userAgent.match(/OS (\d+[_\d]*)/); // "17_5" → 17.5
+  if (ios) {
+    const device = /\biPad\b/i.test(userAgent) ? "iPad" : /\biPod\b/i.test(userAgent) ? "iPod" : "iPhone";
+    const v = osVersion ? ` · iOS ${osVersion[1]!.replace(/_/g, ".")}` : "";
+    return `${device}${v}`;
+  }
+  if (android) {
+    const v = userAgent.match(/Android (\d+[\d.]*)/);
+    return v ? `Android · ${v[1]!}` : "Android";
+  }
+  if (/iPhone Simulator/i.test(userAgent)) return "iOS Simulator";
+  const desktopOS = /Windows/i.test(userAgent) ? "Windows" : /Mac OS X|Macintosh/i.test(userAgent) ? "Mac" : /Linux/i.test(userAgent) ? "Linux" : null;
+  const browser = /Edg\//i.test(userAgent) ? "Edge" : /OPR\//i.test(userAgent) ? "Opera" : /Chrome\//i.test(userAgent) ? "Chrome" : /Firefox\//i.test(userAgent) ? "Firefox" : /Safari\//i.test(userAgent) ? "Safari" : null;
+  if (desktopOS && browser) return `${desktopOS} · ${browser}`;
+  return desktopOS ?? browser ?? "Device";
+}
+
 /** GET /api/notifications/history — the user-visible delivery ledger. */
 export async function getNotificationHistory(user: SessionUser): Promise<NotificationHistoryResponse> {
   const db = getPrismaClient();
@@ -131,7 +162,7 @@ export async function getNotificationHistory(user: SessionUser): Promise<Notific
   });
   const currentDeviceLabel = (userAgent: string | null, endpoint: string): string => {
     void endpoint; // deliberately never exposed — coarse label only
-    return userAgent ? userAgent.slice(0, 40) : "Device";
+    return coarseDeviceLabel(userAgent);
   };
   return {
     entries: events.map((e) => ({

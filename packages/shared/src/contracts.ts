@@ -880,6 +880,28 @@ export const DailySummaryResponseSchema = z.object({
      *  driver reconciliation, which sums to the delta exactly. */
     activity: z.array(NetworthDriverSchema).optional(),
     confidence: DataConfidenceMetaSchema,
+    /**
+     * Inspectable wallet equation behind the Cash driver row (real-user
+     * finding: "why did cash move by this amount?"). opening + knownReceived
+     * − knownSpent = expectedClosing, compared against actualClosing, with
+     * the graded residual. quality: exact | small_residual | partial |
+     * unreconciled | unavailable — "partial" also covers known money-log
+     * coverage gaps, so a day is never presented as fully explained when the
+     * history is not proven complete. Optional for deploy-order tolerance.
+     */
+    wallet: z
+      .object({
+        opening: z.number().nullable(),
+        openingAt: z.number().nullable(),
+        knownReceived: z.number(),
+        knownSpent: z.number(),
+        expectedClosing: z.number().nullable(),
+        actualClosing: z.number().nullable(),
+        residual: z.number().nullable(),
+        coverage: z.enum(["full", "partial", "unavailable"]),
+        quality: z.enum(["exact", "small_residual", "partial", "unreconciled", "unavailable"]),
+      })
+      .optional(),
   }),
   cashFlow: z.object({
     received: KpiValueSchema,
@@ -1840,6 +1862,10 @@ export const NotificationsStatusResponseSchema = z.object({
     z.object({
       id: z.string(),
       userAgent: z.string().nullable(),
+      /** Coarse human label derived from the user agent ("iPhone · iOS 17.5",
+       *  "Mac · Chrome") — never a raw UA string in the UI. Optional for
+       *  deploy-order tolerance; clients fall back to a truncated UA. */
+      label: z.string().optional(),
       createdAt: z.number(),
       lastSeenAt: z.number(),
       /** True when this row is the browser making the request. */
