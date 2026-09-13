@@ -22,7 +22,13 @@
   );
 </script>
 
-<header class="sticky top-0 z-40 border-b border-border bg-bg/85 backdrop-blur-md lg:hidden">
+<!-- In the installed Home Screen app (black-translucent status bar) the page
+     extends under the iOS status bar: pad the top by the safe-area inset.
+     In normal browsers the inset is 0, so this is a no-op there. -->
+<header
+  class="sticky top-0 z-40 border-b border-border bg-bg/85 backdrop-blur-md lg:hidden"
+  style="padding-top: env(safe-area-inset-top);"
+>
   <div class="mx-auto flex h-14 max-w-7xl items-center justify-between gap-3 px-4 sm:px-6">
     <!-- Brand -->
     <a href="/" class="group flex min-w-0 items-center gap-2.5" title="TornScope">

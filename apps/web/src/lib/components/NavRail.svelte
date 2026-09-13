@@ -27,7 +27,12 @@
   );
 </script>
 
-<aside class="sticky top-0 z-40 hidden h-screen w-[68px] shrink-0 flex-col border-r border-border bg-bg-raise lg:flex xl:w-[228px]">
+<!-- Safe-area top inset: in an installed standalone web app on notched
+     devices the rail starts under the status bar; 0 in normal browsers. -->
+<aside
+  class="sticky top-0 z-40 hidden h-screen w-[68px] shrink-0 flex-col border-r border-border bg-bg-raise lg:flex xl:w-[228px]"
+  style="padding-top: env(safe-area-inset-top);"
+>
   <!-- Brand -->
   <a href="/" class="flex h-16 shrink-0 items-center gap-2.5 border-b border-border px-4 xl:px-5" title="TornScope" aria-label="TornScope — Overview">
     <img src="/icons/tornscope-96.png" alt="" aria-hidden="true" class="h-7 w-7 rounded-lg" />

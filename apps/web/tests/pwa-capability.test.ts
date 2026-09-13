@@ -134,6 +134,14 @@ describe("push capability detection (real-user iOS remediation)", () => {
       expect(detectPushCapability().capability.kind).toBe("ios-needs-install");
     });
   });
+
+  it("denied permission is still a SUPPORTED platform — the blocked state is a permission, not a capability", () => {
+    // Feature detection first: a denied grant must NOT downgrade the platform
+    // to unsupported/needs-install; the UI shows its blocked guidance instead.
+    withWindow({ secure: true, pushManager: true, serviceWorker: true, notification: true, permission: "denied", ua: IPHONE_UA, standaloneQuery: true }, () => {
+      expect(detectPushCapability().capability).toEqual({ kind: "ok", permission: "denied" });
+    });
+  });
 });
 
 describe("iOS install/push copy contract (rendered surfaces)", () => {
@@ -156,14 +164,33 @@ describe("iOS install/push copy contract (rendered surfaces)", () => {
   });
 
   it("the app shell carries the standalone meta tags and the SW registers at startup", () => {
-    expect(read("../src/app.html")).toContain("apple-mobile-web-app-capable");
-    expect(read("../src/app.html")).toContain("apple-mobile-web-app-status-bar-style");
-    expect(read("../src/app.html")).toContain("apple-mobile-web-app-title");
+    const appHtml = read("../src/app.html");
+    expect(appHtml).toContain("apple-mobile-web-app-capable");
+    expect(appHtml).toContain("apple-mobile-web-app-status-bar-style");
+    expect(appHtml).toContain("apple-mobile-web-app-title");
+    // viewport-fit=cover is what makes env(safe-area-inset-*) non-zero in the
+    // installed app — without it the safe-area paddings are inert.
+    expect(appHtml).toContain("viewport-fit=cover");
     expect(read("../src/routes/+layout.svelte")).toContain("registerServiceWorker()");
+    expect(read("../src/lib/components/Header.svelte")).toContain("env(safe-area-inset-top)");
+    expect(read("../src/lib/components/MobileNav.svelte")).toContain("env(safe-area-inset-bottom)");
     const manifest = JSON.parse(read("../static/manifest.webmanifest"));
     expect(manifest.display).toBe("standalone");
     expect(manifest.id).toBe("/");
     expect(manifest.start_url).toBe("/today");
     expect((manifest.icons ?? []).some((i: { purpose?: string }) => i.purpose === "maskable")).toBe(true);
+  });
+
+  it("the service worker is push-only and never caches responses", () => {
+    const sw = read("../static/sw.js");
+    expect(sw).toContain("addEventListener(\"push\"");
+    expect(sw).toContain("notificationclick");
+    // Privacy: no fetch handler — private API responses are never cached, and
+    // no offline shell can go stale.
+    expect(sw).not.toMatch(/addEventListener\(\s*["']fetch["']/);
+    expect(sw).not.toMatch(/\bcaches\.open\b/);
+    // A new deployment activates on the next load instead of waiting.
+    expect(sw).toContain("skipWaiting");
+    expect(sw).toContain("clients.claim()");
   });
 });
