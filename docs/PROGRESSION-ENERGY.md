@@ -106,6 +106,29 @@ Milestones (`detectStatMilestones`) report threshold crossings **with their
 crossing window** between two observations. Balance is descriptive (share of
 total) — no ideal distribution is prescribed.
 
+**Range baseline rule (real-user finding: the mysterious 7d dash).** The
+opening baseline is the latest snapshot **at or before** the range start
+(`baselineKind: "at_range_start"`). When tracking began inside the requested
+range, the earliest in-range snapshot anchors the change instead
+(`baselineKind: "tracked_since"`): the figure covers a SHORTER span than
+requested, the UI discloses "since tracking began" with the tracking-start
+date, and `gainPerDay` divides by the actual observed `spanDays` — never by
+the requested 7 when only 3 days exist. Below one day of observed span the
+rate stays null ("less than a day of history"). A bare dash is reserved for
+genuinely no history (`baselineKind: null`, "Not enough history yet").
+
+**Total stat change vs gym gain.** A snapshot delta is a TOTAL stat change,
+never automatically a gym gain (rule: a Mining Corporation job special and
+received friend trains also move battlestats). The exact cumulative
+job/company stat counter (`jobs.stats.total`) is netted out of each session
+bracket; friend-train stat amounts are unobservable, so their presence keeps
+gym attribution provisional and disqualifies the session from gain-per-energy
+medians. `battlestats.attribution` splits every range into
+gym / job / other — and the Daily Summary Training strip leads with the
+gym-ATTRIBUTABLE gain (`progression.gymGain`), never the raw total delta
+labeled as a training gain. `gainPerEnergy` divides gym-attributable gain by
+training-attributed energy only.
+
 ## 7. Confidence vs inference strength
 
 - **Data confidence** (coverage/freshness) reuses the central

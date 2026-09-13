@@ -34,6 +34,22 @@ confusion · P3 polish.
 | PF-023 | /sync | Incident copy "Recovered stale worker run · worker interrupted · auto-recovered" is semi-jargon | P3 | Copy | Sync → click "1 issue · 24h" chip | Plain incident wording | Worker internals phrasing | FIXED |
 | PF-024 | /timeline | Log titles like "Crime success item gain (new)" contain Torn's own "(new)" suffix — verified authentic Torn wording, kept | P3 | Content | Timeline | — | — | ACCEPTED FOR BETA (authentic Torn data, not our artifact) |
 
+### Energy / training / battlestats correctness cluster (real-user findings)
+
+Root causes and the full semantic model live in docs/PROGRESSION-ENERGY.md.
+The inflated numbers below came from the pre-remediation ledger, which
+charged the full Xanax estimate (150) on top of every observed decline
+(`spend = gains + |ΔE|`) without capping gains at the bar's remaining
+headroom, and presented raw snapshot deltas as training gains.
+
+| ID | Route | Issue | Severity | Status |
+|----|-------|-------|----------|--------|
+| PF-025 | Today → Training | User trained twice in a day; TornScope reported ~360 E across 3 sessions — one real period split into two bursts and Xanax energy that never existed (taken at cap) was charged as training | P1 | FIXED — cap-aware ledger (gains bounded by interval headroom, overshoot surfaced) + canonical session grouping; Today and Progression share one engine (cross-page contract test) |
+| PF-026 | Progression → Energy Flow | Reconciliation read Xanax +300 / Natural +435 / Training −660 for ~2 real bursts — sources were overstated (regen credited during cap-pinned time) and training absorbed the inflated balance | P1 | FIXED — sources are headroom-bounded (estimated Xanax, derived natural regen), uses split Training (inferred, "likely" only) vs Unattributed, cap-waste surfaces as overshoot, and opening + sources − uses = closing holds exactly in tests |
+| PF-027 | Progression → Battlestats | "7d change" / "gain per day" showed an unexplained dash for accounts whose tracking began inside the range | P1 | FIXED — baseline rules: at_range_start / tracked_since (disclosed "since tracking began" with actual span) / no-history ("Not enough history yet"); gain/day divides by actual span, null below one day |
+| PF-028 | Progression → Recent Training Sessions | Session energies 295 / 250 / 115 looked inconsistent with the known activity — 295/250-style values were full-Xanax-on-top-of-drop artifacts | P1 | IMPROVED BUT INHERENTLY INFERRED — energies are headroom-bounded "~" figures with evidence lists now; exact per-train energy is unobservable in Torn (5-minute bar resolution, no training log) |
+| PF-029 | Progression, Today | Non-gym stat gains (e.g. Mining Corporation / Rock Salt-style Defense from company specials, received friend trains) were implicitly presented as gym gains | P1 | FIXED — exact job/company stat counter netted out of every bracket and every range split (gym / job / other); friend trains keep attribution provisional and block gain/E; Today's Training strip leads with the gym-attributable gain, never the raw snapshot delta |
+
 ## Verified non-issues (checked, working)
 
 - All nav links, More-sheet links, Torn external links carry correct targets; no `href="#"`, no dead anchors, `target="_blank"` always paired with `rel="noopener noreferrer"`.

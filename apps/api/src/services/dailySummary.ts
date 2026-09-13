@@ -395,6 +395,14 @@ export async function getDailySummary(
     highlights,
     progression: {
       battlestatGain: { value: progGlimpse.battlestatGain, provenance: "derived" },
+      // Gym-ATTRIBUTABLE share (real-user finding #13: the snapshot delta is
+      // a total stat change — job/company points and unattributable movement
+      // must not be presented as training gains).
+      gymGain: {
+        value: progGlimpse.gymGain,
+        provenance: "derived",
+        availability: progGlimpse.gymGain === null ? "unavailable" : "ok",
+      },
       energyTrained: {
         value: progGlimpse.energyTrained,
         provenance: "estimated",

@@ -390,6 +390,14 @@ function buildBattlestatAttribution(
 export interface ProgressionGlimpse {
   /** Observed battlestat gain over the window (derived, hourly brackets). */
   battlestatGain: number | null;
+  /**
+   * Gym-ATTRIBUTABLE share of that gain (real-user finding #13: a snapshot
+   * delta is a TOTAL stat change — job/company points are netted out and
+   * friend-train amounts keep attribution provisional). Null when no likely
+   * session has a clean stat bracket; the total delta stays in
+   * battlestatGain with different wording.
+   */
+  gymGain: number | null;
   /** Energy attributed to inferred training sessions (estimated). */
   energyTrained: number | null;
   sessions: number;
@@ -455,7 +463,7 @@ export async function getProgressionGlimpse(userId: string, from: number, to: nu
   const prog = battlestatProgression(statSeries, from, to);
   const bars = toEnergyObservations(barsRows);
   if (bars.length < 2) {
-    return { battlestatGain: prog.deltaTotal, energyTrained: null, sessions: 0, likelyJumps: 0 };
+    return { battlestatGain: prog.deltaTotal, gymGain: null, energyTrained: null, sessions: 0, likelyJumps: 0 };
   }
   const { gains, competing } = shapeEnergyInputs(refillRows, drugRows, consumptionRows, combatRows);
   const ledger = buildEnergyLedger(
@@ -467,11 +475,16 @@ export async function getProgressionGlimpse(userId: string, from: number, to: nu
   // Same definition as the full getProgression summary: only "likely"
   // sessions (decline + observed gym-attributable gain) count as energy
   // trained — a possible burst stays unattributed on every surface.
+  const likely = sessions.filter((s) => s.inference === "likely");
+  // Gym-attributable gain sums ONLY clean brackets (the same definition as
+  // getProgression's battlestats.attribution.gym): shared/unclean brackets
+  // contribute energy but no attributable gain, and the sum is null when no
+  // session has a clean bracket at all — never zero-filled.
+  const cleanGainSessions = likely.filter((s) => s.gains !== null && s.gymGain !== null);
   return {
     battlestatGain: prog.deltaTotal,
-    energyTrained: sessions
-      .filter((s) => s.inference === "likely")
-      .reduce((sum, s) => sum + (s.energySpent ?? 0), 0),
+    gymGain: cleanGainSessions.length > 0 ? cleanGainSessions.reduce((sum, s) => sum + (s.gymGain ?? 0), 0) : null,
+    energyTrained: likely.reduce((sum, s) => sum + (s.energySpent ?? 0), 0),
     sessions: sessions.length,
     likelyJumps: 0, // jump detection needs drug events — full getProgression only
   };

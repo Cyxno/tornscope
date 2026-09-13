@@ -171,6 +171,35 @@
 
   const toneClass = { neutral: "text-fg", positive: "text-positive", negative: "text-negative", accent: "text-accent" };
 
+  type ProgressionStrip = NonNullable<DailySummaryResponse["progression"]>;
+
+  /**
+   * The Training strip leads with the gym-ATTRIBUTABLE gain (real-user
+   * finding #13: a snapshot delta is a TOTAL stat change — job/company
+   * points and unattributable movement must never read as training gains).
+   * Without a clean bracket the total delta may still be shown, but only
+   * under a label that says it is not a training gain.
+   */
+  function stripGain(p: ProgressionStrip): string {
+    const gym = p.gymGain?.value ?? null;
+    if (gym !== null) return (gym < 0 ? "" : "+") + formatNumberCompact(gym);
+    const total = p.battlestatGain.value;
+    if (total !== null) return (total < 0 ? "" : "+") + formatNumberCompact(total);
+    return "—";
+  }
+
+  function gainTone(p: ProgressionStrip): string {
+    const v = p.gymGain?.value ?? p.battlestatGain.value;
+    if (v === null) return "text-fg-faint";
+    return v < 0 ? "text-negative" : "text-fg";
+  }
+
+  function stripGainLabel(p: ProgressionStrip): string {
+    if ((p.gymGain?.value ?? null) !== null) return "gym-attributable battlestats";
+    if (p.battlestatGain.value !== null) return "battlestats from all sources";
+    return "stat history unavailable";
+  }
+
   function netWorthWord(coverage: "full" | "partial" | "none"): string {
     return coverage === "full" ? "Net worth change" : coverage === "partial" ? "Tracked period change" : "Net worth change";
   }
@@ -403,18 +432,18 @@
           </p>
         {/if}
       </div>
-      {#if summary.progression && (summary.progression.battlestatGain.value !== null || summary.progression.energyTrained.value !== null)}
+      {#if summary.progression && (summary.progression.gymGain?.value !== null || summary.progression.battlestatGain.value !== null || summary.progression.energyTrained.value !== null)}
         <div class="border-t border-border pt-7">
           <div class="flex items-center justify-between gap-2">
             <p class="section-label">Training</p>
             <ConfidenceBadge meta={summary.progression.confidence} tooltip={confidenceTitle(summary.progression.confidence)} />
           </div>
           <p class="mt-3 flex flex-wrap items-baseline gap-x-3">
-            <span class="tnum text-3xl font-semibold {summary.progression.battlestatGain.value !== null && summary.progression.battlestatGain.value < 0 ? 'text-negative' : 'text-fg'}">
-              {summary.progression.battlestatGain.value !== null ? (summary.progression.battlestatGain.value < 0 ? "" : "+") + formatNumberCompact(summary.progression.battlestatGain.value) : "—"}
+            <span class="tnum text-3xl font-semibold {gainTone(summary.progression)}">
+              {stripGain(summary.progression)}
             </span>
             <span class="text-xs text-fg-faint">
-              battlestats · {summary.progression.energyTrained.value !== null ? `~${formatNumberCompact(summary.progression.energyTrained.value)} E inferred` : formatKpiValue(summary.progression.energyTrained, formatNumberCompact)} · {summary.progression.sessions} inferred session{summary.progression.sessions === 1 ? "" : "s"}
+              {stripGainLabel(summary.progression)} · {summary.progression.energyTrained.value !== null ? `~${formatNumberCompact(summary.progression.energyTrained.value)} E inferred` : formatKpiValue(summary.progression.energyTrained, formatNumberCompact)} · {summary.progression.sessions} inferred session{summary.progression.sessions === 1 ? "" : "s"}
             </span>
           </p>
         </div>

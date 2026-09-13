@@ -939,10 +939,17 @@ export const DailySummaryResponseSchema = z.object({
    * Compact Progression glimpse (roadmap: Progression & Energy Intelligence).
    * Battlestat gain is derived from hourly stat snapshots; training energy is
    * an inference from bar history — null when that history does not exist.
+   * gymGain is the gym-ATTRIBUTABLE share of that gain (exact job/company
+   * stat points netted out; friend-train amounts cannot be separated and
+   * keep attribution provisional) — the only figure a training surface may
+   * present as a training gain. Optional for deploy-order tolerance:
+   * consumers must fall back to battlestatGain (TOTAL stat change) with
+   * clearly different wording.
    */
   progression: z
     .object({
       battlestatGain: KpiValueSchema,
+      gymGain: KpiValueSchema.optional(),
       energyTrained: KpiValueSchema,
       sessions: z.number(),
       confidence: DataConfidenceMetaSchema,

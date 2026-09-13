@@ -44,7 +44,12 @@ describe("unit semantics: no currency on non-money metrics", () => {
 
   it("daily summary training strip uses number formatters", () => {
     const daily = read("lib/components/DailySummary.svelte");
-    expect(daily).toContain("formatNumberCompact(summary.progression.battlestatGain.value)");
+    // The strip renders gym-attributable gain (with the total-delta fallback)
+    // through the stripGain helper — number formatters, never currency.
+    expect(daily).toContain("(gym < 0 ? \"\" : \"+\") + formatNumberCompact(gym)");
+    expect(daily).toContain("(total < 0 ? \"\" : \"+\") + formatNumberCompact(total)");
+    expect(daily).not.toContain("formatMoneyCompact(summary.progression");
+    expect(daily).not.toContain("formatSignedMoney(summary.progression");
   });
 });
 
