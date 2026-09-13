@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import { randomBytes } from "node:crypto";
 import { getPrismaClient } from "@tornscope/database";
-import { getProgression } from "../src/services/progression.js";
+import { getProgression, getProgressionGlimpse } from "../src/services/progression.js";
 import { getDailySummary } from "../src/services/dailySummary.js";
 import { deleteProfile } from "../src/services/me.js";
 
@@ -230,6 +230,41 @@ suite("progression & energy intelligence", () => {
     }
     expect(summaryUtc.progression).not.toBeNull();
     expect(summaryUtc.progression!.energyTrained.provenance).toBe("estimated");
+  });
+
+  it("cross-page contract: Today's glimpse and Progression agree for the same day", async () => {
+    // Phase 45: one canonical engine — the Daily Summary glimpse must report
+    // the SAME sessions and training energy as the Progression page, and the
+    // gym-attributable gain must match the Progression attribution split.
+    const p = await makeProfile("PROG-CROSSPAGE", FULL_CAPS);
+    await caughtUpStates(p.id);
+    await seedBars(p.id);
+    await seedStats(p.id);
+    const dayStart = Math.floor(nowSec / DAY) * DAY;
+    // Deterministic only once the seeded 3h of history sits inside the UTC
+    // day and the glimpse's 1h pre-window can anchor the day baseline.
+    if (nowSec - dayStart < 4 * 3600) return;
+    const full = await getProgression(p.id, { preset: "custom", from: dayStart, to: nowSec });
+    const glimpse = await getProgressionGlimpse(p.id, dayStart, nowSec);
+
+    expect(glimpse.sessions).toBe(full.summary.sessions);
+    expect(glimpse.energyTrained).toBe(full.summary.energyTrained.value);
+    expect(glimpse.battlestatGain).toBe(full.summary.totalDelta.value);
+    if (full.battlestats.attribution.gym === 0 && glimpse.gymGain === null) {
+      // Both honest: no clean bracket anywhere (gym gain unknown, never 0).
+      expect(full.battlestats.attribution.gym).toBe(0);
+    } else {
+      expect(glimpse.gymGain).toBe(full.battlestats.attribution.gym);
+    }
+
+    // The Daily Summary strip carries the same numbers through its contract.
+    const dayKey = new Date(dayStart * 1000).toISOString().slice(0, 10);
+    const summary = await getDailySummary({ id: p.id, timezone: "UTC", isDemo: false }, dayKey);
+    expect(summary.progression).not.toBeNull();
+    expect(summary.progression!.sessions).toBe(full.summary.sessions);
+    expect(summary.progression!.energyTrained.value).toBe(full.summary.energyTrained.value);
+    expect(summary.progression!.gymGain?.value ?? null).toBe(glimpse.gymGain);
+    expect(summary.progression!.gymGain?.provenance ?? null).toBe(glimpse.gymGain === null ? null : "derived");
   });
 
   it("demo profile: coherent progression history with an inferred happy jump", async () => {

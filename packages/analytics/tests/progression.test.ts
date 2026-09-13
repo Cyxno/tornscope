@@ -393,3 +393,241 @@ describe("battlestat progression", () => {
     expect(medians.gain).toBe(55_000); // median of even set = midpoint
   });
 });
+
+/* -------------------------------------------------------------------------- */
+/* Session grouping (Phase 12 A-E): human sessions, not raw intervals          */
+/* -------------------------------------------------------------------------- */
+
+describe("session grouping determinism", () => {
+  it("A. three adjacent training intervals with regen pauses between stay ONE session", () => {
+    // Real shape: a player trains, pauses a few minutes (bar rises a little),
+    // trains again. Rises are not spend intervals; the gaps between spend
+    // intervals are under SESSION_MERGE_GAP_SECONDS, so the burst merges.
+    const { sessions } = run(bars([
+      [T0, 150], [T0 + 300, 120], // spend 30
+      [T0 + 600, 125], // small regen blip (rise)
+      [T0 + 900, 95], // spend 30
+      [T0 + 1200, 100], // blip
+      [T0 + 1500, 70], // spend 30
+    ]));
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]!.energySpent).toBe(90); // 30 + 30 + 30
+  });
+
+  it("B. two training bursts separated by a large gap are TWO sessions", () => {
+    const { sessions } = run(bars([
+      [T0, 150], [T0 + 300, 100], // burst 1
+      [T0 + 600, 105], [T0 + 1200, 110], [T0 + 1800, 115], [T0 + 2400, 120], // long regen (>15 min gap)
+      [T0 + 2700, 70], [T0 + 3000, 20], // burst 2
+    ]));
+    expect(sessions).toHaveLength(2);
+    expect(sessions[0]!.energySpent).toBe(50);
+    expect(sessions[1]!.energySpent).toBe(100);
+  });
+
+  it("C. a Xanax between training intervals does NOT automatically split the session", () => {
+    // Player trains, takes a Xanax (the +150 estimate is a known gain; the
+    // bar ticks up), trains again within the merge gap: one human session,
+    // not two. The Xanax's unmaterialized share surfaces as overshoot.
+    const { ledger, sessions } = run(
+      bars([
+        [T0, 100], [T0 + 300, 60], // spend 40
+        [T0 + 600, 90], // Xanax gain inside this rise: net +30, 120 overshoot
+        [T0 + 900, 40], // spend 50
+      ]),
+      [{ t: T0 + 450, amount: 150, category: "xanax", provenance: "estimated" }]
+    );
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]!.energySpent).toBe(90); // 40 + 50 — gains never padded it
+    expect(ledger.absorbedOvershoot).toBe(120);
+  });
+
+  it("D. natural regen between snapshots never creates a phantom session", () => {
+    const { sessions, ledger } = run(bars([
+      [T0, 50], [T0 + 600, 55], [T0 + 1200, 60], [T0 + 1800, 65], // clean rises
+      [T0 + 2400, 70], [T0 + 3000, 75],
+    ]));
+    expect(sessions).toHaveLength(0);
+    expect(ledger.observedSpent).toBe(0);
+    expect(ledger.derivedRegen).toBe(25);
+  });
+
+  it("E. a stat-snapshot update without energy evidence creates no fake session", () => {
+    const stats = [
+      statPoint(T0 - H, [1000, 1000, 1000, 1000]),
+      statPoint(T0 + H, [2000, 1050, 1030, 1010]), // stat grew (e.g. job/company gain)
+      statPoint(T0 + 2 * H, [2000, 1050, 1030, 1010]),
+    ];
+    const flatBars = bars([[T0, 100], [T0 + 300, 100], [T0 + 600, 100], [T0 + 900, 100]]);
+    const ledger = buildEnergyLedger(flatBars, []);
+    const sessions = detectTrainingSessions(ledger, stats);
+    expect(sessions).toHaveLength(0);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Gym vs non-gym attribution (Phase 42-43) + ledger identity (Phase 38)       */
+/* -------------------------------------------------------------------------- */
+
+describe("gym vs non-gym stat attribution", () => {
+  // Cumulative counters ride on the hourly snapshots. The second snapshot is
+  // placed exactly at the burst end (T0 + 600) — the counter at/before the
+  // bracket end then carries the gain, mirroring real hourly cadence.
+  const counters = (job0: number, job1: number, trains1 = 0) => [
+    { t: T0 - H, xanax: null, ecstasy: null, refillsEnergy: null, candy: null, awards: null, level: null, jobStats: job0, trainsReceived: 0 },
+    { t: T0 + 600, xanax: null, ecstasy: null, refillsEnergy: null, candy: null, awards: null, level: null, jobStats: job1, trainsReceived: trains1 },
+  ];
+
+  it("42. a job/company-only Defense gain is NOT gym gain (Mining Corp / Rock Salt case)", () => {
+    // Bar evidence of a burst, but the bracket's only stat growth is the
+    // exact job counter (+150) — the job points ARE the observed stat delta.
+    const stats = [
+      statPoint(T0 - H, [1000, 1000, 1000, 1000]),
+      statPoint(T0 + H, [1000, 1150, 1000, 1000]), // defense +150 == job delta
+    ];
+    const ledger = buildEnergyLedger(bars([[T0, 150], [T0 + 300, 100], [T0 + 600, 50]]), []);
+    const sessions = detectTrainingSessions(ledger, stats, counters(500, 650));
+    expect(sessions).toHaveLength(1);
+    const s = sessions[0]!;
+    expect(s.totalGain).toBe(150);
+    expect(s.nonGymJobGain).toBe(150);
+    expect(s.gymGain).toBe(0);
+    expect(s.inference).toBe("possible"); // no gym-attributable gain to confirm
+    expect(s.gainPerEnergy).toBeNull();
+  });
+
+  it("43. mixed gain: gym strength + job defense — gain/E divides ONLY the gym share", () => {
+    const stats = [
+      statPoint(T0 - H, [1000, 1000, 1000, 1000]),
+      statPoint(T0 + H, [2000, 1150, 1000, 1000]), // strength +1000 (gym), defense +150 (job)
+    ];
+    const ledger = buildEnergyLedger(bars([[T0, 150], [T0 + 300, 100], [T0 + 600, 50]]), []);
+    const sessions = detectTrainingSessions(ledger, stats, counters(500, 650));
+    const s = sessions[0]!;
+    expect(s.totalGain).toBe(1150);
+    expect(s.nonGymJobGain).toBe(150);
+    expect(s.gymGain).toBe(1000);
+    expect(s.gainPerEnergy).toBeCloseTo(1000 / 100, 5);
+    expect(s.primaryStat).toBe("strength");
+  });
+
+  it("friend trains in the bracket keep gym attribution provisional and block gain/E", () => {
+    const stats = [
+      statPoint(T0 - H, [1000, 1000, 1000, 1000]),
+      statPoint(T0 + H, [2000, 1000, 1000, 1000]),
+    ];
+    const ledger = buildEnergyLedger(bars([[T0, 150], [T0 + 300, 100], [T0 + 600, 50]]), []);
+    const sessions = detectTrainingSessions(ledger, stats, counters(500, 500, 3));
+    const s = sessions[0]!;
+    expect(s.friendTrains).toBe(3);
+    expect(s.gainPerEnergy).toBeNull();
+    expect(s.evidence.some((e) => e.includes("train"))).toBe(true);
+  });
+});
+
+describe("ledger reconciliation identity (Phase 38)", () => {
+  it("opening + knownGains + derivedRegen − observedSpent === closing, exactly", () => {
+    // Timeline: clean rises → pinned at cap → Xanax at cap (pure overshoot,
+    // never materializes) → small decline → real training decline.
+    const observations = bars([
+      [T0, 100],
+      [T0 + 600, 130], // rise +30 (clean regen)
+      [T0 + 1200, 150], // rise +20 (clean regen)
+      [T0 + 1800, 150], // pinned at cap
+      [T0 + 2400, 140], // decline −10 with a Xanax at cap inside (headroom 0 → overshoot 150)
+      [T0 + 3000, 60], // decline −80 (training)
+    ]);
+    const gains: EnergyGainEvent[] = [{ t: T0 + 2100, amount: 150, category: "xanax", provenance: "estimated" }];
+    const ledger = buildEnergyLedger(observations, gains);
+    // No hidden balancing term: materialized gains + derived regen − spend
+    // must equal the observed delta exactly.
+    expect(ledger.reconciliation.opening).toBe(100);
+    expect(ledger.reconciliation.closing).toBe(60);
+    expect(ledger.knownGains).toBe(0); // the Xanax hit the cap: nothing materialized
+    expect(ledger.derivedRegen).toBe(50);
+    expect(ledger.observedSpent).toBe(90);
+    expect(ledger.absorbedOvershoot).toBe(150);
+    const identity =
+      (ledger.reconciliation.opening ?? 0) + ledger.knownGains + ledger.derivedRegen - ledger.observedSpent;
+    expect(identity).toBe(ledger.reconciliation.closing);
+  });
+
+  it("the identity also holds when a Xanax lands inside a decline at cap", () => {
+    // Xanax lands at full cap: headroom 0, nothing materializes (overshoot
+    // 150); the decline's spend is the observed drop only.
+    const observations = bars([
+      [T0, 120],
+      [T0 + 600, 150], // rise to cap +30 (clean regen)
+      [T0 + 1200, 140], // Xanax inside: spend = observed drop 10 only
+      [T0 + 1800, 60], // plain decline 80
+    ]);
+    const gains: EnergyGainEvent[] = [{ t: T0 + 900, amount: 150, category: "xanax", provenance: "estimated" }];
+    const ledger = buildEnergyLedger(observations, gains);
+    expect(ledger.knownGains).toBe(0);
+    expect(ledger.derivedRegen).toBe(30);
+    expect(ledger.observedSpent).toBe(90);
+    expect(ledger.absorbedOvershoot).toBe(150);
+    const identity =
+      (ledger.reconciliation.opening ?? 0) + ledger.knownGains + ledger.derivedRegen - ledger.observedSpent;
+    expect(identity).toBe(ledger.reconciliation.closing);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Battlestat baseline rules (Phase 22/24/25/44): range history semantics      */
+/* -------------------------------------------------------------------------- */
+
+describe("battlestat baseline rules", () => {
+  const D = 86_400;
+  // Tracking began 7 days ago; observations at -7d, -3d and now-ish.
+  const series = [
+    statPoint(T0 - 7 * D, [10_000, 10_000, 10_000, 10_000]),
+    statPoint(T0 - 3 * D, [11_000, 10_100, 10_050, 10_020]),
+    statPoint(T0, [12_000, 10_200, 10_100, 10_040]),
+  ];
+
+  it("44A. exact baseline exists at range start → at_range_start, full-range delta", () => {
+    // Range starts 2d ago: the closest snapshot at/before is -3d (total
+    // 41,170); closing is now (42,340) → 1,170 over the actual 3-day span.
+    const p = battlestatProgression(series, T0 - 2 * D, T0);
+    expect(p.baselineKind).toBe("at_range_start");
+    expect(p.deltaTotal).toBe(1_170);
+    expect(p.spanDays).toBeCloseTo(3, 5);
+    expect(p.gainPerDay).toBeCloseTo(390, 5);
+  });
+
+  it("44B. tracking began inside the range → tracked_since, never a fabricated full-range figure", () => {
+    const p = battlestatProgression(series, T0 - 30 * D, T0);
+    expect(p.baselineKind).toBe("tracked_since");
+    // Earliest in-range anchor (-7d, total 40,000) → closing (42,340) over
+    // the ACTUAL 7-day span — labeled "since tracking began", gainPerDay
+    // divides by the real span.
+    expect(p.deltaTotal).toBe(2_340);
+    expect(p.spanDays).toBeCloseTo(7, 5);
+    expect(p.gainPerDay).toBeCloseTo(2_340 / 7, 5);
+  });
+
+  it("44C. less than a day of span → gainPerDay stays null (no fabricated rate)", () => {
+    const p = battlestatProgression(series, T0 - 7 * D, T0 - 7 * D + 3600);
+    expect(p.deltaTotal).toBe(0);
+    expect(p.spanDays).toBe(0);
+    expect(p.gainPerDay).toBeNull();
+  });
+
+  it("44D. snapshot just before the range start anchors it (boundary-safe baseline)", () => {
+    // Range starts 1h after the -7d snapshot: that snapshot is still the
+    // baseline — a snapshot AFTER the start must never be the baseline.
+    const p = battlestatProgression(series, T0 - 7 * D + 3600, T0);
+    expect(p.baselineKind).toBe("at_range_start");
+    expect(p.openingTotal).toBe(40_000);
+    expect(p.closingTotal).toBe(42_340);
+    expect(p.gainPerDay).not.toBeNull();
+  });
+
+  it("44E. no history at all → deltas null (the honest dash), gainPerDay null", () => {
+    const p = battlestatProgression([], T0 - 7 * D, T0);
+    expect(p.baselineKind).toBeNull();
+    expect(p.deltaTotal).toBeNull();
+    expect(p.gainPerDay).toBeNull();
+  });
+});
