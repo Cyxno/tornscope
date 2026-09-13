@@ -50,6 +50,14 @@ headroom, and presented raw snapshot deltas as training gains.
 | PF-028 | Progression → Recent Training Sessions | Session energies 295 / 250 / 115 looked inconsistent with the known activity — 295/250-style values were full-Xanax-on-top-of-drop artifacts | P1 | IMPROVED BUT INHERENTLY INFERRED — energies are headroom-bounded "~" figures with evidence lists now; exact per-train energy is unobservable in Torn (5-minute bar resolution, no training log) |
 | PF-029 | Progression, Today | Non-gym stat gains (e.g. Mining Corporation / Rock Salt-style Defense from company specials, received friend trains) were implicitly presented as gym gains | P1 | FIXED — exact job/company stat counter netted out of every bracket and every range split (gym / job / other); friend trains keep attribution provisional and block gain/E; Today's Training strip leads with the gym-attributable gain, never the raw snapshot delta |
 
+### Money reconciliation + iOS/PWA/notifications cluster (final release blockers)
+
+| ID | Route | Issue | Severity | Status |
+|----|-------|-------|----------|--------|
+| PF-030 | Today | Persistent unexplained money: a $500k–$800k "Unexplained" row with no way to see where it came from | P1 | FIXED — the structural double-count (snapshot category deltas + activity flows double-added) was removed, so the partition sums to the snapshot change exactly (verified residual = $0 over 7 real days); the wallet equation behind the Cash row is now inspectable on Today (opening + received − spent = expected vs actual closing) with a graded residual — exact / partially reconciled / unexplained movement — always surfaced, never hidden or zero-filled |
+| PF-031 | iOS, all routes | The installed Home Screen app's chrome paddings were inert: `viewport-fit=cover` was missing, so `env(safe-area-inset-*)` resolved to 0 and the header sat under the iOS status bar | P2 | FIXED — viewport-fit=cover + top safe-area padding on the mobile header and nav rail (bottom nav already padded) |
+| PF-032 | Settings → Devices | Registered push devices showed raw user-agent strings ("Mozilla/5.0 (iPhone; CPU iPhone OS…") | P3 | FIXED — coarse human labels derived server-side ("iPhone · iOS 17.5", "Mac · Chrome"); no fingerprinting beyond the UA the browser already sent |
+
 ## Verified non-issues (checked, working)
 
 - All nav links, More-sheet links, Torn external links carry correct targets; no `href="#"`, no dead anchors, `target="_blank"` always paired with `rel="noopener noreferrer"`.
@@ -72,4 +80,4 @@ Found during the settings/theming epic's own walkthroughs:
 | TH-001 | all | Inline pre-paint theme bootstrap was blocked by CSP (script-src 'self'), so stored themes never applied before paint (flash) | P1 | FIXED — bootstrap moved to static/appearance-bootstrap.js |
 | TH-002 | Charts | Live theme switch merged color-only option updates and could leave series unrendered (net-worth line vanished in Light until reload) | P1 | FIXED — appearance signature forces full option replace in Chart.svelte |
 | TH-003 | Settings | Feature matrix + About mixed with daily preferences in one monolithic page | P2 | FIXED — six-tab IA (?tab= deep links) |
-| TH-004 | /stocks, /money, tests | Stale travel-golden fixture: time-of-day dependent failure (passes ~19:00 UTC, fails later; reproduces on the previously accepted SHA 8be89a6) | P2 | ACCEPTED FOR BETA — pre-existing test-infrastructure issue, documented for a focused follow-up |
+| TH-004 | /stocks, /money, tests | Stale travel-golden fixture: time-of-day dependent failure (passes ~19:00 UTC, fails later; reproduces on the previously accepted SHA 8be89a6) | P2 | FIXED — root cause: the fixture's departure was `now − 1h` with the purchased item at `+3h`; `resolveDateRange` clamps `to` to end-of-UTC-today, so after ~22:00 UTC the item fell into "tomorrow", dropped out of the clamped range, and the golden profit read 0. Fixture now anchors departure inside today (00:30 UTC), deterministic for any run hour |

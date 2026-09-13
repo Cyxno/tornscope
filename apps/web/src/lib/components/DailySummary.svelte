@@ -6,6 +6,7 @@
   import { confidenceTitle } from "$lib/confidence";
   import { formatDateInZone, formatRelative } from "$lib/reltime";
   import ConfidenceBadge from "./ConfidenceBadge.svelte";
+  import WalletEquation from "./WalletEquation.svelte";
 
   /**
    * Daily Summary (v0.2): one trustworthy recap of a calendar day in the
@@ -338,6 +339,10 @@
             </p>
           {/if}
         </div>
+
+        {#if summary.netWorth.wallet}
+          <WalletEquation wallet={summary.netWorth.wallet} />
+        {/if}
       {/if}
     </div>
 

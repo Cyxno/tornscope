@@ -299,7 +299,12 @@ suite("drugs golden", () => {
 suite("travel golden", () => {
   it("14-15. trip economics traced from stored items; Today agrees with Travel", async () => {
     const userId = await makeProfile();
-    const departed = nowSec - 3600;
+    // Departure anchored INSIDE today (00:30 UTC), deterministic for any run
+    // hour. The previous nowSec-anchored departure (now − 1h, item at +3h)
+    // pushed the purchased item past UTC midnight after ~22:00 UTC;
+    // resolveDateRange clamps `to` to end-of-today, so the item silently
+    // dropped out of the range and the golden profit read 0 (TH-004).
+    const departed = Math.floor(nowSec / DAY) * DAY + 1800;
     const trip = await db.travelEvent.create({
       data: {
         userId, destination: "Mexico", departedAt: new Date(departed * 1000),
@@ -309,7 +314,7 @@ suite("travel golden", () => {
     });
     await db.travelItemEvent.create({
       data: {
-        userId, travelEventId: trip.id, occurredAt: new Date((departed + 3 * 3600) * 1000),
+        userId, travelEventId: trip.id, occurredAt: new Date((departed + 60) * 1000),
         destination: "Mexico", category: "plushie", itemId: 438, itemName: "Teddy",
         quantity: 10, unitCost: 6_500n, totalCost: 65_000n,
         estimatedUnitValue: 10_000n, estimatedTotalValue: 100_000n,

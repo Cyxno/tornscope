@@ -19,9 +19,11 @@ import {
 import {
   aggregateConsumption,
   aggregateMoneySemantics,
+  buildWalletBridge,
   calculateRehabStats,
   calculateTravelProfit,
   classifyMoneySemantics,
+  classifyReconciliation,
   type ConsumptionEventLike,
 } from "@tornscope/analytics";
 import { bigintToNumber, getPrismaClient, isOcPayoutRow, loadMarketPrices } from "@tornscope/database";
@@ -92,7 +94,7 @@ export async function getDailySummary(
   const range = { from: day.from, to: day.to };
   const ctx = await loadAvailabilityContext(userId);
 
-  const [moneyRows, drugRows, consumptionRows, rehabRows, travelEvents, travelItems, marketPrices, xanaxItem, nwPeriod, crimeRows, combatRows, accountEvents] = await Promise.all([
+  const [moneyRows, drugRows, consumptionRows, rehabRows, travelEvents, travelItems, marketPrices, xanaxItem, nwPeriod, crimeRows, combatRows, accountEvents, walletStart, walletEnd] = await Promise.all([
     db.moneyEvent.findMany({
       where: { userId, occurredAt: { gte: new Date(range.from * 1000), lte: new Date(range.to * 1000) } },
       select: { occurredAt: true, category: true, subcategory: true, direction: true, amount: true, metadata: true },
@@ -135,6 +137,19 @@ export async function getDailySummary(
       take: 6,
       select: { occurredAt: true, title: true },
     }),
+    // Wallet reconciliation anchors — the SAME rule as the Economy page
+    // (closest snapshot at/before each range end) so Today and Economy can
+    // never disagree about the same day's wallet equation.
+    db.networthSnapshot.findFirst({
+      where: { userId, capturedAt: { lte: new Date(range.from * 1000) } },
+      orderBy: { capturedAt: "desc" },
+      select: { capturedAt: true, wallet: true },
+    }),
+    db.networthSnapshot.findFirst({
+      where: { userId, capturedAt: { lte: new Date(range.to * 1000) } },
+      orderBy: { capturedAt: "desc" },
+      select: { capturedAt: true, wallet: true },
+    }),
   ]);
 
   /* ----------------------------- confidence ------------------------------ */
@@ -159,6 +174,39 @@ export async function getDailySummary(
     ocPayout: isOcPayoutRow(r),
   }));
   const sem = aggregateMoneySemantics(moneyEvents, range.from, range.to);
+
+  /* --------------------- wallet reconciliation (Today) -------------------- */
+  // The SAME canonical bridge the Economy page uses, on the SAME anchor
+  // rule (closest snapshot at/before each range end), so the user can
+  // inspect exactly what the "Cash" driver row moved by — and see an
+  // honest residual when the recorded ledger does not explain it.
+  const openingWallet = walletStart ? bigintToNumber(walletStart.wallet) : null;
+  const closingWallet = walletEnd ? bigintToNumber(walletEnd.wallet) : null;
+  const factionBalanceCredits = moneyEvents
+    .filter((e) => e.ocPayout && e.amount > 0)
+    .reduce((sum, e) => sum + e.amount, 0);
+  const wallet = buildWalletBridge(
+    moneyEvents
+      .filter((e) => !e.ocPayout)
+      .map((e) => ({ amount: e.amount, direction: e.direction, category: e.category })),
+    openingWallet,
+    closingWallet,
+    factionBalanceCredits
+  );
+  // Known coverage gaps cap the grade at "partial" — a perfect residual over
+  // an unproven history is luck, not proof (same rule as Economy).
+  const walletCoverageGap =
+    moneyConfidence.confidence !== "complete" ||
+    moneyConfidence.coverage.hasKnownGaps ||
+    (moneyConfidence.coverage.from !== null && moneyConfidence.coverage.from > range.from);
+  const walletQuality = classifyReconciliation({
+    openingWallet,
+    closingWallet,
+    residual: wallet.unreconciled,
+    inflows: wallet.walletInflow,
+    outflows: wallet.walletOutflow,
+    coverageGap: walletCoverageGap,
+  });
 
   // When does an EMPTY day count as a valid zero?
   // - complete coverage: the walk scanned the day and found nothing → $0.
@@ -358,6 +406,21 @@ export async function getDailySummary(
       drivers,
       activity: networthActivity,
       confidence: netWorthSection,
+      // Inspectable wallet equation behind the Cash driver row: opening +
+      // known received − known spent = expected closing vs actual closing,
+      // with the residual graded (exact / small_residual / partial /
+      // unreconciled / unavailable). Null when no wallet anchors exist.
+      wallet: {
+        opening: wallet.startingCash,
+        openingAt: walletStart ? Math.floor(walletStart.capturedAt.getTime() / 1000) : null,
+        knownReceived: wallet.walletInflow,
+        knownSpent: wallet.walletOutflow,
+        expectedClosing: wallet.expectedEndingCash,
+        actualClosing: wallet.actualEndingCash,
+        residual: wallet.unreconciled,
+        coverage: wallet.coverage,
+        quality: walletQuality,
+      },
     },
     cashFlow,
     economicEffect,

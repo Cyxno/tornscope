@@ -394,6 +394,65 @@ suite("daily summary — dates, isolation, capability tiers, demo", () => {
     expect(amsTomorrow.cashFlow.received.value).toBe(111_111);
   });
 
+  it("wallet equation is inspectable and reconciles to exactly zero residual", async () => {
+    // Real-user finding: the "Cash" why-it-moved row read like unexplained
+    // money. The day now carries the SAME wallet equation as Economy:
+    // opening + known received − known spent = expected closing vs actual
+    // closing, with the graded residual surfaced.
+    const w = await makeProfile("DAILY-WALLET", FULL_CAPS);
+    await caughtUpStates(w.id);
+    await db.networthSnapshot.createMany({
+      data: [
+        { userId: w.id, capturedAt: new Date((dayStart - 3600) * 1000), total: 5_000_000n, wallet: 1_000_000n },
+        { userId: w.id, capturedAt: new Date((dayStart + 3600) * 1000), total: 5_400_000n, wallet: 1_400_000n },
+      ],
+    });
+    await db.moneyEvent.createMany({
+      data: [
+        { userId: w.id, occurredAt: sig(2, 0), category: "salary", direction: "income", amount: 750_000n, source: "test", sourceRef: `we:salary:${w.id}` },
+        { userId: w.id, occurredAt: sig(6, 0), category: "gym", direction: "expense", amount: -350_000n, source: "test", sourceRef: `we:gym:${w.id}` },
+      ],
+      skipDuplicates: true,
+    });
+    const s = await summaryFor(w);
+    const wallet = s.netWorth.wallet!;
+    expect(wallet).toBeDefined();
+    expect(wallet.opening).toBe(1_000_000);
+    expect(wallet.knownReceived).toBe(750_000);
+    expect(wallet.knownSpent).toBe(350_000);
+    expect(wallet.expectedClosing).toBe(1_400_000);
+    expect(wallet.actualClosing).toBe(1_400_000);
+    expect(wallet.residual).toBe(0);
+    expect(wallet.quality).toBe("exact");
+    expect(wallet.coverage).toBe("full");
+  });
+
+  it("an unexplained cash change surfaces as a graded residual — never hidden or zero-filled", async () => {
+    const w = await makeProfile("DAILY-WALLET-GAP", FULL_CAPS);
+    await caughtUpStates(w.id);
+    // The closing snapshot's wallet is 500,000 ABOVE what the recorded flows
+    // explain — the equation must show that gap, not absorb it.
+    await db.networthSnapshot.createMany({
+      data: [
+        { userId: w.id, capturedAt: new Date((dayStart - 3600) * 1000), total: 5_000_000n, wallet: 1_000_000n },
+        { userId: w.id, capturedAt: new Date((dayStart + 3600) * 1000), total: 5_900_000n, wallet: 1_900_000n },
+      ],
+    });
+    await db.moneyEvent.createMany({
+      data: [
+        { userId: w.id, occurredAt: sig(2, 0), category: "salary", direction: "income", amount: 750_000n, source: "test", sourceRef: `weg:salary:${w.id}` },
+        { userId: w.id, occurredAt: sig(6, 0), category: "gym", direction: "expense", amount: -350_000n, source: "test", sourceRef: `weg:gym:${w.id}` },
+      ],
+      skipDuplicates: true,
+    });
+    const s = await summaryFor(w);
+    const wallet = s.netWorth.wallet!;
+    expect(wallet.expectedClosing).toBe(1_400_000);
+    expect(wallet.actualClosing).toBe(1_900_000);
+    expect(wallet.residual).toBe(500_000);
+    expect(wallet.quality).toBe("unreconciled");
+  });
+
   it("today is capped at partial with day_in_progress", async () => {
     const s = await summaryFor(mainProfile, undefined);
     void s; // main profile used elsewhere; use a dedicated profile for clarity

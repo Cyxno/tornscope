@@ -49,6 +49,18 @@ purchase raises Cash spent but not True expenses; both appear under
 Conversions. Bank interest is economic income; gym/rehab payments are true
 expenses where the existing classifier says so.
 
+**Wallet reconciliation (why cash moved).** The "Cash" row in Why-it-moved
+is the day's wallet change from official snapshots. Behind it sits an
+inspectable equation — opening wallet + known cash received − known cash
+spent = expected closing, compared against the actual closing wallet — the
+SAME canonical bridge and anchor rule the Economy page uses, so the two
+surfaces cannot disagree. The residual is graded: exact ("Fully
+reconciled"), small_residual, partial ("Partially reconciled" — money-log
+history not proven complete), unreconciled ("Unexplained movement"), or
+unavailable (no anchor snapshots). A residual is always surfaced with its
+grade, never hidden, never zero-filled, and never forced into income or
+spending.
+
 ## Net worth: delta and "why did it move?"
 
 - `start`/`end` come from official snapshots at/before the day bounds

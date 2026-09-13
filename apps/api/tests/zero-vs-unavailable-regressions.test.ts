@@ -119,6 +119,28 @@ describe("daily summary UI (v0.2 item #2)", () => {
     expect(daily).not.toContain('summary ? formatDate(summary.range.from) : ""');
   });
 
+  it("unexplained money is inspectable, never hidden and never mislabeled", () => {
+    // Real-user finding: a persistent $500k–$800k "Unexplained" row. The
+    // category partition now sums to the snapshot delta exactly, and the
+    // wallet equation behind the Cash row is exposed as an inspectable
+    // disclosure with graded reconciliation quality.
+    const wallet = read("../../web/src/lib/components/WalletEquation.svelte");
+    expect(daily).toContain("WalletEquation");
+    expect(wallet).toContain("Why did cash move?");
+    // Human labels and the graded states — never raw internal enums.
+    expect(wallet).toContain("Fully reconciled");
+    expect(wallet).toContain("Partially reconciled");
+    expect(wallet).toContain("Unexplained movement");
+    expect(wallet).toContain("data-testid=\"wallet-equation\"");
+    // The equation itself: opening + received − spent = expected vs actual.
+    expect(wallet).toContain("Opening wallet");
+    expect(wallet).toContain("Known cash received");
+    expect(wallet).toContain("Known cash spent");
+    expect(wallet).toContain("Expected closing");
+    expect(wallet).toContain("Actual closing wallet");
+    expect(wallet).toContain("Unexplained");
+  });
+
 
   it("labels travel profit as estimated and xanax value as consumption", () => {
     expect(daily).toContain(">estimated<");
