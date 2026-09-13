@@ -99,6 +99,27 @@ describe("daily summary UI (v0.2 item #2)", () => {
     expect(daily).not.toContain("Likely contributors");
   });
 
+  it("the Today masthead always shows a real date — never an empty/dash placeholder", () => {
+    // Real-user finding: while the summary request was in flight (and in the
+    // date picker, whose value used to bind the empty today key) the masthead
+    // rendered blanks/dashes instead of today's date.
+    // 1. The picker always carries a concrete day; picking today's own key
+    //    normalizes back to the canonical "" representation.
+    expect(daily).toContain("value={date || todayKey}");
+    expect(daily).toContain('setDay(v === todayKey ? "" : v)');
+    // 2. While the summary is in flight, displayDate falls back to the
+    //    selected day key itself — never "".
+    expect(daily).toContain("const displayDate = $derived.by(");
+    expect(daily).toContain("const key = date || todayKey;");
+    expect(daily).toMatch(/if \(summary\) return formatDateInZone\(summary\.range\.from, timeZone\);[\s\S]*const key = date \|\| todayKey;/);
+    // 3. The date resolves in the USER'S timezone, not UTC (a local-midnight
+    //    range.from can be the previous UTC date).
+    expect(daily).toContain("formatDateInZone(summary.range.from, timeZone)");
+    // The old empty-string fallback must not come back.
+    expect(daily).not.toContain('summary ? formatDate(summary.range.from) : ""');
+  });
+
+
   it("labels travel profit as estimated and xanax value as consumption", () => {
     expect(daily).toContain(">estimated<");
     expect(daily).toContain("Estimated consumption value");

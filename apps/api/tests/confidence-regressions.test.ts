@@ -4,6 +4,7 @@ import { getPrismaClient } from "@tornscope/database";
 import { getSyncHealth } from "../src/services/syncStatus.js";
 import { getDashboard } from "../src/services/dashboard.js";
 import { getEconomySummary } from "../src/services/economy.js";
+import { getDailySummary } from "../src/services/dailySummary.js";
 import { deleteProfile } from "../src/services/me.js";
 
 /**
@@ -272,6 +273,36 @@ suite("data confidence — Overview & Economy integration", () => {
     dash = await getDashboard(userId, range);
     expect(dash.confidence.cashFlow.reason).not.toBe("backfill_in_progress");
     expect(dash.income.availability).not.toBe("importing");
+    await db.syncState.update({
+      where: { userId_resource: { userId, resource: "money_logs" } },
+      data: { status: "idle", stopReason: "history_boundary_reached", lastStartedAt: null, lastHeartbeatAt: null },
+    });
+  });
+
+  it("Daily Summary: Today→Yesterday→Today must not flash IMPORTING on settled days while a top-up runs", async () => {
+    // The exact page from the real-user finding: an already-imported day
+    // (walk complete) must render stable values even when an incremental
+    // sync happens to be running during the request.
+    const settledKey = new Date((Math.floor(nowSec / DAY) * DAY - DAY) * 1000).toISOString().slice(0, 10);
+
+    await db.syncState.update({
+      where: { userId_resource: { userId, resource: "money_logs" } },
+      data: { status: "running", stopReason: "history_boundary_reached", lastStartedAt: new Date(), lastHeartbeatAt: new Date() },
+    });
+    let daily = await getDailySummary({ id: userId, timezone: "UTC", isDemo: false }, settledKey);
+    expect(daily.cashFlow.confidence.reason).not.toBe("backfill_in_progress");
+    expect(daily.cashFlow.received.availability).not.toBe("importing");
+    expect(daily.cashFlow.spent.availability).not.toBe("importing");
+
+    // The genuine state stays distinct: a first walk that never finished
+    // still renders Importing on the same page.
+    await db.syncState.update({
+      where: { userId_resource: { userId, resource: "money_logs" } },
+      data: { status: "running", stopReason: null },
+    });
+    daily = await getDailySummary({ id: userId, timezone: "UTC", isDemo: false }, settledKey);
+    expect(daily.cashFlow.received.availability).toBe("importing");
+
     await db.syncState.update({
       where: { userId_resource: { userId, resource: "money_logs" } },
       data: { status: "idle", stopReason: "history_boundary_reached", lastStartedAt: null, lastHeartbeatAt: null },

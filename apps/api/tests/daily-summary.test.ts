@@ -419,6 +419,53 @@ suite("daily summary — dates, isolation, capability tiers, demo", () => {
     expect(a.cashFlow.received.value).toBe(2_765_000);
   });
 
+  it("large outflows aggregate semantically: one row per category+direction, ×N label, summed amount", async () => {
+    // Real-user finding: two big payments in the SAME category on one day
+    // used to render as two identical "Large cash outflow" ledger rows.
+    // The dedupe must be semantic (merge same category+direction, keep the
+    // count and the summed amount), never string-blind (genuinely different
+    // categories stay separate rows).
+    const dedupe = await makeProfile("DAILY-DEDUPE", FULL_CAPS);
+    await caughtUpStates(dedupe.id);
+    await db.moneyEvent.createMany({
+      data: [
+        { userId: dedupe.id, occurredAt: sig(2, 0), category: "salary", direction: "income", amount: 750_000n, source: "test", sourceRef: `dd:salary:${dedupe.id}` },
+        // Same category, two separate payments — the duplicate-story case.
+        { userId: dedupe.id, occurredAt: sig(5, 0), category: "housing", direction: "expense", amount: -900_000n, source: "test", sourceRef: `dd:rent1:${dedupe.id}` },
+        { userId: dedupe.id, occurredAt: sig(6, 30), category: "housing", direction: "expense", amount: -900_000n, source: "test", sourceRef: `dd:rent2:${dedupe.id}` },
+        // A genuinely different story — must survive as its own row.
+        { userId: dedupe.id, occurredAt: sig(7, 0), category: "gym", direction: "expense", amount: -850_000n, source: "test", sourceRef: `dd:gym:${dedupe.id}` },
+        // Below the large-movement threshold — must not appear at all.
+        { userId: dedupe.id, occurredAt: sig(8, 0), category: "casino", direction: "expense", amount: -100_000n, source: "test", sourceRef: `dd:casino:${dedupe.id}` },
+      ],
+      skipDuplicates: true,
+    });
+    // Outflow 2,750,000 → threshold = max(50k, 20% of 2.75m) = 550k.
+    const s = await summaryFor(dedupe);
+    const outs = s.highlights.filter((h) => h.kind === "large_cash_out");
+    expect(outs).toHaveLength(2); // aggregated rent + gym — not 3 single rows
+
+    const rent = outs.find((h) => h.label.includes("Property Rent & Upkeep"));
+    expect(rent).toBeDefined();
+    expect(rent!.label).toContain("×2"); // the two payments read as one story
+    expect(rent!.amount).toBe(-1_800_000); // summed, not the largest single one
+
+    const gym = outs.find((h) => h.label.includes("Gym Membership"));
+    expect(gym).toBeDefined();
+    expect(gym!.amount).toBe(-850_000);
+
+    expect(outs.find((h) => h.label.includes("Casino"))).toBeUndefined();
+
+    // No two highlights ever render as the same ledger row.
+    const seen = new Set<string>();
+    for (const h of s.highlights) {
+      const key = `${h.kind}:${h.label}`;
+      expect(seen.has(key)).toBe(false);
+      seen.add(key);
+    }
+  });
+
+
   it("Limited capability profile still returns a summary (retained history, not errors)", async () => {
     const limited = await makeProfile("DAILY-LIMITED", LIMITED_CAPS);
     await caughtUpStates(limited.id);
