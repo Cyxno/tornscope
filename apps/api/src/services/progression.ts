@@ -244,7 +244,7 @@ export async function getProgression(userId: string, rangeInput: DateRangeInput)
   const energyTrained = rangeSessions
     .filter((s) => s.inference === "likely")
     .reduce((sum, s) => sum + (s.energySpent ?? 0), 0);
-  const unattributed = Math.max(0, ledger.observedSpent - energyTrained);
+  const unattributed = Math.max(0, ledger.inferredSpent - energyTrained);
 
   const statsAvailability: KpiAvailability = kpiAvailabilityFromConfidence(statsConfidence);
   const energyAvailability: KpiAvailability = kpiAvailabilityFromConfidence(barsConfidence);
@@ -306,20 +306,31 @@ export async function getProgression(userId: string, rangeInput: DateRangeInput)
       ] as ProgressionResponse["energy"]["sources"],
       uses: [
         { category: "Training (inferred)", amount: energyTrained, provenance: "estimated" as const },
-        { category: "Unattributed (observed)", amount: unattributed, provenance: "derived" as const },
+        { category: "Unattributed (inferred)", amount: unattributed, provenance: "derived" as const },
       ].filter((u) => u.amount > 0),
       derivedRegen: covered ? ledger.derivedRegen : null,
       regenPerHour: ledger.regenPerHour,
       potentialRegen: ledger.potentialRegen,
       cappedSeconds: ledger.cappedSeconds > 0 ? ledger.cappedSeconds : null,
-      absorbedOvershoot: ledger.absorbedOvershoot > 0 ? ledger.absorbedOvershoot : null,
-      absorbedOvershootByCategory: ledger.absorbedOvershootByCategory.map((g) => ({
+      unresolvedGains: ledger.unresolvedGains > 0 ? ledger.unresolvedGains : null,
+      unresolvedGainsByCategory: ledger.unresolvedGainsByCategory.map((g) => ({
         category: g.category === "xanax" ? "Xanax (est.)" : g.category === "refill" ? "Refill" : g.category === "energy_drink" ? "Energy drinks" : g.category,
         amount: g.amount,
       })),
       xanax: (() => {
         const uses = xanaxEvents.filter((e) => e.t >= from && e.t <= to).length;
-        return uses > 0 ? { uses, estimatedDelivered: uses * XANAX_ENERGY_ESTIMATE } : null;
+        if (uses === 0) return null;
+        // "Attributed to training": delivered Xanax energy whose event falls
+        // inside a LIKELY training session window (the take-then-train
+        // pattern). The remainder is genuinely unresolved between snapshots.
+        const attributed = xanaxEvents
+          .filter((e) => e.t >= from && e.t <= to)
+          .filter((e) =>
+            rangeSessions.some(
+              (s) => s.inference === "likely" && e.t >= s.startedAt && e.t <= s.endedAt
+            )
+          ).length;
+        return { uses, estimatedDelivered: uses * XANAX_ENERGY_ESTIMATE, attributedToTraining: attributed * XANAX_ENERGY_ESTIMATE };
       })(),
       reconciliation: ledger.reconciliation,
       confidence: energyConfidence,

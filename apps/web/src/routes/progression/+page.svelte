@@ -156,21 +156,20 @@
   });
 
   /** Xanax accounting: uses are exact from the drug log; the per-use amount
-   *  is the documented +250 (estimated). The three-way split (visible in
-   *  bars / lost at the energy cap / outside bar-history coverage) reconciles
-   *  the intake with the usually-much-smaller sources row, so a day with
-   *  2 uses never silently reads as "0 Xanax". */
+   *  is the documented +250 (estimated). Torn's energy bar can hold up to
+   *  1,000, so a Xanax delivers even at a "full" natural bar — energy that
+   *  cannot be placed between two snapshots is UNRESOLVED (still in the
+   *  bar, consumed between polls, or taken before bar history began),
+   *  never claimed as lost. */
   const xanaxLine = $derived.by(() => {
     const e = progression?.energy;
     if (!e?.xanax) return null;
-    const lost = e.absorbedOvershootByCategory.find((c) => c.category === "Xanax (est.)")?.amount ?? 0;
-    const observed = e.sources.find((s) => s.category === "Xanax (est.)")?.amount ?? 0;
-    const uncovered = Math.max(0, e.xanax.estimatedDelivered - observed - lost);
+    const { uses, estimatedDelivered: delivered, attributedToTraining } = e.xanax;
+    const unresolved = Math.max(0, delivered - attributedToTraining);
     const parts: string[] = [];
-    if (observed > 0) parts.push(`+${formatNumberCompact(observed)} visible in your bars`);
-    if (lost > 0) parts.push(`~${formatNumberCompact(lost)} lost at your energy cap (taken at/near full)`);
-    if (uncovered > 0) parts.push(`~${formatNumberCompact(uncovered)} before bar history began`);
-    return { uses: e.xanax.uses, delivered: e.xanax.estimatedDelivered, parts };
+    if (attributedToTraining > 0) parts.push(`~${formatNumberCompact(attributedToTraining)} E attributed to training`);
+    if (unresolved > 0) parts.push(`~${formatNumberCompact(unresolved)} E unresolved between snapshots`);
+    return { uses, delivered, parts };
   });
 </script>
 
@@ -404,7 +403,7 @@
                 {#each progression.training.sessions.slice().reverse().slice(0, 12) as session (session.startedAt)}
                   <tr>
                     <td class="tnum whitespace-nowrap text-xs text-fg-faint">{formatDateTime(session.startedAt)} → {formatDateTime(session.endedAt).slice(-5)}</td>
-                    <td class="tnum text-right {session.energySpent !== null ? 'text-negative' : 'text-fg-faint'}" title={session.energySpent !== null ? "Bounded inference: cap-affected Xanax energy is excluded and regeneration inside the burst is not separable" : undefined}>{session.energySpent !== null ? `~${formatNumberCompact(session.energySpent)}` : "—"}</td>
+                    <td class="tnum text-right {session.energySpent !== null ? 'text-negative' : 'text-fg-faint'}" title={session.energySpent !== null ? "Bounded inference: includes Xanax energy delivered between snapshots; regeneration inside the burst is not separable" : undefined}>{session.energySpent !== null ? `~${formatNumberCompact(session.energySpent)}` : "—"}</td>
                     <td class="tnum text-right {session.gymGain !== null && session.gymGain > 0 ? 'text-positive' : 'text-fg-faint'}" title={session.nonGymJobGain > 0 ? `+${formatNumberCompact(session.totalGain ?? 0)} observed, of which ${formatNumberCompact(session.nonGymJobGain)} was job/company gains — not gym` : session.friendTrains > 0 ? `${session.friendTrains} stat trains received in the bracket — gym share not separable` : undefined}>{session.gymGain !== null ? `+${formatNumberCompact(session.gymGain)}` : "—"}{#if session.nonGymJobGain > 0}<span class="ml-1 text-[10px] text-fg-faint" title="Job/company stat gains inside the bracket — excluded from gym attribution">{formatNumberCompact(session.nonGymJobGain)} job</span>{/if}</td>
                     <td class="tnum text-right text-fg-muted">{session.gainPerEnergy !== null ? session.gainPerEnergy.toFixed(1) : "—"}</td>
                     <td>
@@ -426,7 +425,7 @@
             </table>
           </div>
           <p class="mt-4 text-[11px] text-fg-faint">
-            Torn has no gym-training log: sessions are TornScope's inference from energy declines that no competing activity (like attacks) explains. Energy is a bounded estimate ("~") — cap-affected Xanax energy is excluded and regeneration inside a burst is not separable. Gain shows the gym-attributable share; exact job/company gains are listed separately and never counted as gym.
+            Torn has no gym-training log: sessions are TornScope's inference from energy declines that no competing activity (like attacks) explains. Energy is a bounded estimate ("~") — Xanax energy delivered between snapshots is included and regeneration inside a burst is not separable. Gain shows the gym-attributable share; exact job/company gains are listed separately and never counted as gym.
           </p>
         </Panel>
       {/if}
@@ -520,9 +519,9 @@
               {#if xanaxLine}
                 <li
                   class="border-t border-border/60 pt-2.5 text-[11px] leading-relaxed text-fg-faint"
-                  title="Torn's Xanax gives +250 energy per use (documented game mechanic — the log itself carries no energy field). Torn's energy bar cannot exceed your maximum, so energy taken at or near a full bar is discarded by the game, not tracked as spend. Uses before bar-history began cannot be placed on the bar at all."
+                  title="Torn's Xanax gives +250 energy per use (documented game mechanic — the log itself carries no energy field), and Torn's energy bar can hold up to 1,000 — so a Xanax delivers in full even at a full natural bar. Energy not attributable to a specific training session is 'unresolved': still in the bar, consumed between snapshots, or taken before bar history began. It is never counted as lost."
                 >
-                  {xanaxLine.uses} Xanax taken · est. +{formatNumberCompact(xanaxLine.delivered)} delivered{#if xanaxLine.parts.length}{" — " + xanaxLine.parts.join(", ")}{/if}. Count is exact from your drug log; +250 per use is the documented mechanic, not a per-use reading.
+                  {xanaxLine.uses} Xanax taken · ~{formatNumberCompact(xanaxLine.delivered)} E delivered{#if xanaxLine.parts.length}{" — " + xanaxLine.parts.join(", ")}{/if}. Uses are exact from your drug log; +250 per use is the documented mechanic, not a per-use reading.
                 </li>
               {/if}
             </ul>
@@ -537,7 +536,7 @@
             <span class="text-2xl text-border-strong">→</span>
           </div>
 
-          <Panel title="Energy out" caption="Observed declines attributed by evidence — unattributed stays unattributed">
+          <Panel title="Energy out" caption="Inferred spend: observed declines plus delivered energy consumed between snapshots — unattributed stays unattributed">
             <ul class="space-y-2.5 text-[13px]">
               {#each progression.energy.uses as use (use.category)}
                 <li class="flex items-baseline justify-between gap-3">
@@ -558,19 +557,20 @@
           </Panel>
         </div>
 
-        <Panel title="Energy reconciliation" caption="Opening plus known gains plus derived regeneration, against what the bars actually show">
-          <div class="grid grid-cols-2 gap-px overflow-hidden rounded-tile border border-border bg-border md:grid-cols-5">
+        <Panel title="Energy reconciliation" caption="Opening plus delivered gains plus derived regeneration, minus inferred spend and unresolved gains, against what the bars show">
+          <div class="grid grid-cols-2 gap-px overflow-hidden rounded-tile border border-border bg-border md:grid-cols-6">
             <div class="bg-surface p-4"><p class="text-[11px] font-medium text-fg-faint">Opening energy</p><p class="tnum mt-1 text-lg font-semibold text-fg">{progression.energy.reconciliation.opening !== null ? progression.energy.reconciliation.opening : "—"}</p></div>
-            <div class="bg-surface p-4"><p class="text-[11px] font-medium text-fg-faint">Known gains</p><p class="tnum mt-1 text-lg font-semibold text-positive">{progression.energy.sources.filter((s) => s.category !== "Natural regen (derived)").reduce((sum, s) => sum + s.amount, 0) !== 0 ? `+${formatNumberCompact(progression.energy.sources.filter((s) => s.category !== "Natural regen (derived)").reduce((sum, s) => sum + s.amount, 0))}` : "0"}</p></div>
+            <div class="bg-surface p-4"><p class="text-[11px] font-medium text-fg-faint" title="Delivered energy from logs (refills exact, Xanax +250 per use) inside bar coverage">Delivered gains</p><p class="tnum mt-1 text-lg font-semibold text-positive">{progression.energy.sources.filter((s) => s.category !== "Natural regen (derived)").reduce((sum, s) => sum + s.amount, 0) !== 0 ? `+${formatNumberCompact(progression.energy.sources.filter((s) => s.category !== "Natural regen (derived)").reduce((sum, s) => sum + s.amount, 0))}` : "0"}</p></div>
             <div class="bg-surface p-4"><p class="text-[11px] font-medium text-fg-faint">Derived regen</p><p class="tnum mt-1 text-lg font-semibold text-positive">{progression.energy.derivedRegen !== null ? `+${formatNumberCompact(progression.energy.derivedRegen)}` : "—"}</p></div>
-            <div class="bg-surface p-4"><p class="text-[11px] font-medium text-fg-faint">Observed declines</p><p class="tnum mt-1 text-lg font-semibold text-negative">{progression.energy.uses.reduce((sum, u) => sum + u.amount, 0) !== 0 ? `-${formatNumberCompact(progression.energy.uses.reduce((sum, u) => sum + u.amount, 0))}` : "0"}</p></div>
+            <div class="bg-surface p-4"><p class="text-[11px] font-medium text-fg-faint" title="Observed declines plus delivered energy credited inside them (consumption between snapshots)">Inferred spend</p><p class="tnum mt-1 text-lg font-semibold text-negative">{progression.energy.uses.reduce((sum, u) => sum + u.amount, 0) !== 0 ? `-${formatNumberCompact(progression.energy.uses.reduce((sum, u) => sum + u.amount, 0))}` : "0"}</p></div>
+            <div class="bg-surface p-4"><p class="text-[11px] font-medium text-fg-faint" title="Delivered gains that cannot be placed between two snapshots — consumed, banked above the natural max, or wasted; not observable">Unresolved</p><p class="tnum mt-1 text-lg font-semibold text-fg-muted">{progression.energy.unresolvedGains !== null ? `±${formatNumberCompact(progression.energy.unresolvedGains)}` : "0"}</p></div>
             <div class="bg-surface p-4"><p class="text-[11px] font-medium text-fg-faint">Closing energy</p><p class="tnum mt-1 text-lg font-semibold text-fg">{progression.energy.reconciliation.closing !== null ? progression.energy.reconciliation.closing : "—"}</p></div>
           </div>
           <div class="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-fg-faint">
             <span class="{energyQualityChip.cls} chip !px-1.5 !text-[9px] !uppercase">{energyQualityChip.label}</span>
             {#if capTimeSentence}<span>{capTimeSentence}.</span>{/if}
-            {#if progression.energy.absorbedOvershoot !== null}
-              <span title="Known gains (mostly the Xanax estimate) that never became bar energy. Verified mechanic: Torn's energy bar hard-caps at your maximum and discards anything beyond it, so gains taken at/near full are lost.">{formatNumberCompact(progression.energy.absorbedOvershoot)} of known gains never showed up in the bars — lost at your energy cap (gains taken at/near full), surfaced, not silently dropped.</span>
+            {#if progression.energy.unresolvedGains !== null}
+              <span title="Delivered gains (mostly Xanax) that cannot be placed between two snapshots. Verified mechanic: Torn's energy bar can hold up to 1,000, so a Xanax delivers in full even at a full natural bar — when the player trains before the next poll, the energy is consumed unobserved. Unresolved is not lost: it may have been spent, or may still be banked above the natural maximum.">{formatNumberCompact(progression.energy.unresolvedGains)} of delivered gains can't be placed between snapshots (consumed between polls, banked above the natural max, or wasted) — shown, never silently dropped.</span>
             {/if}
           </div>
         </Panel>

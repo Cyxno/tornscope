@@ -37,50 +37,56 @@ Torn's surfaces cannot tell us stays visibly unknown.
   = 250` per normal Xanax use (`packages/analytics/src/progression.ts`),
   verified 2026-09-14 against the official Torn wiki (the Xanax item page and
   the Energy page both state +250 energy; the success log payload itself
-  carries no energy field). Cap interactions surface as per-category
-  reconciliation overshoot instead of silently inflating regeneration.
+  carries no energy field).
 - **inferred** — pattern-based classification (training sessions, happy
   jumps). Always shipped with the evidence list and a "missing" list.
 - **unavailable** — no reliable basis; rendered as "—", never zero.
 
 ## 3. Energy model
 
-**Verified game mechanics this model builds on** (verified 2026-09-14, not
-assumed): a Xanax gives **+250 energy** (official Torn wiki: Xanax item page
-and Energy page), and Torn's energy bar **hard-clamps at the player's
-maximum** — across six months of stored snapshots energy never once exceeded
-the maximum, including ~150 Xanax-taken-while-full events whose bars stayed
-pinned at max through the following 25+ minutes. Energy above the cap is
-**lost**, which is why a Xanax taken at full bar contributes nothing
-observable.
+**Verified game mechanics this model builds on** (verified 2026-09-14): a
+Xanax gives **+250 energy** (official Torn wiki: Xanax item page and Energy
+page), and Torn's energy bar can hold up to an **absolute 1,000** — the
+Energy page states "The maximum energy one can have at any moment is
+1,000", and chaining guides confirm gains stack above the natural maximum
+("after 4 Xanax you have 1000e"). A Xanax therefore DELIVERS its energy
+even when the natural bar is full. When the player trains immediately, the
+150 → 400 → low transition happens entirely between snapshots — which is
+why bar polls essentially never record values above the natural maximum.
+Unobserved delivered energy is **unresolved** (consumed between polls,
+banked above the natural max, or wasted — not observable), never claimed
+as lost. (An earlier revision of this model assumed a hard clamp at the
+natural maximum and labeled the remainder "lost at cap"; that was an
+inference from snapshot absence, not a documented mechanic, and was
+corrected.)
 
-`buildEnergyLedger(bars, gains, competing)` walks consecutive bar snapshots:
+`buildEnergyLedger(bars, gains, competing)` walks consecutive bar
+snapshots:
 
 - **rise** minus known gains inside the interval = **derived natural
   regeneration**; the median rate over clean regenerating intervals is the
-  personal `regenPerHour`.
+  personal `regenPerHour`. A delivery larger than the rise credits in
+  full, with the unobservable remainder **unresolved**.
 - **pinned at cap** (`e0 == max && e1 == max`) → `cappedSeconds` (a
-  snapshot-bounded *lower bound*, worded "observed at cap for at least…");
-  potential regeneration during cap time is estimated from the personal rate
-  and explicitly **never counted as banked energy**. Gains landing while
-  pinned are attributed (per category) to overshoot.
-- **decline** → observed spend, bounded: a known gain inside a decline can
-  only materialize up to the **headroom below the cap at the interval's
-  start** (`spend = min(gains, headroom) + |dE|`); the unmaterialized
-  remainder is cap-ambiguous overshoot, never spend.
-- **known gains that exceed the observed rise** (refill at cap, Xanax
-  estimate near cap) → `absorbedOvershoot`, surfaced in the UI both as a
-  total and **per source category** (`absorbedOvershootByCategory`), so the
-  Progression page can say "2 Xanax taken · est. +500 · ~0 visible — lost at
-  your energy cap" on a day where the naive sources list would have shown
-  nothing at all. `energy.xanax` (`uses`, `estimatedDelivered`) ships the
-  exact drug-log count even when nothing materialized.
+  snapshot-bounded *lower bound*, worded "observed at cap for at
+  least…"); potential regeneration during cap time is estimated from the
+  personal rate and explicitly **never counted as banked energy**. Gains
+  landing while pinned are delivered in full and marked unresolved.
+- **decline** → inferred spend: observed drop PLUS delivered gains inside
+  the interval (`spend = gains + |dE|`) — a Xanax trained away before
+  the next poll is consumption, not loss. Natural regeneration during a
+  decline is NOT separately observable, so spend stays a bounded inference
+  ("~").
+- Gains outside bar coverage (events before the first snapshot of the
+  range) ship through `energy.xanax` (uses, estimatedDelivered) and stay
+  unplaced rather than being dropped or invented.
 - Exact sources are preferred when attributing a rise: the estimated Xanax
   amount is applied only after exact gains.
 
-Reconciliation quality: `full` (≥2 snapshots), `partial` (fetch bounds cut
-the range), `unavailable` (<2 snapshots). Residuals are never hidden and
-never zero-filled.
+Reconciliation identity: `closing = opening + deliveredGains +
+derivedRegen − inferredSpent − unresolvedGains`, surfaced cell by cell in
+the UI (the Unresolved cell keeps the ambiguity inspectable instead of
+hiding it).
 
 ## 4. Attribution of energy spend
 
@@ -196,9 +202,9 @@ exercise the honest-unknown path. Demo never writes global state.
 - All training figures are inferences at snapshot resolution; Torn exposes
   no per-train data, so "gain per energy" is an observational estimate.
 - Xanax energy is the documented +250 mechanic, not a per-use recorded
-  value; energy lost at the cap is attributed per use from the drug log
-  count, but the bar cannot show where inside a 5-minute window a use and
-  the matching training happened.
+  value. Delivery is certain (the bar holds up to 1,000); its PLACEMENT is
+  not — training between snapshots is a bounded inference and energy that
+  cannot be placed stays explicitly unresolved.
 - Milestones carry windows, not exact timestamps; level changes inherit the
   sparse (change-triggered) UserSnapshot cadence.
 - Awards are a personalstats counter only — Torn medal/honor detail would

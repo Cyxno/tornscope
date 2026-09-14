@@ -162,17 +162,24 @@ export interface CompetingWindow {
  * the Energy page ("The Drugs Xanax and LSD provide 250 and 50 energy
  * respectively"). The earlier 150 was a stale historical value.
  *
- * Cap behavior (verified empirically, not assumed): Torn's energy bar
- * hard-clamps at the player's maximum — across six months of this game's
- * own bar snapshots, energy NEVER exceeded the maximum, including ~150
- * Xanax-taken-while-full events whose bars stayed pinned at max for the
- * following 25+ minutes. Energy above the cap is lost, which is exactly
- * what the ledger's headroom-bounded materialization + overshoot models.
+ * Over-max behavior (corrected after an audit of an earlier "hard clamp at
+ * the natural maximum" conclusion): the Energy page states "The maximum
+ * energy one can have at any moment is 1,000" — a value only reachable if
+ * gains can exceed the natural bar maximum (100/150). Community chaining
+ * guides confirm the mechanic ("after 4 Xanax you have 1000e"). A Xanax
+ * therefore DELIVERS its energy even when the bar is at the natural
+ * maximum; the resulting 150 → 400 → low transition happens entirely
+ * between snapshots when the player trains immediately, which is why bar
+ * snapshots essentially never record values above the natural maximum.
+ * Consequence for the ledger: unobserved delivered energy is UNRESOLVED
+ * (consumed between snapshots, still banked, or wasted — not observable),
+ * never claimed as "lost".
  */
 export const XANAX_ENERGY_ESTIMATE = 250;
 
 export interface EnergyLedgerSummary {
-  /** Known gains applied (refills exact, xanax estimated, ...). */
+  /** Known gains delivered inside bar coverage (refills exact, xanax
+   *  estimated) — credited in full whether or not a snapshot shows them. */
   knownGains: number;
   knownGainsByCategory: Array<{ category: string; amount: number; provenance: "exact" | "estimated" }>;
   /** Regeneration derived from observed rises net of known gains. */
@@ -183,13 +190,16 @@ export interface EnergyLedgerSummary {
   potentialRegen: number | null;
   /** Lower-bound seconds observed pinned at the energy cap. */
   cappedSeconds: number;
-  /** Observed energy declines (all causes). Attribution is the sessions' job. */
-  observedSpent: number;
-  /** Known gains that could not fit inside the observed rise (cap effects). */
-  absorbedOvershoot: number;
-  /** The same overshoot split by source category (e.g. Xanax lost at cap),
-   *  so surfaces can attribute unmaterialized gains instead of lumping. */
-  absorbedOvershootByCategory: Array<{ category: string; amount: number }>;
+  /** Inferred energy spend: observed declines plus delivered gains credited
+   *  inside decline intervals (consumption between snapshots). Attribution
+   *  is the sessions' job. */
+  inferredSpent: number;
+  /** Delivered gains that cannot be placed between two snapshots (rise
+   *  exceeded by the gain, or pinned intervals): consumed, banked or wasted
+   *  — not observable, never claimed as lost. */
+  unresolvedGains: number;
+  /** The same unresolved split by source category. */
+  unresolvedGainsByCategory: Array<{ category: string; amount: number }>;
   reconciliation: {
     opening: number | null;
     closing: number | null;
@@ -200,8 +210,9 @@ export interface EnergyLedgerSummary {
 
 export interface EnergyLedgerResult extends EnergyLedgerSummary {
   /** Per-interval spends with competing-evidence flags (session detection input).
-   *  `overshoot` is the cap-ambiguous gain portion inside that interval. */
-  spendIntervals: Array<{ from: number; to: number; amount: number; competed: boolean; overshoot: number }>;
+   *  `estimatedGainsIncluded` is the delivered-gain portion credited into
+   *  that interval's spend (consumption between snapshots). */
+  spendIntervals: Array<{ from: number; to: number; amount: number; competed: boolean; estimatedGainsIncluded: number }>;
   /** Median seconds between observations (cadence; null when too few). */
   cadenceSeconds: number | null;
   /** True when every observation in range carries bars data. */
@@ -213,12 +224,16 @@ const isWithin = (t: number, from: number, to: number): boolean => t > from && t
 
 /**
  * Derive the energy ledger from bar observations + known gain events.
- * Snapshots must be sorted by t. Gains inside a decline interval net against
- * the observed drop first (a refill mid-training is gain + bigger spend).
+ * Snapshots must be sorted by t. A gain inside a decline interval is
+ * credited in full and the observed drop adds on top (a Xanax taken at a
+ * full bar and trained away before the next poll is spend, not loss).
  *
  * `opts.truncated` marks a fetch whose row cap cut history before the
  * requested range start: the opening balance is then not the true opening,
  * so reconciliation degrades to "partial" instead of claiming "full".
+ *
+ * Identity: closing = opening + knownGains + derivedRegen − inferredSpent
+ * − unresolvedGains.
  */
 export function buildEnergyLedger(
   observations: readonly EnergyObservation[],
@@ -230,12 +245,12 @@ export function buildEnergyLedger(
   const cleanRegenRates: number[] = [];
   let knownGains = 0;
   let derivedRegen = 0;
-  let observedSpent = 0;
-  let absorbedOvershoot = 0;
+  let inferredSpent = 0;
+  let unresolvedGains = 0;
   let cappedSeconds = 0;
   let cappedIntervals = 0;
   const byCategory = new Map<string, { amount: number; provenance: "exact" | "estimated" }>();
-  const overshootByCategory = new Map<string, { amount: number }>();
+  const unresolvedByCategory = new Map<string, { amount: number }>();
 
   const sorted = [...observations].sort((a, b) => a.t - b.t);
   for (let i = 1; i < sorted.length; i++) {
@@ -246,30 +261,22 @@ export function buildEnergyLedger(
     const dE = b.energyCurrent - a.energyCurrent;
     const inInterval = gains.filter((g) => isWithin(g.t, a.t, b.t));
     const intervalGains = inInterval.reduce((sum, g) => sum + g.amount, 0);
-    const bumpOvershoot = (category: string, amount: number): void => {
+    const bumpUnresolved = (category: string, amount: number): void => {
       if (amount <= 0) return;
-      absorbedOvershoot += amount;
-      const entry = overshootByCategory.get(category);
+      unresolvedGains += amount;
+      const entry = unresolvedByCategory.get(category);
       if (entry) entry.amount += amount;
-      else overshootByCategory.set(category, { amount });
+      else unresolvedByCategory.set(category, { amount });
     };
-    // Apply up to the given amount of known gains to the ledger and the
-    // per-category breakdown; each gain's unapplied remainder is attributed
-    // to its category as overshoot. Returns the unapplied budget remainder.
-    const applyGains = (amount: number): number => {
-      let remaining = amount;
+    // Credit gains in full to the ledger and the per-category breakdown;
+    // leftover budget is returned (callers turn it into unresolved).
+    const applyGains = (): void => {
       for (const g of inInterval) {
-        const used = Math.min(g.amount, remaining);
-        if (used > 0) {
-          knownGains += used;
-          const entry = byCategory.get(g.category);
-          if (entry) entry.amount += used;
-          else byCategory.set(g.category, { amount: used, provenance: g.provenance });
-          remaining -= used;
-        }
-        bumpOvershoot(g.category, g.amount - used);
+        knownGains += g.amount;
+        const entry = byCategory.get(g.category);
+        if (entry) entry.amount += g.amount;
+        else byCategory.set(g.category, { amount: g.amount, provenance: g.provenance });
       }
-      return remaining;
     };
 
     if (dE >= 0) {
@@ -278,41 +285,48 @@ export function buildEnergyLedger(
         // Pinned at cap the whole interval: regen unobservable, only bounded.
         cappedSeconds += dt;
         cappedIntervals += 1;
-        // Known gains while pinned produced NO observed energy (e.g. a refill
-        // or a Xanax at cap) — attributed per category as overshoot, never
-        // counted as regen or dropped.
-        for (const g of inInterval) bumpOvershoot(g.category, g.amount);
+        // Gains while pinned are not visible between these snapshots. Under
+        // the over-max mechanic they were DELIVERED (a Xanax at the natural
+        // maximum still adds energy); whether they were consumed in between
+        // or waited above the max is not observable — unresolved, never
+        // "lost", and never counted as regen.
+        applyGains();
+        for (const g of inInterval) bumpUnresolved(g.category, g.amount);
         continue;
       }
       const natural = dE - intervalGains;
       if (natural >= 0) {
-        applyGains(intervalGains);
+        applyGains();
         derivedRegen += natural;
         cleanRegenRates.push((natural / dt) * 3600);
       } else {
-        // Known gains exceed the observed rise: the excess never became
-        // observed energy (cap interaction) — surfaced, never silent.
-        applyGains(dE);
+        // Delivered gains exceed the observed rise: part of the delivery was
+        // consumed (or banked above max) within the interval. Everything is
+        // credited as delivered; the unobservable remainder is unresolved,
+        // attributed across the interval's gains from the last one back (the
+        // bar never showed the tail of the delivery).
+        applyGains();
+        let remaining = intervalGains - dE;
+        for (let i = inInterval.length - 1; i >= 0 && remaining > 0; i--) {
+          const g = inInterval[i]!;
+          const take = Math.min(g.amount, remaining);
+          bumpUnresolved(g.category, take);
+          remaining -= take;
+        }
       }
     } else {
-      // Decline interval. CAP-AWARE (real-user finding: "Training inferred
-      // −660" / "295 E" were inflated by gains that never existed): a known
-      // gain inside a decline can only materialize up to the headroom below
-      // the cap at the interval's start — a Xanax taken near cap largely
-      // cannot become observed energy. The unmaterialized remainder surfaces
-      // as cap-ambiguous overshoot, never as spend. Natural regeneration
-      // during a decline is NOT separately observable (bounded by the
-      // derived rate), so `spend` is a bounded inference, not an exact read.
-      const headroom = Math.max(0, a.energyMaximum - a.energyCurrent);
-      const effectiveGains = Math.min(intervalGains, headroom);
-      applyGains(effectiveGains);
-      // Per-interval overshoot for the session evidence (scalar accounting
-      // already happened per category inside applyGains).
-      const overshoot = intervalGains - effectiveGains;
-      const spend = effectiveGains + -dE;
-      observedSpent += spend;
+      // Decline interval. Delivered gains inside the interval are credited in
+      // FULL and the observed drop adds on top: a Xanax taken at the natural
+      // maximum and trained away before the next poll delivers real energy
+      // (the bar can hold up to 1,000), so spend = gains + |dE|. Natural
+      // regeneration during a decline is NOT separately observable (bounded
+      // by the derived rate), so `spend` remains a bounded inference ("~"),
+      // never an exact read.
+      applyGains();
+      const spend = intervalGains + -dE;
+      inferredSpent += spend;
       const competed = competing.some((c) => c.from <= b.t && c.to >= a.t);
-      spendIntervals.push({ from: a.t, to: b.t, amount: spend, competed, overshoot });
+      spendIntervals.push({ from: a.t, to: b.t, amount: spend, competed, estimatedGainsIncluded: intervalGains });
     }
   }
 
@@ -332,9 +346,9 @@ export function buildEnergyLedger(
     regenPerHour,
     potentialRegen: potentialRegenTotal,
     cappedSeconds,
-    observedSpent,
-    absorbedOvershoot,
-    absorbedOvershootByCategory: [...overshootByCategory.entries()]
+    inferredSpent,
+    unresolvedGains,
+    unresolvedGainsByCategory: [...unresolvedByCategory.entries()]
       .map(([category, v]) => ({ category, amount: v.amount }))
       .filter((e) => e.amount > 0)
       .sort((a, b) => b.amount - a.amount),
@@ -375,8 +389,9 @@ export interface TrainingSession {
   startedAt: number;
   endedAt: number;
   /** Bounded energy inference for the burst (null when bars uncovered).
-   *  Cap-aware: Xanax energy that could not fit below the cap is excluded,
-   *  and regeneration during the burst is not separable — treat as "~". */
+   *  Includes delivered gains credited inside the burst (a Xanax trained
+   *  away between snapshots); regeneration during the burst is not
+   *  separable — treat as "~". */
   energySpent: number | null;
   energyKnown: boolean;
   /** Observed battlestat gain bracketing the session; null when shared/absent. */
@@ -426,16 +441,16 @@ export function detectTrainingSessions(
   if (usable.length === 0 && statSeries.length === 0) return [];
 
   // Merge adjacent spend intervals into bursts.
-  const bursts: Array<{ from: number; to: number; energy: number; overshoot: number }> = [];
+  const bursts: Array<{ from: number; to: number; energy: number; estimatedGainsIncluded: number }> = [];
   const mergeGap = Math.max(SESSION_MERGE_GAP_SECONDS, (ledger.cadenceSeconds ?? SESSION_MERGE_GAP_SECONDS) * 2);
   for (const interval of usable) {
     const last = bursts[bursts.length - 1];
     if (last && interval.from - last.to <= mergeGap) {
       last.to = interval.to;
       last.energy += interval.amount;
-      last.overshoot += interval.overshoot;
+      last.estimatedGainsIncluded += interval.estimatedGainsIncluded;
     } else {
-      bursts.push({ from: interval.from, to: interval.to, energy: interval.amount, overshoot: interval.overshoot });
+      bursts.push({ from: interval.from, to: interval.to, energy: interval.amount, estimatedGainsIncluded: interval.estimatedGainsIncluded });
     }
   }
 
@@ -511,7 +526,8 @@ export function detectTrainingSessions(
     if (gains && totalGain) evidence.push(`battlestats increased by ${Math.round(totalGain)} across the bracket`);
     if (nonGymJobGain > 0) evidence.push(`${Math.round(nonGymJobGain)} stat points from job/company gains — excluded from gym attribution`);
     if (friendTrains > 0) evidence.push(`${friendTrains} stat train${friendTrains === 1 ? "" : "s"} received in the bracket — gym share not separable`);
-    if (burst.overshoot > 0) evidence.push(`~${Math.round(burst.overshoot)} Xanax energy hit the cap (not counted as training)`);
+    if (burst.estimatedGainsIncluded > 0)
+      evidence.push(`~${Math.round(burst.estimatedGainsIncluded)} E from estimated Xanax delivery included (consumed between snapshots — not directly observed)`);
     if (bracketShared && statSeries.length > 0) evidence.push("stat window shared with other activity — gain not attributable");
 
     const inference: InferenceStrength =

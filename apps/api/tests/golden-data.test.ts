@@ -107,8 +107,8 @@ suite("energy golden", () => {
     // t2(150) → t3(40): training decline −110 (bar was pinned at cap, no
     //                   gains inside — plain 110E spend).
     // t3(40) → t4(20): Xanax(+250 est) at t0+1000 with the bar at 40 —
-    //                   headroom 110: 110E materializes, 140E is cap
-    //                   overshoot, spend = 110 + 20 = 130.
+    //                   delivered in full and consumed inside the interval:
+    //                   spend = 250 + 20 = 270.
     // t3(40) → t4(20): unknown drop −20 (<25, stays unattributed).
     const bars = [
       { t: t0, e: 10 }, { t: t0 + 300, e: 60 }, { t: t0 + 600, e: 150 },
@@ -146,22 +146,22 @@ suite("energy golden", () => {
     expect(rec.opening).toBe(10);
     expect(rec.closing).toBe(20);
     expect(rec.opening! + sourcesTotal - usesTotal).toBe(rec.closing);
-    // Exact attribution (verified against the ledger mechanics): the refill
-    // lands in a rise (90 exact); the Xanax estimate lands when the bar sits
-    // at 40 (headroom 110) — 110E applied, 140E cap overshoot (the +250
-    // documented mechanic minus the headroom); natural regen contributes 50.
-    // Under the old model the full estimate was charged on top of the
-    // observed drops — the inflated accounting the real-user walkthrough
-    // disputed.
-    expect(sourcesTotal).toBe(250);
+    // Exact attribution: the refill lands in the 60→150 rise (90 exact, regen
+    // 0 for that interval); the Xanax delivery is credited IN FULL inside the
+    // 40→20 decline (the bar can hold up to 1,000 — consumption between
+    // snapshots is spend, not loss): spend = 250 + 20 = 270; natural regen
+    // contributes 50. Under the pre-250 models the estimate was either
+    // charged blindly or clamped away as "lost" — both wrong.
+    expect(sourcesTotal).toBe(390);
     expect(prog.energy.sources).toContainEqual({ category: "Energy drinks", amount: 90, provenance: "exact" });
-    expect(prog.energy.sources).toContainEqual({ category: "Xanax (est.)", amount: 110, provenance: "estimated" });
-    expect(prog.energy.absorbedOvershoot ?? 0).toBe(140);
+    expect(prog.energy.sources).toContainEqual({ category: "Xanax (est.)", amount: 250, provenance: "estimated" });
+    expect(prog.energy.unresolvedGains ?? 0).toBe(0);
+    expect(prog.energy.xanax).toEqual({ uses: 1, estimatedDelivered: 250, attributedToTraining: 250 });
     const trained = prog.training.sessions
       .filter((s) => s.inference === "likely")
       .reduce((sum, s) => sum + (s.energySpent ?? 0), 0);
-    expect(trained).toBe(240);
-    expect(usesTotal).toBe(240); // no unexplained residue in this fixture
+    expect(trained).toBe(380);
+    expect(usesTotal).toBe(380); // no unexplained residue in this fixture
     // Primary stat provenance: strength +500, others untouched.
     const strength = prog.battlestats.perStat.find((s) => s.key === "strength")!;
     expect(strength.delta).toBe(500);
@@ -201,18 +201,21 @@ suite("energy golden — two Xanax at full bar in one range", () => {
 
     const prog = await getProgression(userId, { preset: "custom", from: t0 - 600, to: t0 + 3_600 });
 
-    // The exact drug-log count and the documented +250/use ship even though
-    // NOTHING materialized — the intake line's data.
-    expect(prog.energy.xanax).toEqual({ uses: 2, estimatedDelivered: 500 });
-    // The whole loss is attributed per category, not lumped.
-    expect(prog.energy.absorbedOvershootByCategory).toContainEqual({ category: "Xanax (est.)", amount: 500 });
-    expect(prog.energy.absorbedOvershoot ?? 0).toBe(500);
-    // No materialized Xanax row appears in sources — correctly — while the
-    // intake fields above carry the story.
-    expect(prog.energy.sources.filter((s) => s.category.startsWith("Xanax"))).toEqual([]);
-    // Spend stays the observed declines (150 + 145) — never the phantom 2×250.
+    // The exact drug-log count, the documented delivery, and the
+    // session-attributed portion ship even though nothing above the natural
+    // max was directly observed.
+    expect(prog.energy.xanax).toEqual({ uses: 2, estimatedDelivered: 500, attributedToTraining: 0 });
+    // No unresolved remainder and no "lost" concept anywhere: both
+    // deliveries were consumed inside their decline intervals.
+    expect(prog.energy.unresolvedGains ?? 0).toBe(0);
+    expect(prog.energy.unresolvedGainsByCategory).toEqual([]);
+    // The deliveries land in the sources list in full (Energy in), and the
+    // inferred spend carries them (Energy out).
+    expect(prog.energy.sources).toContainEqual({ category: "Xanax (est.)", amount: 500, provenance: "estimated" });
+    // Spend stays the observed declines plus the two deliveries — 795 total,
+    // all unattributed here (no stat brackets → no "likely" sessions).
     const usesTotal = prog.energy.uses.reduce((sum, u) => sum + u.amount, 0);
-    expect(usesTotal).toBe(295);
+    expect(usesTotal).toBe(150 + 250 + 145 + 250);
     // Identity holds: opening + sources − uses = closing.
     const sourcesTotal = prog.energy.sources.reduce((sum, s) => sum + s.amount, 0);
     const rec = prog.energy.reconciliation;

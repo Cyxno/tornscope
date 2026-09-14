@@ -538,6 +538,10 @@ async function main(): Promise<void> {
 
   let energy = 40;
   const energyMax = 150;
+  // Torn's ABSOLUTE energy cap: gains (Xanax, refills) can push the bar
+  // above the natural maximum, up to 1,000 — chaining guides confirm
+  // "after 4 Xanax you have 1000e". Xanax delivery is NOT clamped at
+  // energyMax; only the absolute cap applies.
   let happy = 1200;
   const happyMax = 5000;
   const clamp = (v: number, max: number): number => Math.max(0, Math.min(max, v));
@@ -546,11 +550,11 @@ async function main(): Promise<void> {
     for (const e of progHappyItemEvents) if (e.at >= stepStart && e.at < stepStart + 300) happy = clamp(happy + 1500, happyMax);
     for (const e of progXanaxEvents) {
       if ((e.at >= stepStart && e.at < stepStart + 300) || (e.at2 !== undefined && e.at2 >= stepStart && e.at2 < stepStart + 300)) {
-        energy = clamp(energy + 250, energyMax);
+        energy = Math.min(energy + 250, 1000);
       }
     }
     for (const e of progRefillEvents) if (e.at >= stepStart && e.at < stepStart + 300) energy = clamp(energy + e.energy, energyMax);
-    for (const t of xanaxInWindow) if (t >= stepStart && t < stepStart + 300) energy = clamp(energy + 250, energyMax);
+    for (const t of xanaxInWindow) if (t >= stepStart && t < stepStart + 300) energy = Math.min(energy + 250, 1000);
   };
 
   for (let t = progStart; t < now; t += 300) {

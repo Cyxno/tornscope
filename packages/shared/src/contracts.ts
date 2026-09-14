@@ -2070,18 +2070,21 @@ export const ProgressionResponseSchema = z.object({
     potentialRegen: z.number().nullable(),
     /** Lower-bound seconds observed at cap (snapshot-bounded). */
     cappedSeconds: z.number().nullable(),
-    /** Known gains that never materialized as observed energy (cap effects). */
-    absorbedOvershoot: z.number().nullable(),
-    /** Same overshoot split by source category — surfaces attribute the loss
-     *  (e.g. "Xanax taken at full energy") instead of lumping it. */
-    absorbedOvershootByCategory: z.array(z.object({ category: z.string(), amount: z.number() })),
+    /** Delivered gains that cannot be placed between two snapshots (a Xanax
+     *  trained away before the next poll, pinned intervals): consumed,
+     *  banked above max, or wasted — not observable, never claimed lost. */
+    unresolvedGains: z.number().nullable(),
+    /** Same unresolved split by source category. */
+    unresolvedGainsByCategory: z.array(z.object({ category: z.string(), amount: z.number() })),
     /** Xanax uses recorded in range (success outcomes) with the estimated
-     *  energy delivered per use — present even when nothing materialized,
-     *  so a day with 2 uses never reads as "0 Xanax". */
+     *  energy delivered per use and the portion inside likely training
+     *  sessions — present even when nothing was directly observed, so a day
+     *  with 2 uses never reads as "0 Xanax". */
     xanax: z
       .object({
         uses: z.number(),
         estimatedDelivered: z.number(),
+        attributedToTraining: z.number(),
       })
       .nullable(),
     reconciliation: z.object({

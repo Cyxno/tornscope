@@ -76,13 +76,13 @@ describe("energy ledger", () => {
   it("1-3. exact snapshots: known gains and observed declines are recorded", () => {
     const gains: EnergyGainEvent[] = [{ t: T0 + 600, amount: 150, category: "refill", provenance: "exact" }];
     const ledger = buildEnergyLedger(bars([[T0, 10], [T0 + 300, 20], [T0 + 600, 100], [T0 + 900, 30]]), gains);
-    expect(ledger.observedSpent).toBe(70);
-    expect(ledger.knownGainsByCategory).toContainEqual({ category: "refill", amount: 80, provenance: "exact" });
-    expect(ledger.absorbedOvershoot).toBe(70); // refill exceeded the observed rise
+    expect(ledger.inferredSpent).toBe(70);
+    expect(ledger.knownGainsByCategory).toContainEqual({ category: "refill", amount: 150, provenance: "exact" });
+    expect(ledger.unresolvedGains).toBe(70); // refill exceeded the observed rise
     expect(ledger.reconciliation).toEqual({ opening: 10, closing: 30, observedDelta: 20, quality: "full" });
   });
 
-  it("5. refill attribution is exact; 4. xanax is an estimate", () => {
+  it("5. delivered gains credit in full; the unobservable remainder is unresolved", () => {
     const ledger = buildEnergyLedger(
       bars([[T0, 0], [T0 + 300, 150]]),
       [
@@ -90,13 +90,13 @@ describe("energy ledger", () => {
         { t: T0 + 150, amount: 150, category: "xanax", provenance: "estimated" },
       ]
     );
-    // The observed rise is attributed to the EXACT source first; the
-    // estimated Xanax never materialized → overshoot.
+    // Both gains are DELIVERED (the bar can hold up to 1,000) and count in
+    // full; the 150 the bar never showed is unresolved between snapshots.
     expect(ledger.knownGainsByCategory).toContainEqual({ category: "refill", amount: 150, provenance: "exact" });
-    expect(ledger.knownGainsByCategory.find((c) => c.category === "xanax")).toBeUndefined();
+    expect(ledger.knownGainsByCategory).toContainEqual({ category: "xanax", amount: 150, provenance: "estimated" });
     expect(ledger.derivedRegen).toBe(0);
-    expect(ledger.absorbedOvershoot).toBe(150);
-    expect(ledger.knownGains).toBe(150);
+    expect(ledger.unresolvedGains).toBe(150);
+    expect(ledger.knownGains).toBe(300);
   });
 
   it("9. capped regen: pinned-at-cap time is bounded, never counted as banked", () => {
@@ -105,35 +105,35 @@ describe("energy ledger", () => {
     expect(ledger.derivedRegen).toBe(0);
   });
 
-  it("10-11. gains inside a decline interval net out exactly once (cap-aware)", () => {
-    // Real-user finding shape: Xanax lands while the bar is near cap
-    // (105/150 → train to 5). Only the 45E of headroom can materialize;
-    // the remaining 105E is cap-ambiguous overshoot — never spend. The old
-    // model charged the full 150 on top of the observed drop (250E "trained")
-    // and produced the disputed 295/250 values.
+  it("10-11. gains inside a decline interval credit in full (over-max delivery)", () => {
+    // Real-user shape: Xanax lands near cap (105/150 → train to 5). The
+    // delivery is NOT clamped at the natural maximum (bar can hold 1,000):
+    // the 250 was delivered and consumed between the snapshots, so spend =
+    // 250 + 100 = 350. Unobserved delivery is never "lost".
     const nearCap = buildEnergyLedger(bars([[T0, 105], [T0 + 300, 5]]), [
       { t: T0 + 150, amount: 150, category: "xanax", provenance: "estimated" },
     ]);
-    expect(nearCap.observedSpent).toBe(145);
-    expect(nearCap.knownGains).toBe(45);
-    expect(nearCap.absorbedOvershoot).toBe(105);
-    expect(nearCap.spendIntervals[0]?.amount).toBe(145);
-    expect(nearCap.spendIntervals[0]?.overshoot).toBe(105);
+    expect(nearCap.inferredSpent).toBe(250);
+    expect(nearCap.knownGains).toBe(150);
+    expect(nearCap.unresolvedGains).toBe(0);
+    expect(nearCap.spendIntervals[0]?.amount).toBe(250);
+    expect(nearCap.spendIntervals[0]?.estimatedGainsIncluded).toBe(150);
 
     // Declines WITHOUT gains keep their plain observed drop (regen during a
     // decline is not separable — the ledger stays a bounded inference).
     const plain = buildEnergyLedger(bars([[T0, 100], [T0 + 300, 80]]), []);
-    expect(plain.observedSpent).toBe(20);
-    expect(plain.absorbedOvershoot).toBe(0);
+    expect(plain.inferredSpent).toBe(20);
+    expect(plain.unresolvedGains).toBe(0);
   });
 
-  it("13. cap interaction overshoot is surfaced, never silently dropped", () => {
-    // Refill at cap: +150 known but observed rise 0.
+  it("13. gains while pinned stay delivered and unresolved — never lost", () => {
+    // Xanax while pinned at cap: +150 delivered but not visible between the
+    // snapshots — unresolved, never silently dropped, never claimed lost.
     const ledger = buildEnergyLedger(bars([[T0, 150], [T0 + 300, 150]]), [
       { t: T0 + 150, amount: 150, category: "xanax", provenance: "estimated" },
     ]);
-    expect(ledger.absorbedOvershoot).toBe(150);
-    expect(ledger.knownGains).toBe(0);
+    expect(ledger.unresolvedGains).toBe(150);
+    expect(ledger.knownGains).toBe(150);
   });
 
   it("14. missing anchors: a single observation cannot reconcile", () => {
@@ -155,7 +155,7 @@ describe("energy ledger", () => {
   it("16→17. empty bar history stays unavailable; flat bars are a real zero", () => {
     expect(buildEnergyLedger([], []).reconciliation.quality).toBe("unavailable");
     const flat = buildEnergyLedger(bars([[T0, 100], [T0 + 600, 100], [T0 + 1200, 100]]), []);
-    expect(flat.observedSpent).toBe(0);
+    expect(flat.inferredSpent).toBe(0);
     expect(flat.spendIntervals).toHaveLength(0);
   });
 
@@ -211,8 +211,8 @@ describe("training session detection", () => {
     expect(sessions).toHaveLength(1);
     expect(sessions[0]!.inference).toBe("possible");
     expect(sessions[0]!.totalGain).toBe(0);
-    // The observed spend remains unattributed in the ledger.
-    expect(ledger.observedSpent).toBe(100);
+    // The inferred spend remains unattributed in the ledger.
+    expect(ledger.inferredSpent).toBe(100);
   });
 
   it("34-35. merge and split thresholds: adjacent declines are one burst", () => {
@@ -428,18 +428,19 @@ describe("session grouping determinism", () => {
   it("C. a Xanax between training intervals does NOT automatically split the session", () => {
     // Player trains, takes a Xanax (the +150 estimate is a known gain; the
     // bar ticks up), trains again within the merge gap: one human session,
-    // not two. The Xanax's unmaterialized share surfaces as overshoot.
+    // not two. The Xanax is delivered in full; the share the bar never
+    // showed between these snapshots stays unresolved — never lost.
     const { ledger, sessions } = run(
       bars([
         [T0, 100], [T0 + 300, 60], // spend 40
-        [T0 + 600, 90], // Xanax gain inside this rise: net +30, 120 overshoot
+        [T0 + 600, 90], // Xanax inside this rise: delivered 150, +30 net
         [T0 + 900, 40], // spend 50
       ]),
       [{ t: T0 + 450, amount: 150, category: "xanax", provenance: "estimated" }]
     );
     expect(sessions).toHaveLength(1);
     expect(sessions[0]!.energySpent).toBe(90); // 40 + 50 — gains never padded it
-    expect(ledger.absorbedOvershoot).toBe(120);
+    expect(ledger.unresolvedGains).toBe(120);
   });
 
   it("D. natural regen between snapshots never creates a phantom session", () => {
@@ -448,7 +449,7 @@ describe("session grouping determinism", () => {
       [T0 + 2400, 70], [T0 + 3000, 75],
     ]));
     expect(sessions).toHaveLength(0);
-    expect(ledger.observedSpent).toBe(0);
+    expect(ledger.inferredSpent).toBe(0);
     expect(ledger.derivedRegen).toBe(25);
   });
 
@@ -526,49 +527,50 @@ describe("gym vs non-gym stat attribution", () => {
 });
 
 describe("ledger reconciliation identity (Phase 38)", () => {
-  it("opening + knownGains + derivedRegen − observedSpent === closing, exactly", () => {
-    // Timeline: clean rises → pinned at cap → Xanax at cap (pure overshoot,
-    // never materializes) → small decline → real training decline.
+  it("opening + knownGains + derivedRegen − inferredSpent − unresolvedGains === closing, exactly", () => {
+    // Timeline: clean rises → pinned at cap → Xanax while pinned (delivered,
+    // unobservable placement) → small decline → real training decline.
     const observations = bars([
       [T0, 100],
       [T0 + 600, 130], // rise +30 (clean regen)
       [T0 + 1200, 150], // rise +20 (clean regen)
       [T0 + 1800, 150], // pinned at cap
-      [T0 + 2400, 140], // decline −10 with a Xanax at cap inside (headroom 0 → overshoot 150)
-      [T0 + 3000, 60], // decline −80 (training)
+      [T0 + 2400, 140], // decline −10 — the Xanax (T0+2100) lands inside it
+      [T0 + 3000, 60], // plain decline −80 (training)
     ]);
     const gains: EnergyGainEvent[] = [{ t: T0 + 2100, amount: 150, category: "xanax", provenance: "estimated" }];
     const ledger = buildEnergyLedger(observations, gains);
-    // No hidden balancing term: materialized gains + derived regen − spend
-    // must equal the observed delta exactly.
+    // No hidden balancing term: delivered gains + derived regen − inferred
+    // spend − unresolved must equal the observed delta exactly.
     expect(ledger.reconciliation.opening).toBe(100);
     expect(ledger.reconciliation.closing).toBe(60);
-    expect(ledger.knownGains).toBe(0); // the Xanax hit the cap: nothing materialized
+    expect(ledger.knownGains).toBe(150); // delivered inside the decline
     expect(ledger.derivedRegen).toBe(50);
-    expect(ledger.observedSpent).toBe(90);
-    expect(ledger.absorbedOvershoot).toBe(150);
+    expect(ledger.inferredSpent).toBe(240); // (150 + 10) with the Xanax + plain 80
+    expect(ledger.unresolvedGains).toBe(0);
     const identity =
-      (ledger.reconciliation.opening ?? 0) + ledger.knownGains + ledger.derivedRegen - ledger.observedSpent;
+      (ledger.reconciliation.opening ?? 0) + ledger.knownGains + ledger.derivedRegen - ledger.inferredSpent - ledger.unresolvedGains;
     expect(identity).toBe(ledger.reconciliation.closing);
   });
 
   it("the identity also holds when a Xanax lands inside a decline at cap", () => {
-    // Xanax lands at full cap: headroom 0, nothing materializes (overshoot
-    // 150); the decline's spend is the observed drop only.
+    // Xanax lands at the natural cap and is consumed between the snapshots
+    // (the bar can hold up to 1,000 — nothing is clamped away): the
+    // delivery joins the decline's inferred spend in full.
     const observations = bars([
       [T0, 120],
       [T0 + 600, 150], // rise to cap +30 (clean regen)
-      [T0 + 1200, 140], // Xanax inside: spend = observed drop 10 only
+      [T0 + 1200, 140], // Xanax inside: spend = 150 + observed drop 10
       [T0 + 1800, 60], // plain decline 80
     ]);
     const gains: EnergyGainEvent[] = [{ t: T0 + 900, amount: 150, category: "xanax", provenance: "estimated" }];
     const ledger = buildEnergyLedger(observations, gains);
-    expect(ledger.knownGains).toBe(0);
+    expect(ledger.knownGains).toBe(150);
     expect(ledger.derivedRegen).toBe(30);
-    expect(ledger.observedSpent).toBe(90);
-    expect(ledger.absorbedOvershoot).toBe(150);
+    expect(ledger.inferredSpent).toBe(240);
+    expect(ledger.unresolvedGains).toBe(0);
     const identity =
-      (ledger.reconciliation.opening ?? 0) + ledger.knownGains + ledger.derivedRegen - ledger.observedSpent;
+      (ledger.reconciliation.opening ?? 0) + ledger.knownGains + ledger.derivedRegen - ledger.inferredSpent - ledger.unresolvedGains;
     expect(identity).toBe(ledger.reconciliation.closing);
   });
 });
