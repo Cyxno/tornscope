@@ -57,6 +57,9 @@
     }
     return out.slice(0, 3);
   });
+  const topCosts = $derived(
+    [...economy.economicEffect.expenseCategories].filter((c) => c.total > 0).sort((a, b) => b.total - a.total).slice(0, 3)
+  );
   const movementTone = (role: string): string => (role === "income" ? "text-positive" : role === "expense" ? "text-negative" : "text-fg");
 </script>
 
@@ -123,6 +126,17 @@
       This and the net worth change answer different questions — net worth also moves when prices shift and when you convert
       value between forms, so they rarely match.
     </p>
+    {#if topCosts.length > 0}
+      <p class="mt-3 text-[11px] font-medium uppercase tracking-[0.12em] text-fg-faint">Biggest costs</p>
+      <ul class="mt-1.5 space-y-1">
+        {#each topCosts as c (c.key)}
+          <li class="flex items-baseline justify-between gap-3 text-[12.5px]">
+            <span class="text-fg-muted" title={c.provenance === "estimated" ? "Estimated value of items consumed — the log records the use, not its cost" : undefined}>{c.label}</span>
+            <span class="tnum text-fg-muted">−{formatMoneyCompact(c.total)}</span>
+          </li>
+        {/each}
+      </ul>
+    {/if}
   </div>
 
   <!-- ── Asset shifts: value changing form ── -->

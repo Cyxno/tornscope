@@ -232,8 +232,15 @@ Economy and Overview carry a browser-local **Simple/Advanced** preference
   items, so wallet flow volume describes behavior, not performance. The
   wallet reconciliation and its graded residual stay inside the disclosure —
   uncertainty is never hidden.
-- **Advanced** is the previous full surface: all four lenses, conversion
-  pairs, wallet bridge, category tables, methodology notes.
+- **Simple** also lists the biggest true-cost categories directly under the
+  economic-effect total, so a negative effect is explained in place.
+- **Advanced** is the full analytics surface in reading order: **net worth →
+  economic effect → asset conversions → cash movement** — the wealth result
+  opens, wallet throughput closes. The editorial ".at a glance." block is
+  Advanced-only and follows the same order: it leads with the net worth
+  movement, explains the economic effect and the conversion share, and only
+  then notes wallet turnover as normal Torn staging (wealth lives in banks,
+  stocks and items, not the wallet). It never opens with turnover.
 
 Terminology contract (never interchangeable):
 - **Net worth change** — official Torn snapshot delta (includes price moves

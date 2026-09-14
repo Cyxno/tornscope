@@ -107,6 +107,42 @@ describe("overview hierarchy", () => {
   });
 });
 
+describe("economy narrative order (V0.2 semantic pass)", () => {
+  it("the advanced opener leads with the wealth result, never wallet turnover", () => {
+    expect(money).toContain("your net worth");
+    // The user-visible complaint: the editorial opened with "…entered your
+    // wallet and … left it". That framing must not exist anywhere on the page.
+    expect(money).not.toContain("entered your wallet");
+    // Turnover is the CLOSING note of the editorial, framed as staging.
+    const turnover = money.indexOf("Wallet turnover ran");
+    const lead = money.indexOf("const editorial");
+    expect(turnover).toBeGreaterThan(-1);
+    expect(turnover).toBeGreaterThan(lead);
+    expect(money.slice(turnover)).toContain("normal staging in Torn");
+  });
+
+  it("advanced lens order is net worth → economic effect → conversions → cash", () => {
+    const nw = money.indexOf('id="lens-panel-networth"');
+    const ef = money.indexOf('id="lens-panel-effect"');
+    const cv = money.indexOf('id="lens-panel-conversions"');
+    const ch = money.indexOf('id="lens-panel-cash"');
+    expect(nw).toBeGreaterThan(-1);
+    expect(nw).toBeLessThan(ef);
+    expect(ef).toBeLessThan(cv);
+    expect(cv).toBeLessThan(ch);
+  });
+
+  it("the lens switcher defaults to net worth", () => {
+    expect(money).toContain('activeLens = $state("networth")');
+  });
+
+  it("simple surfaces the biggest costs beside the economic effect", () => {
+    const effect = simple.indexOf("Real gains &amp; costs");
+    const costs = simple.indexOf("Biggest costs");
+    expect(costs).toBeGreaterThan(effect);
+  });
+});
+
 describe("bank color semantics", () => {
   it("a healthy bank countdown is neutral; only a matured investment warns", () => {
     // Real-user finding: "Bank" rendered warning-yellow for a normal active

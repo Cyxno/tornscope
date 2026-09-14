@@ -89,13 +89,15 @@
   const period = $derived(periodLabel(dateRange.preset));
 
   /* ----------------------------- lens switching --------------------------- */
+  // Order = reading order: the wealth result first, wallet throughput last
+  // (V0.2 hierarchy pass — turnover is staging, not performance).
   const LENSES = [
-    { id: "cash", label: "Cash movement" },
-    { id: "conversions", label: "Conversions" },
-    { id: "effect", label: "Economic effect" },
     { id: "networth", label: "Net worth" },
+    { id: "effect", label: "Economic effect" },
+    { id: "conversions", label: "Conversions" },
+    { id: "cash", label: "Cash movement" },
   ];
-  let activeLens = $state("cash");
+  let activeLens = $state("networth");
 
   /** At-a-glance lens chips: select the lens (mobile/tablet) and scroll to it (desktop shows all). */
   function jumpToLens(id: string) {
@@ -150,23 +152,34 @@
   const cash = $derived(economy?.cashFlow);
   const ecoEffect = $derived(economy?.economicEffect);
   const wallet = $derived(economy?.wallet);
+  const nwChange = $derived(economy?.networth.change ?? null);
 
+  // SUMMARY FIRST (V0.2 hierarchy rule): the wealth result opens, wallet
+  // turnover comes last — in Torn it describes transient staging (wealth
+  // lives in banks, stocks and items, not the wallet), and leading with it
+  // made normal behavior read like the headline performance.
   const editorial = $derived.by<{ lead: string | null; support: string[] }>(() => {
-    if (!economy || !cash) return { lead: null, support: [] };
+    if (!economy) return { lead: null, support: [] };
     const sentences: string[] = [];
     let lead: string | null = null;
-    if (cash.income.value === null || cash.expenses.value === null) {
-      lead = "Cash flow isn't available for this range yet — nothing is estimated to fill the gap.";
+    const periodName = period === "All" ? "all time" : period;
+    if (nwChange && nwChange.value !== null) {
+      lead = `Across ${periodName}, your net worth ${nwChange.value >= 0 ? "grew" : "fell"} by ${formatMoneyCompact(Math.abs(nwChange.value))} — the official total of everything you own.`;
+    } else if (ecoEffect && ecoEffect.net.value !== null) {
+      lead = `Across ${periodName}, your activity's economic effect was ${formatSignedMoneyCompact(ecoEffect.net.value)}.`;
     } else {
-      lead = `Across ${period === "All" ? "all time" : period}, ${formatMoneyCompact(cash.income.value)} entered your wallet and ${formatMoneyCompact(cash.expenses.value)} left it.`;
-      if (cash.expenses.value > 0) {
-        if (cash.assetOutflow >= cash.trueExpense) sentences.push("Most of the outflow was asset conversion rather than true expense.");
-        else sentences.push("Most of the outflow was true expense — value that left for good.");
-      }
+      lead = "Net worth history isn't available for this range yet — nothing is estimated to fill the gap.";
     }
     if (ecoEffect && ecoEffect.income.value !== null && ecoEffect.expenses.value !== null) {
       sentences.push(
         `Economic effect — earned ${formatMoneyCompact(ecoEffect.income.value)} against ${formatMoneyCompact(ecoEffect.expenses.value)} spent for good, a net of ${ecoEffect.net.value !== null ? formatSignedMoneyCompact(ecoEffect.net.value) : "—"}.`
+      );
+    }
+    if (cash && cash.income.value !== null && cash.expenses.value !== null && cash.expenses.value > 0) {
+      sentences.push(
+        cash.assetOutflow >= cash.trueExpense
+          ? "Most of the money that left your wallet went into assets you still own — a change of form, not spending."
+          : "Most of the money that left your wallet was true expense — value that left for good."
       );
     }
     if (wallet && wallet.quality !== "unavailable" && wallet.closingWallet !== null && wallet.openingWallet !== null) {
@@ -178,6 +191,11 @@
             : `Recorded movements explain ${Math.round(wallet.explainedRatio * 100)}% of your wallet change; ${formatMoneyCompact(Math.abs(wallet.residual ?? 0))} remains unexplained by available money logs.`
         );
       }
+    }
+    if (cash && cash.income.value !== null && cash.expenses.value !== null) {
+      sentences.push(
+        `Wallet turnover ran ${formatMoneyCompact(cash.income.value)} in and ${formatMoneyCompact(cash.expenses.value)} out — normal staging in Torn, where wealth sits in banks, stocks and items rather than the wallet.`
+      );
     }
     return { lead, support: sentences };
   });
@@ -343,7 +361,7 @@
   <PageHeader
     eyebrow="Finance"
     title="Economy"
-    description="Four related lenses — cash movement, asset conversions, economic effect and net worth. Related, never additive: they answer different questions about the same money."
+    description="Four related lenses, in reading order — net worth (the official result), economic effect (real gains and costs), asset conversions (value changing form), cash movement (wallet throughput). Related, never additive: they answer different questions about the same money."
   >
     {#snippet actions()}
       <SegmentedDateRange />
@@ -373,18 +391,19 @@
       <EconomySimple economy={economy} period={period} />
     {/if}
 
-    <!-- ═══ Editorial summary — what happened, in words, before numbers ═══ -->
+    <!-- ═══ Editorial summary — Advanced's narrative opener. In Simple mode
+         EconomySimple already leads with the same result, so the prose
+         section (which ends in wallet turnover) stays out of the way. ═══ -->
+    {#if prefs.mode === "advanced"}
     <section aria-labelledby="economy-editorial" class="rounded-card border border-border bg-surface px-5 py-5 shadow-panel sm:px-7">
       <div class="flex flex-wrap items-center justify-between gap-2">
         <h2 id="economy-editorial" class="section-label !tracking-[0.12em]">{period} at a glance</h2>
-        {#if prefs.mode === "advanced"}
-          <div class="flex flex-wrap items-center gap-2">
-              <button class="chip chip-quiet cursor-pointer !border-border !text-[10px]" title="Money that moved through the wallet" onclick={() => jumpToLens("cash")}>cash movement</button>
-              <button class="chip chip-quiet cursor-pointer !border-border !text-[10px]" title="Value changing form — not gain or loss" onclick={() => jumpToLens("conversions")}>conversion</button>
-              <button class="chip chip-quiet cursor-pointer !border-border !text-[10px]" title="Value gained or lost" onclick={() => jumpToLens("effect")}>economic effect</button>
-              <button class="chip chip-quiet cursor-pointer !border-border !text-[10px]" title="Official Torn snapshot delta — not profit" onclick={() => jumpToLens("networth")}>net worth</button>
-          </div>
-        {/if}
+        <div class="flex flex-wrap items-center gap-2">
+            <button class="chip chip-quiet cursor-pointer !border-border !text-[10px]" title="Official Torn snapshot delta — not profit" onclick={() => jumpToLens("networth")}>net worth</button>
+            <button class="chip chip-quiet cursor-pointer !border-border !text-[10px]" title="Value gained or lost" onclick={() => jumpToLens("effect")}>economic effect</button>
+            <button class="chip chip-quiet cursor-pointer !border-border !text-[10px]" title="Value changing form — not gain or loss" onclick={() => jumpToLens("conversions")}>conversion</button>
+            <button class="chip chip-quiet cursor-pointer !border-border !text-[10px]" title="Money that moved through the wallet" onclick={() => jumpToLens("cash")}>cash movement</button>
+        </div>
       </div>
       {#if editorial.lead}
         <p class="mt-3 max-w-4xl font-display text-lg leading-relaxed text-fg sm:text-xl">{editorial.lead}</p>
@@ -395,6 +414,7 @@
         <p class="mt-3 max-w-4xl text-sm leading-relaxed text-fg-muted">Waiting for enough history to say anything honest about this range.</p>
       {/if}
     </section>
+    {/if}
 
     <!-- ═══ Lens switcher (mobile / tablet — desktop shows every lens; Advanced only) ═══ -->
     {#if prefs.mode === "advanced"}
@@ -422,10 +442,305 @@
             </p>
           {/if}
 
-          <!-- ─────────────── Lens 1 · Cash movement ─────────────── -->
+          <!-- ─────────────── Lens 1 · Net worth ─────────────── -->
+          <div id="lens-panel-networth" role="tabpanel" aria-labelledby="lens-tab-networth" class="space-y-5 {activeLens === 'networth' ? '' : 'max-lg:hidden'}">
+            <div class="flex flex-wrap items-baseline justify-between gap-2">
+              <h2 class="section-label text-[12px]"><span class="mr-2 text-accent">1</span> Net worth — official snapshot movement, not profit</h2>
+              {#if economy.networth.trackingSince !== null}
+                <span class="text-[11px] text-fg-faint">Tracking since {formatDate(economy.networth.trackingSince)}</span>
+              {/if}
+            </div>
+            {#if nwBlocked && nwAv}
+              <StateMessage
+                state={availabilityMessage(nwAv).state}
+                title={availabilityMessage(nwAv).title}
+                hint={nwAv.state === "unavailable_permission" ? "Your current API key does not include User Networth — grant it in Torn to track wealth history." : availabilityMessage(nwAv).hint}
+                action={{ label: "Review API access in Settings", run: () => void goto("/settings?tab=api") }}
+              />
+            {:else}
+              <div class="grid grid-cols-2 gap-px overflow-hidden rounded-card border border-border bg-border shadow-panel md:grid-cols-4">
+                <Stat label="Opening net worth" value={economy.networth.baseline !== null ? formatMoneyCompact(economy.networth.baseline) : "—"} provenance="exact" confidence={economy.confidence?.networth} sub={economy.networth.baselineAt !== null ? `snapshot ${formatDate(economy.networth.baselineAt)}` : null} />
+                <Stat label="Closing net worth" value={formatKpiValue(economy.networth.current)} provenance="exact" tone="accent" confidence={economy.confidence?.networth} sub={economy.networth.currentAt !== null ? `snapshot ${formatDate(economy.networth.currentAt)}` : null} />
+                <Stat
+                  label="Net worth change{economy.networth.coverage === 'partial' ? ' (partial)' : ''}"
+                  value={economy.networth.coverage === "none" ? "Insufficient history" : formatSignedMoneyCompact(economy.networth.change.value)}
+                  provenance="exact"
+                  confidence={economy.confidence?.networth}
+                  tone={economy.networth.change.value === null || economy.networth.coverage === "none" ? "neutral" : economy.networth.change.value >= 0 ? "positive" : "negative"}
+                  sub={economy.networth.changePct !== null ? `${economy.networth.changePct >= 0 ? "+" : ""}${economy.networth.changePct.toFixed(2)}%` : null}
+                />
+                <Stat
+                  label="vs economic effect"
+                  value={economy.economicEffect.net.value !== null ? formatSignedMoneyCompact(economy.economicEffect.net.value) : "—"}
+                  provenance={economy.economicEffect.net.provenance}
+                  confidence={economy.economicEffect.confidence}
+                  title="Side by side on purpose: the two figures measure different things and are never summed"
+                />
+              </div>
+              <details class="group rounded-tile border border-border bg-surface px-5 py-3">
+                <summary class="flex cursor-pointer items-center justify-between gap-3 text-xs font-medium text-fg-muted transition-colors hover:text-fg [&::-webkit-details-marker]:hidden">
+                  Why net worth change is not profit
+                  <span class="transition-transform group-open:rotate-180">▾</span>
+                </summary>
+                <p class="mt-2.5 border-t border-border pt-2.5 text-xs leading-relaxed text-fg-muted">
+                  Net worth change is the snapshot delta from official Torn net worth — it includes item/stock/property price moves as well as
+                  spending and income, so it is a wealth movement, never "profit". Estimated economic effects are shown separately and never
+                  merged into it.
+                </p>
+              </details>
+
+              <Panel title="Likely contributors — recorded movements, not proven causes" caption="Official Torn category deltas first; estimated effects and the unexplained residual are labeled as such">
+                {#if recordedContributors.length === 0 && residualContributors.length === 0}
+                  <StateMessage state="empty" compact title="No net worth movement recorded in this range" />
+                {:else}
+                  <ul class="space-y-2.5 text-[13px]">
+                    {#each recordedContributors as c (c.key)}
+                      <li class="flex items-baseline justify-between gap-3">
+                        <span class="text-fg">
+                          {c.label}
+                          <span class="ml-1.5 chip chip-quiet !border-border !px-1.5 !text-[9px] !uppercase" title="Official Torn net worth snapshot delta">recorded</span>
+                        </span>
+                        <span class="tnum font-medium {(c.value ?? 0) >= 0 ? 'text-positive' : 'text-negative'}">{c.value !== null ? formatSignedMoneyCompact(c.value) : "—"}</span>
+                      </li>
+                    {/each}
+                    {#each estimatedContributors as c (c.key)}
+                      <li class="flex items-baseline justify-between gap-3">
+                        <span class="text-fg-muted">
+                          {c.label}
+                          <span class="ml-1.5 text-[10px] font-medium uppercase tracking-[0.12em] text-warning" title="Estimated value — catalog-based, not an official figure">estimated</span>
+                        </span>
+                        <span class="tnum font-medium text-fg-muted">{c.value !== null ? formatSignedMoneyCompact(c.value) : "—"}</span>
+                      </li>
+                    {/each}
+                    {#each residualContributors as c (c.key)}
+                      <li class="flex items-baseline justify-between gap-3 border-t border-border pt-2.5">
+                        <span class="text-fg-muted" title={c.source}>{c.label}</span>
+                        <span class="tnum font-medium text-fg">{c.value !== null ? formatSignedMoneyCompact(c.value) : "—"}</span>
+                      </li>
+                    {/each}
+                  </ul>
+                  {#if economy.networth.byCategory.length > 0}
+                    <div class="mt-5 overflow-x-auto">
+                      <table class="tsv-table">
+                        <thead>
+                          <tr>
+                            <th>Category</th>
+                            <th class="text-right">Baseline</th>
+                            <th class="text-right">Current</th>
+                            <th class="text-right">{period} change</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {#each economy.networth.byCategory as cat (cat.key)}
+                            <tr>
+                              <td class="text-fg">{cat.label}</td>
+                              <td class="tnum text-right text-fg-muted">{formatMoneyCompact(cat.baseline)}</td>
+                              <td class="tnum text-right text-fg-muted">{formatMoneyCompact(cat.current)}</td>
+                              <td class="tnum text-right font-medium {cat.change >= 0 ? 'text-positive' : 'text-negative'}">{formatSignedMoneyCompact(cat.change)}</td>
+                            </tr>
+                          {/each}
+                        </tbody>
+                      </table>
+                    </div>
+                  {/if}
+                  {#if economy.networth.coverage === "partial"}
+                    <p class="mt-4 text-[11px] text-fg-faint">Tracked period: TornScope started snapshotting after this period began, so the change covers the tracked span only.</p>
+                  {/if}
+                {/if}
+              </Panel>
+            {/if}
+          </div>
+        {/if}
+          <!-- ─────────────── Lens 2 · Economic effect ─────────────── -->
+          <div id="lens-panel-effect" role="tabpanel" aria-labelledby="lens-tab-effect" class="space-y-5 {activeLens === 'effect' ? '' : 'max-lg:hidden'}">
+            <div class="flex flex-wrap items-baseline justify-between gap-2">
+              <h2 class="section-label text-[12px]"><span class="mr-2 text-accent">2</span> Economic effect — value genuinely gained or lost</h2>
+              <span class="chip chip-quiet !border-border !text-[10px]" title="The closest figure to profit and loss — but never labeled profit, because acquisition costs are unknown">economic effect, not profit</span>
+            </div>
+            <div class="grid grid-cols-2 gap-px overflow-hidden rounded-card border border-border bg-border shadow-panel md:grid-cols-4">
+              <Stat label="Income (earned)" value={formatKpiValue(economy.economicEffect.income)} provenance={economy.economicEffect.income.provenance} tone="positive" confidence={economy.economicEffect.confidence} title="Earned money plus derived bank interest — conversions excluded" />
+              <Stat label="Expenses (true)" value={formatKpiValue(economy.economicEffect.expenses)} provenance="exact" tone="negative" confidence={economy.economicEffect.confidence} title="Value consumed or paid away — asset purchases excluded" />
+              <Stat
+                label="Net economic effect"
+                value={formatKpiValue(economy.economicEffect.net, formatSignedMoneyCompact)}
+                provenance={economy.economicEffect.net.provenance}
+                confidence={economy.economicEffect.confidence}
+                tone={economy.economicEffect.net.value === null ? "neutral" : economy.economicEffect.net.value >= 0 ? "positive" : "negative"}
+              />
+              <Stat
+                label="Bank interest (derived)"
+                value={economy.economicEffect.interestIncome !== 0 || economy.economicEffect.interestComplete ? formatMoneyCompact(economy.economicEffect.interestIncome) : "—"}
+                provenance="derived"
+                confidence={economy.economicEffect.confidence}
+                sub={economy.economicEffect.interestComplete ? "split from principal returns" : "some withdrawals could not be split — figure may understate"}
+              />
+            </div>
+            {#if !economy.economicEffect.interestComplete}
+              <p class="rounded-tile border border-warning/30 bg-warning/5 px-5 py-3 text-xs leading-relaxed text-warning">
+                Some bank withdrawals in this range have their principal outside the recorded history, so their interest cannot be split out. Bank
+                interest is understated rather than guessed.
+              </p>
+            {/if}
+
+            <section class="grid gap-6 lg:grid-cols-2">
+              <Panel title="Income sources" caption="Earned value — payouts, wages, yields. Asset sales never appear here.">
+                {#if economy.economicEffect.incomeCategories.length === 0}
+                  <StateMessage state="empty" compact title="No earned income in this range" />
+                {:else}
+                  <ul class="space-y-2.5 text-[13px]">
+                    {#each economy.economicEffect.incomeCategories as row (row.key + row.label)}
+                      <li class="flex items-baseline justify-between gap-3">
+                        <span class="text-fg">{row.label}</span>
+                        <span class="tnum font-medium text-positive">{formatMoneyCompact(row.total)}</span>
+                      </li>
+                    {/each}
+                  </ul>
+                {/if}
+              </Panel>
+              <Panel title="True expenses" caption="Value that left for good — rehab, fees, upkeep, gym, rent.">
+                {#if economy.economicEffect.expenseCategories.length === 0}
+                  <StateMessage state="empty" compact title="No true expenses in this range" />
+                {:else}
+                  <ul class="space-y-2.5 text-[13px]">
+                    {#each economy.economicEffect.expenseCategories as row (row.key + row.label)}
+                      <li class="flex items-baseline justify-between gap-3">
+                        <span class="text-fg">{row.label}</span>
+                        <span class="tnum font-medium text-negative">{formatMoneyCompact(row.total)}</span>
+                      </li>
+                    {/each}
+                  </ul>
+                {/if}
+              </Panel>
+            </section>
+
+            <!-- Estimated economic context — provenance-labeled, never merged -->
+            <Panel title="Estimated economic context" caption="Catalog-based estimates — shown for context, never merged into the figures above">
+              <div class="grid grid-cols-2 gap-px overflow-hidden rounded-tile border border-border bg-border md:grid-cols-4">
+                <div class="bg-surface p-4">
+                  <div class="flex items-center justify-between gap-2"><p class="text-[11px] font-medium text-fg-faint">Consumed value</p><ProvenanceBadge level="estimated" /></div>
+                  <p class="tnum mt-1 text-lg font-semibold text-negative">{formatKpiValue(economy.consumption.totalValue)}</p>
+                </div>
+                <div class="bg-surface p-4">
+                  <div class="flex items-center justify-between gap-2"><p class="text-[11px] font-medium text-fg-faint">Drugs consumed</p><ProvenanceBadge level="estimated" /></div>
+                  <p class="tnum mt-1 text-lg font-semibold text-negative">{economy.consumption.drugValue !== null ? formatMoneyCompact(economy.consumption.drugValue) : "—"}</p>
+                </div>
+                <div class="bg-surface p-4">
+                  <div class="flex items-center justify-between gap-2"><p class="text-[11px] font-medium text-fg-faint">Travel profit</p><ProvenanceBadge level="estimated" /></div>
+                  <p class="tnum mt-1 text-lg font-semibold {economy.travel.estimatedProfit.value === null ? 'text-fg-faint' : economy.travel.estimatedProfit.value >= 0 ? 'text-positive' : 'text-negative'}">{formatKpiValue(economy.travel.estimatedProfit)}</p>
+                </div>
+                <div class="bg-surface p-4">
+                  <div class="flex items-center justify-between gap-2"><p class="text-[11px] font-medium text-fg-faint">Non-cash wealth gained</p><ProvenanceBadge level={economy.nonCashGains.provenance === "estimated" ? "estimated" : "exact"} /></div>
+                  <p class="tnum mt-1 text-lg font-semibold text-fg-muted">{economy.nonCashGains.value !== null ? formatMoneyCompact(economy.nonCashGains.value) : "—"}</p>
+                </div>
+              </div>
+              {#if economy.consumption.byCategory.length > 0}
+                <ul class="mt-5 space-y-4">
+                  {#each economy.consumption.byCategory as row (row.category)}
+                    <li>
+                      <div class="flex items-baseline justify-between gap-3 text-[13px]">
+                        <span class="text-fg">
+                          {CONSUMPTION_LABELS[row.category] ?? row.category}
+                          <span class="ml-1.5 text-[11px] text-fg-faint">{row.uses} use{row.uses === 1 ? "" : "s"}</span>
+                        </span>
+                        <span class="tnum font-medium text-negative">
+                          {row.totalValue !== null ? `-${formatMoneyCompact(row.totalValue).replace("-", "")}` : "Incomplete"}
+                        </span>
+                      </div>
+                      <div class="mt-1.5 h-1.5 overflow-hidden rounded-full bg-surface-2">
+                        <div class="h-full rounded-full bg-negative/70" style="width: {row.totalValue !== null ? Math.round((row.totalValue / topConsumedValue) * 100) : 0}%"></div>
+                      </div>
+                    </li>
+                  {/each}
+                </ul>
+                {#if economy.consumption.valueUnknownCount > 0}
+                  <p class="mt-4 text-[11px] text-fg-faint">
+                    {economy.consumption.valueUnknownCount} use{economy.consumption.valueUnknownCount === 1 ? "" : "s"} without a known price {economy.consumption.valueUnknownCount === 1 ? "is" : "are"} counted as use{economy.consumption.valueUnknownCount === 1 ? "" : "s"} but add{economy.consumption.valueUnknownCount === 1 ? "s" : ""} nothing to Consumed Value — never an invented price.
+                  </p>
+                {/if}
+              {/if}
+            </Panel>
+          </div>
+
+          <!-- ─────────────── Lens 3 · Asset conversions ─────────────── -->
+          <div id="lens-panel-conversions" role="tabpanel" aria-labelledby="lens-tab-conversions" class="space-y-5 {activeLens === 'conversions' ? '' : 'max-lg:hidden'}">
+            <div class="flex flex-wrap items-baseline justify-between gap-2">
+              <h2 class="section-label text-[12px]"><span class="mr-2 text-accent">3</span> Asset conversions — value changing form, not gain or loss</h2>
+              <span class="chip chip-quiet !border-border !text-[10px]" title="Conversions are neither income nor spending">conversion ≠ income</span>
+            </div>
+            <details class="group rounded-tile border border-border bg-surface px-5 py-3">
+              <summary class="flex cursor-pointer items-center justify-between gap-3 text-xs font-medium text-fg-muted transition-colors hover:text-fg [&::-webkit-details-marker]:hidden">
+                Why conversions are kept apart from income
+                <span class="transition-transform group-open:rotate-180">▾</span>
+              </summary>
+              <p class="mt-2.5 border-t border-border pt-2.5 text-xs leading-relaxed text-fg-muted">
+                A bank deposit, a stock purchase or a bazaar sale changes the FORM of value you already own — cash becomes an asset, or an asset becomes
+                cash. Nothing is gained or lost at that moment, so conversions never enter income, expenses or economic effect. They still move your
+                wallet, which is why the wallet reconciliation counts them.
+              </p>
+            </details>
+            <div class="grid grid-cols-2 gap-px overflow-hidden rounded-card border border-border bg-border shadow-panel md:grid-cols-4">
+              <Stat label="Cash → assets" value={formatKpiValue(economy.conversions.cashIntoAssets)} provenance="exact" confidence={economy.confidence?.cashFlow} title="Cash that left the wallet into things you still own" />
+              <Stat label="Assets → cash" value={formatKpiValue(economy.conversions.assetsIntoCash)} provenance="exact" tone="accent" confidence={economy.confidence?.cashFlow} title="Value you owned that returned to the wallet as cash" />
+              <Stat
+                label="Net cash effect"
+                value={formatKpiValue(economy.conversions.netCashEffect, formatSignedMoneyCompact)}
+                provenance="derived"
+                confidence={economy.confidence?.cashFlow}
+                title="Assets → cash minus cash → assets: how far conversions drained or refilled the wallet"
+              />
+              <Stat label="Bank movements" value={formatMoneyCompact(economy.conversions.bankTransfers)} provenance="exact" confidence={economy.confidence?.cashFlow} sub="wallet ↔ bank, both directions" />
+            </div>
+
+            <Panel title="Conversion pairs" caption="Every conversion route in this range, largest first">
+              {#if economy.conversions.byPair.length === 0}
+                <StateMessage state="empty" compact title="No conversions in this range" hint="Bank deposits, stock or item trades will appear here." />
+              {:else}
+                <ul class="space-y-4">
+                  {#each economy.conversions.byPair as row (row.pair)}
+                    <li>
+                      <div class="flex items-baseline justify-between gap-3 text-[13px]">
+                        <span class="text-fg">
+                          {row.label}
+                          <span class="ml-1.5 text-[11px] text-fg-faint">{row.count} movement{row.count === 1 ? "" : "s"}</span>
+                        </span>
+                        <span class="tnum font-medium text-fg-muted">{formatMoneyCompact(row.amount)}</span>
+                      </div>
+                      <div class="mt-1.5 h-1.5 overflow-hidden rounded-full bg-surface-2">
+                        <div class="h-full rounded-full bg-accent/60" style="width: {Math.round((row.amount / conversionBarTop) * 100)}%"></div>
+                      </div>
+                    </li>
+                  {/each}
+                </ul>
+              {/if}
+            </Panel>
+
+            {#if economy.sales.cashReceived > 0}
+              <div class="grid grid-cols-1 gap-px overflow-hidden rounded-tile border border-border bg-border md:grid-cols-3">
+                <div class="bg-surface p-4 sm:p-5">
+                  <p class="text-[11px] font-medium text-fg-faint">Sale proceeds <span class="uppercase tracking-wide">(cash received)</span></p>
+                  <p class="tnum mt-1 text-xl font-semibold text-fg">{formatMoneyCompact(economy.sales.cashReceived)}</p>
+                </div>
+                <div class="bg-surface p-4 sm:p-5">
+                  <p class="text-[11px] font-medium text-fg-faint">Estimated item value sold</p>
+                  <p class="tnum mt-1 text-xl font-semibold text-fg-muted">{economy.sales.inventoryValueRemoved !== null ? formatMoneyCompact(economy.sales.inventoryValueRemoved) : "—"}</p>
+                </div>
+                <div class="bg-surface p-4 sm:p-5">
+                  <p class="text-[11px] font-medium text-fg-faint" title="Sale proceeds minus estimated catalog value of the sold items. Not called profit: acquisition cost is not reliably known.">Estimated value difference</p>
+                  <p class="tnum mt-1 text-xl font-semibold {economy.sales.economicResult === null ? 'text-fg-faint' : economy.sales.economicResult >= 0 ? 'text-positive' : 'text-negative'}">
+                    {economy.sales.economicResult !== null ? formatSignedMoneyCompact(economy.sales.economicResult) : "—"}
+                  </p>
+                  <p class="mt-1 text-[10.5px] leading-relaxed text-fg-faint">
+                    {economy.sales.provenance === "estimated" ? "estimated from current catalog prices" : "item valuation unavailable for this range"}
+                  </p>
+                </div>
+              </div>
+            {/if}
+          </div>
+
+          <!-- ─────────────── Lens 4 · Cash movement ─────────────── -->
           <div id="lens-panel-cash" role="tabpanel" aria-labelledby="lens-tab-cash" class="space-y-5 {activeLens === 'cash' ? '' : 'max-lg:hidden'}">
             <div class="flex flex-wrap items-baseline justify-between gap-2">
-              <h2 class="section-label text-[12px]"><span class="mr-2 text-accent">1</span> Cash movement — money that moved through your wallet</h2>
+              <h2 class="section-label text-[12px]"><span class="mr-2 text-accent">4</span> Cash movement — money that moved through your wallet</h2>
               <span class="chip chip-quiet !border-border !text-[10px]" title="Cash in and out is not the same as income and expense">cash ≠ income</span>
             </div>
             <div class="grid grid-cols-2 gap-px overflow-hidden rounded-card border border-border bg-border shadow-panel md:grid-cols-4">
@@ -586,301 +901,6 @@
             </Panel>
           </div>
 
-          <!-- ─────────────── Lens 2 · Asset conversions ─────────────── -->
-          <div id="lens-panel-conversions" role="tabpanel" aria-labelledby="lens-tab-conversions" class="space-y-5 {activeLens === 'conversions' ? '' : 'max-lg:hidden'}">
-            <div class="flex flex-wrap items-baseline justify-between gap-2">
-              <h2 class="section-label text-[12px]"><span class="mr-2 text-accent">2</span> Asset conversions — value changing form, not gain or loss</h2>
-              <span class="chip chip-quiet !border-border !text-[10px]" title="Conversions are neither income nor spending">conversion ≠ income</span>
-            </div>
-            <details class="group rounded-tile border border-border bg-surface px-5 py-3">
-              <summary class="flex cursor-pointer items-center justify-between gap-3 text-xs font-medium text-fg-muted transition-colors hover:text-fg [&::-webkit-details-marker]:hidden">
-                Why conversions are kept apart from income
-                <span class="transition-transform group-open:rotate-180">▾</span>
-              </summary>
-              <p class="mt-2.5 border-t border-border pt-2.5 text-xs leading-relaxed text-fg-muted">
-                A bank deposit, a stock purchase or a bazaar sale changes the FORM of value you already own — cash becomes an asset, or an asset becomes
-                cash. Nothing is gained or lost at that moment, so conversions never enter income, expenses or economic effect. They still move your
-                wallet, which is why the wallet reconciliation counts them.
-              </p>
-            </details>
-            <div class="grid grid-cols-2 gap-px overflow-hidden rounded-card border border-border bg-border shadow-panel md:grid-cols-4">
-              <Stat label="Cash → assets" value={formatKpiValue(economy.conversions.cashIntoAssets)} provenance="exact" confidence={economy.confidence?.cashFlow} title="Cash that left the wallet into things you still own" />
-              <Stat label="Assets → cash" value={formatKpiValue(economy.conversions.assetsIntoCash)} provenance="exact" tone="accent" confidence={economy.confidence?.cashFlow} title="Value you owned that returned to the wallet as cash" />
-              <Stat
-                label="Net cash effect"
-                value={formatKpiValue(economy.conversions.netCashEffect, formatSignedMoneyCompact)}
-                provenance="derived"
-                confidence={economy.confidence?.cashFlow}
-                title="Assets → cash minus cash → assets: how far conversions drained or refilled the wallet"
-              />
-              <Stat label="Bank movements" value={formatMoneyCompact(economy.conversions.bankTransfers)} provenance="exact" confidence={economy.confidence?.cashFlow} sub="wallet ↔ bank, both directions" />
-            </div>
-
-            <Panel title="Conversion pairs" caption="Every conversion route in this range, largest first">
-              {#if economy.conversions.byPair.length === 0}
-                <StateMessage state="empty" compact title="No conversions in this range" hint="Bank deposits, stock or item trades will appear here." />
-              {:else}
-                <ul class="space-y-4">
-                  {#each economy.conversions.byPair as row (row.pair)}
-                    <li>
-                      <div class="flex items-baseline justify-between gap-3 text-[13px]">
-                        <span class="text-fg">
-                          {row.label}
-                          <span class="ml-1.5 text-[11px] text-fg-faint">{row.count} movement{row.count === 1 ? "" : "s"}</span>
-                        </span>
-                        <span class="tnum font-medium text-fg-muted">{formatMoneyCompact(row.amount)}</span>
-                      </div>
-                      <div class="mt-1.5 h-1.5 overflow-hidden rounded-full bg-surface-2">
-                        <div class="h-full rounded-full bg-accent/60" style="width: {Math.round((row.amount / conversionBarTop) * 100)}%"></div>
-                      </div>
-                    </li>
-                  {/each}
-                </ul>
-              {/if}
-            </Panel>
-
-            {#if economy.sales.cashReceived > 0}
-              <div class="grid grid-cols-1 gap-px overflow-hidden rounded-tile border border-border bg-border md:grid-cols-3">
-                <div class="bg-surface p-4 sm:p-5">
-                  <p class="text-[11px] font-medium text-fg-faint">Sale proceeds <span class="uppercase tracking-wide">(cash received)</span></p>
-                  <p class="tnum mt-1 text-xl font-semibold text-fg">{formatMoneyCompact(economy.sales.cashReceived)}</p>
-                </div>
-                <div class="bg-surface p-4 sm:p-5">
-                  <p class="text-[11px] font-medium text-fg-faint">Estimated item value sold</p>
-                  <p class="tnum mt-1 text-xl font-semibold text-fg-muted">{economy.sales.inventoryValueRemoved !== null ? formatMoneyCompact(economy.sales.inventoryValueRemoved) : "—"}</p>
-                </div>
-                <div class="bg-surface p-4 sm:p-5">
-                  <p class="text-[11px] font-medium text-fg-faint" title="Sale proceeds minus estimated catalog value of the sold items. Not called profit: acquisition cost is not reliably known.">Estimated value difference</p>
-                  <p class="tnum mt-1 text-xl font-semibold {economy.sales.economicResult === null ? 'text-fg-faint' : economy.sales.economicResult >= 0 ? 'text-positive' : 'text-negative'}">
-                    {economy.sales.economicResult !== null ? formatSignedMoneyCompact(economy.sales.economicResult) : "—"}
-                  </p>
-                  <p class="mt-1 text-[10.5px] leading-relaxed text-fg-faint">
-                    {economy.sales.provenance === "estimated" ? "estimated from current catalog prices" : "item valuation unavailable for this range"}
-                  </p>
-                </div>
-              </div>
-            {/if}
-          </div>
-
-          <!-- ─────────────── Lens 3 · Economic effect ─────────────── -->
-          <div id="lens-panel-effect" role="tabpanel" aria-labelledby="lens-tab-effect" class="space-y-5 {activeLens === 'effect' ? '' : 'max-lg:hidden'}">
-            <div class="flex flex-wrap items-baseline justify-between gap-2">
-              <h2 class="section-label text-[12px]"><span class="mr-2 text-accent">3</span> Economic effect — value genuinely gained or lost</h2>
-              <span class="chip chip-quiet !border-border !text-[10px]" title="The closest figure to profit and loss — but never labeled profit, because acquisition costs are unknown">economic effect, not profit</span>
-            </div>
-            <div class="grid grid-cols-2 gap-px overflow-hidden rounded-card border border-border bg-border shadow-panel md:grid-cols-4">
-              <Stat label="Income (earned)" value={formatKpiValue(economy.economicEffect.income)} provenance={economy.economicEffect.income.provenance} tone="positive" confidence={economy.economicEffect.confidence} title="Earned money plus derived bank interest — conversions excluded" />
-              <Stat label="Expenses (true)" value={formatKpiValue(economy.economicEffect.expenses)} provenance="exact" tone="negative" confidence={economy.economicEffect.confidence} title="Value consumed or paid away — asset purchases excluded" />
-              <Stat
-                label="Net economic effect"
-                value={formatKpiValue(economy.economicEffect.net, formatSignedMoneyCompact)}
-                provenance={economy.economicEffect.net.provenance}
-                confidence={economy.economicEffect.confidence}
-                tone={economy.economicEffect.net.value === null ? "neutral" : economy.economicEffect.net.value >= 0 ? "positive" : "negative"}
-              />
-              <Stat
-                label="Bank interest (derived)"
-                value={economy.economicEffect.interestIncome !== 0 || economy.economicEffect.interestComplete ? formatMoneyCompact(economy.economicEffect.interestIncome) : "—"}
-                provenance="derived"
-                confidence={economy.economicEffect.confidence}
-                sub={economy.economicEffect.interestComplete ? "split from principal returns" : "some withdrawals could not be split — figure may understate"}
-              />
-            </div>
-            {#if !economy.economicEffect.interestComplete}
-              <p class="rounded-tile border border-warning/30 bg-warning/5 px-5 py-3 text-xs leading-relaxed text-warning">
-                Some bank withdrawals in this range have their principal outside the recorded history, so their interest cannot be split out. Bank
-                interest is understated rather than guessed.
-              </p>
-            {/if}
-
-            <section class="grid gap-6 lg:grid-cols-2">
-              <Panel title="Income sources" caption="Earned value — payouts, wages, yields. Asset sales never appear here.">
-                {#if economy.economicEffect.incomeCategories.length === 0}
-                  <StateMessage state="empty" compact title="No earned income in this range" />
-                {:else}
-                  <ul class="space-y-2.5 text-[13px]">
-                    {#each economy.economicEffect.incomeCategories as row (row.key + row.label)}
-                      <li class="flex items-baseline justify-between gap-3">
-                        <span class="text-fg">{row.label}</span>
-                        <span class="tnum font-medium text-positive">{formatMoneyCompact(row.total)}</span>
-                      </li>
-                    {/each}
-                  </ul>
-                {/if}
-              </Panel>
-              <Panel title="True expenses" caption="Value that left for good — rehab, fees, upkeep, gym, rent.">
-                {#if economy.economicEffect.expenseCategories.length === 0}
-                  <StateMessage state="empty" compact title="No true expenses in this range" />
-                {:else}
-                  <ul class="space-y-2.5 text-[13px]">
-                    {#each economy.economicEffect.expenseCategories as row (row.key + row.label)}
-                      <li class="flex items-baseline justify-between gap-3">
-                        <span class="text-fg">{row.label}</span>
-                        <span class="tnum font-medium text-negative">{formatMoneyCompact(row.total)}</span>
-                      </li>
-                    {/each}
-                  </ul>
-                {/if}
-              </Panel>
-            </section>
-
-            <!-- Estimated economic context — provenance-labeled, never merged -->
-            <Panel title="Estimated economic context" caption="Catalog-based estimates — shown for context, never merged into the figures above">
-              <div class="grid grid-cols-2 gap-px overflow-hidden rounded-tile border border-border bg-border md:grid-cols-4">
-                <div class="bg-surface p-4">
-                  <div class="flex items-center justify-between gap-2"><p class="text-[11px] font-medium text-fg-faint">Consumed value</p><ProvenanceBadge level="estimated" /></div>
-                  <p class="tnum mt-1 text-lg font-semibold text-negative">{formatKpiValue(economy.consumption.totalValue)}</p>
-                </div>
-                <div class="bg-surface p-4">
-                  <div class="flex items-center justify-between gap-2"><p class="text-[11px] font-medium text-fg-faint">Drugs consumed</p><ProvenanceBadge level="estimated" /></div>
-                  <p class="tnum mt-1 text-lg font-semibold text-negative">{economy.consumption.drugValue !== null ? formatMoneyCompact(economy.consumption.drugValue) : "—"}</p>
-                </div>
-                <div class="bg-surface p-4">
-                  <div class="flex items-center justify-between gap-2"><p class="text-[11px] font-medium text-fg-faint">Travel profit</p><ProvenanceBadge level="estimated" /></div>
-                  <p class="tnum mt-1 text-lg font-semibold {economy.travel.estimatedProfit.value === null ? 'text-fg-faint' : economy.travel.estimatedProfit.value >= 0 ? 'text-positive' : 'text-negative'}">{formatKpiValue(economy.travel.estimatedProfit)}</p>
-                </div>
-                <div class="bg-surface p-4">
-                  <div class="flex items-center justify-between gap-2"><p class="text-[11px] font-medium text-fg-faint">Non-cash wealth gained</p><ProvenanceBadge level={economy.nonCashGains.provenance === "estimated" ? "estimated" : "exact"} /></div>
-                  <p class="tnum mt-1 text-lg font-semibold text-fg-muted">{economy.nonCashGains.value !== null ? formatMoneyCompact(economy.nonCashGains.value) : "—"}</p>
-                </div>
-              </div>
-              {#if economy.consumption.byCategory.length > 0}
-                <ul class="mt-5 space-y-4">
-                  {#each economy.consumption.byCategory as row (row.category)}
-                    <li>
-                      <div class="flex items-baseline justify-between gap-3 text-[13px]">
-                        <span class="text-fg">
-                          {CONSUMPTION_LABELS[row.category] ?? row.category}
-                          <span class="ml-1.5 text-[11px] text-fg-faint">{row.uses} use{row.uses === 1 ? "" : "s"}</span>
-                        </span>
-                        <span class="tnum font-medium text-negative">
-                          {row.totalValue !== null ? `-${formatMoneyCompact(row.totalValue).replace("-", "")}` : "Incomplete"}
-                        </span>
-                      </div>
-                      <div class="mt-1.5 h-1.5 overflow-hidden rounded-full bg-surface-2">
-                        <div class="h-full rounded-full bg-negative/70" style="width: {row.totalValue !== null ? Math.round((row.totalValue / topConsumedValue) * 100) : 0}%"></div>
-                      </div>
-                    </li>
-                  {/each}
-                </ul>
-                {#if economy.consumption.valueUnknownCount > 0}
-                  <p class="mt-4 text-[11px] text-fg-faint">
-                    {economy.consumption.valueUnknownCount} use{economy.consumption.valueUnknownCount === 1 ? "" : "s"} without a known price {economy.consumption.valueUnknownCount === 1 ? "is" : "are"} counted as use{economy.consumption.valueUnknownCount === 1 ? "" : "s"} but add{economy.consumption.valueUnknownCount === 1 ? "s" : ""} nothing to Consumed Value — never an invented price.
-                  </p>
-                {/if}
-              {/if}
-            </Panel>
-          </div>
-
-          <!-- ─────────────── Lens 4 · Net worth ─────────────── -->
-          <div id="lens-panel-networth" role="tabpanel" aria-labelledby="lens-tab-networth" class="space-y-5 {activeLens === 'networth' ? '' : 'max-lg:hidden'}">
-            <div class="flex flex-wrap items-baseline justify-between gap-2">
-              <h2 class="section-label text-[12px]"><span class="mr-2 text-accent">4</span> Net worth — official snapshot movement, not profit</h2>
-              {#if economy.networth.trackingSince !== null}
-                <span class="text-[11px] text-fg-faint">Tracking since {formatDate(economy.networth.trackingSince)}</span>
-              {/if}
-            </div>
-            {#if nwBlocked && nwAv}
-              <StateMessage
-                state={availabilityMessage(nwAv).state}
-                title={availabilityMessage(nwAv).title}
-                hint={nwAv.state === "unavailable_permission" ? "Your current API key does not include User Networth — grant it in Torn to track wealth history." : availabilityMessage(nwAv).hint}
-                action={{ label: "Review API access in Settings", run: () => void goto("/settings?tab=api") }}
-              />
-            {:else}
-              <div class="grid grid-cols-2 gap-px overflow-hidden rounded-card border border-border bg-border shadow-panel md:grid-cols-4">
-                <Stat label="Opening net worth" value={economy.networth.baseline !== null ? formatMoneyCompact(economy.networth.baseline) : "—"} provenance="exact" confidence={economy.confidence?.networth} sub={economy.networth.baselineAt !== null ? `snapshot ${formatDate(economy.networth.baselineAt)}` : null} />
-                <Stat label="Closing net worth" value={formatKpiValue(economy.networth.current)} provenance="exact" tone="accent" confidence={economy.confidence?.networth} sub={economy.networth.currentAt !== null ? `snapshot ${formatDate(economy.networth.currentAt)}` : null} />
-                <Stat
-                  label="Net worth change{economy.networth.coverage === 'partial' ? ' (partial)' : ''}"
-                  value={economy.networth.coverage === "none" ? "Insufficient history" : formatSignedMoneyCompact(economy.networth.change.value)}
-                  provenance="exact"
-                  confidence={economy.confidence?.networth}
-                  tone={economy.networth.change.value === null || economy.networth.coverage === "none" ? "neutral" : economy.networth.change.value >= 0 ? "positive" : "negative"}
-                  sub={economy.networth.changePct !== null ? `${economy.networth.changePct >= 0 ? "+" : ""}${economy.networth.changePct.toFixed(2)}%` : null}
-                />
-                <Stat
-                  label="vs economic effect"
-                  value={economy.economicEffect.net.value !== null ? formatSignedMoneyCompact(economy.economicEffect.net.value) : "—"}
-                  provenance={economy.economicEffect.net.provenance}
-                  confidence={economy.economicEffect.confidence}
-                  title="Side by side on purpose: the two figures measure different things and are never summed"
-                />
-              </div>
-              <details class="group rounded-tile border border-border bg-surface px-5 py-3">
-                <summary class="flex cursor-pointer items-center justify-between gap-3 text-xs font-medium text-fg-muted transition-colors hover:text-fg [&::-webkit-details-marker]:hidden">
-                  Why net worth change is not profit
-                  <span class="transition-transform group-open:rotate-180">▾</span>
-                </summary>
-                <p class="mt-2.5 border-t border-border pt-2.5 text-xs leading-relaxed text-fg-muted">
-                  Net worth change is the snapshot delta from official Torn net worth — it includes item/stock/property price moves as well as
-                  spending and income, so it is a wealth movement, never "profit". Estimated economic effects are shown separately and never
-                  merged into it.
-                </p>
-              </details>
-
-              <Panel title="Likely contributors — recorded movements, not proven causes" caption="Official Torn category deltas first; estimated effects and the unexplained residual are labeled as such">
-                {#if recordedContributors.length === 0 && residualContributors.length === 0}
-                  <StateMessage state="empty" compact title="No net worth movement recorded in this range" />
-                {:else}
-                  <ul class="space-y-2.5 text-[13px]">
-                    {#each recordedContributors as c (c.key)}
-                      <li class="flex items-baseline justify-between gap-3">
-                        <span class="text-fg">
-                          {c.label}
-                          <span class="ml-1.5 chip chip-quiet !border-border !px-1.5 !text-[9px] !uppercase" title="Official Torn net worth snapshot delta">recorded</span>
-                        </span>
-                        <span class="tnum font-medium {(c.value ?? 0) >= 0 ? 'text-positive' : 'text-negative'}">{c.value !== null ? formatSignedMoneyCompact(c.value) : "—"}</span>
-                      </li>
-                    {/each}
-                    {#each estimatedContributors as c (c.key)}
-                      <li class="flex items-baseline justify-between gap-3">
-                        <span class="text-fg-muted">
-                          {c.label}
-                          <span class="ml-1.5 text-[10px] font-medium uppercase tracking-[0.12em] text-warning" title="Estimated value — catalog-based, not an official figure">estimated</span>
-                        </span>
-                        <span class="tnum font-medium text-fg-muted">{c.value !== null ? formatSignedMoneyCompact(c.value) : "—"}</span>
-                      </li>
-                    {/each}
-                    {#each residualContributors as c (c.key)}
-                      <li class="flex items-baseline justify-between gap-3 border-t border-border pt-2.5">
-                        <span class="text-fg-muted" title={c.source}>{c.label}</span>
-                        <span class="tnum font-medium text-fg">{c.value !== null ? formatSignedMoneyCompact(c.value) : "—"}</span>
-                      </li>
-                    {/each}
-                  </ul>
-                  {#if economy.networth.byCategory.length > 0}
-                    <div class="mt-5 overflow-x-auto">
-                      <table class="tsv-table">
-                        <thead>
-                          <tr>
-                            <th>Category</th>
-                            <th class="text-right">Baseline</th>
-                            <th class="text-right">Current</th>
-                            <th class="text-right">{period} change</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {#each economy.networth.byCategory as cat (cat.key)}
-                            <tr>
-                              <td class="text-fg">{cat.label}</td>
-                              <td class="tnum text-right text-fg-muted">{formatMoneyCompact(cat.baseline)}</td>
-                              <td class="tnum text-right text-fg-muted">{formatMoneyCompact(cat.current)}</td>
-                              <td class="tnum text-right font-medium {cat.change >= 0 ? 'text-positive' : 'text-negative'}">{formatSignedMoneyCompact(cat.change)}</td>
-                            </tr>
-                          {/each}
-                        </tbody>
-                      </table>
-                    </div>
-                  {/if}
-                  {#if economy.networth.coverage === "partial"}
-                    <p class="mt-4 text-[11px] text-fg-faint">Tracked period: TornScope started snapshotting after this period began, so the change covers the tracked span only.</p>
-                  {/if}
-                {/if}
-              </Panel>
-            {/if}
-          </div>
-        {/if}
       </div>
 
       <!-- ══════════════════ rail: reconciliation + major movements ═════════ -->
@@ -970,8 +990,9 @@
             <span class="transition-transform group-open:rotate-180">▾</span>
           </summary>
           <p class="mt-2.5 border-t border-border pt-2.5 text-xs leading-relaxed text-fg-muted">
-            Cash movement counts money through the wallet. Conversions move value between forms. Economic effect counts value gained or lost.
-            Net worth is the official snapshot delta. The lenses are related, not additive — cash net + economic net + conversion net does not
+            Net worth is the official snapshot delta of everything you own. Economic effect counts value genuinely gained or
+            lost. Conversions move value between forms. Cash movement counts money through the wallet — throughput, not
+            performance. The lenses are related, not additive — cash net + economic net + conversion net does not
             equal net worth change, because net worth also includes market repricing and unobserved activity.
           </p>
         </details>
