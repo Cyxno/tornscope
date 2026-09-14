@@ -79,6 +79,14 @@ label.
 
 ## Layout rules
 
+- **Summary first, explanation second, technical detail last** (V0.2
+  information-hierarchy rule): every analytics page opens with the result a
+  player came for (net worth on Economy, battlestat growth on Progression,
+  live bars + cash on Overview), keeps explanations and context in the
+  middle, and puts accounting detail (reconciliations, ledgers, turnovers)
+  behind disclosures or at the bottom. A figure that is *throughput* rather
+  than *performance* (e.g. wallet turnover in Torn) must never be the first
+  thing a page says.
 - Content column: `.page-shell` — max-width 80rem (1280px), padding
   16/24px inline, rhythm 2rem mobile → 2.75rem desktop between sections.
 - Page mastheads vary by page on purpose: `PageHeader` (eyebrow · serif

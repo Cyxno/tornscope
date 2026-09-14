@@ -154,6 +154,22 @@
     const minutes = Math.round((e.cappedSeconds % 3600) / 60);
     return `Observed at the energy cap for at least ${hours > 0 ? `${hours}h ` : ""}${minutes}m — regeneration while full is potential, not banked`;
   });
+
+  /** Xanax accounting: uses are exact from the drug log; the per-use amount
+   *  is the documented +250 (estimated). The split between what the bars
+   *  actually absorbed and what was lost at the energy cap is surfaced so a
+   *  day with 2 uses never silently reads as "0 Xanax". */
+  const xanaxLine = $derived.by(() => {
+    const e = progression?.energy;
+    if (!e?.xanax) return null;
+    const lost = e.absorbedOvershootByCategory.find((c) => c.category === "Xanax (est.)")?.amount ?? 0;
+    return {
+      uses: e.xanax.uses,
+      delivered: e.xanax.estimatedDelivered,
+      observed: Math.max(0, e.xanax.estimatedDelivered - lost),
+      lost,
+    };
+  });
 </script>
 
 <svelte:head><title>Progression · TornScope</title></svelte:head>
@@ -208,94 +224,10 @@
       </p>
     </section>
 
-    <!-- ═══ A · Energy flow ═══ -->
-    <section class="space-y-5">
-      <h2 class="section-label text-[12px]"><span class="mr-2 text-accent">A</span> Energy flow — where it came from, where it went</h2>
-      {#if energyBlocked && energyAv}
-        <StateMessage
-          state={availabilityMessage(energyAv).state}
-          title={availabilityMessage(energyAv).title}
-          hint={availabilityMessage(energyAv).hint}
-          action={{ label: "Review API access in Settings", run: () => void goto("/settings?tab=api") }}
-        />
-      {:else if !progression.energy.covered}
-        <StateMessage
-          state="empty"
-          title="No bar history in this range"
-          hint="TornScope snapshots energy and happy every five minutes from the bars resource. Before that snapshot history begins, energy cannot be reconstructed honestly — it stays unavailable rather than estimated."
-        />
-      {:else}
-        <div class="grid gap-5 lg:grid-cols-[1fr_auto_1fr] lg:items-stretch">
-          <Panel title="Energy in" caption="Gains recorded by Torn logs plus regeneration derived from bar deltas">
-            <ul class="space-y-2.5 text-[13px]">
-              {#each progression.energy.sources as source (source.category)}
-                <li class="flex items-baseline justify-between gap-3">
-                  <span class="flex items-center gap-2 text-fg">
-                    {source.category}
-                    <ProvenanceBadge level={source.provenance} />
-                  </span>
-                  <span class="tnum font-medium text-positive">+{formatNumberCompact(source.amount)}</span>
-                </li>
-              {/each}
-              {#if progression.energy.sources.length === 0}
-                <li class="text-fg-faint">No energy gains recorded in this range.</li>
-              {/if}
-            </ul>
-            {#if progression.energy.potentialRegen !== null}
-              <p class="mt-4 text-[11px] leading-relaxed text-fg-faint">
-                Potential natural regeneration while full: ~{formatNumberCompact(progression.energy.potentialRegen)} (estimated from your observed regen rate of {progression.energy.regenPerHour !== null ? progression.energy.regenPerHour.toFixed(1) : "—"} per hour — never counted as banked energy).
-              </p>
-            {/if}
-          </Panel>
-
-          <div class="hidden items-center justify-center lg:flex" aria-hidden="true">
-            <span class="text-2xl text-border-strong">→</span>
-          </div>
-
-          <Panel title="Energy out" caption="Observed declines attributed by evidence — unattributed stays unattributed">
-            <ul class="space-y-2.5 text-[13px]">
-              {#each progression.energy.uses as use (use.category)}
-                <li class="flex items-baseline justify-between gap-3">
-                  <span class="flex items-center gap-2 text-fg">
-                    {use.category}
-                    <ProvenanceBadge level={use.provenance} />
-                  </span>
-                  <span class="tnum font-medium text-negative">-{formatNumberCompact(use.amount)}</span>
-                </li>
-              {/each}
-              {#if progression.energy.uses.length === 0}
-                <li class="text-fg-faint">No energy declines observed in this range.</li>
-              {/if}
-            </ul>
-            <p class="mt-4 text-[11px] leading-relaxed text-fg-faint">
-              Attacks carry no energy cost in Torn's data, so their spend stays unattributed — drops during attacks are never called training.
-            </p>
-          </Panel>
-        </div>
-
-        <Panel title="Energy reconciliation" caption="Opening plus known gains plus derived regeneration, against what the bars actually show">
-          <div class="grid grid-cols-2 gap-px overflow-hidden rounded-tile border border-border bg-border md:grid-cols-5">
-            <div class="bg-surface p-4"><p class="text-[11px] font-medium text-fg-faint">Opening energy</p><p class="tnum mt-1 text-lg font-semibold text-fg">{progression.energy.reconciliation.opening !== null ? progression.energy.reconciliation.opening : "—"}</p></div>
-            <div class="bg-surface p-4"><p class="text-[11px] font-medium text-fg-faint">Known gains</p><p class="tnum mt-1 text-lg font-semibold text-positive">{progression.energy.sources.filter((s) => s.category !== "Natural regen (derived)").reduce((sum, s) => sum + s.amount, 0) !== 0 ? `+${formatNumberCompact(progression.energy.sources.filter((s) => s.category !== "Natural regen (derived)").reduce((sum, s) => sum + s.amount, 0))}` : "0"}</p></div>
-            <div class="bg-surface p-4"><p class="text-[11px] font-medium text-fg-faint">Derived regen</p><p class="tnum mt-1 text-lg font-semibold text-positive">{progression.energy.derivedRegen !== null ? `+${formatNumberCompact(progression.energy.derivedRegen)}` : "—"}</p></div>
-            <div class="bg-surface p-4"><p class="text-[11px] font-medium text-fg-faint">Observed declines</p><p class="tnum mt-1 text-lg font-semibold text-negative">{progression.energy.uses.reduce((sum, u) => sum + u.amount, 0) !== 0 ? `-${formatNumberCompact(progression.energy.uses.reduce((sum, u) => sum + u.amount, 0))}` : "0"}</p></div>
-            <div class="bg-surface p-4"><p class="text-[11px] font-medium text-fg-faint">Closing energy</p><p class="tnum mt-1 text-lg font-semibold text-fg">{progression.energy.reconciliation.closing !== null ? progression.energy.reconciliation.closing : "—"}</p></div>
-          </div>
-          <div class="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-fg-faint">
-            <span class="{energyQualityChip.cls} chip !px-1.5 !text-[9px] !uppercase">{energyQualityChip.label}</span>
-            {#if capTimeSentence}<span>{capTimeSentence}.</span>{/if}
-            {#if progression.energy.absorbedOvershoot !== null}
-              <span title="Known gains (mostly the Xanax estimate) that never materialized as observed energy — usually a cap interaction">{formatNumberCompact(progression.energy.absorbedOvershoot)} of known gains never showed up in the bars (cap interaction) — surfaced, not silently dropped.</span>
-            {/if}
-          </div>
-        </Panel>
-      {/if}
-    </section>
-
-    <!-- ═══ B · Battlestat progression ═══ -->
+    <!-- ═══ A · Battlestat progression ═══ -->
     <section class="space-y-5">
       <div class="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 class="section-label text-[12px]"><span class="mr-2 text-accent">B</span> Battlestat progression — hourly observations from Torn personal stats</h2>
+        <h2 class="section-label text-[12px]"><span class="mr-2 text-accent">A</span> Battlestat progression — hourly observations from Torn personal stats</h2>
         {#if progression.battlestats.trackedSince !== null}
           <span class="text-[11px] text-fg-faint">Tracked since {formatDate(progression.battlestats.trackedSince)}</span>
         {/if}
@@ -418,9 +350,10 @@
       {/if}
     </section>
 
-    <!-- ═══ C · Training ═══ -->
+
+    <!-- ═══ B · Training ═══ -->
     <section class="space-y-5">
-      <h2 class="section-label text-[12px]"><span class="mr-2 text-accent">C</span> Training — sessions inferred from energy declines and stat gains</h2>
+      <h2 class="section-label text-[12px]"><span class="mr-2 text-accent">B</span> Training — sessions inferred from energy declines and stat gains</h2>
       {#if progression.training.sessions.length === 0}
         <StateMessage state="empty" title="No training sessions inferred in this range" hint="Sessions need bar history (energy declines) and hourly stat snapshots. Both accumulate automatically." />
       {:else}
@@ -497,9 +430,10 @@
       {/if}
     </section>
 
-    <!-- ═══ D · Happy jumps ═══ -->
+
+    <!-- ═══ C · Happy jumps ═══ -->
     <section class="space-y-5">
-      <h2 class="section-label text-[12px]"><span class="mr-2 text-accent">D</span> Happy jumps — inferred, evidence on request</h2>
+      <h2 class="section-label text-[12px]"><span class="mr-2 text-accent">C</span> Happy jumps — inferred, evidence on request</h2>
       {#if progression.happyJumps.jumps.length === 0}
         <StateMessage state="empty" title="No happy jumps inferred in this range" hint="A jump needs a large training burst plus preparation evidence (Xanax cluster, Ecstasy, refill) — Torn has no direct happy-jump record." />
       {:else}
@@ -549,5 +483,103 @@
         </div>
       {/if}
     </section>
+    <!-- ═══ D · Energy flow ═══ -->
+    <section class="space-y-5">
+      <h2 class="section-label text-[12px]"><span class="mr-2 text-accent">D</span> Energy flow — where it came from, where it went</h2>
+      {#if energyBlocked && energyAv}
+        <StateMessage
+          state={availabilityMessage(energyAv).state}
+          title={availabilityMessage(energyAv).title}
+          hint={availabilityMessage(energyAv).hint}
+          action={{ label: "Review API access in Settings", run: () => void goto("/settings?tab=api") }}
+        />
+      {:else if !progression.energy.covered}
+        <StateMessage
+          state="empty"
+          title="No bar history in this range"
+          hint="TornScope snapshots energy and happy every five minutes from the bars resource. Before that snapshot history begins, energy cannot be reconstructed honestly — it stays unavailable rather than estimated."
+        />
+      {:else}
+        <div class="grid gap-5 lg:grid-cols-[1fr_auto_1fr] lg:items-stretch">
+          <Panel title="Energy in" caption="Gains recorded by Torn logs plus regeneration derived from bar deltas">
+            <ul class="space-y-2.5 text-[13px]">
+              {#each progression.energy.sources as source (source.category)}
+                <li class="flex items-baseline justify-between gap-3">
+                  <span class="flex items-center gap-2 text-fg">
+                    {source.category}
+                    <ProvenanceBadge level={source.provenance} />
+                  </span>
+                  <span class="tnum font-medium text-positive">+{formatNumberCompact(source.amount)}</span>
+                </li>
+              {/each}
+              {#if progression.energy.sources.length === 0}
+                <li class="text-fg-faint">No energy gains recorded in this range.</li>
+              {/if}
+              {#if xanaxLine}
+                <li
+                  class="border-t border-border/60 pt-2.5 text-[11px] leading-relaxed text-fg-faint"
+                  title="Torn's Xanax gives +250 energy per use (documented game mechanic — the log itself carries no energy field). Torn's energy bar cannot exceed your maximum, so energy taken at or near a full bar is discarded by the game, not tracked as spend."
+                >
+                  {xanaxLine.uses} Xanax{xanaxLine.uses === 1 ? "" : "s"} taken · est. +{formatNumberCompact(xanaxLine.delivered)} delivered
+                  {#if xanaxLine.lost > 0}
+                    — ~{formatNumberCompact(xanaxLine.observed)} visible in your bars, ~{formatNumberCompact(xanaxLine.lost)} lost at your energy cap (taken at/near full)
+                  {:else}
+                    — all visible in your bars
+                  {/if}
+                  . Count is exact from your drug log; +250 per use is the documented mechanic, not a per-use reading.
+                </li>
+              {/if}
+            </ul>
+            {#if progression.energy.potentialRegen !== null}
+              <p class="mt-4 text-[11px] leading-relaxed text-fg-faint">
+                Potential natural regeneration while full: ~{formatNumberCompact(progression.energy.potentialRegen)} (estimated from your observed regen rate of {progression.energy.regenPerHour !== null ? progression.energy.regenPerHour.toFixed(1) : "—"} per hour — never counted as banked energy).
+              </p>
+            {/if}
+          </Panel>
+
+          <div class="hidden items-center justify-center lg:flex" aria-hidden="true">
+            <span class="text-2xl text-border-strong">→</span>
+          </div>
+
+          <Panel title="Energy out" caption="Observed declines attributed by evidence — unattributed stays unattributed">
+            <ul class="space-y-2.5 text-[13px]">
+              {#each progression.energy.uses as use (use.category)}
+                <li class="flex items-baseline justify-between gap-3">
+                  <span class="flex items-center gap-2 text-fg">
+                    {use.category}
+                    <ProvenanceBadge level={use.provenance} />
+                  </span>
+                  <span class="tnum font-medium text-negative">-{formatNumberCompact(use.amount)}</span>
+                </li>
+              {/each}
+              {#if progression.energy.uses.length === 0}
+                <li class="text-fg-faint">No energy declines observed in this range.</li>
+              {/if}
+            </ul>
+            <p class="mt-4 text-[11px] leading-relaxed text-fg-faint">
+              Attacks carry no energy cost in Torn's data, so their spend stays unattributed — drops during attacks are never called training.
+            </p>
+          </Panel>
+        </div>
+
+        <Panel title="Energy reconciliation" caption="Opening plus known gains plus derived regeneration, against what the bars actually show">
+          <div class="grid grid-cols-2 gap-px overflow-hidden rounded-tile border border-border bg-border md:grid-cols-5">
+            <div class="bg-surface p-4"><p class="text-[11px] font-medium text-fg-faint">Opening energy</p><p class="tnum mt-1 text-lg font-semibold text-fg">{progression.energy.reconciliation.opening !== null ? progression.energy.reconciliation.opening : "—"}</p></div>
+            <div class="bg-surface p-4"><p class="text-[11px] font-medium text-fg-faint">Known gains</p><p class="tnum mt-1 text-lg font-semibold text-positive">{progression.energy.sources.filter((s) => s.category !== "Natural regen (derived)").reduce((sum, s) => sum + s.amount, 0) !== 0 ? `+${formatNumberCompact(progression.energy.sources.filter((s) => s.category !== "Natural regen (derived)").reduce((sum, s) => sum + s.amount, 0))}` : "0"}</p></div>
+            <div class="bg-surface p-4"><p class="text-[11px] font-medium text-fg-faint">Derived regen</p><p class="tnum mt-1 text-lg font-semibold text-positive">{progression.energy.derivedRegen !== null ? `+${formatNumberCompact(progression.energy.derivedRegen)}` : "—"}</p></div>
+            <div class="bg-surface p-4"><p class="text-[11px] font-medium text-fg-faint">Observed declines</p><p class="tnum mt-1 text-lg font-semibold text-negative">{progression.energy.uses.reduce((sum, u) => sum + u.amount, 0) !== 0 ? `-${formatNumberCompact(progression.energy.uses.reduce((sum, u) => sum + u.amount, 0))}` : "0"}</p></div>
+            <div class="bg-surface p-4"><p class="text-[11px] font-medium text-fg-faint">Closing energy</p><p class="tnum mt-1 text-lg font-semibold text-fg">{progression.energy.reconciliation.closing !== null ? progression.energy.reconciliation.closing : "—"}</p></div>
+          </div>
+          <div class="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-fg-faint">
+            <span class="{energyQualityChip.cls} chip !px-1.5 !text-[9px] !uppercase">{energyQualityChip.label}</span>
+            {#if capTimeSentence}<span>{capTimeSentence}.</span>{/if}
+            {#if progression.energy.absorbedOvershoot !== null}
+              <span title="Known gains (mostly the Xanax estimate) that never became bar energy. Verified mechanic: Torn's energy bar hard-caps at your maximum and discards anything beyond it, so gains taken at/near full are lost.">{formatNumberCompact(progression.energy.absorbedOvershoot)} of known gains never showed up in the bars — lost at your energy cap (gains taken at/near full), surfaced, not silently dropped.</span>
+            {/if}
+          </div>
+        </Panel>
+      {/if}
+    </section>
+
   {/if}
 </div>
