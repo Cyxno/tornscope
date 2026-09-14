@@ -156,19 +156,21 @@
   });
 
   /** Xanax accounting: uses are exact from the drug log; the per-use amount
-   *  is the documented +250 (estimated). The split between what the bars
-   *  actually absorbed and what was lost at the energy cap is surfaced so a
-   *  day with 2 uses never silently reads as "0 Xanax". */
+   *  is the documented +250 (estimated). The three-way split (visible in
+   *  bars / lost at the energy cap / outside bar-history coverage) reconciles
+   *  the intake with the usually-much-smaller sources row, so a day with
+   *  2 uses never silently reads as "0 Xanax". */
   const xanaxLine = $derived.by(() => {
     const e = progression?.energy;
     if (!e?.xanax) return null;
     const lost = e.absorbedOvershootByCategory.find((c) => c.category === "Xanax (est.)")?.amount ?? 0;
-    return {
-      uses: e.xanax.uses,
-      delivered: e.xanax.estimatedDelivered,
-      observed: Math.max(0, e.xanax.estimatedDelivered - lost),
-      lost,
-    };
+    const observed = e.sources.find((s) => s.category === "Xanax (est.)")?.amount ?? 0;
+    const uncovered = Math.max(0, e.xanax.estimatedDelivered - observed - lost);
+    const parts: string[] = [];
+    if (observed > 0) parts.push(`+${formatNumberCompact(observed)} visible in your bars`);
+    if (lost > 0) parts.push(`~${formatNumberCompact(lost)} lost at your energy cap (taken at/near full)`);
+    if (uncovered > 0) parts.push(`~${formatNumberCompact(uncovered)} before bar history began`);
+    return { uses: e.xanax.uses, delivered: e.xanax.estimatedDelivered, parts };
   });
 </script>
 
@@ -518,15 +520,9 @@
               {#if xanaxLine}
                 <li
                   class="border-t border-border/60 pt-2.5 text-[11px] leading-relaxed text-fg-faint"
-                  title="Torn's Xanax gives +250 energy per use (documented game mechanic — the log itself carries no energy field). Torn's energy bar cannot exceed your maximum, so energy taken at or near a full bar is discarded by the game, not tracked as spend."
+                  title="Torn's Xanax gives +250 energy per use (documented game mechanic — the log itself carries no energy field). Torn's energy bar cannot exceed your maximum, so energy taken at or near a full bar is discarded by the game, not tracked as spend. Uses before bar-history began cannot be placed on the bar at all."
                 >
-                  {xanaxLine.uses} Xanax{xanaxLine.uses === 1 ? "" : "s"} taken · est. +{formatNumberCompact(xanaxLine.delivered)} delivered
-                  {#if xanaxLine.lost > 0}
-                    — ~{formatNumberCompact(xanaxLine.observed)} visible in your bars, ~{formatNumberCompact(xanaxLine.lost)} lost at your energy cap (taken at/near full)
-                  {:else}
-                    — all visible in your bars
-                  {/if}
-                  . Count is exact from your drug log; +250 per use is the documented mechanic, not a per-use reading.
+                  {xanaxLine.uses} Xanax taken · est. +{formatNumberCompact(xanaxLine.delivered)} delivered{#if xanaxLine.parts.length}{" — " + xanaxLine.parts.join(", ")}{/if}. Count is exact from your drug log; +250 per use is the documented mechanic, not a per-use reading.
                 </li>
               {/if}
             </ul>
