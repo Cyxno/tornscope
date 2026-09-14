@@ -165,10 +165,14 @@
     const e = progression?.energy;
     if (!e?.xanax) return null;
     const { uses, estimatedDelivered: delivered, attributedToTraining } = e.xanax;
-    const unresolved = Math.max(0, delivered - attributedToTraining);
+    const walkUnresolved = e.unresolvedGainsByCategory.find((c) => c.category === "Xanax (est.)")?.amount ?? 0;
+    // Everything neither attributed to a session, nor walk-unresolved, nor
+    // inside bar coverage predates bar history — delivered, but unplaceable.
+    const beforeBars = Math.max(0, delivered - attributedToTraining - walkUnresolved);
     const parts: string[] = [];
     if (attributedToTraining > 0) parts.push(`~${formatNumberCompact(attributedToTraining)} E attributed to training`);
-    if (unresolved > 0) parts.push(`~${formatNumberCompact(unresolved)} E unresolved between snapshots`);
+    if (walkUnresolved > 0) parts.push(`~${formatNumberCompact(walkUnresolved)} E unresolved between snapshots`);
+    if (beforeBars > 0) parts.push(`~${formatNumberCompact(beforeBars)} E outside bar history (unresolved)`);
     return { uses, delivered, parts };
   });
 </script>
