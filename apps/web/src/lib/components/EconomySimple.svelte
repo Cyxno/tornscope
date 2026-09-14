@@ -24,7 +24,11 @@
 
   const nw = $derived(economy.networth);
   const effect = $derived(economy.economicEffect);
-  const changed = $derived.by(() => [...nw.byCategory].sort((a, b) => Math.abs(b.change) - Math.abs(a.change)).slice(0, 5));
+  // Zero-change rows (e.g. an untouched Bank) carry no information — the
+  // full table stays available in Advanced.
+  const changed = $derived.by(() =>
+    [...nw.byCategory].filter((c) => c.change !== 0).sort((a, b) => Math.abs(b.change) - Math.abs(a.change)).slice(0, 5)
+  );
   // The net-worth-vs-economic-effect gap: net worth includes asset (price)
   // moves and conversions; economic effect does not. Never force a balance.
   const unexplained = $derived(economy.explanation.netWorthUnexplained);
@@ -95,16 +99,20 @@
     <div class="section-rule pt-7">
       <p class="section-label">What changed</p>
       <p class="mt-1 text-[11px] text-fg-faint">Official category movements — largest first. Non-cash moves include price changes.</p>
-      <ul class="mt-4 space-y-2.5">
-        {#each changed as c (c.key)}
-          <li class="flex items-baseline justify-between gap-4 border-b border-border/60 py-2 last:border-0">
-            <span class="text-[13.5px] text-fg-muted">
-              {c.label}{#if c.key !== "cash"}<span class="ml-1.5 text-[10px] uppercase tracking-wide text-fg-faint">incl. price moves</span>{/if}
-            </span>
-            <span class="tnum text-[13.5px] font-medium {c.change >= 0 ? "text-positive" : "text-negative"}">{formatSignedMoneyCompact(c.change)}</span>
-          </li>
-        {/each}
-      </ul>
+      {#if changed.length > 0}
+        <ul class="mt-4 space-y-2.5">
+          {#each changed as c (c.key)}
+            <li class="flex items-baseline justify-between gap-4 border-b border-border/60 py-2 last:border-0">
+              <span class="text-[13.5px] text-fg-muted">
+                {c.label}{#if c.key !== "cash"}<span class="ml-1.5 text-[10px] uppercase tracking-wide text-fg-faint">incl. price moves</span>{/if}
+              </span>
+              <span class="tnum text-[13.5px] font-medium {c.change >= 0 ? "text-positive" : "text-negative"}">{formatSignedMoneyCompact(c.change)}</span>
+            </li>
+          {/each}
+        </ul>
+      {:else}
+        <p class="mt-4 text-[13px] text-fg-faint">Nothing moved this period — every category is flat.</p>
+      {/if}
     </div>
   {/if}
 

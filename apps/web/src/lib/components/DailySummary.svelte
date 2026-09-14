@@ -333,7 +333,7 @@
             <p class="mt-4 text-[11px] uppercase tracking-[0.12em] text-fg-faint">Activity behind the moves</p>
             <p class="mt-1.5 text-[12.5px] leading-relaxed text-fg-muted">
               {#each summary.netWorth.activity ?? [] as a, i (a.kind + a.label)}
-                {#if i > 0} · {/if}{a.label} <span class="tnum {a.magnitude !== null && a.magnitude >= 0 ? 'text-positive' : 'text-negative'}">{a.magnitude === null ? "—" : formatSignedMoneyCompact(a.magnitude)}</span>{#if a.certainty === "estimated"}<span class="text-[10px] uppercase text-fg-faint"> est.</span>{/if}
+                {#if i > 0}{" · "}{/if}{a.label}{" "}<span class="tnum {a.magnitude !== null && a.magnitude >= 0 ? 'text-positive' : 'text-negative'}">{a.magnitude === null ? "—" : formatSignedMoneyCompact(a.magnitude)}</span>{#if a.certainty === "estimated"}<span class="text-[10px] uppercase text-fg-faint"> est.</span>{/if}
               {/each}
               <span class="text-fg-faint"> — already included in the category rows above.</span>
             </p>

@@ -178,6 +178,9 @@
     critical: "bg-negative",
   };
 
+  // NOTE: while the served payload is stale, this label is suppressed: the
+  // clock it reads is anchored to the payload's own fetch time, so a stale
+  // copy would forever claim "Updated just now" next to the stale chip.
   const updatedAgo = $derived.by(() => {
     if (!data) return "";
     const diff = Math.max(0, Math.floor((serverNowMs - data.fetchedAt) / 1000));
@@ -217,7 +220,7 @@
       {#if statusLine}<span>{statusLine}</span>{/if}
     </p>
     <div class="flex items-center gap-3">
-      {#if data}
+      {#if data && !data.stale}
         <span class="hidden text-xs text-fg-faint sm:inline">Updated {updatedAgo}</span>
       {/if}
       {#if data?.stale}

@@ -76,13 +76,13 @@
     });
   });
 
-  function barChip(kind: "energy" | "nerve"): Chip | null {
-    const bar = kind === "energy" ? today?.bars.energy : today?.bars.nerve;
+  function barChip(kind: "energy" | "nerve" | "happy"): Chip | null {
+    const bar = kind === "energy" ? today?.bars.energy : kind === "nerve" ? today?.bars.nerve : today?.bars.happy;
     const d = barFullDisplay(bar, serverNowMs);
     if (!bar || !d) return null;
     return {
       key: kind,
-      label: kind === "energy" ? "Energy" : "Nerve",
+      label: kind === "energy" ? "Energy" : kind === "nerve" ? "Nerve" : "Happy",
       // Use the shared text as-is: covers "Full in …" AND the paused/
       // indeterminate "—" without inventing a timer here.
       value: d.full ? `${bar.current} / ${bar.max}` : `${bar.current} / ${bar.max} · ${d.text}`,
@@ -94,6 +94,7 @@
 
   const energyChip = $derived(barChip("energy"));
   const nerveChip = $derived(barChip("nerve"));
+  const happyChip = $derived(barChip("happy"));
 
   const attentionChips = $derived.by((): Chip[] => {
     const t = today;
@@ -183,6 +184,16 @@
             <span class="block h-full rounded-full {nerveChip.tone === 'positive' ? 'bg-positive' : 'bg-gradient-to-r from-accent-strong to-accent'}" style={`width:${nerveChip.pct ?? 0}%`}></span>
           </span>
           <span class="tnum text-fg">{nerveChip.value}</span>
+        </span>
+      {/if}
+      {#if happyChip}
+        <span class="inline-flex items-center gap-2">
+          <span class="h-1.5 w-1.5 rounded-full {toneTick[happyChip.tone]}" aria-hidden="true"></span>
+          <a href="https://www.torn.com/item.php" target="_blank" rel="noopener noreferrer" class="font-medium text-fg transition-colors hover:text-accent" title="Open items in Torn">Happy</a>
+          <span class="h-1.5 w-14 overflow-hidden rounded-full bg-border sm:w-20" aria-hidden="true">
+            <span class="block h-full rounded-full {happyChip.tone === 'positive' ? 'bg-positive' : 'bg-gradient-to-r from-accent-strong to-accent'}" style={`width:${happyChip.pct ?? 0}%`}></span>
+          </span>
+          <span class="tnum text-fg">{happyChip.value}</span>
         </span>
       {/if}
       {#each cooldownChips as chip (chip.key)}

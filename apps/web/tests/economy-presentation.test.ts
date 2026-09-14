@@ -143,6 +143,22 @@ describe("economy narrative order (V0.2 semantic pass)", () => {
   });
 });
 
+describe('release-candidate QA regressions', () => {
+  it('what-changed omits zero-change rows instead of printing $0 noise', () => {
+    expect(simple).toContain('.filter((c) => c.change !== 0)');
+    expect(simple).toContain('Nothing moved this period');
+  });
+
+  it('the Overview strip carries a Happy bar — energy/nerve/happy at a glance', () => {
+    expect(liveNow).toContain('barChip("happy")');
+    expect(liveNow).toContain('today?.bars.happy');
+  });
+
+  it('the Today updated label is suppressed while the payload is stale (no contradictory "updated just now")', () => {
+    expect(read('../../web/src/routes/today/+page.svelte')).toContain('{#if data && !data.stale}');
+  });
+});
+
 describe("bank color semantics", () => {
   it("a healthy bank countdown is neutral; only a matured investment warns", () => {
     // Real-user finding: "Bank" rendered warning-yellow for a normal active
