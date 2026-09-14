@@ -47,6 +47,9 @@
     tone: "neutral" | "negative" | "accent" | "warning" | "positive";
     live: boolean;
     href?: string;
+    /** Proportional fill 0-100 for bar chips (Energy/Nerve) — the at-a-glance
+     *  visual the strip regressed to text-only without (V0.2 pass). */
+    pct?: number;
   }
 
   const cooldownChips = $derived.by((): Chip[] => {
@@ -85,6 +88,7 @@
       value: d.full ? `${bar.current} / ${bar.max}` : `${bar.current} / ${bar.max} · ${d.text}`,
       tone: d.full ? ("positive" as const) : ("accent" as const),
       live: !d.full,
+      pct: Math.min(100, Math.max(2, bar.percent)),
     };
   }
 
@@ -165,6 +169,9 @@
         <span class="inline-flex items-center gap-2">
           <span class="h-1.5 w-1.5 rounded-full {toneTick[energyChip.tone]}" aria-hidden="true"></span>
           <a href="https://www.torn.com/gym.php" target="_blank" rel="noopener noreferrer" class="font-medium text-fg transition-colors hover:text-accent" title="Open the gym in Torn">Energy</a>
+          <span class="h-1 w-14 overflow-hidden rounded-full bg-surface-2 sm:w-20" aria-hidden="true">
+            <span class="block h-full rounded-full {energyChip.tone === 'positive' ? 'bg-positive' : 'bg-gradient-to-r from-accent-strong to-accent'}" style={`width:${energyChip.pct ?? 0}%`}></span>
+          </span>
           <span class="tnum text-fg">{energyChip.value}</span>
         </span>
       {/if}
@@ -172,6 +179,9 @@
         <span class="inline-flex items-center gap-2">
           <span class="h-1.5 w-1.5 rounded-full {toneTick[nerveChip.tone]}" aria-hidden="true"></span>
           <a href="https://www.torn.com/crimes.php" target="_blank" rel="noopener noreferrer" class="font-medium text-fg transition-colors hover:text-accent" title="Open crimes in Torn">Nerve</a>
+          <span class="h-1 w-14 overflow-hidden rounded-full bg-surface-2 sm:w-20" aria-hidden="true">
+            <span class="block h-full rounded-full {nerveChip.tone === 'positive' ? 'bg-positive' : 'bg-gradient-to-r from-accent-strong to-accent'}" style={`width:${nerveChip.pct ?? 0}%`}></span>
+          </span>
           <span class="tnum text-fg">{nerveChip.value}</span>
         </span>
       {/if}
