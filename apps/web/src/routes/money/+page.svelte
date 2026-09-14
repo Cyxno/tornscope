@@ -6,7 +6,8 @@
   import { incomeLabel, expenseLabel, humanLabel } from "@tornscope/shared";
   import { tick } from "svelte";
   import { createLoadGuard } from "$lib/loadGuard";
-  import { dateRange, DATE_PRESETS, setPreset, setCustomRange } from "$lib/state.svelte";
+  import { dateRange, DATE_PRESETS, setPreset, setCustomRange, prefs, setDashboardMode, DASHBOARD_MODES } from "$lib/state.svelte";
+  import EconomySimple from "$lib/components/EconomySimple.svelte";
   import PageHeader from "$lib/components/PageHeader.svelte";
   import Panel from "$lib/components/Panel.svelte";
   import Stat from "$lib/components/Stat.svelte";
@@ -346,6 +347,19 @@
   >
     {#snippet actions()}
       <SegmentedDateRange />
+      <!-- Presentation mode: Simple answers "what happened?", Advanced keeps
+           the full analytics surface (browser-local preference). -->
+      <div class="flex items-center rounded-full border border-border bg-surface p-0.5" role="group" aria-label="Presentation mode">
+        {#each DASHBOARD_MODES as m (m.value)}
+          <button
+            class="rounded-full px-3 py-1 text-xs font-medium transition-colors {prefs.mode === m.value ? 'bg-accent-strong text-bg' : 'text-fg-muted hover:text-fg'}"
+            aria-pressed={prefs.mode === m.value}
+            onclick={() => setDashboardMode(m.value)}
+          >
+            {m.label}
+          </button>
+        {/each}
+      </div>
     {/snippet}
   </PageHeader>
 
@@ -358,12 +372,14 @@
     <section aria-labelledby="economy-editorial" class="rounded-card border border-border bg-surface px-5 py-5 shadow-panel sm:px-7">
       <div class="flex flex-wrap items-center justify-between gap-2">
         <h2 id="economy-editorial" class="section-label !tracking-[0.12em]">{period} at a glance</h2>
-        <div class="flex flex-wrap items-center gap-2">
-            <button class="chip chip-quiet cursor-pointer !border-border !text-[10px]" title="Money that moved through the wallet" onclick={() => jumpToLens("cash")}>cash movement</button>
-            <button class="chip chip-quiet cursor-pointer !border-border !text-[10px]" title="Value changing form — not gain or loss" onclick={() => jumpToLens("conversions")}>conversion</button>
-            <button class="chip chip-quiet cursor-pointer !border-border !text-[10px]" title="Value gained or lost" onclick={() => jumpToLens("effect")}>economic effect</button>
-            <button class="chip chip-quiet cursor-pointer !border-border !text-[10px]" title="Official Torn snapshot delta — not profit" onclick={() => jumpToLens("networth")}>net worth</button>
-        </div>
+        {#if prefs.mode === "advanced"}
+          <div class="flex flex-wrap items-center gap-2">
+              <button class="chip chip-quiet cursor-pointer !border-border !text-[10px]" title="Money that moved through the wallet" onclick={() => jumpToLens("cash")}>cash movement</button>
+              <button class="chip chip-quiet cursor-pointer !border-border !text-[10px]" title="Value changing form — not gain or loss" onclick={() => jumpToLens("conversions")}>conversion</button>
+              <button class="chip chip-quiet cursor-pointer !border-border !text-[10px]" title="Value gained or lost" onclick={() => jumpToLens("effect")}>economic effect</button>
+              <button class="chip chip-quiet cursor-pointer !border-border !text-[10px]" title="Official Torn snapshot delta — not profit" onclick={() => jumpToLens("networth")}>net worth</button>
+          </div>
+        {/if}
       </div>
       {#if editorial.lead}
         <p class="mt-3 max-w-4xl font-display text-lg leading-relaxed text-fg sm:text-xl">{editorial.lead}</p>
@@ -380,6 +396,12 @@
       <LensSwitcher tabs={LENSES} active={activeLens} onselect={(id) => (activeLens = id)} />
     </div>
 
+    <!-- ═══ Simple: the wealth result first, wallet turnover demoted ═══ -->
+    {#if prefs.mode === "simple"}
+      <EconomySimple economy={economy} period={period} />
+    {/if}
+
+    {#if prefs.mode === "advanced"}
     <div class="grid gap-8 lg:grid-cols-3 lg:gap-10">
       <!-- ══════════════════ main analytics (2/3 on desktop) ═══════════════ -->
       <div class="min-w-0 space-y-10 lg:col-span-2 lg:space-y-12">
@@ -953,6 +975,7 @@
         </details>
       </aside>
     </div>
+    {/if}
 
     <!-- Ledger -->
     <Panel title="The cash ledger" caption="Every real cash movement recorded from Torn logs — deduplicated, exact amounts">
