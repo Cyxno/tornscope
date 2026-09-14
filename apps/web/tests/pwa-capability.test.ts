@@ -142,6 +142,25 @@ describe("push capability detection (real-user iOS remediation)", () => {
       expect(detectPushCapability().capability).toEqual({ kind: "ok", permission: "denied" });
     });
   });
+
+  it("Android Chrome with push → ok: push is NOT gated behind Home Screen install", () => {
+    const ua = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36";
+    withWindow({ secure: true, pushManager: true, serviceWorker: true, notification: true, permission: "default", ua }, () => {
+      expect(isIOS()).toBe(false);
+      const detected = detectPushCapability();
+      expect(detected.capability).toEqual({ kind: "ok", permission: "default" });
+      expect(detected.capability.kind).not.toBe("ios-needs-install");
+    });
+  });
+
+  it("Android Firefox without push → unsupported with platform facts, never the iOS install path", () => {
+    const ua = "Mozilla/5.0 (Android 14; Mobile; rv:128.0) Gecko/128.0 Firefox/128.0";
+    withWindow({ secure: true, pushManager: false, serviceWorker: false, notification: false, ua }, () => {
+      const detected = detectPushCapability();
+      expect(detected.capability.kind).toBe("unsupported");
+      expect(detected.ios).toBe(false);
+    });
+  });
 });
 
 describe("iOS install/push copy contract (rendered surfaces)", () => {
@@ -161,6 +180,20 @@ describe("iOS install/push copy contract (rendered surfaces)", () => {
     expect(src).toContain("visible = false");
     expect(src).toContain("installed = isStandalone()");
     expect(src).toContain("this address is not HTTPS");
+  });
+
+  it("iOS Share instructions never render on non-iOS platforms (Android gets the native prompt)", () => {
+    const src = read("../src/lib/components/InstallHint.svelte");
+    // The Share → Add to Home Screen steps live inside the iOS-only branch.
+    const iosBranchStart = src.indexOf("{#if showIOSHint}");
+    const iosBranchEnd = src.indexOf("{:else}");
+    expect(iosBranchStart).toBeGreaterThan(-1);
+    expect(iosBranchEnd).toBeGreaterThan(iosBranchStart);
+    const iosBranch = src.slice(iosBranchStart, iosBranchEnd);
+    expect(iosBranch).toContain("Add to Home Screen");
+    const nonIosBranch = src.slice(iosBranchEnd);
+    expect(nonIosBranch).not.toContain("Add to Home Screen");
+    expect(nonIosBranch).toContain("Add TornScope to your device"); // generic, platform-neutral copy
   });
 
   it("the app shell carries the standalone meta tags and the SW registers at startup", () => {

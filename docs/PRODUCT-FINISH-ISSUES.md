@@ -81,3 +81,13 @@ Found during the settings/theming epic's own walkthroughs:
 | TH-002 | Charts | Live theme switch merged color-only option updates and could leave series unrendered (net-worth line vanished in Light until reload) | P1 | FIXED — appearance signature forces full option replace in Chart.svelte |
 | TH-003 | Settings | Feature matrix + About mixed with daily preferences in one monolithic page | P2 | FIXED — six-tab IA (?tab= deep links) |
 | TH-004 | /stocks, /money, tests | Stale travel-golden fixture: time-of-day dependent failure (passes ~19:00 UTC, fails later; reproduces on the previously accepted SHA 8be89a6) | P2 | FIXED — root cause: the fixture's departure was `now − 1h` with the purchased item at `+3h`; `resolveDateRange` clamps `to` to end-of-UTC-today, so after ~22:00 UTC the item fell into "tomorrow", dropped out of the clamped range, and the golden profit read 0. Fixture now anchors departure inside today (00:30 UTC), deterministic for any run hour |
+
+### Product simplification cluster (information hierarchy, economy UX, Android)
+
+| ID | Route | Issue | Severity | Status |
+|----|-------|-------|----------|--------|
+| PF-033 | Overview | "Bank" rendered warning-yellow for a healthy active investment countdown — yellow must mean caution/action, not a normal asset timer | P2 | FIXED — countdown is neutral; warning reserved for "Matured — collect" (actionable) |
+| PF-034 | Overview, Economy | Wallet turnover led the economy story ("$54m in / $54m out") — in Torn that describes normal behavior (players store wealth outside the wallet), not performance | P1 | FIXED — Simple mode leads with the net worth result, category shifts, real gains/costs and asset shifts; wallet turnover demoted to a cash-details disclosure with the Torn-specific explanation; Advanced keeps the full bridge |
+| PF-035 | Economy | Net Worth change vs Economic Effect read as contradictory (+$4.53m vs −$29.21m style) with no reconciliation | P1 | FIXED — Simple mode adds plain-language definitions and the explicit note that net worth also moves with prices and form changes, so the two rarely match; tooltips carry the same copy |
+| PF-036 | Overview | No way to personalize what matters per player goal | P2 | FIXED — Focus areas (Everything/Wealth/Training/Combat) reorder Overview prominence; personalization only — no routes hidden, "Everything" is the default |
+| PF-037 | Economy, Overview | No Simple/Advanced presentation model | P1 | FIXED — browser-local Simple/Advanced preference with toggles on both pages and in Settings → General; Simple = wealth result + what changed + real gains/costs + asset shifts + cash disclosure; Advanced = the complete previous surface |

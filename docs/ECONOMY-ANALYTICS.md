@@ -218,3 +218,30 @@ reconciliation shows a small honest residual instead of a fake exact match.
 - Pre-existing: `money-semantics`, `cash-breakdown`, `wallet-bridge`,
   `overview-economy-consistency`, `top-outflow-rental-gym`,
   `real-log-coverage`, `money-transfers`, `zero-vs-unavailable-regressions`.
+
+## Simple / Advanced presentation
+
+Economy and Overview carry a browser-local **Simple/Advanced** preference
+(Settings → General, plus a toggle on both pages; default **Simple**).
+
+- **Simple** leads with the official net worth change, the largest category
+  shifts ("What changed"), real economic gains/costs (conversions excluded),
+  asset shifts ("into assets / into cash"), and the largest recorded
+  movements. Wallet turnover is demoted to a cash-details disclosure with
+  the Torn-specific explanation: players store wealth in banks, stocks and
+  items, so wallet flow volume describes behavior, not performance. The
+  wallet reconciliation and its graded residual stay inside the disclosure —
+  uncertainty is never hidden.
+- **Advanced** is the previous full surface: all four lenses, conversion
+  pairs, wallet bridge, category tables, methodology notes.
+
+Terminology contract (never interchangeable):
+- **Net worth change** — official Torn snapshot delta (includes price moves
+  and conversions).
+- **Wallet movement / turnover** — cash through the wallet.
+- **Economic effect** — known income minus true costs.
+- **Asset conversion / shift** — value changing form.
+
+Focus areas (Settings → General): Everything (default) / Wealth / Training /
+Combat reorder Overview section prominence only — every section and route
+stays available.

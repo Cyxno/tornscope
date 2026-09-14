@@ -43,6 +43,24 @@ Firefox (all WebKit views) — does not expose a usable PushManager, and no
 user-agent check can conjure one. TornScope's capability model therefore
 answers **what the platform can actually do**, feature-first:
 
+### Platform capability matrix
+
+| Platform | PWA install | Standalone | Web Push | Push gated on install? | UI state |
+|---|---|---|---|---|---|
+| iOS browser tab (Safari/Chrome/Firefox) | guided Add to Home Screen | no | no (16.4+ requires installed) | yes | `ios-needs-install` + install steps |
+| iOS/iPadOS Home Screen app | already installed | yes | yes (16.4+) | — | `ok` → Enable flow |
+| Android Chrome | native prompt (`beforeinstallprompt`) | yes after install | yes | **no** | `ok` → Enable flow; separate Install CTA |
+| Android Firefox | via browser menu (no prompt event) | yes | varies by version | **no** | feature-detected: `ok` → Enable flow; else `unsupported` with factual reason |
+| Desktop Chrome/Edge | native prompt | yes | yes | no | `ok` → Enable flow |
+| Desktop Firefox | manual (menu) | limited | yes | no | `ok` → Enable flow |
+| Desktop Safari | no prompt | limited | partial (17+) | no | feature-detected |
+
+All detection is **feature-first** (PushManager/Notification/serviceWorker +
+secure context); the user agent only picks wording (e.g. iOS install steps
+vs native install button). Firefox-on-iOS is never mislabeled "Firefox
+doesn't support notifications" — the correct message is the Home Screen
+requirement.
+
 | State | Meaning | UI |
 |---|---|---|
 | `ok` | Secure context + PushManager + Notification + SW | Enable flow available |
