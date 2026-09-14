@@ -11,6 +11,7 @@
 import NotificationsSettings from "$lib/components/NotificationsSettings.svelte";
   import StateMessage from "$lib/components/StateMessage.svelte";
   import AppearanceTab from "$lib/components/settings/AppearanceTab.svelte";
+  import { prefs, setDashboardMode, DASHBOARD_MODES, setFocusArea, FOCUS_AREAS } from "$lib/state.svelte";
 
   const envLabel = publicEnv.PUBLIC_ENV_LABEL?.trim() || "Public Beta";
 
@@ -333,6 +334,44 @@ import NotificationsSettings from "$lib/components/NotificationsSettings.svelte"
         {/each}
       </div>
       <p class="mt-3 text-[11px] text-fg-faint">Stored in this browser. Pages remember their own range changes as you use them.</p>
+    </Panel>
+
+    <Panel title="Presentation" caption="How much detail analytics pages lead with">
+      <div class="flex flex-wrap gap-2" role="group" aria-label="Presentation mode">
+        {#each DASHBOARD_MODES as m (m.value)}
+          <button
+            class="chip cursor-pointer {prefs.mode === m.value ? 'chip-accent font-semibold' : 'chip-quiet'}"
+            aria-pressed={prefs.mode === m.value}
+            onclick={() => setDashboardMode(m.value)}
+          >
+            {m.label}
+          </button>
+        {/each}
+      </div>
+      <p class="mt-3 text-[11px] leading-relaxed text-fg-faint">
+        <span class="font-medium text-fg-muted">Simple</span> answers "what happened?" first — wealth result, biggest shifts, real
+        gains and costs. <span class="font-medium text-fg-muted">Advanced</span> keeps the full analytics surface with every table,
+        chart and reconciliation. Both stay accurate; the toggle is also on Overview and Economy.
+      </p>
+    </Panel>
+
+    <Panel title="Focus" caption="What you mainly use TornScope for — reorders Overview prominence">
+      <div class="flex flex-wrap gap-2" role="group" aria-label="Focus area">
+        {#each FOCUS_AREAS as f (f.value)}
+          <button
+            class="chip cursor-pointer {prefs.focus === f.value ? 'chip-accent font-semibold' : 'chip-quiet'}"
+            aria-pressed={prefs.focus === f.value}
+            title={f.hint}
+            onclick={() => setFocusArea(f.value)}
+          >
+            {f.label}
+          </button>
+        {/each}
+      </div>
+      <p class="mt-3 text-[11px] leading-relaxed text-fg-faint">
+        Personalization, not permissions: every page and section stays available, this only changes what Overview shows first.
+        Stored in this browser; "Everything" is the default.
+      </p>
     </Panel>
   {:else if activeTab === "appearance"}
     <Panel title="Appearance" caption="Applies immediately, stored in this browser">
