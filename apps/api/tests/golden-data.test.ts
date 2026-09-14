@@ -106,8 +106,8 @@ suite("energy golden", () => {
     // t1(60) → t2(150): refill +90 inside → gains 90 applied, regen 0.
     // t2(150) → t3(40): training decline −110 (bar was pinned at cap, no
     //                   gains inside — plain 110E spend).
-    // t3(40) → t4(20): Xanax(+150 est) at t0+1000 with the bar at 40 —
-    //                   headroom 110: 110E materializes, 40E is cap
+    // t3(40) → t4(20): Xanax(+250 est) at t0+1000 with the bar at 40 —
+    //                   headroom 110: 110E materializes, 140E is cap
     //                   overshoot, spend = 110 + 20 = 130.
     // t3(40) → t4(20): unknown drop −20 (<25, stays unattributed).
     const bars = [
@@ -148,14 +148,15 @@ suite("energy golden", () => {
     expect(rec.opening! + sourcesTotal - usesTotal).toBe(rec.closing);
     // Exact attribution (verified against the ledger mechanics): the refill
     // lands in a rise (90 exact); the Xanax estimate lands when the bar sits
-    // at 40 (headroom 110) — 110E applied, 40E cap overshoot; natural regen
-    // contributes 50. Under the old model the full 150E was charged on top
-    // of the observed drops (290 sources / 280 trained) — the inflated
-    // accounting the real-user walkthrough disputed.
+    // at 40 (headroom 110) — 110E applied, 140E cap overshoot (the +250
+    // documented mechanic minus the headroom); natural regen contributes 50.
+    // Under the old model the full estimate was charged on top of the
+    // observed drops — the inflated accounting the real-user walkthrough
+    // disputed.
     expect(sourcesTotal).toBe(250);
     expect(prog.energy.sources).toContainEqual({ category: "Energy drinks", amount: 90, provenance: "exact" });
     expect(prog.energy.sources).toContainEqual({ category: "Xanax (est.)", amount: 110, provenance: "estimated" });
-    expect(prog.energy.absorbedOvershoot ?? 0).toBe(40);
+    expect(prog.energy.absorbedOvershoot ?? 0).toBe(140);
     const trained = prog.training.sessions
       .filter((s) => s.inference === "likely")
       .reduce((sum, s) => sum + (s.energySpent ?? 0), 0);
@@ -165,6 +166,57 @@ suite("energy golden", () => {
     const strength = prog.battlestats.perStat.find((s) => s.key === "strength")!;
     expect(strength.delta).toBe(500);
     expect(prog.battlestats.perStat.filter((s) => s.key !== "strength").every((s) => s.delta === 0)).toBe(true);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* ENERGY — same-day 2-Xanax-at-full-bar (V0.2 "0 Xanax" regression)   */
+/* ------------------------------------------------------------------ */
+
+suite("energy golden — two Xanax at full bar in one range", () => {
+  it("ships the exact use count and per-category cap loss even when nothing materializes", async () => {
+    const userId = await makeProfile();
+    const t0 = nowSec - 7_200;
+    // Both uses land on a full bar and are trained away inside the same
+    // 5-minute snapshot: zero materialized Xanax energy — the exact shape
+    // that used to read as "0 Xanax" on 1D.
+    const bars = [
+      { t: t0, e: 150 },
+      { t: t0 + 300, e: 0 }, // Xanax 1 at t0+100 inside
+      { t: t0 + 1_500, e: 150 }, // regen back to full
+      { t: t0 + 1_800, e: 5 }, // Xanax 2 at t0+1_600 inside
+    ];
+    await db.barsSnapshot.createMany({
+      data: bars.map((b) => ({
+        userId, capturedAt: new Date(b.t * 1000),
+        energyCurrent: b.e, energyMaximum: 150, happyCurrent: 0, happyMaximum: 0,
+      })),
+    });
+    await db.drugEvent.createMany({
+      data: [
+        { userId, occurredAt: new Date((t0 + 100) * 1000), drugName: "Xanax", outcome: "success", source: "test", sourceRef: `x1-${userId}` },
+        { userId, occurredAt: new Date((t0 + 1_600) * 1000), drugName: "Xanax", outcome: "success", source: "test", sourceRef: `x2-${userId}` },
+      ],
+    });
+
+    const prog = await getProgression(userId, { preset: "custom", from: t0 - 600, to: t0 + 3_600 });
+
+    // The exact drug-log count and the documented +250/use ship even though
+    // NOTHING materialized — the intake line's data.
+    expect(prog.energy.xanax).toEqual({ uses: 2, estimatedDelivered: 500 });
+    // The whole loss is attributed per category, not lumped.
+    expect(prog.energy.absorbedOvershootByCategory).toContainEqual({ category: "Xanax (est.)", amount: 500 });
+    expect(prog.energy.absorbedOvershoot ?? 0).toBe(500);
+    // No materialized Xanax row appears in sources — correctly — while the
+    // intake fields above carry the story.
+    expect(prog.energy.sources.filter((s) => s.category.startsWith("Xanax"))).toEqual([]);
+    // Spend stays the observed declines (150 + 145) — never the phantom 2×250.
+    const usesTotal = prog.energy.uses.reduce((sum, u) => sum + u.amount, 0);
+    expect(usesTotal).toBe(295);
+    // Identity holds: opening + sources − uses = closing.
+    const sourcesTotal = prog.energy.sources.reduce((sum, s) => sum + s.amount, 0);
+    const rec = prog.energy.reconciliation;
+    expect(rec.opening! + sourcesTotal - usesTotal).toBe(rec.closing);
   });
 });
 

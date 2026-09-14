@@ -154,11 +154,22 @@ export interface CompetingWindow {
 
 /**
  * Canonical Xanax energy. Normal-use Torn logs carry NO energy field (raw
- * payload is {item, faction}); the value below is the documented game
- * convention applied per event with provenance "estimated" — the
- * reconciliation overshoot surfaces any cap interaction honestly.
+ * payload is {item, faction}), so the amount is applied per event with
+ * provenance "estimated".
+ *
+ * Value verified 2026-09-14 against the official Torn wiki (fetched live):
+ * the Xanax item page ("Increases energy by 250 and happiness by 75") and
+ * the Energy page ("The Drugs Xanax and LSD provide 250 and 50 energy
+ * respectively"). The earlier 150 was a stale historical value.
+ *
+ * Cap behavior (verified empirically, not assumed): Torn's energy bar
+ * hard-clamps at the player's maximum — across six months of this game's
+ * own bar snapshots, energy NEVER exceeded the maximum, including ~150
+ * Xanax-taken-while-full events whose bars stayed pinned at max for the
+ * following 25+ minutes. Energy above the cap is lost, which is exactly
+ * what the ledger's headroom-bounded materialization + overshoot models.
  */
-export const XANAX_ENERGY_ESTIMATE = 150;
+export const XANAX_ENERGY_ESTIMATE = 250;
 
 export interface EnergyLedgerSummary {
   /** Known gains applied (refills exact, xanax estimated, ...). */
@@ -176,6 +187,9 @@ export interface EnergyLedgerSummary {
   observedSpent: number;
   /** Known gains that could not fit inside the observed rise (cap effects). */
   absorbedOvershoot: number;
+  /** The same overshoot split by source category (e.g. Xanax lost at cap),
+   *  so surfaces can attribute unmaterialized gains instead of lumping. */
+  absorbedOvershootByCategory: Array<{ category: string; amount: number }>;
   reconciliation: {
     opening: number | null;
     closing: number | null;
@@ -221,6 +235,7 @@ export function buildEnergyLedger(
   let cappedSeconds = 0;
   let cappedIntervals = 0;
   const byCategory = new Map<string, { amount: number; provenance: "exact" | "estimated" }>();
+  const overshootByCategory = new Map<string, { amount: number }>();
 
   const sorted = [...observations].sort((a, b) => a.t - b.t);
   for (let i = 1; i < sorted.length; i++) {
@@ -231,18 +246,28 @@ export function buildEnergyLedger(
     const dE = b.energyCurrent - a.energyCurrent;
     const inInterval = gains.filter((g) => isWithin(g.t, a.t, b.t));
     const intervalGains = inInterval.reduce((sum, g) => sum + g.amount, 0);
+    const bumpOvershoot = (category: string, amount: number): void => {
+      if (amount <= 0) return;
+      absorbedOvershoot += amount;
+      const entry = overshootByCategory.get(category);
+      if (entry) entry.amount += amount;
+      else overshootByCategory.set(category, { amount });
+    };
     // Apply up to the given amount of known gains to the ledger and the
-    // per-category breakdown; returns the unapplied remainder (overshoot).
+    // per-category breakdown; each gain's unapplied remainder is attributed
+    // to its category as overshoot. Returns the unapplied budget remainder.
     const applyGains = (amount: number): number => {
       let remaining = amount;
       for (const g of inInterval) {
-        if (remaining <= 0) break;
         const used = Math.min(g.amount, remaining);
-        knownGains += used;
-        const entry = byCategory.get(g.category);
-        if (entry) entry.amount += used;
-        else byCategory.set(g.category, { amount: used, provenance: g.provenance });
-        remaining -= used;
+        if (used > 0) {
+          knownGains += used;
+          const entry = byCategory.get(g.category);
+          if (entry) entry.amount += used;
+          else byCategory.set(g.category, { amount: used, provenance: g.provenance });
+          remaining -= used;
+        }
+        bumpOvershoot(g.category, g.amount - used);
       }
       return remaining;
     };
@@ -254,8 +279,9 @@ export function buildEnergyLedger(
         cappedSeconds += dt;
         cappedIntervals += 1;
         // Known gains while pinned produced NO observed energy (e.g. a refill
-        // at cap) — surfaced as overshoot, never counted as regen or dropped.
-        absorbedOvershoot += intervalGains;
+        // or a Xanax at cap) — attributed per category as overshoot, never
+        // counted as regen or dropped.
+        for (const g of inInterval) bumpOvershoot(g.category, g.amount);
         continue;
       }
       const natural = dE - intervalGains;
@@ -267,7 +293,6 @@ export function buildEnergyLedger(
         // Known gains exceed the observed rise: the excess never became
         // observed energy (cap interaction) — surfaced, never silent.
         applyGains(dE);
-        absorbedOvershoot += intervalGains - dE;
       }
     } else {
       // Decline interval. CAP-AWARE (real-user finding: "Training inferred
@@ -281,8 +306,9 @@ export function buildEnergyLedger(
       const headroom = Math.max(0, a.energyMaximum - a.energyCurrent);
       const effectiveGains = Math.min(intervalGains, headroom);
       applyGains(effectiveGains);
+      // Per-interval overshoot for the session evidence (scalar accounting
+      // already happened per category inside applyGains).
       const overshoot = intervalGains - effectiveGains;
-      absorbedOvershoot += overshoot;
       const spend = effectiveGains + -dE;
       observedSpent += spend;
       const competed = competing.some((c) => c.from <= b.t && c.to >= a.t);
@@ -308,6 +334,10 @@ export function buildEnergyLedger(
     cappedSeconds,
     observedSpent,
     absorbedOvershoot,
+    absorbedOvershootByCategory: [...overshootByCategory.entries()]
+      .map(([category, v]) => ({ category, amount: v.amount }))
+      .filter((e) => e.amount > 0)
+      .sort((a, b) => b.amount - a.amount),
     reconciliation: {
       opening: first ? first.energyCurrent : null,
       closing: last ? last.energyCurrent : null,

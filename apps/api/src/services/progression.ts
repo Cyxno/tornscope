@@ -313,6 +313,14 @@ export async function getProgression(userId: string, rangeInput: DateRangeInput)
       potentialRegen: ledger.potentialRegen,
       cappedSeconds: ledger.cappedSeconds > 0 ? ledger.cappedSeconds : null,
       absorbedOvershoot: ledger.absorbedOvershoot > 0 ? ledger.absorbedOvershoot : null,
+      absorbedOvershootByCategory: ledger.absorbedOvershootByCategory.map((g) => ({
+        category: g.category === "xanax" ? "Xanax (est.)" : g.category === "refill" ? "Refill" : g.category === "energy_drink" ? "Energy drinks" : g.category,
+        amount: g.amount,
+      })),
+      xanax: (() => {
+        const uses = xanaxEvents.filter((e) => e.t >= from && e.t <= to).length;
+        return uses > 0 ? { uses, estimatedDelivered: uses * XANAX_ENERGY_ESTIMATE } : null;
+      })(),
       reconciliation: ledger.reconciliation,
       confidence: energyConfidence,
     },

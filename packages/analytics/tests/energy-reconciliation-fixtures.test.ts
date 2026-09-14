@@ -15,13 +15,17 @@ import {
  * Deterministic timelines that pin the ledger's semantics from first
  * principles. Torn's observable inputs are:
  *   EXACT      — bar readings, refill energy_increased
- *   ESTIMATED  — Xanax +150 per successful use (logs carry no energy field)
+ *   ESTIMATED  — Xanax +250 per successful use (documented mechanic; the
+ *                success log carries no energy field)
  *   DERIVED    — natural regen on clean rise intervals
  *   INFERRED   — training spend from declines (bounded: regen inside a
  *                decline is not separable, cap-affected gains are overshoot)
  * The fixtures prove the ledger NEVER invents energy that could not have
  * existed (the disputed 295/250/660 values) and never loses the ambiguous
- * remainder silently.
+ * remainder silently. Cap behavior is verified, not assumed: Torn's energy
+ * bar hard-clamps at the player's maximum (six months of real snapshots
+ * never once exceed the max, including Xanax-while-full events whose bars
+ * stayed pinned for 25+ minutes), so energy above the cap is LOST.
  */
 
 const T = 1_750_000_000;
@@ -50,10 +54,11 @@ function expectReconciliation(observations: EnergyObservation[], gains: EnergyGa
 }
 
 describe("fixture A — natural regen, Xanax at cap, one training burst", () => {
-  // start E=100 → natural +50 → 150 (cap) → Xanax (+150 est, fully wasted at
-  // cap) → train to 50. The user's mental model says "Xanax +150, trained
-  // 250" — the bar evidence cannot support that: the Xanax landed on a full
-  // bar and never existed as energy; only the observed 100 decline is spend.
+  // start E=100 → natural +50 → 150 (cap) → Xanax (+250 est, fully lost at
+  // cap) → train to 50. The mental model says "Xanax +250, trained it all" —
+  // the bar evidence cannot support that: the Xanax landed on a full bar and
+  // Torn discards energy beyond the cap; only the observed 100 decline is
+  // spend.
   const points = bars([
     [T, 100],
     [T + 300, 150],
@@ -65,7 +70,8 @@ describe("fixture A — natural regen, Xanax at cap, one training burst", () => 
     const ledger = expectReconciliation(points, gains);
     expect(ledger.derivedRegen).toBe(50);
     expect(ledger.knownGains).toBe(0); // nothing materialized
-    expect(ledger.absorbedOvershoot).toBe(150); // surfaced, not silent
+    expect(ledger.absorbedOvershoot).toBe(XANAX_ENERGY_ESTIMATE); // surfaced, not silent
+    expect(ledger.absorbedOvershootByCategory).toEqual([{ category: "xanax", amount: XANAX_ENERGY_ESTIMATE }]);
     expect(ledger.observedSpent).toBe(100);
     expect(ledger.reconciliation.closing).toBe(50);
   });
@@ -98,12 +104,13 @@ describe("fixture B — two Xanax, natural regen, two training bursts (the dispu
   it("splits effective gains from cap waste and keeps the identity exact", () => {
     const ledger = expectReconciliation(points, gains);
     // Xanax 1: pinned interval → overshoot. Xanax 2: headroom 110 at the
-    // burst start → 110 materializes, 40 is cap-ambiguous.
+    // burst start → 110 materializes, 140 is lost at cap.
     expect(ledger.knownGainsByCategory).toContainEqual({ category: "xanax", amount: 110, provenance: "estimated" });
-    expect(ledger.absorbedOvershoot).toBe(190);
+    expect(ledger.absorbedOvershoot).toBe(XANAX_ENERGY_ESTIMATE + 140); // 390
+    expect(ledger.absorbedOvershootByCategory).toEqual([{ category: "xanax", amount: 390 }]);
     // regen: the +35 rise only (pinned time is unobservable, never banked).
     expect(ledger.derivedRegen).toBe(35);
-    // spends: 145 + (110 + 35) = 290 — not 300 + something; no phantom energy.
+    // spends: 145 + (110 + 35) = 290 — not 2×250 + something; no phantom energy.
     expect(ledger.observedSpent).toBe(290);
     expect(ledger.reconciliation.closing).toBe(5);
   });
@@ -124,7 +131,7 @@ describe("fixture C — snapshot gap with ambiguous gain/spend stays bounded", (
     const ledger = expectReconciliation(points, gains);
     // headroom at gap start = 10; the rest of the Xanax is cap-ambiguous.
     expect(ledger.knownGains).toBe(10);
-    expect(ledger.absorbedOvershoot).toBe(140);
+    expect(ledger.absorbedOvershoot).toBe(XANAX_ENERGY_ESTIMATE - 10);
     expect(ledger.observedSpent).toBe(140); // 10 gain + 130 observed drop
   });
 });
@@ -151,9 +158,9 @@ describe("fixture D — refill, Xanax, training", () => {
     const ledger = expectReconciliation(adjusted, gains);
     expect(ledger.knownGainsByCategory).toContainEqual({ category: "refill", amount: 50, provenance: "exact" });
     // second interval 60 → 10 decline with xanax inside: headroom at start
-    // is 90 → 90 applied, 60 overshoot, spend = 90 + 50 = 140.
+    // is 90 → 90 applied, the rest overshoot, spend = 90 + 50 = 140.
     expect(ledger.knownGainsByCategory).toContainEqual({ category: "xanax", amount: 90, provenance: "estimated" });
-    expect(ledger.absorbedOvershoot).toBe(60);
+    expect(ledger.absorbedOvershoot).toBe(XANAX_ENERGY_ESTIMATE - 90);
     expect(ledger.observedSpent).toBe(140);
     void points;
   });
@@ -179,21 +186,49 @@ describe("fixture E — idle natural regeneration only", () => {
   });
 });
 
+describe("fixture — two Xanax at full bar in one day (the '0 Xanax' complaint shape)", () => {
+  // The real 2026-09-14 shape: both uses land on a full bar and are trained
+  // away within the same 5-minute snapshot. Materialized Xanax energy is 0 —
+  // which used to make the sources list omit Xanax entirely ("1D shows 0
+  // Xanax despite 2 taken"). The per-category overshoot is what lets the
+  // surface say "2 taken · est. +500 · 0 visible, lost at cap" honestly.
+  const points = bars([
+    [T, 150], // full
+    [T + 300, 0], // Xanax 1 at T+100, trained away inside the interval
+    [T + 3_600, 150], // regen back to full
+    [T + 3_900, 5], // Xanax 2 at T+3_700, trained away inside the interval
+  ]);
+  const gains = [xanax(T + 100), xanax(T + 3_700)];
+
+  it("materializes nothing but attributes the whole loss to Xanax", () => {
+    const ledger = expectReconciliation(points, gains);
+    expect(ledger.knownGains).toBe(0);
+    expect(ledger.knownGainsByCategory).toEqual([]);
+    expect(ledger.absorbedOvershoot).toBe(2 * XANAX_ENERGY_ESTIMATE);
+    expect(ledger.absorbedOvershootByCategory).toEqual([{ category: "xanax", amount: 2 * XANAX_ENERGY_ESTIMATE }]);
+    // spend stays the plain observed declines — never the phantom 2×250.
+    expect(ledger.observedSpent).toBe(150 + 145);
+    // regen: the 0 → 150 rise only.
+    expect(ledger.derivedRegen).toBe(150);
+  });
+});
+
 describe("fixture — real problematic-day shape (sanitized from the user's day)", () => {
   // Real user's 05:15 event: snapshot 05:11 E=105, Xanax 05:15:12, snapshot
-  // 05:17 E=5. The old model charged 150 on top of the visible 100 decline
-  // (→ "250 E trained"). Truth: the Xanax only filled the 45E of headroom.
+  // 05:17 E=5. A naive model charges the full estimate on top of the visible
+  // 100 decline (→ "+350 E trained"). Truth: the Xanax only filled the 45E
+  // of headroom; the observed decline is the rest.
   const points = bars([
     [T, 105],
     [T + 360, 5],
   ]);
   const gains = [xanax(T + 250)];
 
-  it("reports ~145 inferred, not 250", () => {
+  it("reports ~145 inferred, not the naive total", () => {
     const ledger = expectReconciliation(points, gains);
     expect(ledger.observedSpent).toBe(145);
     expect(ledger.knownGains).toBe(45);
-    expect(ledger.absorbedOvershoot).toBe(105);
+    expect(ledger.absorbedOvershoot).toBe(XANAX_ENERGY_ESTIMATE - 45);
     const sessions = detectTrainingSessions(ledger, []);
     expect(sessions[0]!.energySpent).toBe(145);
     expect(sessions[0]!.evidence.join(" ")).toContain("cap");

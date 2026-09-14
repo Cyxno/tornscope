@@ -34,14 +34,25 @@ Torn's surfaces cannot tell us stays visibly unknown.
 - **derived** — deterministic from exact observations (battlestat deltas,
   natural regeneration between snapshots, milestone crossing windows).
 - **estimated** — relies on one documented convention: `XANAX_ENERGY_ESTIMATE
-  = 150` per normal Xanax use (`packages/analytics/src/progression.ts`). Cap
-  interactions surface as reconciliation overshoot instead of silently
-  inflating regeneration.
+  = 250` per normal Xanax use (`packages/analytics/src/progression.ts`),
+  verified 2026-09-14 against the official Torn wiki (the Xanax item page and
+  the Energy page both state +250 energy; the success log payload itself
+  carries no energy field). Cap interactions surface as per-category
+  reconciliation overshoot instead of silently inflating regeneration.
 - **inferred** — pattern-based classification (training sessions, happy
   jumps). Always shipped with the evidence list and a "missing" list.
 - **unavailable** — no reliable basis; rendered as "—", never zero.
 
 ## 3. Energy model
+
+**Verified game mechanics this model builds on** (verified 2026-09-14, not
+assumed): a Xanax gives **+250 energy** (official Torn wiki: Xanax item page
+and Energy page), and Torn's energy bar **hard-clamps at the player's
+maximum** — across six months of stored snapshots energy never once exceeded
+the maximum, including ~150 Xanax-taken-while-full events whose bars stayed
+pinned at max through the following 25+ minutes. Energy above the cap is
+**lost**, which is why a Xanax taken at full bar contributes nothing
+observable.
 
 `buildEnergyLedger(bars, gains, competing)` walks consecutive bar snapshots:
 
@@ -51,11 +62,19 @@ Torn's surfaces cannot tell us stays visibly unknown.
 - **pinned at cap** (`e0 == max && e1 == max`) → `cappedSeconds` (a
   snapshot-bounded *lower bound*, worded "observed at cap for at least…");
   potential regeneration during cap time is estimated from the personal rate
-  and explicitly **never counted as banked energy**.
-- **decline** → observed spend. Known gains inside a decline materialize
-  fully and the net decline adds on top (`spend = gains + |dE|`).
+  and explicitly **never counted as banked energy**. Gains landing while
+  pinned are attributed (per category) to overshoot.
+- **decline** → observed spend, bounded: a known gain inside a decline can
+  only materialize up to the **headroom below the cap at the interval's
+  start** (`spend = min(gains, headroom) + |dE|`); the unmaterialized
+  remainder is cap-ambiguous overshoot, never spend.
 - **known gains that exceed the observed rise** (refill at cap, Xanax
-  estimate near cap) → `absorbedOvershoot`, surfaced in the UI.
+  estimate near cap) → `absorbedOvershoot`, surfaced in the UI both as a
+  total and **per source category** (`absorbedOvershootByCategory`), so the
+  Progression page can say "2 Xanax taken · est. +500 · ~0 visible — lost at
+  your energy cap" on a day where the naive sources list would have shown
+  nothing at all. `energy.xanax` (`uses`, `estimatedDelivered`) ships the
+  exact drug-log count even when nothing materialized.
 - Exact sources are preferred when attributing a rise: the estimated Xanax
   amount is applied only after exact gains.
 
@@ -176,7 +195,10 @@ exercise the honest-unknown path. Demo never writes global state.
   that, energy analytics honestly show "no bar history" instead of estimates.
 - All training figures are inferences at snapshot resolution; Torn exposes
   no per-train data, so "gain per energy" is an observational estimate.
-- Xanax energy is a documented convention, not a recorded value.
+- Xanax energy is the documented +250 mechanic, not a per-use recorded
+  value; energy lost at the cap is attributed per use from the drug log
+  count, but the bar cannot show where inside a 5-minute window a use and
+  the matching training happened.
 - Milestones carry windows, not exact timestamps; level changes inherit the
   sparse (change-triggered) UserSnapshot cadence.
 - Awards are a personalstats counter only — Torn medal/honor detail would

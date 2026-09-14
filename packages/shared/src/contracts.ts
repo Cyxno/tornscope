@@ -2072,6 +2072,18 @@ export const ProgressionResponseSchema = z.object({
     cappedSeconds: z.number().nullable(),
     /** Known gains that never materialized as observed energy (cap effects). */
     absorbedOvershoot: z.number().nullable(),
+    /** Same overshoot split by source category — surfaces attribute the loss
+     *  (e.g. "Xanax taken at full energy") instead of lumping it. */
+    absorbedOvershootByCategory: z.array(z.object({ category: z.string(), amount: z.number() })),
+    /** Xanax uses recorded in range (success outcomes) with the estimated
+     *  energy delivered per use — present even when nothing materialized,
+     *  so a day with 2 uses never reads as "0 Xanax". */
+    xanax: z
+      .object({
+        uses: z.number(),
+        estimatedDelivered: z.number(),
+      })
+      .nullable(),
     reconciliation: z.object({
       opening: z.number().nullable(),
       closing: z.number().nullable(),

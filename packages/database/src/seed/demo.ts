@@ -497,8 +497,8 @@ async function main(): Promise<void> {
   // analytics' reconciliation, session detection and happy-jump inference all
   // behave on demo data exactly as they would on real data. The random drug
   // rows generated above feed the simulation too (a random Xanax shows up as
-  // a real +150 estimated gain, sometimes absorbed at cap — the honest noise
-  // the ledger must surface).
+  // a real +250 estimated gain, lost at cap when the bar is full — the
+  // verified mechanic the ledger must surface honestly).
   const PROG_WINDOW = 10 * DAY; // bars window
   const progStart = now - PROG_WINDOW;
   const barsRows = [];
@@ -508,7 +508,7 @@ async function main(): Promise<void> {
   const progHappyItemEvents: Array<{ at: number }> = [];
 
   // Existing random drug rows within the window act as sim inputs (their
-  // Xanax carries the canonical estimated +150; overdoses skip).
+  // Xanax carries the canonical estimated +250; overdoses skip).
   const xanaxInWindow = drugRows
     .filter((r) => r.drugName === "Xanax" && r.occurredAt.getTime() / 1000 >= progStart)
     .map((r) => r.occurredAt.getTime() / 1000)
@@ -546,11 +546,11 @@ async function main(): Promise<void> {
     for (const e of progHappyItemEvents) if (e.at >= stepStart && e.at < stepStart + 300) happy = clamp(happy + 1500, happyMax);
     for (const e of progXanaxEvents) {
       if ((e.at >= stepStart && e.at < stepStart + 300) || (e.at2 !== undefined && e.at2 >= stepStart && e.at2 < stepStart + 300)) {
-        energy = clamp(energy + 150, energyMax);
+        energy = clamp(energy + 250, energyMax);
       }
     }
     for (const e of progRefillEvents) if (e.at >= stepStart && e.at < stepStart + 300) energy = clamp(energy + e.energy, energyMax);
-    for (const t of xanaxInWindow) if (t >= stepStart && t < stepStart + 300) energy = clamp(energy + 150, energyMax);
+    for (const t of xanaxInWindow) if (t >= stepStart && t < stepStart + 300) energy = clamp(energy + 250, energyMax);
   };
 
   for (let t = progStart; t < now; t += 300) {
