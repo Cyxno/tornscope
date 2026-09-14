@@ -5,7 +5,7 @@
   import { CAPABILITY_LABELS, DELIVERY_REASON_LABELS, DELIVERY_STATUSES, NOTIFICATION_GROUPS, NOTIFICATION_TYPES, type DeliveryReason, type DeliveryStatus } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
   import { me } from "$lib/state.svelte";
-  import { formatClock } from "$lib/reltime";
+  import * as td from "$lib/time-display.svelte.js";
   import StateMessage from "./StateMessage.svelte";
   import { detectPushCapability, isIOS, isStandalone, type PushCapability } from "$lib/pwa";
 
@@ -544,7 +544,7 @@
           <li class="bg-surface px-4 py-2.5 text-[13px]">
             <details>
               <summary class="flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 select-none">
-                <span class="font-mono text-xs text-fg-faint">{formatClock(entry.occurredAt)}</span>
+                <span class="font-mono text-xs text-fg-faint">{td.displayTime(entry.occurredAt)}</span>
                 <span class="min-w-0 flex-1 truncate text-fg">{entry.title}</span>
                 <span class="text-xs {entry.status === 'delivered' || entry.status === 'sent' ? 'text-positive' : entry.status === 'failed' || entry.status === 'expired' ? 'text-negative' : 'text-fg-faint'}">
                   {entry.status}
@@ -555,10 +555,10 @@
               </summary>
               <div class="mt-2 space-y-1 text-xs text-fg-faint">
                 <p>{entry.body}</p>
-                <p>Fact provenance: {entry.provenance}. Fired at {formatClock(entry.occurredAt)} ({timezone}).</p>
+                <p>Fact provenance: {entry.provenance}. Fired at {td.displayTime(entry.occurredAt)} ({timezone}).</p>
                 {#each entry.deliveries as d (d.device ?? "")}
                   <p>
-                    → {d.device ?? "Device"}: {d.status.includes("_") ? DELIVERY_STATUS_LABELS[d.status as DeliveryStatus] ?? humanizeStatus(d.status) : d.status}{d.reason ? ` (${DELIVERY_REASON_LABELS[d.reason as DeliveryReason] ?? d.reason})` : ""}{d.sentAt ? ` · ${formatClock(d.sentAt)}` : ""}{d.attempts > 1 ? ` · ${d.attempts} attempts` : ""}
+                    → {d.device ?? "Device"}: {d.status.includes("_") ? DELIVERY_STATUS_LABELS[d.status as DeliveryStatus] ?? humanizeStatus(d.status) : d.status}{d.reason ? ` (${DELIVERY_REASON_LABELS[d.reason as DeliveryReason] ?? d.reason})` : ""}{d.sentAt ? ` · ${td.displayTime(d.sentAt)}` : ""}{d.attempts > 1 ? ` · ${d.attempts} attempts` : ""}
                   </p>
                 {/each}
               </div>

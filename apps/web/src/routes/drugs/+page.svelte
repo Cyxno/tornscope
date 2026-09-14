@@ -2,7 +2,7 @@
   import { createLoadGuard } from "$lib/loadGuard";
   import { goto } from "$app/navigation";
   import type { DrugsSummaryResponse } from "@tornscope/shared";
-  import { TORN_DRUG_NAMES, formatMoneyCompact, formatDateTime, formatDate } from "@tornscope/shared";
+  import { TORN_DRUG_NAMES, formatMoneyCompact } from "@tornscope/shared";
   import { formatRelative } from "$lib/reltime";
   import { endpoints, ApiClientError } from "$lib/api";
   import { dateRange } from "$lib/state.svelte";
@@ -13,6 +13,7 @@
   import StateMessage from "$lib/components/StateMessage.svelte";
   import { availabilityMessage, availabilityHasData } from "$lib/capabilities";
   import { C, ct, TOOLTIP, LEGEND, GRID, timeAxis, countAxis, dayLabel, MOTION, surface, accentRgba } from "$lib/charts";
+  import * as td from "$lib/time-display.svelte.js";
 
   let data = $state<DrugsSummaryResponse | null>(null);
   let loading = $state(true);
@@ -93,7 +94,7 @@
     const palette = ct().palette;
     return {
       ...MOTION,
-      tooltip: { ...TOOLTIP, trigger: "item", formatter: "{b}: {c} uses ({d}%)" },
+      tooltip: { ...TOOLTIP, trigger: "item", formatter: (p: { name: string; value: number; percent: number }) => `${p.name}: ${p.value} use${p.value === 1 ? "" : "s"} (${p.percent}%)` },
       legend: { ...LEGEND, type: "scroll", orient: "vertical", right: 4, top: "middle" },
       series: [
         {
@@ -273,7 +274,7 @@
           </p>
           {#if data.xanaxFunding.armoryHistory.available}
             <p>
-              Faction armory history covers events since {formatDate(data.xanaxFunding.armoryHistory.earliestAt)} ({data.xanaxFunding.armoryHistory.events} armory events stored);
+              Faction armory history covers events since {td.displayDate(data.xanaxFunding.armoryHistory.earliestAt)} ({data.xanaxFunding.armoryHistory.events} armory events stored);
               uses before that date cannot be matched to armory evidence and stay unclassified rather than assumed personal.
             </p>
           {:else}
@@ -311,7 +312,7 @@
             <p class="text-[11px] font-medium text-fg-faint" title="One Torn Rehab log row is one visit — Torn pre-groups each visit into a single log">Visits</p>
             <p class="tnum mt-1 text-xl font-semibold text-fg">{data.rehab.visits}</p>
             <p class="tnum text-[11px] text-fg-faint">
-              {#if data.rehab.sessions !== null}{data.rehab.sessions} sessions{#if data.rehab.sessionsUnavailable > 0} · {data.rehab.sessionsUnavailable} unknown{/if}{:else}Sessions unavailable{/if}
+              {#if data.rehab.sessions !== null}{data.rehab.sessions} session{data.rehab.sessions === 1 ? "" : "s"}{#if data.rehab.sessionsUnavailable > 0} · {data.rehab.sessionsUnavailable} unknown{/if}{:else}Sessions unavailable{/if}
             </p>
           </div>
           <div>
@@ -337,7 +338,7 @@
             <div class="mt-2 flex items-end gap-1.5">
               {#each data.rehab.visitTrend.slice(-16) as visit, i (visit.startedAt)}
                 {@const maxCost = Math.max(...data.rehab.visitTrend.slice(-16).map((t) => t.cost ?? 0), 1)}
-                <div class="group relative flex-1" title="{formatDateTime(visit.startedAt)} · {visit.sessions !== null ? `${visit.sessions} session${visit.sessions === 1 ? '' : 's'}` : 'sessions unavailable'} · total {visit.cost !== null ? `-${formatMoneyCompact(visit.cost)}` : 'cost unknown'}{visit.costPerSession !== null ? ` · ${formatMoneyCompact(visit.costPerSession)}/session` : ''}">
+                <div class="group relative flex-1" title="{td.displayDateTime(visit.startedAt)} · {visit.sessions !== null ? `${visit.sessions} session${visit.sessions === 1 ? '' : 's'}` : 'sessions unavailable'} · total {visit.cost !== null ? `-${formatMoneyCompact(visit.cost)}` : 'cost unknown'}{visit.costPerSession !== null ? ` · ${formatMoneyCompact(visit.costPerSession)}/session` : ''}">
                   {#if visit.cost !== null}
                     <div class="w-full rounded-t bg-negative/60 transition-colors group-hover:bg-negative" style="height: {Math.max(4, Math.round((visit.cost / maxCost) * 64))}px"></div>
                   {:else}
@@ -362,7 +363,7 @@
             {#each data.rehab.recent.slice(0, 6) as visit (visit.occurredAt)}
               {@const trend = data.rehab.visitTrend.find((t) => t.startedAt === visit.occurredAt)}
               <li class="flex items-baseline justify-between gap-3 py-2.5">
-                <span class="tnum text-[13px] text-fg-muted">{formatDateTime(visit.occurredAt)}</span>
+                <span class="tnum text-[13px] text-fg-muted">{td.displayDateTime(visit.occurredAt)}</span>
                 <span class="text-[13px] text-fg">{trend?.sessions !== null && trend?.sessions !== undefined ? `${trend.sessions} session${trend.sessions === 1 ? "" : "s"}` : "sessions unavailable"}</span>
                 {#if anyPercent}
                   <span class="text-[13px] text-fg">{visit.rehabPercent !== null ? `${visit.rehabPercent}%` : "—"}</span>

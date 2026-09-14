@@ -77,6 +77,12 @@ label.
   `formatMoneyCompact` / `formatSignedMoneyCompact`; full precision is reserved
   for ledger rows where exactness is the point.
 
+### Date & time display
+
+See docs/DATETIME.md — canonical UTC storage, Local (default) / Torn time (UTC)
+display preference, DST-safe historical offsets, and the analytical-day
+vs display-day separation.
+
 ### Summary composition rules (V1.0 hierarchy pass)
 
 - **Summary admission rule** — a metric may occupy a top-level summary card

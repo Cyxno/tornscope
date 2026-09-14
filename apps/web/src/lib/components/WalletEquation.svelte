@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { formatMoneyFull, formatDateTime } from "@tornscope/shared";
+  import { formatMoneyFull } from "@tornscope/shared";
+  import * as td from "$lib/time-display.svelte.js";
 
   /**
    * Inspectable wallet equation for one day (real-user finding: the "Cash"
@@ -70,7 +71,7 @@
     <span class="rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] {quality.cls}">{quality.label}</span>
   </summary>
   <div class="mt-3 space-y-1 border-t border-border/60 pt-3 text-[13px]" data-testid="wallet-equation">
-    <p class="flex items-baseline justify-between gap-3"><span class="text-fg-muted">Opening wallet{wallet.openingAt !== null ? ` · ${formatDateTime(wallet.openingAt)}` : ""}</span><span class="tnum text-fg">{wallet.opening !== null ? formatMoneyFull(wallet.opening) : "—"}</span></p>
+    <p class="flex items-baseline justify-between gap-3"><span class="text-fg-muted">Opening wallet{wallet.openingAt !== null ? ` · ${td.displayDateTime(wallet.openingAt)}` : ""}</span><span class="tnum text-fg">{wallet.opening !== null ? formatMoneyFull(wallet.opening) : "—"}</span></p>
     <p class="flex items-baseline justify-between gap-3"><span class="text-fg-muted">Known cash received</span><span class="tnum text-positive">+{formatMoneyFull(wallet.knownReceived)}</span></p>
     <p class="flex items-baseline justify-between gap-3"><span class="text-fg-muted">Known cash spent</span><span class="tnum text-negative">−{formatMoneyFull(wallet.knownSpent)}</span></p>
     <p class="flex items-baseline justify-between gap-3 border-t border-border/60 pt-1.5"><span class="text-fg">Expected closing</span><span class="tnum font-medium text-fg">{wallet.expectedClosing !== null ? formatMoneyFull(wallet.expectedClosing) : "—"}</span></p>

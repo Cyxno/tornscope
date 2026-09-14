@@ -2,7 +2,7 @@
   import { createLoadGuard } from "$lib/loadGuard";
   import { goto } from "$app/navigation";
   import type { TravelSummaryResponse, TravelTripDto, Paginated } from "@tornscope/shared";
-  import { formatMoneyCompact, formatDateTime, formatDuration, formatKpiValue, formatDate, formatSignedMoneyCompact } from "@tornscope/shared";
+  import { formatMoneyCompact, formatDuration, formatKpiValue, formatSignedMoneyCompact } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
   import { dateRange } from "$lib/state.svelte";
   import PageHeader from "$lib/components/PageHeader.svelte";
@@ -12,6 +12,7 @@
   import StateMessage from "$lib/components/StateMessage.svelte";
   import { availabilityMessage, availabilityHasData } from "$lib/capabilities";
   import { C, TOOLTIP, GRID, timeAxis, valueAxis, moneyValueAxis, moneyTooltipValue, dayLabel, MOTION } from "$lib/charts";
+  import * as td from "$lib/time-display.svelte.js";
 
   let summary = $state<TravelSummaryResponse | null>(null);
   let history = $state<Paginated<TravelTripDto> | null>(null);
@@ -141,9 +142,9 @@
             <span class="transition-transform group-open:rotate-180">▾</span>
           </summary>
           <p class="mt-2.5 border-t border-border pt-2.5">
-            Full trip data available from Torn: {summary.coverage.completeTripsFrom !== null ? formatDate(summary.coverage.completeTripsFrom) : "—"}
+            Full trip data available from Torn: {summary.coverage.completeTripsFrom !== null ? td.displayDate(summary.coverage.completeTripsFrom) : "—"}
             <span class="mx-2 text-border-strong">·</span>
-            TornScope tracking since: {formatDate(summary.coverage.trackingSince)}
+            TornScope tracking since: {td.displayDate(summary.coverage.trackingSince)}
             — trips are stored permanently from that point and do not disappear when Torn prunes its logs.
             {#if dateRange.from !== undefined && dateRange.from < summary.coverage.trackingSince}
               <span class="font-medium text-warning"> The selected range predates complete trip coverage, so it shows partial history — no zeros are invented.</span>
@@ -322,7 +323,7 @@
               <tbody>
                 {#each history.items as trip (trip.id)}
                   <tr class="cursor-pointer" onclick={() => toggle(trip.id)}>
-                    <td class="tnum whitespace-nowrap text-xs text-fg-faint">{formatDateTime(trip.departedAt)}</td>
+                    <td class="tnum whitespace-nowrap text-xs text-fg-faint">{td.displayDateTime(trip.departedAt)}</td>
                     <td>
                       <span class="font-medium text-fg">{trip.destination}</span>
                       {#if trip.returnedAt === null}
@@ -390,7 +391,7 @@
                     </span>
                   </div>
                   <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-fg-faint">
-                    <span class="tnum">{formatDateTime(trip.departedAt)}</span>
+                    <span class="tnum">{td.displayDateTime(trip.departedAt)}</span>
                     <span>{formatDuration(trip.durationSeconds)}</span>
                     <span>{trip.itemsBought} items</span>
                     <span class="tnum">{formatMoneyCompact(-trip.spend)}</span>

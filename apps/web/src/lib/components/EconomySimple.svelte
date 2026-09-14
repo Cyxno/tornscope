@@ -1,8 +1,9 @@
 <script lang="ts">
   import type { EconomySummaryResponse } from "@tornscope/shared";
-  import { formatMoneyCompact, formatSignedMoneyCompact, formatDate } from "@tornscope/shared";
+  import { formatMoneyCompact, formatSignedMoneyCompact } from "@tornscope/shared";
   import { setDashboardMode } from "$lib/state.svelte";
   import ConfidenceBadge from "./ConfidenceBadge.svelte";
+  import * as td from "$lib/time-display.svelte.js";
 
   /**
    * Economy — SIMPLE presentation (curated interpretation, not reduced
@@ -59,7 +60,7 @@
         <span class="tnum text-lg text-fg-muted">{nw.changePct >= 0 ? "+" : ""}{nw.changePct.toFixed(2)}%</span>
       {/if}
       <span class="text-[13px] text-fg-faint" title="How much Torn's official total value changed. Includes price moves and money moving between assets — not a profit figure.">
-        {period} · snapshots {nw.baselineAt !== null ? formatDate(nw.baselineAt) : "—"} → {nw.currentAt !== null ? formatDate(nw.currentAt) : "now"}{nw.coverage === "partial" ? " · covers the tracked portion only" : ""}
+        {period} · snapshots {nw.baselineAt !== null ? td.displayDate(nw.baselineAt) : "—"} → {nw.currentAt !== null ? td.displayDate(nw.currentAt) : "now"}{nw.coverage === "partial" ? " · covers the tracked portion only" : ""}
       </span>
     </p>
   </div>

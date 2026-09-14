@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { formatDateTime, formatDate, RESOURCE_LABELS, humanLabel, type SyncHealthResponse } from "@tornscope/shared";
+  import { RESOURCE_LABELS, humanLabel, type SyncHealthResponse } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
   import { formatRelative } from "$lib/reltime";
   import { confidenceTitle, coverageTitle } from "$lib/confidence";
@@ -10,6 +10,7 @@
   import Panel from "$lib/components/Panel.svelte";
   import StateMessage from "$lib/components/StateMessage.svelte";
   import ConfidenceBadge from "$lib/components/ConfidenceBadge.svelte";
+  import * as td from "$lib/time-display.svelte.js";
 
   /**
    * Sync health: per-resource operational state (derived server-side by the
@@ -89,7 +90,7 @@
       case "retrying":
         return {
           label: "Retry",
-          value: op.retryAt ? formatDateTime(op.retryAt).slice(11) : "pending",
+          value: op.retryAt ? td.displayDateTime(op.retryAt).slice(11) : "pending",
           countdown: op.retryAt ? `in ${formatDuration(op.retryAt - Date.now() / 1000)}` : undefined,
         };
       case "delayed":
@@ -100,7 +101,7 @@
       case "never_run":
         return { label: "Next run", value: "—" };
       default:
-        return { label: "Next run", value: row.nextRunAt ? formatDateTime(row.nextRunAt).slice(11) : "—" };
+        return { label: "Next run", value: row.nextRunAt ? td.displayDateTime(row.nextRunAt).slice(11) : "—" };
     }
   }
 
@@ -279,8 +280,8 @@
   /** Per-resource historical coverage rows for the table. */
   const coverageRows = $derived.by(() => {
     if (!health) return [];
-    const requestedStart = formatDate(Math.floor((Date.now() - health.requestedHistoryDays * 86_400_000) / 1000));
-    const day = (ts: number | null | undefined): string => (ts ? formatDate(ts) : "—");
+    const requestedStart = td.displayDate(Math.floor((Date.now() - health.requestedHistoryDays * 86_400_000) / 1000));
+    const day = (ts: number | null | undefined): string => (ts ? td.displayDate(ts) : "—");
     return COVERAGE_RESOURCES.map((resource) => {
       const row = health!.resources.find((r) => r.resource === resource);
       // Live-only resource: Torn exposes no net-worth history, so there is no
@@ -295,7 +296,7 @@
         stopReason: row?.stopReason ?? null,
         liveOnly,
         confidence: row?.confidence ?? null,
-        coverageTooltip: coverageTitle(row?.confidence?.coverage, (ts) => (ts ? formatDate(ts) : "—")),
+        coverageTooltip: coverageTitle(row?.confidence?.coverage, (ts) => (ts ? td.displayDate(ts) : "—")),
       };
     });
   });
@@ -530,8 +531,8 @@
                       {#each row.categories as cat (cat.categoryId)}
                         <tr class="border-t border-border/40">
                           <td class="text-fg">{cat.title ?? cat.categoryId}</td>
-                          <td class="text-fg-muted">{cat.lastSuccessAt ? formatDateTime(cat.lastSuccessAt) : "—"}</td>
-                          <td class="tnum py-1.5 pr-3 text-fg-muted">{cat.lastTimestamp ? formatDateTime(cat.lastTimestamp) : "—"}</td>
+                          <td class="text-fg-muted">{cat.lastSuccessAt ? td.displayDateTime(cat.lastSuccessAt) : "—"}</td>
+                          <td class="tnum py-1.5 pr-3 text-fg-muted">{cat.lastTimestamp ? td.displayDateTime(cat.lastTimestamp) : "—"}</td>
                           <td class="tnum py-1.5 pr-3 text-right text-fg-muted">{cat.lastWalkPages ?? "—"}</td>
                           <td class="tnum py-1.5 pr-3 text-right text-fg-muted">{cat.lastRecordsInserted ?? "—"}</td>
                           <td class="tnum py-1.5 pr-3 text-fg-muted">{cat.frequencySeconds ? Math.round(cat.frequencySeconds / 60) + "m" : "—"}</td>

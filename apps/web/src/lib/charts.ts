@@ -1,5 +1,6 @@
 import { formatMoneyCompact } from "@tornscope/shared";
 import { appearance, resolvedTheme, prefersReducedMotion } from "$lib/appearance-state.svelte";
+import { chartDay, chartHour } from "$lib/time-display.svelte.js";
 import { CATEGORICAL, RAMPS, BATTLESTATS } from "$lib/chart-palettes";
 import type { ChartPalette, ResolvedTheme } from "$lib/appearance.svelte";
 
@@ -298,12 +299,9 @@ function compact(v: number): string {
 }
 
 export function dayLabel(t: number): string {
-  const d = new Date(t * 1000);
-  return `${d.getUTCDate()}/${d.getUTCMonth() + 1}`;
+  return chartDay(t);
 }
 
 export function hourLabel(t: number): string {
-  const d = new Date(t * 1000);
-  const p = (n: number) => String(n).padStart(2, "0");
-  return p(d.getUTCHours()) + ":" + p(d.getUTCMinutes());
+  return chartHour(t);
 }

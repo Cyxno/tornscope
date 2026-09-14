@@ -1,15 +1,7 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
   import type { DashboardResponse, TodayResponse, DailySummaryResponse } from "@tornscope/shared";
-  import {
-    formatMoneyCompact,
-    formatNumberCompact,
-  formatSignedNumberCompact,
-    formatKpiValue,
-    periodLabel,
-    formatDate,
-    formatSignedMoneyCompact,
-  } from "@tornscope/shared";
+  import { formatMoneyCompact, formatNumberCompact, formatSignedNumberCompact, formatKpiValue, periodLabel, formatSignedMoneyCompact } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
   import LiveNow from "$lib/components/LiveNow.svelte";
   import { dateRange, me, prefs, overviewSectionOrder, setDashboardMode, DASHBOARD_MODES } from "$lib/state.svelte";
@@ -21,6 +13,7 @@
   import SegmentedDateRange from "$lib/components/SegmentedDateRange.svelte";
   import StateMessage from "$lib/components/StateMessage.svelte";
   import { C, TOOLTIP, GRID, timeAxis, valueAxis, moneyValueAxis, moneyTooltipValue, dayLabel, hourLabel, tealArea, MOTION } from "$lib/charts";
+  import * as td from "$lib/time-display.svelte.js";
 
   /**
    * Overview — "the record". Composition, not a card grid:
@@ -227,7 +220,7 @@
               <span class="tnum text-fg-muted">{data.networthChangePct >= 0 ? "+" : ""}{data.networthChangePct.toFixed(2)}%</span>
             {/if}
             <span class="text-fg-faint" title="Snapshot delta from official Torn net worth: includes item/stock/property price moves, cash and asset movement. Not a profit figure.">
-              · snapshots {data.financial.netWorthMeasuredFrom !== null ? formatDate(data.financial.netWorthMeasuredFrom) : "—"} → {data.financial.netWorthMeasuredTo !== null ? formatDate(data.financial.netWorthMeasuredTo) : "now"}{data.networthCoverage === "partial" ? " · partial coverage" : ""}
+              · snapshots {data.financial.netWorthMeasuredFrom !== null ? td.displayDate(data.financial.netWorthMeasuredFrom) : "—"} → {data.financial.netWorthMeasuredTo !== null ? td.displayDate(data.financial.netWorthMeasuredTo) : "now"}{data.networthCoverage === "partial" ? " · partial coverage" : ""}
             </span>
           {/if}
         </p>
@@ -309,7 +302,7 @@
     <section class="section-rule" aria-label="Today's story" style="order: {order.today};">
       <div class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
         <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <h2 class="section-label">Today — {todaySummary ? formatDate(todaySummary.range.from) : formatDate(Math.floor(Date.now() / 1000))}</h2>
+          <h2 class="section-label">Today — {todaySummary ? td.displayDate(todaySummary.range.from) : td.displayDate(Math.floor(Date.now() / 1000))}</h2>
           {#if todaySummary?.ongoingDay}<span class="chip chip-warning !py-0 !text-[9px]">day in progress</span>{/if}
           {#if todaySummary}
             <ConfidenceBadge meta={todaySummary.overallConfidence} tooltip={confidenceTitle(todaySummary.overallConfidence)} />
@@ -426,7 +419,7 @@
         <ul class="mt-2 divide-y divide-border/70">
           {#each data.recentTimeline.slice(0, 6) as event (event.id)}
             <li class="grid grid-cols-[44px_1fr_auto] items-baseline gap-3 py-2.5">
-              <span class="tnum text-[11px] text-fg-faint">{formatClock(event.occurredAt)}</span>
+              <span class="tnum text-[11px] text-fg-faint">{td.displayTime(event.occurredAt)}</span>
               <span class="min-w-0 truncate text-[13px] text-fg" title={event.title}>{event.title}</span>
               {#if event.amount !== null && event.amount !== undefined}
                 <span class="tnum text-[13px] font-medium {event.amount >= 0 ? 'text-positive' : 'text-negative'}">

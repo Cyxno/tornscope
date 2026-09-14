@@ -2,7 +2,7 @@
   import { createLoadGuard } from "$lib/loadGuard";
   import { goto } from "$app/navigation";
   import type { FactionOverviewResponse, FactionRankedWarsResponse, FactionMembersResponse, FactionOcsResponse, FactionLedgerResponse, FactionOcRow } from "@tornscope/shared";
-  import { formatMoneyCompact, formatDateTime, formatSignedMoney, formatDate, formatDecimal, ocParticipationState, OC_PARTICIPATION_LABELS, OC_PARTICIPATION_HINTS, userInAnyKnownOc } from "@tornscope/shared";
+  import { formatMoneyCompact, formatSignedMoney, formatDecimal, ocParticipationState, OC_PARTICIPATION_LABELS, OC_PARTICIPATION_HINTS, userInAnyKnownOc } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
   import { dateRange } from "$lib/state.svelte";
   import PageHeader from "$lib/components/PageHeader.svelte";
@@ -11,6 +11,7 @@
   import SegmentedDateRange from "$lib/components/SegmentedDateRange.svelte";
   import StateMessage from "$lib/components/StateMessage.svelte";
   import { availabilityMessage, availabilityHasData } from "$lib/capabilities";
+  import * as td from "$lib/time-display.svelte.js";
 
   type Tab = "overview" | "wars" | "members" | "oc" | "ledger";
 
@@ -194,7 +195,7 @@
             <tbody>
               {#each overview.recentWars as w (w.tornWarId)}
                 <tr>
-                  <td class="tnum whitespace-nowrap text-xs text-fg-faint">{formatDate(w.startedAt)}</td>
+                  <td class="tnum whitespace-nowrap text-xs text-fg-faint">{td.displayDate(w.startedAt)}</td>
                   <td class="text-fg">{w.opponentName ?? "—"}</td>
                   <td class="py-2 pr-4"><span class={`chip ${resultBadge(w.result)}`}>{w.result}</span></td>
                   <td class="tnum text-right text-fg-muted">{w.ourScore ?? "—"} : {w.opponentScore ?? "—"}</td>
@@ -228,7 +229,7 @@
               <tbody>
                 {#each wars.wars as w (w.tornWarId)}
                   <tr>
-                    <td class="tnum whitespace-nowrap text-xs text-fg-faint">{formatDateTime(w.startedAt)}</td>
+                    <td class="tnum whitespace-nowrap text-xs text-fg-faint">{td.displayDateTime(w.startedAt)}</td>
                     <td class="text-fg">{w.opponentName ?? "—"}</td>
                     <td class=""><span class={`chip ${resultBadge(w.result)}`}>{w.result}</span></td>
                     <td class="tnum text-right text-fg-muted">{w.ourScore ?? "—"} : {w.opponentScore ?? "—"}</td>
@@ -273,7 +274,7 @@
                     <td class="tnum text-right text-fg-muted">{m.daysInFaction ?? "—"}</td>
                     <td class="text-xs text-fg-faint">
                       {#if m.status || m.lastActionAt}
-                        {m.status ?? "—"}{m.lastActionAt ? ` · ${formatDate(m.lastActionAt)}` : ""}
+                        {m.status ?? "—"}{m.lastActionAt ? ` · ${td.displayDate(m.lastActionAt)}` : ""}
                       {:else}
                         —
                       {/if}
@@ -335,9 +336,9 @@
                     <span class="chip chip-accent" title="Your slot in this crime">Your role: {oc.myPosition}</span>
                   {/if}
                   {#if oc.readyAt}
-                    <span class="text-xs text-fg-faint">Ready {formatDateTime(oc.readyAt)}</span>
+                    <span class="text-xs text-fg-faint">Ready {td.displayDateTime(oc.readyAt)}</span>
                   {:else if oc.planningAt}
-                    <span class="text-xs text-fg-faint">Planning since {formatDateTime(oc.planningAt)}</span>
+                    <span class="text-xs text-fg-faint">Planning since {td.displayDateTime(oc.planningAt)}</span>
                   {/if}
                   <span class="ml-auto">{@render participationCell(oc)}</span>
                 </div>
@@ -379,8 +380,8 @@
                       {/if}
                     </td>
                     <td class="text-xs text-fg-faint">
-                      {#if oc.readyAt}{formatDateTime(oc.readyAt)}
-                      {:else if oc.planningAt}planning since {formatDateTime(oc.planningAt)}
+                      {#if oc.readyAt}{td.displayDateTime(oc.readyAt)}
+                      {:else if oc.planningAt}planning since {td.displayDateTime(oc.planningAt)}
                       {:else}—{/if}
                     </td>
                     <td class="">{@render participationCell(oc)}</td>
@@ -424,7 +425,7 @@
                     <td class="">
                       <span class={`chip ${oc.status === "Successful" ? "chip-positive" : "chip-negative"}`}>{oc.status}</span>
                     </td>
-                    <td class="tnum whitespace-nowrap text-xs text-fg-faint">{oc.executedAt ? formatDateTime(oc.executedAt) : "—"}</td>
+                    <td class="tnum whitespace-nowrap text-xs text-fg-faint">{oc.executedAt ? td.displayDateTime(oc.executedAt) : "—"}</td>
                     <td class="">
                       {#if oc.rewardMoney === null && !hasItems && oc.rewardRespect === null}
                         <span class="text-xs text-fg-faint">—</span>
@@ -502,7 +503,7 @@
       </Panel>
     {:else if tab === "ledger" && ledger}
       <p class="text-xs text-fg-faint">
-        Faction bank snapshots stay collected in the background (latest: {ledger.snapshots.length > 0 ? `${formatMoneyCompact(ledger.snapshots[ledger.snapshots.length - 1]!.money)} · ${formatDate(ledger.snapshots[ledger.snapshots.length - 1]!.capturedAt)}` : "—"})
+        Faction bank snapshots stay collected in the background (latest: {ledger.snapshots.length > 0 ? `${formatMoneyCompact(ledger.snapshots[ledger.snapshots.length - 1]!.money)} · ${td.displayDate(ledger.snapshots[ledger.snapshots.length - 1]!.capturedAt)}` : "—"})
         — the actionable view is your labeled income below.
       </p>
       <Panel title="My faction income" caption="Canonical personal ledger rows — labelled by their actual source" flush>
@@ -522,7 +523,7 @@
               <tbody>
                 {#each ledger.payouts.slice(0, 30) as p (p.sourceRef)}
                   <tr>
-                    <td class="tnum whitespace-nowrap text-xs text-fg-faint">{formatDateTime(p.occurredAt)}</td>
+                    <td class="tnum whitespace-nowrap text-xs text-fg-faint">{td.displayDateTime(p.occurredAt)}</td>
                     <td class="">
                       {#if p.kind === "oc"}
                         <span class="chip chip-info whitespace-nowrap">OC payout{p.scenario ? ` · ${p.scenario}` : ""}</span>

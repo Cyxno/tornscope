@@ -10,7 +10,8 @@
   } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
   import { me } from "$lib/state.svelte";
-  import { formatDateTimeInZone, greetingForHour } from "$lib/reltime";
+  import { greetingForHour } from "$lib/reltime";
+  import * as td from "$lib/time-display.svelte.js";
   import { cooldownDisplay } from "$lib/live";
   import StateMessage from "$lib/components/StateMessage.svelte";
   import Countdown from "$lib/components/Countdown.svelte";
@@ -133,7 +134,7 @@
 
   function fmtFullAt(bar: LiveBar | null): string {
     if (!bar || bar.regenState !== "regenerating" || bar.fullAt === null) return "";
-    return ` · ${formatDateTimeInZone(bar.fullAt, timeZone)}`;
+    return ` · ${td.displayDateTime(bar.fullAt)}`;
   }
 
   const travel = $derived(data?.travel ?? null);
@@ -263,7 +264,7 @@
                 <span class="text-xs text-fg-muted">{notice.reason}</span>
               {/if}
               {#if notice.releasedAt !== null}
-                <span class="tnum text-xs text-fg-faint">at {formatDateTimeInZone(notice.releasedAt, timeZone)}</span>
+                <span class="tnum text-xs text-fg-faint" title={td.alternateTimeTooltip(notice.releasedAt)}>at {td.displayDateTime(notice.releasedAt)}</span>
               {/if}
             </div>
           {/if}
@@ -329,7 +330,7 @@
                   <Countdown seconds={remainingSeconds(serverNowMs, travel.landsAt)} style="clock" />
                 </span>
                 {#if flightProgress === null}
-                  <span class="tnum text-xs text-fg-faint">at {formatDateTimeInZone(travel.landsAt, timeZone)}</span>
+                  <span class="tnum text-xs text-fg-faint" title={td.alternateTimeTooltip(travel.landsAt)}>at {td.displayDateTime(travel.landsAt)}</span>
                 {/if}
               </div>
               {#if flightProgress !== null}
@@ -337,11 +338,11 @@
                   <div class="h-full rounded-full bg-accent/70" style={`width:${flightProgress}%`}></div>
                 </div>
                 <div class="mt-1 flex justify-between text-[11px] text-fg-faint">
-                  <span>{travel.departedAt !== null ? formatDateTimeInZone(travel.departedAt, timeZone) : ""}</span>
+                  <span>{travel.departedAt !== null ? td.displayDateTime(travel.departedAt) : ""}</span>
                   {#if travel.durationSeconds}
                     <span>flight {Math.round(travel.durationSeconds / 60)}m</span>
                   {/if}
-                  <span>{formatDateTimeInZone(travel.landsAt, timeZone)}</span>
+                  <span>{td.displayDateTime(travel.landsAt)}</span>
                 </div>
               {/if}
             {/if}
@@ -405,7 +406,7 @@
               <p class="text-sm text-fg-muted">
                 Matures in
                 <span class="tnum font-semibold text-fg"><Countdown seconds={remainingSeconds(serverNowMs, bank.maturesAt)} style="compact" /></span>
-                <span class="tnum text-xs text-fg-faint">· {formatDateTimeInZone(bank.maturesAt, timeZone)}</span>
+                <span class="tnum text-xs text-fg-faint" title={td.alternateTimeTooltip(bank.maturesAt)}>· {td.displayDateTime(bank.maturesAt)}</span>
               </p>
             {/if}
             <div class="grid grid-cols-2 gap-x-4 gap-y-1.5 pt-1 text-[13px]">
@@ -427,7 +428,7 @@
               {/if}
               {#if bank.investedAt !== null}
                 <span class="text-fg-faint">Invested</span>
-                <span class="tnum text-right text-fg-muted">{formatDateTimeInZone(bank.investedAt, timeZone)}</span>
+                <span class="tnum text-right text-fg-muted">{td.displayDateTime(bank.investedAt)}</span>
               {/if}
             </div>
           </div>
@@ -457,7 +458,7 @@
               <p class="text-sm text-fg-muted">
                 <span class="tnum font-semibold text-fg"><Countdown seconds={remainingSeconds(serverNowMs, education.completesAt)} style="compact" /></span>
                 remaining
-                <span class="tnum text-xs text-fg-faint">· {formatDateTimeInZone(education.completesAt, timeZone)}</span>
+                <span class="tnum text-xs text-fg-faint">· {td.displayDateTime(education.completesAt)}</span>
               </p>
             {/if}
           </div>
@@ -485,7 +486,7 @@
             <div class="flex items-center gap-3 border-b border-border/60 py-3 last:border-0">
               <span class={`h-1.5 w-1.5 shrink-0 rounded-full ${severityDot[event.severity]}`}></span>
               <span class="min-w-0 flex-1 truncate text-[13.5px] text-fg">{event.title}</span>
-              <span class="tnum hidden shrink-0 text-xs text-fg-faint sm:inline">{formatDateTimeInZone(event.at, timeZone)}</span>
+              <span class="tnum hidden shrink-0 text-xs text-fg-faint sm:inline" title={td.alternateTimeTooltip(event.at)}>{td.displayDateTime(event.at)}</span>
               <span class="tnum w-20 shrink-0 text-right text-[13px] font-semibold text-fg">
                 <Countdown seconds={remainingSeconds(serverNowMs, event.at)} style="compact" />
               </span>

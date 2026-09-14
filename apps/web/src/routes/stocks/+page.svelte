@@ -2,11 +2,12 @@
   import { goto } from "$app/navigation";
   import type { StocksResponse, StockRowDto, FeatureAvailability as FeatureAvailabilityDto } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
-  import { formatDate, formatDateTime, formatMoneyCompact, formatNumberCompact } from "@tornscope/shared";
+  import { formatMoneyCompact, formatNumberCompact } from "@tornscope/shared";
   import { formatRelative } from "$lib/reltime";
   import PageHeader from "$lib/components/PageHeader.svelte";
   import StateMessage from "$lib/components/StateMessage.svelte";
   import Icon from "$lib/components/Icon.svelte";
+  import * as td from "$lib/time-display.svelte.js";
 
   /**
    * Stocks — "a portfolio & benefit intelligence ledger".
@@ -182,7 +183,7 @@
     {/if}
     <p class="text-[11px] text-fg-faint">
       Prices and valuations are estimates at the current market price
-      {#if data.priceCapturedAt}· captured {formatRelative(data.priceCapturedAt)} ({formatDate(data.priceCapturedAt)}){/if}.
+      {#if data.priceCapturedAt}· captured {formatRelative(data.priceCapturedAt)} ({td.displayDate(data.priceCapturedAt)}){/if}.
     </p>
 
     {#if upcoming.length > 0}
@@ -351,7 +352,7 @@
         </div>
         {#if data.priceCapturedAt}
           <p class="mt-3 text-[11px] text-fg-faint">
-            Price as of {formatDateTime(data.priceCapturedAt)} · benefit-only economics; never investment advice.
+            Price as of {td.displayDateTime(data.priceCapturedAt)} · benefit-only economics; never investment advice.
           </p>
         {/if}
       {/if}

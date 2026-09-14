@@ -39,7 +39,7 @@ describe("progression summary composition", () => {
   });
 
   it("the grid renders conditionally — however many cards earn a slot", () => {
-    expect(progression).toContain("{#each summaryCards as card (card.label)}");
+    expect(progression).toContain("{#each summaryCards as card, i (card.label)}");
     expect(progression).toContain("summaryGridClass");
   });
 

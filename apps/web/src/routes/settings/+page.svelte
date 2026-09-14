@@ -12,6 +12,7 @@ import NotificationsSettings from "$lib/components/NotificationsSettings.svelte"
   import StateMessage from "$lib/components/StateMessage.svelte";
   import AppearanceTab from "$lib/components/settings/AppearanceTab.svelte";
   import { prefs, setDashboardMode, DASHBOARD_MODES, setFocusArea, FOCUS_AREAS } from "$lib/state.svelte";
+  import { timeDisplay, setTimeDisplay, currentZoneLabel } from "$lib/time-display.svelte.js";
 
   const envLabel = publicEnv.PUBLIC_ENV_LABEL?.trim() || "Public Beta";
 
@@ -334,6 +335,30 @@ import NotificationsSettings from "$lib/components/NotificationsSettings.svelte"
         {/each}
       </div>
       <p class="mt-3 text-[11px] text-fg-faint">Stored in this browser. Pages remember their own range changes as you use them.</p>
+    </Panel>
+
+    <Panel title="Time display" caption="Which timezone event times show in">
+      <div class="flex flex-wrap gap-2" role="group" aria-label="Time display">
+        <button
+          class="chip cursor-pointer {timeDisplay.mode === 'local' ? 'chip-accent font-semibold' : 'chip-quiet'}"
+          aria-pressed={timeDisplay.mode === "local"}
+          onclick={() => setTimeDisplay("local")}
+        >
+          Local time
+        </button>
+        <button
+          class="chip cursor-pointer {timeDisplay.mode === 'torn' ? 'chip-accent font-semibold' : 'chip-quiet'}"
+          aria-pressed={timeDisplay.mode === "torn"}
+          onclick={() => setTimeDisplay("torn")}
+        >
+          Torn time (UTC)
+        </button>
+      </div>
+      <p class="mt-3 text-[11px] leading-relaxed text-fg-faint">
+        Currently showing {currentZoneLabel()}. Local uses this device's timezone and handles daylight-saving changes per
+        event. Analytics day boundaries (Today, the 1D range) follow your profile timezone — Torn's server day is UTC.
+        Stored in this browser.
+      </p>
     </Panel>
 
     <Panel title="Presentation" caption="How much detail analytics pages lead with">

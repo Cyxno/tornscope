@@ -1,10 +1,24 @@
 <script lang="ts">
-  import { DATE_PRESETS, setPreset, setCustomRange, dateRange } from "$lib/state.svelte";
+  import { DATE_PRESETS, setPreset, setCustomRange, dateRange, rememberRouteRange, routeRange, defaultPreset } from "$lib/state.svelte";
+  import { onMount } from "svelte";
 
   /**
    * Segmented control for the global date range. Active segment is inverted
    * (light on dark); Custom unfolds an inline two-date form.
    */
+  // Per-route memory (V1.0 QOL): a route reopens with its own last preset;
+  // the Settings default still governs first-ever visits.
+  onMount(() => {
+    const remembered = routeRange(window.location.pathname);
+    if (remembered && dateRange.preset !== remembered) setPreset(remembered);
+  });
+
+  function selectPreset(value: (typeof DATE_PRESETS)[number]["value"]) {
+    showCustom = false;
+    setPreset(value);
+    rememberRouteRange(window.location.pathname, value);
+  }
+
   let showCustom = $state(false);
   let customFrom = $state("");
   let customTo = $state("");
@@ -32,10 +46,7 @@
         class="rounded-full px-3 py-1 text-xs font-medium transition-all {dateRange.preset === preset.value && !showCustom
           ? 'bg-fg font-semibold text-bg'
           : 'text-fg-muted hover:text-fg'}"
-        onclick={() => {
-          showCustom = false;
-          setPreset(preset.value);
-        }}
+        onclick={() => selectPreset(preset.value)}
       >
         {preset.label}
       </button>

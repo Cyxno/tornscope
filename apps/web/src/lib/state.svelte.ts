@@ -30,6 +30,12 @@ function storedDefaultPreset(): DateRangePreset {
 
 export const dateRange = $state<{ preset: DateRangePreset; from?: number; to?: number }>({ preset: storedDefaultPreset() });
 
+/** The Settings default range — the fallback for routes without their own
+ *  remembered preset (keeps routes isolated from each other). */
+export function defaultPreset(): DateRangePreset {
+  return storedDefaultPreset();
+}
+
 export interface MeState {
   loaded: boolean;
   data: import("@tornscope/shared").MeResponse | null;
@@ -48,6 +54,40 @@ export async function refreshMe(): Promise<void> {
   } finally {
     me.loaded = true;
   }
+}
+
+/** Per-route range memory (V1.0 QOL): each analytics route remembers its
+ *  own preset in this browser. Custom windows stay session-only. */
+const ROUTE_RANGES_KEY = "tornscope.routeRange.v1";
+function loadRouteRanges(): Record<string, DateRangePreset> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(ROUTE_RANGES_KEY);
+    const parsed = raw ? (JSON.parse(raw) as Record<string, string>) : {};
+    const out: Record<string, DateRangePreset> = {};
+    for (const [route, preset] of Object.entries(parsed)) {
+      if (DATE_PRESETS.some((p) => p.value === preset)) out[route] = preset as DateRangePreset;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+const routeRanges: Record<string, DateRangePreset> = loadRouteRanges();
+
+export function rememberRouteRange(route: string, preset: DateRangePreset): void {
+  if (preset === "custom") return;
+  routeRanges[route] = preset;
+  try {
+    window.localStorage.setItem(ROUTE_RANGES_KEY, JSON.stringify(routeRanges));
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+export function routeRange(route: string): DateRangePreset | null {
+  const preset = routeRanges[route];
+  return DATE_PRESETS.some((p) => p.value === preset) ? preset : null;
 }
 
 export function setPreset(preset: DateRangePreset): void {

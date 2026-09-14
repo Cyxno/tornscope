@@ -1,12 +1,13 @@
 <script lang="ts">
   import type { DailySummaryResponse, DailyHighlight } from "@tornscope/shared";
-  import { formatDate, formatKpiValue, formatMoneyCompact, formatNumberCompact, formatSignedMoney, formatSignedMoneyCompact } from "@tornscope/shared";
+  import { formatKpiValue, formatMoneyCompact, formatNumberCompact, formatSignedMoney, formatSignedMoneyCompact } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
   import { me } from "$lib/state.svelte";
   import { confidenceTitle } from "$lib/confidence";
   import { formatDateInZone, formatRelative } from "$lib/reltime";
   import ConfidenceBadge from "./ConfidenceBadge.svelte";
   import WalletEquation from "./WalletEquation.svelte";
+  import * as td from "$lib/time-display.svelte.js";
 
   /**
    * Daily Summary (v0.2): one trustworthy recap of a calendar day in the
@@ -213,6 +214,7 @@
       <h2 class="font-display text-[30px] font-medium leading-[1.05] text-fg sm:text-[36px]">{mastheadWeekday}</h2>
       <p class="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[13px] text-fg-muted">
         <span class="tnum">{displayDate}</span>
+        <span class="text-[11px] text-fg-faint" title="The Today page follows your profile timezone for its day boundary (Torn's server day is UTC). Timestamps elsewhere follow Settings → General → Time display.">· day boundary {timeZone}</span>
         {#if summary?.ongoingDay}
           <span class="chip chip-warning !py-0 !text-[9px]">day in progress</span>
         {/if}
@@ -286,7 +288,7 @@
       </p>
       {#if summary.netWorth.startAt !== null || summary.netWorth.endAt !== null}
         <p class="mt-2 text-xs text-fg-faint">
-          snapshots {summary.netWorth.startAt !== null ? formatDate(summary.netWorth.startAt) : "—"} → {summary.netWorth.endAt !== null ? formatDate(summary.netWorth.endAt) : "—"}
+          snapshots {summary.netWorth.startAt !== null ? td.displayDate(summary.netWorth.startAt) : "—"} → {summary.netWorth.endAt !== null ? td.displayDate(summary.netWorth.endAt) : "—"}
           {#if summary.netWorth.coverage === "partial"} · covers the tracked portion only{/if}
           · includes price moves and asset movement, not a profit figure
         </p>

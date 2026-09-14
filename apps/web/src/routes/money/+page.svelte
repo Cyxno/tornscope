@@ -1,7 +1,7 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
   import type { DateRangePreset, EconomySummaryResponse, MoneyEventDto, Paginated } from "@tornscope/shared";
-  import { MONEY_CATEGORIES, formatMoneyCompact, formatMoneyFull, formatDateTime, formatKpiValue, periodLabel, formatSignedMoney, formatSignedMoneyCompact, formatDate } from "@tornscope/shared";
+  import { MONEY_CATEGORIES, formatMoneyCompact, formatMoneyFull, formatKpiValue, periodLabel, formatSignedMoney, formatSignedMoneyCompact } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
   import { incomeLabel, expenseLabel, humanLabel } from "@tornscope/shared";
   import { tick } from "svelte";
@@ -18,6 +18,7 @@
   import ProvenanceBadge from "$lib/components/ProvenanceBadge.svelte";
   import { availabilityMessage, availabilityHasData } from "$lib/capabilities";
   import { C, ct, TOOLTIP, LEGEND, GRID, timeAxis, valueAxis, moneyValueAxis, moneyTooltipValue, dayLabel, tealArea, MOTION, surface } from "$lib/charts";
+  import * as td from "$lib/time-display.svelte.js";
 
   let economy = $state<EconomySummaryResponse | null>(null);
   let events = $state<Paginated<MoneyEventDto> | null>(null);
@@ -447,7 +448,7 @@
             <div class="flex flex-wrap items-baseline justify-between gap-2">
               <h2 class="section-label text-[12px]"><span class="mr-2 text-accent">1</span> Net worth — official snapshot movement, not profit</h2>
               {#if economy.networth.trackingSince !== null}
-                <span class="text-[11px] text-fg-faint">Tracking since {formatDate(economy.networth.trackingSince)}</span>
+                <span class="text-[11px] text-fg-faint">Tracking since {td.displayDate(economy.networth.trackingSince)}</span>
               {/if}
             </div>
             {#if nwBlocked && nwAv}
@@ -459,8 +460,8 @@
               />
             {:else}
               <div class="grid grid-cols-2 gap-px overflow-hidden rounded-card border border-border bg-border shadow-panel md:grid-cols-4">
-                <Stat label="Opening net worth" value={economy.networth.baseline !== null ? formatMoneyCompact(economy.networth.baseline) : "—"} provenance="exact" confidence={economy.confidence?.networth} sub={economy.networth.baselineAt !== null ? `snapshot ${formatDate(economy.networth.baselineAt)}` : null} />
-                <Stat label="Closing net worth" value={formatKpiValue(economy.networth.current)} provenance="exact" tone="accent" confidence={economy.confidence?.networth} sub={economy.networth.currentAt !== null ? `snapshot ${formatDate(economy.networth.currentAt)}` : null} />
+                <Stat label="Opening net worth" value={economy.networth.baseline !== null ? formatMoneyCompact(economy.networth.baseline) : "—"} provenance="exact" confidence={economy.confidence?.networth} sub={economy.networth.baselineAt !== null ? `snapshot ${td.displayDate(economy.networth.baselineAt)}` : null} />
+                <Stat label="Closing net worth" value={formatKpiValue(economy.networth.current)} provenance="exact" tone="accent" confidence={economy.confidence?.networth} sub={economy.networth.currentAt !== null ? `snapshot ${td.displayDate(economy.networth.currentAt)}` : null} />
                 <Stat
                   label="Net worth change{economy.networth.coverage === 'partial' ? ' (partial)' : ''}"
                   value={economy.networth.coverage === "none" ? "Insufficient history" : formatSignedMoneyCompact(economy.networth.change.value)}
@@ -924,14 +925,14 @@
           {:else}
             <dl class="space-y-1.5 text-[13px]">
               <div class="flex items-baseline justify-between gap-3">
-                <dt class="text-fg-muted">Opening wallet{#if wallet.openingSnapshotAt !== null}<span class="ml-1.5 text-[10px] text-fg-faint">{formatDate(wallet.openingSnapshotAt)}</span>{/if}</dt>
+                <dt class="text-fg-muted">Opening wallet{#if wallet.openingSnapshotAt !== null}<span class="ml-1.5 text-[10px] text-fg-faint">{td.displayDate(wallet.openingSnapshotAt)}</span>{/if}</dt>
                 <dd class="tnum text-fg">{formatMoneyCompact(wallet.openingWallet)}</dd>
               </div>
               <div class="flex items-baseline justify-between gap-3"><dt class="text-fg-muted">Recorded inflows</dt><dd class="tnum text-positive">+{formatMoneyCompact(wallet.recordedInflows)}</dd></div>
               <div class="flex items-baseline justify-between gap-3"><dt class="text-fg-muted">Recorded outflows</dt><dd class="tnum text-negative">-{formatMoneyCompact(wallet.recordedOutflows)}</dd></div>
               <div class="flex items-baseline justify-between gap-3"><dt class="text-fg-muted">Expected closing</dt><dd class="tnum text-fg">{wallet.expectedClosingWallet !== null ? formatMoneyCompact(wallet.expectedClosingWallet) : "—"}</dd></div>
               <div class="flex items-baseline justify-between gap-3">
-                <dt class="text-fg-muted">Actual closing{#if wallet.closingSnapshotAt !== null}<span class="ml-1.5 text-[10px] text-fg-faint">{formatDate(wallet.closingSnapshotAt)}</span>{/if}</dt>
+                <dt class="text-fg-muted">Actual closing{#if wallet.closingSnapshotAt !== null}<span class="ml-1.5 text-[10px] text-fg-faint">{td.displayDate(wallet.closingSnapshotAt)}</span>{/if}</dt>
                 <dd class="tnum font-medium text-fg">{formatMoneyCompact(wallet.closingWallet)}</dd>
               </div>
               <div class="flex items-baseline justify-between gap-3 border-t border-border pt-1.5">
@@ -972,7 +973,7 @@
                 <li class="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
                   <div class="min-w-0">
                     <p class="truncate text-fg" title={m.description ?? m.label}>{m.label}</p>
-                    <p class="text-[10.5px] text-fg-faint">{formatDateTime(m.occurredAt)} · {m.role.replace("_", " ")}</p>
+                    <p class="text-[10.5px] text-fg-faint">{td.displayDateTime(m.occurredAt)} · {m.role.replace("_", " ")}</p>
                   </div>
                   <span class="tnum shrink-0 font-medium {(m.role === 'expense' || m.role === 'conversion_out') ? 'text-fg-muted' : 'text-fg'}" title={m.description ?? ""}>
                     {m.role === "expense" ? `-${formatMoneyCompact(m.amount)}` : m.role === "conversion_out" ? `-${formatMoneyCompact(m.amount)}` : `+${formatMoneyCompact(m.amount)}`}
@@ -1041,7 +1042,7 @@
             <tbody>
               {#each events.items as event (event.id)}
                 <tr>
-                  <td class="tnum whitespace-nowrap text-xs text-fg-faint">{formatDateTime(event.occurredAt)}</td>
+                  <td class="tnum whitespace-nowrap text-xs text-fg-faint">{td.displayDateTime(event.occurredAt)}</td>
                   <td>
                     <span class="chip">{humanLabel(event.category)}</span>
                   </td>

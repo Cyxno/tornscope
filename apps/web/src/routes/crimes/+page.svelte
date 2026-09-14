@@ -2,7 +2,7 @@
   import { createLoadGuard } from "$lib/loadGuard";
   import { goto } from "$app/navigation";
   import type { CrimesSummaryResponse, CrimesTimelineResponse } from "@tornscope/shared";
-  import { formatMoneyCompact, formatDateTime, formatSignedMoney, formatSignedMoneyCompact, periodLabel, formatDate } from "@tornscope/shared";
+  import { formatMoneyCompact, formatSignedMoney, formatSignedMoneyCompact, periodLabel } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
   import { dateRange } from "$lib/state.svelte";
   import PageHeader from "$lib/components/PageHeader.svelte";
@@ -12,6 +12,7 @@
   import StateMessage from "$lib/components/StateMessage.svelte";
   import { availabilityMessage, availabilityHasData } from "$lib/capabilities";
   import { C, TOOLTIP, LEGEND, GRID, timeAxis, valueAxis, moneyValueAxis, moneyTooltipValue, dayLabel } from "$lib/charts";
+  import * as td from "$lib/time-display.svelte.js";
 
   let summary = $state<CrimesSummaryResponse | null>(null);
   let timeline = $state<CrimesTimelineResponse | null>(null);
@@ -117,7 +118,7 @@
     {:else}
     {#if summary.coverage.trackingSince !== null}
       <p class="rounded-tile border border-border bg-surface px-5 py-3 text-xs text-fg-muted">
-        <span class="font-medium text-fg">Tracking since {formatDate(summary.coverage.trackingSince)}</span>
+        <span class="font-medium text-fg">Tracking since {td.displayDate(summary.coverage.trackingSince)}</span>
         — crime attempts are normalized from your permanently stored raw logs; older history Torn no longer returns is never invented.
       </p>
     {/if}
@@ -245,7 +246,7 @@
             <tbody>
               {#each timeline.items as ev (ev.id)}
                 <tr>
-                  <td class="tnum whitespace-nowrap text-xs text-fg-faint">{formatDateTime(ev.occurredAt)}</td>
+                  <td class="tnum whitespace-nowrap text-xs text-fg-faint">{td.displayDateTime(ev.occurredAt)}</td>
                   <td class="max-w-[260px] truncate text-fg" title={ev.crimeName ?? ""}>{ev.crimeName ?? "Unknown crime"}</td>
                   <td class="">
                     <span class={`chip ${ev.success ? "chip-positive" : "chip-negative"}`}>

@@ -10,6 +10,7 @@
   import PageHeader from "$lib/components/PageHeader.svelte";
   import StateMessage from "$lib/components/StateMessage.svelte";
   import Icon, { type IconName } from "$lib/components/Icon.svelte";
+  import * as td from "$lib/time-display.svelte.js";
 
   /** Coarse event → icon mapping: supports scanning, never decoration. */
   function eventIcon(event: TimelineEventDto): IconName {
@@ -149,11 +150,11 @@
       {#each dayGroups as group (group.day)}
         <section>
           <!-- Date anchor: sticky, the ledger's section rule -->
-          <h2 class="section-label sticky top-0 z-10 -mx-2 border-b border-border bg-bg/90 px-2 py-2 backdrop-blur-sm">{formatDayHeading(group.list[0]!.occurredAt)}</h2>
+          <h2 class="section-label sticky top-0 z-10 -mx-2 border-b border-border bg-bg/90 px-2 py-2 backdrop-blur-sm">{td.displayDayHeading(group.list[0]!.occurredAt)}</h2>
           <ol>
             {#each group.list as event (event.id)}
               <li class="grid grid-cols-[44px_minmax(0,1fr)_auto] items-baseline gap-3 border-b border-border/40 px-2 py-2 transition-colors last:border-0 hover:bg-surface/60">
-                <span class="tnum text-right text-[11px] text-fg-faint">{formatClock(event.occurredAt)}</span>
+                <span class="tnum text-right text-[11px] text-fg-faint">{td.displayTime(event.occurredAt)}</span>
                 <span class="min-w-0 truncate text-[13px] text-fg" title={event.title}>
                   <Icon
                     name={eventIcon(event)}

@@ -2,7 +2,7 @@
   import { createLoadGuard } from "$lib/loadGuard";
   import { goto } from "$app/navigation";
   import type { CombatSummaryResponse, CombatTimelineResponse } from "@tornscope/shared";
-  import { formatMoneyCompact, formatDateTime, formatKpiValue, periodLabel, formatDate, combatEventSemantics } from "@tornscope/shared";
+  import { formatMoneyCompact, formatKpiValue, periodLabel, combatEventSemantics } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
   import { dateRange } from "$lib/state.svelte";
   import PageHeader from "$lib/components/PageHeader.svelte";
@@ -12,6 +12,7 @@
   import StateMessage from "$lib/components/StateMessage.svelte";
   import { availabilityMessage, availabilityHasData } from "$lib/capabilities";
   import { C, TOOLTIP, LEGEND, GRID, timeAxis, valueAxis, dayLabel } from "$lib/charts";
+  import * as td from "$lib/time-display.svelte.js";
 
   let summary = $state<CombatSummaryResponse | null>(null);
   let timeline = $state<CombatTimelineResponse | null>(null);
@@ -120,7 +121,7 @@
     {:else}
     {#if summary.coverage.trackingSince !== null}
       <p class="rounded-tile border border-border bg-surface px-5 py-3 text-xs text-fg-muted">
-        <span class="font-medium text-fg">Tracking since {formatDate(summary.coverage.trackingSince)}</span>
+        <span class="font-medium text-fg">Tracking since {td.displayDate(summary.coverage.trackingSince)}</span>
         — combat events come from your Torn attacks record (kept permanently once stored). Mug cash is tracked in the Economy ledger
         under the mugging category, never duplicated here.
       </p>
@@ -249,7 +250,7 @@
                   <td class="tnum text-right text-positive">{row.wins}</td>
                   <td class="tnum text-right text-negative">{row.losses}</td>
                   <td class="tnum text-right text-fg-muted">{row.winRate !== null ? `${Math.round(row.winRate * 100)}%` : "—"}</td>
-                  <td class="tnum text-right text-xs text-fg-faint">{formatDateTime(row.lastEncounter)}</td>
+                  <td class="tnum text-right text-xs text-fg-faint">{td.displayDateTime(row.lastEncounter)}</td>
                 </tr>
               {/each}
             </tbody>
@@ -277,7 +278,7 @@
               {#each timeline.items as ev (ev.id)}
                 {@const sem = combatEventSemantics(ev.direction, ev.result)}
                 <tr>
-                  <td class="tnum whitespace-nowrap text-xs text-fg-faint">{formatDateTime(ev.occurredAt)}</td>
+                  <td class="tnum whitespace-nowrap text-xs text-fg-faint">{td.displayDateTime(ev.occurredAt)}</td>
                   <td class="text-fg">
                     {ev.direction === "outgoing" ? "vs" : "by"}
                     <span class="font-medium">{ev.opponentName ?? "Unknown opponent"}</span>

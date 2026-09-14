@@ -134,3 +134,16 @@ no zero heroes), Merits (unspent/invested/recommendation summary correct),
 Crimes (attempts/success/value summary correct), Travel (est. labels quiet,
 status first), Overview Advanced (financial context allowed below the
 dashboard), Today (top already outcome-first after PF-045).
+
+### V1.0 QOL + time consistency pass
+
+Timestamp-source audit (Part 3): A (Torn event timestamps) and B (Torn API
+fetch times) dominate surfaces; C (DB row times) never surfaces raw; D
+(TornScope fetch time) drives freshness labels; E (browser display) is the
+new presentation layer. Canonical storage/comparison remains UTC.
+
+| ID | Route | Issue | Severity | Status |
+|----|-------|-------|----------|--------|
+| PF-054 | product-wide | All timestamps rendered in UTC regardless of the user's real day; no way to choose; charts and tables could disagree with the user's clock | P1 | FIXED — Settings → General → Time display (Local [default] / Torn time (UTC)), browser-local preference; central `datetime.ts` + `time-display.svelte.ts` (Intl, DST-correct, formatter cache); swept every route's event tables, timelines, countdowns and chart axes; alternate-zone tooltips on significant Today timestamps; contracts in docs/DATETIME.md; timezone/DST/SSR tests (UTC, Europe/Amsterdam incl. DST transition days, America/New_York, Asia/Tokyo) |
+| PF-055 | all analytics routes | Selected range reset to the stored default on every full page load; one global range leaked across routes | P2 | FIXED — per-route range memory (`tornscope.routeRange.v1`): each route reopens with its own last preset; the Settings default still governs first visits; custom windows remain session-only |
+| PF-056 | Today | Day boundary semantic (profile timezone, default UTC = Torn server day) was undocumented — a local-time user near midnight could not tell which day the page meant | P2 | FIXED — masthead captions "day boundary {tz}" with a tooltip; display timezone stays independent of analytical grouping (verified near-midnight: a 23:30 UTC event displays 00:30 Amsterdam but remains in the same analytical day) |
