@@ -125,8 +125,11 @@
 
     if (t.bank.state === "active" && t.bank.maturesAt !== null) {
       const left = t.bank.maturesAt - nowSec;
+      // Warning ONLY when action is needed (matured → collect). A healthy
+      // investment counting down is a neutral timer — warning-yellow on a
+      // normal asset read as a problem (color-semantics audit).
       if (left <= 0) out.push({ key: "bank", label: "Bank", value: "Matured — collect", tone: "warning", live: false, href: "/money" });
-      else if (left < 7 * 86_400) out.push({ key: "bank", label: "Bank", value: `matures in ${formatCountdownCompact(left)}`, tone: "warning", live: true, href: "/money" });
+      else if (left < 7 * 86_400) out.push({ key: "bank", label: "Bank", value: `matures in ${formatCountdownCompact(left)}`, tone: "neutral", live: true, href: "/money" });
     }
     return out;
   });

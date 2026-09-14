@@ -11,7 +11,7 @@
   } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
   import LiveNow from "$lib/components/LiveNow.svelte";
-  import { dateRange, me } from "$lib/state.svelte";
+  import { dateRange, me, prefs, overviewSectionOrder, setDashboardMode, DASHBOARD_MODES } from "$lib/state.svelte";
   import { clientPermissionMessage } from "$lib/capabilities";
   import { confidenceTitle } from "$lib/confidence";
   import { formatRelative, formatClock, greetingForHour } from "$lib/reltime";
@@ -132,6 +132,9 @@
   {:else if error}
     <StateMessage state="error" title="Could not load Overview" hint={error} action={{ label: "Retry", run: () => (reloadToken += 1) }} />
   {:else if data}
+    <!-- Focus areas reorder section prominence (personalization, not
+         permissions): every section stays; "everything" is the default. -->
+    {@const order = overviewSectionOrder(prefs.focus)}
     <!-- ── 1 · Masthead: greeting + range, data health quiet at the right ── -->
     <header class="flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
       <div class="min-w-0">
@@ -157,14 +160,30 @@
       </div>
       <div class="flex min-w-0 max-w-full items-center gap-3">
         <SegmentedDateRange />
+        <div class="flex items-center rounded-full border border-border bg-surface p-0.5" role="group" aria-label="Presentation mode">
+          {#each DASHBOARD_MODES as m (m.value)}
+            <button
+              class="rounded-full px-3 py-1 text-xs font-medium transition-colors {prefs.mode === m.value ? 'bg-accent-strong text-bg' : 'text-fg-muted hover:text-fg'}"
+              aria-pressed={prefs.mode === m.value}
+              onclick={() => setDashboardMode(m.value)}
+            >
+              {m.label}
+            </button>
+          {/each}
+        </div>
       </div>
     </header>
 
-    <!-- ── 2 · Live now: one sentence, ticks not boxes ── -->
-    <LiveNow today={today} ocs={myOcs} onOpenToday={() => void goto("/today")} />
+    <!-- ── 2 · Focus-ordered body: every section always renders; the focus
+         area only changes prominence (order). ── -->
+    <div class="flex flex-col gap-10">
+    <!-- ── Live now: one sentence, ticks not boxes ── -->
+    <div style="order: {order.live};">
+      <LiveNow today={today} ocs={myOcs} onOpenToday={() => void goto("/today")} />
+    </div>
 
-    <!-- ── 3 · Net-worth hero: numeral + integrated chart on open canvas ── -->
-    <section class="section-rule" aria-label="Net worth">
+    <!-- ── Net-worth hero: numeral + integrated chart on open canvas ── -->
+    <section class="section-rule" aria-label="Net worth" style="order: {order.networth};">
       <div class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
         <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
           <span class="section-label">Net worth</span>
@@ -226,7 +245,10 @@
         {/if}
       </div>
 
-      <!-- Open hairline strip: period movement, no outer border -->
+      <!-- Open hairline strip: period movement, no outer border.
+           Simple leads with the wealth story (economic effect, asset
+           shifts); wallet turnover is Advanced-only detail — in Torn,
+           cash passing through the wallet is normal, not performance. -->
       <dl class="mt-6 grid grid-cols-2 gap-y-5 md:grid-cols-4 md:divide-x md:divide-border">
         <div class="md:pr-6">
           <dt class="flex items-center gap-2 text-[11px] font-medium text-fg-faint">
@@ -234,34 +256,62 @@
           </dt>
           <dd class="tnum mt-1 text-[22px] font-semibold text-fg">{formatKpiValue(data.cash)}</dd>
         </div>
-        <div class="md:px-6">
-          <dt class="text-[11px] font-medium text-fg-faint">{period} cash received</dt>
-          <dd class="tnum mt-1 text-[22px] font-semibold text-positive">{formatKpiValue(data.financial.cashInflow)}</dd>
-          <dd class="mt-0.5 text-[11px] text-fg-faint">earned {formatMoneyCompact(data.financial.cashReceived?.earned.total ?? data.financial.trueIncome)} · asset sales {formatMoneyCompact(data.financial.cashReceived?.assetSales.total ?? data.financial.assetSales)}</dd>
-        </div>
-        <div class="md:px-6">
-          <dt class="text-[11px] font-medium text-fg-faint">{period} cash spent</dt>
-          <dd class="tnum mt-1 text-[22px] font-semibold text-negative">{formatKpiValue(data.financial.cashOutflow)}</dd>
-          <dd class="mt-0.5 text-[11px] text-fg-faint">true expenses {formatMoneyCompact(data.financial.trueExpense)} · asset purchases {formatMoneyCompact(data.financial.assetPurchases)}</dd>
-        </div>
-        <div class="md:pl-6">
-          <dt class="text-[11px] font-medium text-fg-faint">{period} net wallet movement</dt>
-          <dd class="tnum mt-1 text-[22px] font-semibold {data.wallet.walletInflow - data.wallet.walletOutflow >= 0 ? 'text-positive' : 'text-negative'}">
-            {formatSignedMoneyCompact(data.wallet.walletInflow - data.wallet.walletOutflow)}
-          </dd>
-          <dd class="mt-0.5 text-[11px] text-fg-faint">
-            {#if data.wallet.coverage !== "unavailable" && data.wallet.startingCash !== null && data.wallet.unreconciled !== null}
-              reconciliation {formatSignedMoneyCompact(data.wallet.unreconciled)}
-            {:else}
-              cash arithmetic — not profit
-            {/if}
-          </dd>
-        </div>
+        {#if prefs.mode === "simple"}
+          <div class="md:px-6">
+            <dt class="text-[11px] font-medium text-fg-faint" title="Known income minus true costs. Moving money between assets does not count.">{period} economic effect</dt>
+            <dd class="tnum mt-1 text-[22px] font-semibold {data.financial.trueIncome - data.financial.trueExpense >= 0 ? 'text-positive' : 'text-negative'}">
+              {formatSignedMoneyCompact(data.financial.trueIncome - data.financial.trueExpense)}
+            </dd>
+            <dd class="mt-0.5 text-[11px] text-fg-faint">earned {formatMoneyCompact(data.financial.trueIncome)} · costs {formatMoneyCompact(data.financial.trueExpense)}</dd>
+          </div>
+          <div class="md:px-6" title="Cash that moved into owned value — stocks, items, points, banks. A form change, not a loss.">
+            <dt class="text-[11px] font-medium text-fg-faint">{period} moved into assets</dt>
+            <dd class="tnum mt-1 text-[22px] font-semibold text-fg">{formatMoneyCompact(data.financial.assetPurchases)}</dd>
+            <dd class="mt-0.5 text-[11px] text-fg-faint">asset sales {formatMoneyCompact(data.financial.assetSales)} · bank moves {formatMoneyCompact(data.financial.bankTransfers)}</dd>
+          </div>
+          <div class="md:pl-6">
+            <dt class="text-[11px] font-medium text-fg-faint">{period} largest shift</dt>
+            <dd class="mt-1 text-[15px] font-medium leading-snug text-fg-muted">
+              {#if data.financial.assetPurchases >= data.financial.assetSales && data.financial.assetPurchases > 0}
+                Cash → assets ({formatMoneyCompact(data.financial.assetPurchases)})
+              {:else if data.financial.assetSales > data.financial.assetPurchases && data.financial.assetSales > 0}
+                Assets → cash ({formatMoneyCompact(data.financial.assetSales)})
+              {:else}
+                No dominant shift
+              {/if}
+            </dd>
+            <dd class="mt-0.5 text-[11px] text-fg-faint">Full detail in <a class="text-link underline decoration-border underline-offset-2" href="/money">Economy</a></dd>
+          </div>
+        {:else}
+          <div class="md:px-6">
+            <dt class="text-[11px] font-medium text-fg-faint">{period} cash received</dt>
+            <dd class="tnum mt-1 text-[22px] font-semibold text-positive">{formatKpiValue(data.financial.cashInflow)}</dd>
+            <dd class="mt-0.5 text-[11px] text-fg-faint">earned {formatMoneyCompact(data.financial.cashReceived?.earned.total ?? data.financial.trueIncome)} · asset sales {formatMoneyCompact(data.financial.cashReceived?.assetSales.total ?? data.financial.assetSales)}</dd>
+          </div>
+          <div class="md:px-6">
+            <dt class="text-[11px] font-medium text-fg-faint">{period} cash spent</dt>
+            <dd class="tnum mt-1 text-[22px] font-semibold text-negative">{formatKpiValue(data.financial.cashOutflow)}</dd>
+            <dd class="mt-0.5 text-[11px] text-fg-faint">true expenses {formatMoneyCompact(data.financial.trueExpense)} · asset purchases {formatMoneyCompact(data.financial.assetPurchases)}</dd>
+          </div>
+          <div class="md:pl-6">
+            <dt class="text-[11px] font-medium text-fg-faint" title="Cash that entered or left your wallet. In Torn this is often temporary — players store money in banks, stocks and items rather than holding cash.">{period} net wallet movement</dt>
+            <dd class="tnum mt-1 text-[22px] font-semibold {data.wallet.walletInflow - data.wallet.walletOutflow >= 0 ? 'text-positive' : 'text-negative'}">
+              {formatSignedMoneyCompact(data.wallet.walletInflow - data.wallet.walletOutflow)}
+            </dd>
+            <dd class="mt-0.5 text-[11px] text-fg-faint">
+              {#if data.wallet.coverage !== "unavailable" && data.wallet.startingCash !== null && data.wallet.unreconciled !== null}
+                reconciliation {formatSignedMoneyCompact(data.wallet.unreconciled)}
+              {:else}
+                cash arithmetic — not profit
+              {/if}
+            </dd>
+          </div>
+        {/if}
       </dl>
     </section>
 
-    <!-- ── 4 · Today story: the day as a signed ledger ── -->
-    <section class="section-rule" aria-label="Today's story">
+    <!-- ── Today story: the day as a signed ledger ── -->
+    <section class="section-rule" aria-label="Today's story" style="order: {order.today};">
       <div class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
         <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
           <h2 class="section-label">Today — {todaySummary ? formatDate(todaySummary.range.from) : formatDate(Math.floor(Date.now() / 1000))}</h2>
@@ -368,7 +418,7 @@
     </section>
 
     <!-- ── 5 · Recent activity ledger ── -->
-    <section class="section-rule" aria-label="Recent activity">
+    <section class="section-rule" aria-label="Recent activity" style="order: {order.activity};">
       <div class="flex items-baseline justify-between gap-3">
         <h2 class="section-label">Recent activity</h2>
         <a href="/timeline" class="text-link shrink-0 text-xs font-medium">The ledger →</a>
@@ -396,8 +446,8 @@
       {/if}
     </section>
 
-    <!-- ── 6 · Beyond money: quiet linked rows ── -->
-    <section class="section-rule" aria-label="Beyond money">
+    <!-- ── Beyond money: quiet linked rows ── -->
+    <section class="section-rule" aria-label="Beyond money" style="order: {order.beyond};">
       <h2 class="section-label">Beyond the wallet</h2>
       <div class="mt-3 grid grid-cols-1 gap-x-12 md:grid-cols-2">
         <!-- Crimes -->
@@ -484,5 +534,6 @@
         </a>
       </div>
     </section>
+    </div>
   {/if}
 </div>

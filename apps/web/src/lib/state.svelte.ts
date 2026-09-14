@@ -61,3 +61,75 @@ export function setCustomRange(from: number, to: number): void {
   dateRange.from = from;
   dateRange.to = to;
 }
+
+/* -------------------------------------------------------------------------- */
+/* Presentation preferences: Simple/Advanced + Focus area (browser-local)     */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Presentation model (product simplification):
+ *
+ * - `simple`    — the page answers "what happened?" first: wealth result,
+ *                 biggest shifts, real gains/costs. Dense analytics move
+ *                 behind disclosures / the Advanced toggle. Semantics are
+ *                 never simplified away: residuals and estimates stay
+ *                 visible and labeled.
+ * - `advanced`  — the full pre-existing analytics surface, unchanged.
+ *
+ * Focus areas reorder Overview prominence per player goal. They are
+ * PERSONALIZATION, not permissions: no route is hidden, no data is lost,
+ * and "everything" (the default) preserves the current experience for
+ * established users.
+ *
+ * Both are browser-local presentation preferences (same policy as the
+ * default date range and appearance) — no account data, no migration.
+ */
+
+import type { DashboardMode, FocusArea } from "./focus.js";
+import { FOCUS_AREAS } from "./focus.js";
+
+export { DASHBOARD_MODES, FOCUS_AREAS, overviewSectionOrder } from "./focus.js";
+export type { DashboardMode, FocusArea } from "./focus.js";
+
+const MODE_KEY = "tornscope.mode.v1";
+const FOCUS_KEY = "tornscope.focus.v1";
+
+function storedMode(): DashboardMode {
+  if (typeof window === "undefined") return "simple";
+  try {
+    const raw = window.localStorage.getItem(MODE_KEY);
+    return raw === "advanced" ? "advanced" : "simple";
+  } catch {
+    return "simple";
+  }
+}
+
+function storedFocus(): FocusArea {
+  if (typeof window === "undefined") return "everything";
+  try {
+    const raw = window.localStorage.getItem(FOCUS_KEY);
+    return FOCUS_AREAS.some((f) => f.value === raw) ? (raw as FocusArea) : "everything";
+  } catch {
+    return "everything";
+  }
+}
+
+export const prefs = $state<{ mode: DashboardMode; focus: FocusArea }>({ mode: storedMode(), focus: storedFocus() });
+
+export function setDashboardMode(mode: DashboardMode): void {
+  prefs.mode = mode;
+  try {
+    window.localStorage.setItem(MODE_KEY, mode);
+  } catch {
+    // Private-mode storage failures just mean the choice is per-session.
+  }
+}
+
+export function setFocusArea(area: FocusArea): void {
+  prefs.focus = area;
+  try {
+    window.localStorage.setItem(FOCUS_KEY, area);
+  } catch {
+    // Per-session fallback as above.
+  }
+}
