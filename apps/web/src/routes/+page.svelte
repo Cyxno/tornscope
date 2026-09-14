@@ -4,6 +4,7 @@
   import {
     formatMoneyCompact,
     formatNumberCompact,
+  formatSignedNumberCompact,
     formatKpiValue,
     periodLabel,
     formatDate,
@@ -263,7 +264,7 @@
           <div class="md:px-6">
             <dt class="text-[11px] font-medium text-fg-faint" title="Battlestats gained today from hourly Torn snapshots — not a profit figure">Battlestats today</dt>
             <dd class="tnum mt-1 text-[22px] font-semibold {(todaySummary?.progression?.battlestatGain.value ?? 0) >= 0 ? 'text-positive' : 'text-negative'}">
-              {todaySummary?.progression?.battlestatGain.value != null ? formatSignedMoneyCompact(todaySummary.progression.battlestatGain.value) : '—'}
+              {todaySummary?.progression?.battlestatGain.value != null ? formatSignedNumberCompact(todaySummary.progression.battlestatGain.value) : '—'}
             </dd>
             <dd class="mt-0.5 text-[11px] text-fg-faint">from hourly snapshots</dd>
           </div>

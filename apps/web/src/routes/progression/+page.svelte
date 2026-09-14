@@ -129,9 +129,13 @@
     }
     return cards;
   });
-  const summaryGridClass = $derived(
-    summaryCards.length >= 5 ? "lg:grid-cols-5" : summaryCards.length === 4 ? "md:grid-cols-4" : summaryCards.length === 3 ? "md:grid-cols-3" : "md:grid-cols-2"
-  );
+  const summaryGridClass = $derived.by(() => {
+    const n = summaryCards.length;
+    if (n <= 2) return "md:grid-cols-2";
+    if (n === 3) return "md:grid-cols-3";
+    if (n === 4) return "md:grid-cols-4";
+    return "md:grid-cols-5";
+  });
 
   // Permission-aware sections: unavailable data must never render as zeros.
   const statAv = $derived(progression?.availability?.battlestats);
@@ -329,8 +333,10 @@
              live in Milestones, and the grid renders however many cards
              earn a slot. -->
         <div class="grid grid-cols-2 gap-px overflow-hidden rounded-card border border-border bg-border shadow-panel {summaryGridClass}">
-          {#each summaryCards as card (card.label)}
-            <Stat label={card.label} value={card.value} provenance={card.provenance} confidence={progression.battlestats.confidence} confidenceTooltip={confidenceTitle(progression.battlestats.confidence)} tone={card.tone} sub={card.sub} />
+          {#each summaryCards as card, i (card.label)}
+            <div class={summaryCards.length % 2 === 1 && i === summaryCards.length - 1 ? "max-md:col-span-2 [&>div]:h-full bg-surface" : "bg-surface"}>
+              <Stat label={card.label} value={card.value} provenance={card.provenance} confidence={progression.battlestats.confidence} confidenceTooltip={confidenceTitle(progression.battlestats.confidence)} tone={card.tone} sub={card.sub} />
+            </div>
           {/each}
         </div>
 
