@@ -169,7 +169,7 @@
         <span class="inline-flex items-center gap-2">
           <span class="h-1.5 w-1.5 rounded-full {toneTick[energyChip.tone]}" aria-hidden="true"></span>
           <a href="https://www.torn.com/gym.php" target="_blank" rel="noopener noreferrer" class="font-medium text-fg transition-colors hover:text-accent" title="Open the gym in Torn">Energy</a>
-          <span class="h-1 w-14 overflow-hidden rounded-full bg-surface-2 sm:w-20" aria-hidden="true">
+          <span class="h-1.5 w-14 overflow-hidden rounded-full bg-border sm:w-20" aria-hidden="true">
             <span class="block h-full rounded-full {energyChip.tone === 'positive' ? 'bg-positive' : 'bg-gradient-to-r from-accent-strong to-accent'}" style={`width:${energyChip.pct ?? 0}%`}></span>
           </span>
           <span class="tnum text-fg">{energyChip.value}</span>
@@ -179,7 +179,7 @@
         <span class="inline-flex items-center gap-2">
           <span class="h-1.5 w-1.5 rounded-full {toneTick[nerveChip.tone]}" aria-hidden="true"></span>
           <a href="https://www.torn.com/crimes.php" target="_blank" rel="noopener noreferrer" class="font-medium text-fg transition-colors hover:text-accent" title="Open crimes in Torn">Nerve</a>
-          <span class="h-1 w-14 overflow-hidden rounded-full bg-surface-2 sm:w-20" aria-hidden="true">
+          <span class="h-1.5 w-14 overflow-hidden rounded-full bg-border sm:w-20" aria-hidden="true">
             <span class="block h-full rounded-full {nerveChip.tone === 'positive' ? 'bg-positive' : 'bg-gradient-to-r from-accent-strong to-accent'}" style={`width:${nerveChip.pct ?? 0}%`}></span>
           </span>
           <span class="tnum text-fg">{nerveChip.value}</span>

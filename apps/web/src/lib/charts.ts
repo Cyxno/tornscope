@@ -224,6 +224,11 @@ export function tealArea(): Record<string, unknown> {
 export const accentArea = tealArea;
 
 export function timeAxis(data: (number | string)[], opts: { boundaryGap?: boolean } = {}): Record<string, unknown> {
+  // Dense per-point labels repeat the same day ("14/9 14/9 14/9 …"), which
+  // tells the reader nothing. Show a label only when it differs from the
+  // previously shown one — one label per run of identical values. The
+  // closure lives per options object, so charts rebuild it with their data.
+  let lastShown: string | null = null;
   return {
     type: "category",
     data,
@@ -231,7 +236,16 @@ export function timeAxis(data: (number | string)[], opts: { boundaryGap?: boolea
     // hideOverlap keeps dense ranges readable on narrow charts: ECharts
     // drops colliding labels instead of letting them collide or forcing
     // every label onto tiny screens.
-    axisLabel: { ...AXIS_LABEL, hideOverlap: true },
+    axisLabel: {
+      ...AXIS_LABEL,
+      hideOverlap: true,
+      interval: (_index: number, value: string | number) => {
+        const label = String(value);
+        if (label === lastShown) return false;
+        lastShown = label;
+        return true;
+      },
+    },
     axisLine: AXIS_LINE,
     axisTick: { show: false },
   };
