@@ -257,30 +257,24 @@
           <dd class="tnum mt-1 text-[22px] font-semibold text-fg">{formatKpiValue(data.cash)}</dd>
         </div>
         {#if prefs.mode === "simple"}
+          <!-- Dashboard cells (V1.0 hierarchy pass): training outcome joins
+               cash-on-hand; the accounting perspectives belong to Economy,
+               not the Overview dashboard. -->
           <div class="md:px-6">
-            <dt class="text-[11px] font-medium text-fg-faint" title="Known income minus true costs. Moving money between assets does not count.">{period} economic effect</dt>
-            <dd class="tnum mt-1 text-[22px] font-semibold {data.financial.trueIncome - data.financial.trueExpense >= 0 ? 'text-positive' : 'text-negative'}">
-              {formatSignedMoneyCompact(data.financial.trueIncome - data.financial.trueExpense)}
+            <dt class="text-[11px] font-medium text-fg-faint" title="Battlestats gained today from hourly Torn snapshots — not a profit figure">Battlestats today</dt>
+            <dd class="tnum mt-1 text-[22px] font-semibold {(todaySummary?.progression?.battlestatGain.value ?? 0) >= 0 ? 'text-positive' : 'text-negative'}">
+              {todaySummary?.progression?.battlestatGain.value != null ? formatSignedMoneyCompact(todaySummary.progression.battlestatGain.value) : '—'}
             </dd>
-            <dd class="mt-0.5 text-[11px] text-fg-faint">earned {formatMoneyCompact(data.financial.trueIncome)} · costs {formatMoneyCompact(data.financial.trueExpense)}</dd>
+            <dd class="mt-0.5 text-[11px] text-fg-faint">from hourly snapshots</dd>
           </div>
-          <div class="md:px-6" title="Cash that moved into owned value — stocks, items, points, banks. A form change, not a loss.">
-            <dt class="text-[11px] font-medium text-fg-faint">{period} moved into assets</dt>
-            <dd class="tnum mt-1 text-[22px] font-semibold text-fg">{formatMoneyCompact(data.financial.assetPurchases)}</dd>
-            <dd class="mt-0.5 text-[11px] text-fg-faint">asset sales {formatMoneyCompact(data.financial.assetSales)} · bank moves {formatMoneyCompact(data.financial.bankTransfers)}</dd>
-          </div>
-          <div class="md:pl-6">
-            <dt class="text-[11px] font-medium text-fg-faint">{period} largest shift</dt>
-            <dd class="mt-1 text-[15px] font-medium leading-snug text-fg-muted">
-              {#if data.financial.assetPurchases >= data.financial.assetSales && data.financial.assetPurchases > 0}
-                Cash → assets ({formatMoneyCompact(data.financial.assetPurchases)})
-              {:else if data.financial.assetSales > data.financial.assetPurchases && data.financial.assetSales > 0}
-                Assets → cash ({formatMoneyCompact(data.financial.assetSales)})
-              {:else}
-                No dominant shift
-              {/if}
+          <div class="md:px-6" title="Inferred training sessions from bar history — Xanax uses are exact from your drug log">
+            <dt class="text-[11px] font-medium text-fg-faint">Training today</dt>
+            <dd class="tnum mt-1 text-[22px] font-semibold text-fg">
+              {todaySummary?.progression ? `${todaySummary.progression.sessions} session${todaySummary.progression.sessions === 1 ? '' : 's'}` : '—'}
             </dd>
-            <dd class="mt-0.5 text-[11px] text-fg-faint">Full detail in <a class="text-link underline decoration-border underline-offset-2" href="/money">Economy</a></dd>
+            <dd class="mt-0.5 text-[11px] text-fg-faint">
+              {#if (todaySummary?.progression?.energyTrained.value ?? null) !== null}~{formatNumberCompact(todaySummary?.progression?.energyTrained.value)} E{/if}{#if (todaySummary?.drugs.xanax.consumed ?? 0) > 0} · {todaySummary?.drugs.xanax.consumed} Xanax{/if}
+            </dd>
           </div>
         {:else}
           <div class="md:px-6">

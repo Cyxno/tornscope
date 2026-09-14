@@ -144,10 +144,12 @@
               <dt class="text-[10.5px] font-medium uppercase tracking-[0.13em] text-fg-faint">losses</dt>
               <dd class="tnum text-[26px] font-semibold leading-none text-negative">{summary.outgoingLosses}</dd>
             </div>
-            <div>
-              <dt class="text-[10.5px] font-medium uppercase tracking-[0.13em] text-fg-faint">mugs</dt>
-              <dd class="tnum text-[26px] font-semibold leading-none text-fg">{summary.mugsMade}</dd>
-            </div>
+            {#if summary.mugsMade > 0}
+              <div>
+                <dt class="text-[10.5px] font-medium uppercase tracking-[0.13em] text-fg-faint">mugs</dt>
+                <dd class="tnum text-[26px] font-semibold leading-none text-fg">{summary.mugsMade}</dd>
+              </div>
+            {/if}
           </dl>
         </div>
         <div class="min-w-0 lg:pl-10">
@@ -165,10 +167,12 @@
               <dt class="text-[10.5px] font-medium uppercase tracking-[0.13em] text-fg-faint">lost</dt>
               <dd class="tnum text-[26px] font-semibold leading-none text-negative">{summary.incomingLost}</dd>
             </div>
-            <div>
-              <dt class="text-[10.5px] font-medium uppercase tracking-[0.13em] text-fg-faint">mugged</dt>
-              <dd class="tnum text-[26px] font-semibold leading-none text-fg">{summary.mugsReceived}</dd>
-            </div>
+            {#if summary.mugsReceived > 0}
+              <div>
+                <dt class="text-[10.5px] font-medium uppercase tracking-[0.13em] text-fg-faint">mugged</dt>
+                <dd class="tnum text-[26px] font-semibold leading-none text-fg">{summary.mugsReceived}</dd>
+              </div>
+            {/if}
           </dl>
         </div>
       </div>

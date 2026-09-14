@@ -22,32 +22,38 @@ describe("economy simple view", () => {
   it("leads with the official net worth change", () => {
     expect(simple).toContain("Net worth change");
     expect(simple).toContain("exact · official Torn snapshots");
-    expect(simple.indexOf("Net worth change")).toBeLessThan(simple.indexOf("Real gains &amp; costs"));
+    expect(simple.indexOf("Net worth change")).toBeLessThan(simple.indexOf("Known income &amp; costs"));
   });
 
-  it("shows what changed: official category movements, largest first", () => {
-    expect(simple).toContain("What changed");
-    expect(simple).toContain("Official category movements");
+  it("names the main drivers — largest first, price moves included", () => {
+    expect(simple).toContain("Main drivers");
+    expect(simple).toContain("Official category movements, largest first");
     expect(simple).toContain("incl. price moves");
   });
 
-  it("explains real gains & costs — conversions excluded", () => {
-    expect(simple).toContain("Real gains &amp; costs");
+  it("explains known income & costs — conversions excluded", () => {
+    expect(simple).toContain("Known income &amp; costs");
     expect(simple).toContain("Known income minus true costs — moving money between assets does not count.");
   });
 
-  it("shows asset shifts as value changing form — never gains or losses", () => {
-    expect(simple).toContain("Asset shifts");
-    expect(simple).toContain("not gains, not losses");
+  it("keeps Simple curated: no duplicate lenses (asset shifts / notable movements / biggest costs)", () => {
+    expect(simple).not.toContain("Asset shifts");
+    expect(simple).not.toContain("What mattered most");
+    expect(simple).not.toContain("Biggest costs");
+    // The removed lenses remain in Advanced.
+    expect(money).toContain("Asset conversions");
+    expect(money).toContain("Major movements");
   });
 
-  it("surfaces the unexplained residual when material", () => {
-    expect(simple).toContain("Unexplained");
-    expect(simple).toContain("the remainder is shown, not forced into a category");
+  it("surfaces the residual neutrally when material — never as an error banner", () => {
+    expect(simple).toContain("could not be attributed");
+    expect(simple).toContain("Shown, not forced into a category");
+    // No warning-styled residual tile in Simple.
+    expect(simple).not.toContain("border-warning/30");
   });
 
   it("demotes wallet turnover to a cash-details disclosure with the Torn explanation", () => {
-    expect(simple).toContain("data-testid=\"cash-details\"");
+    expect(simple).toContain('data-testid="cash-details"');
     expect(simple).toContain("Cash details — wallet turnover &amp; reconciliation");
     // The Torn-specific wallet explanation must be present.
     expect(simple).toContain("players store money in banks, stocks and items");
@@ -75,14 +81,20 @@ describe("economy advanced view", () => {
 });
 
 describe("overview hierarchy", () => {
-  it("simple mode leads the strip with the wealth story, not wallet turnover", () => {
-    expect(overview).toContain("{period} economic effect");
-    expect(overview).toContain("{period} moved into assets");
-    // Within the strip, wallet turnover exists only on the Advanced branch:
-    // the simple branch comes first and never mentions it.
+  it("Simple strip is a dashboard: cash on hand + training outcome, no accounting heroes", () => {
+    // V1.0 hierarchy pass: the accounting perspectives moved out of the
+    // Overview Simple strip (they live in Economy).
     const stripStart = overview.indexOf('<dl class="mt-6 grid');
     const stripEnd = overview.indexOf("</dl>", stripStart);
     const strip = overview.slice(stripStart, stripEnd);
+    expect(strip).toContain("Cash on hand");
+    expect(strip).toContain("Battlestats today");
+    expect(strip).toContain("Training today");
+    const simpleSlice = strip.slice(strip.indexOf('prefs.mode === "simple"'), strip.indexOf('{:else}'));
+    expect(simpleSlice).not.toContain("economic effect");
+    expect(simpleSlice).not.toContain("moved into assets");
+    expect(simpleSlice).not.toContain("largest shift");
+    // Wallet turnover exists only on the Advanced branch, after Simple's.
     const simpleBranch = strip.indexOf('prefs.mode === "simple"');
     const advancedBranch = strip.indexOf("{:else}");
     const walletTurnover = strip.indexOf("net wallet movement");
@@ -92,18 +104,19 @@ describe("overview hierarchy", () => {
     expect(strip.slice(simpleBranch, advancedBranch)).not.toContain("wallet");
   });
 
-  it("explains the Torn wallet context and the net-worth-vs-effect distinction", () => {
+  it("explains the Torn wallet context on the Advanced branch only", () => {
     expect(overview).toContain("players store money in banks, stocks and items rather than holding cash");
-    expect(overview).toContain("Known income minus true costs. Moving money between assets does not count.");
+    // The known-income-vs-costs explanation lives in EconomySimple now.
+    expect(simple).toContain("Known income minus true costs — moving money between assets does not count.");
   });
 
   it("focus ordering applies to every Overview section without hiding any", () => {
     expect(overview).toContain("overviewSectionOrder(prefs.focus)");
-    expect(overview).toContain("aria-label=\"Net worth\" style=\"order: {order.networth};\"");
+    expect(overview).toContain('aria-label="Net worth" style="order: {order.networth};"');
     expect(overview).toContain("aria-label=\"Today's story\" style=\"order: {order.today};\"");
-    expect(overview).toContain("aria-label=\"Recent activity\" style=\"order: {order.activity};\"");
-    expect(overview).toContain("aria-label=\"Beyond money\" style=\"order: {order.beyond};\"");
-    expect(overview).toContain("style=\"order: {order.live};\"");
+    expect(overview).toContain('aria-label="Recent activity" style="order: {order.activity};"');
+    expect(overview).toContain('aria-label="Beyond money" style="order: {order.beyond};"');
+    expect(overview).toContain('style="order: {order.live};"');
   });
 });
 
@@ -136,11 +149,6 @@ describe("economy narrative order (V0.2 semantic pass)", () => {
     expect(money).toContain('activeLens = $state("networth")');
   });
 
-  it("simple surfaces the biggest costs beside the economic effect", () => {
-    const effect = simple.indexOf("Real gains &amp; costs");
-    const costs = simple.indexOf("Biggest costs");
-    expect(costs).toBeGreaterThan(effect);
-  });
 });
 
 describe('release-candidate QA regressions', () => {

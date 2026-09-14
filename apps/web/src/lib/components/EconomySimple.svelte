@@ -5,29 +5,29 @@
   import ConfidenceBadge from "./ConfidenceBadge.svelte";
 
   /**
-   * Economy — SIMPLE presentation (product simplification).
+   * Economy — SIMPLE presentation (curated interpretation, not reduced
+   * Advanced).
    *
-   * Answers, in order: "Did I get richer or poorer (official snapshot
-   * delta)?", "What changed (category moves)?", "Did I actually earn or
-   * spend value (economic effect — conversions excluded)?", "What moved
-   * between forms (asset shifts)?" Wallet TURNOVER is deliberately NOT a
-   * headline: in Torn players store wealth outside the wallet, so tens of
-   * millions flowing through is normal, not performance. It stays available
-   * in the cash-details disclosure and in Advanced mode.
+   * Answers, in order: "Am I richer or poorer?", "What mainly changed?",
+   * "How much of it was real income vs costs?", and — when part of the move
+   * can't be attributed — says so plainly and points to the detail below.
    *
-   * Semantics are never simplified away: estimates stay labeled, the
-   * unexplained residual surfaces when material, and partial coverage is
-   * disclosed.
+   * Deliberately OMITTED here (each is one more lens on the same events and
+   * lives in Advanced or the disclosure): the asset-shifts view (Advanced
+   * conversions lens), the notable-movements list (Advanced rail), the
+   * biggest-cost breakdown (Advanced economic-effect lens), and any wallet
+   * throughput headline (Advanced editorial + cash lens). Uncertainty stays
+   * honest but neutral — an unattributed residual is not a warning.
    */
 
   let { economy, period }: { economy: EconomySummaryResponse; period: string } = $props();
 
   const nw = $derived(economy.networth);
   const effect = $derived(economy.economicEffect);
-  // Zero-change rows (e.g. an untouched Bank) carry no information — the
-  // full table stays available in Advanced.
-  const changed = $derived.by(() =>
-    [...nw.byCategory].filter((c) => c.change !== 0).sort((a, b) => Math.abs(b.change) - Math.abs(a.change)).slice(0, 5)
+  // Main drivers: the category moves that carried the change, largest first.
+  // Zero-change rows carry no information and are omitted.
+  const drivers = $derived.by(() =>
+    [...nw.byCategory].filter((c) => c.change !== 0).sort((a, b) => Math.abs(b.change) - Math.abs(a.change)).slice(0, 4)
   );
   // The net-worth-vs-economic-effect gap: net worth includes asset (price)
   // moves and conversions; economic effect does not. Never force a balance.
@@ -35,40 +35,10 @@
   const unexplainedMaterial = $derived(
     unexplained !== null && Math.abs(unexplained) > Math.max(1_000, Math.abs(nw.change.value ?? 0) * 0.02)
   );
-  const shifts = $derived.by(() => {
-    const rows: Array<{ label: string; amount: string; hint: string }> = [];
-    const into = economy.conversions.cashIntoAssets.value;
-    const out = economy.conversions.assetsIntoCash.value;
-    if (into !== null && into > 0) rows.push({ label: "Into assets", amount: formatMoneyCompact(into), hint: "Cash spent on stocks, items, points, banks — value you still own in another form" });
-    if (out !== null && out > 0) rows.push({ label: "Into cash", amount: formatMoneyCompact(out), hint: "Cash received from selling owned value — not earnings" });
-    if (economy.conversions.bankTransfers > 0) rows.push({ label: "Bank transfers", amount: formatMoneyCompact(economy.conversions.bankTransfers), hint: "Internal movements between wallet and bank" });
-    return rows;
-  });
-  const topMovements = $derived.by(() => {
-    // Largest first, but "what mattered" must not read as a duplicated row:
-    // repeated labels (e.g. several City Bank movements) merge into one row
-    // with a ×N count and the COMBINED amount — semantic dedupe, never
-    // string-blind removal, and the figure stays the honest total.
-    const out: Array<{ id: string; label: string; description: string | null; role: string; amount: number; count: number }> = [];
-    for (const m of economy.majorMovements) {
-      const existing = out.find((o) => o.label === m.label);
-      if (existing) {
-        existing.amount += m.amount;
-        existing.count += 1;
-        continue;
-      }
-      out.push({ id: m.id, label: m.label, description: m.description, role: m.role, amount: m.amount, count: 1 });
-    }
-    return out.slice(0, 3);
-  });
-  const topCosts = $derived(
-    [...economy.economicEffect.expenseCategories].filter((c) => c.total > 0).sort((a, b) => b.total - a.total).slice(0, 3)
-  );
-  const movementTone = (role: string): string => (role === "income" ? "text-positive" : role === "expense" ? "text-negative" : "text-fg");
 </script>
 
 <section aria-label="Economy summary" class="space-y-9">
-  <!-- ── Hero: the official wealth result ── -->
+  <!-- ── Outcome: the official wealth result ── -->
   <div>
     <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
       <p class="section-label">Net worth change</p>
@@ -94,32 +64,33 @@
     </p>
   </div>
 
-  <!-- ── What changed: official category moves, biggest first ── -->
-  {#if nw.byCategory.length > 0}
+  <!-- ── Main drivers: what carried the change ── -->
+  {#if drivers.length > 0}
     <div class="section-rule pt-7">
-      <p class="section-label">What changed</p>
-      <p class="mt-1 text-[11px] text-fg-faint">Official category movements — largest first. Non-cash moves include price changes.</p>
-      {#if changed.length > 0}
-        <ul class="mt-4 space-y-2.5">
-          {#each changed as c (c.key)}
-            <li class="flex items-baseline justify-between gap-4 border-b border-border/60 py-2 last:border-0">
-              <span class="text-[13.5px] text-fg-muted">
-                {c.label}{#if c.key !== "cash"}<span class="ml-1.5 text-[10px] uppercase tracking-wide text-fg-faint">incl. price moves</span>{/if}
-              </span>
-              <span class="tnum text-[13.5px] font-medium {c.change >= 0 ? "text-positive" : "text-negative"}">{formatSignedMoneyCompact(c.change)}</span>
-            </li>
-          {/each}
-        </ul>
-      {:else}
-        <p class="mt-4 text-[13px] text-fg-faint">Nothing moved this period — every category is flat.</p>
-      {/if}
+      <p class="section-label">Main drivers</p>
+      <p class="mt-1 text-[11px] text-fg-faint">Official category movements, largest first — non-cash moves include price changes.</p>
+      <ul class="mt-4 space-y-2.5">
+        {#each drivers as c (c.key)}
+          <li class="flex items-baseline justify-between gap-4 border-b border-border/60 py-2 last:border-0">
+            <span class="text-[13.5px] text-fg-muted">
+              {c.label}{#if c.key !== "cash"}<span class="ml-1.5 text-[10px] uppercase tracking-wide text-fg-faint">incl. price moves</span>{/if}
+            </span>
+            <span class="tnum text-[13.5px] font-medium {c.change >= 0 ? "text-positive" : "text-negative"}">{formatSignedMoneyCompact(c.change)}</span>
+          </li>
+        {/each}
+      </ul>
+    </div>
+  {:else if nw.byCategory.length > 0}
+    <div class="section-rule pt-7">
+      <p class="section-label">Main drivers</p>
+      <p class="mt-4 text-[13px] text-fg-faint">Nothing moved this period — every category is flat.</p>
     </div>
   {/if}
 
-  <!-- ── Real gains & costs: true economics, conversions excluded ── -->
+  <!-- ── Known income & costs: real economics, conversions excluded ── -->
   <div class="section-rule pt-7">
     <div class="flex items-center justify-between gap-2">
-      <p class="section-label">Real gains &amp; costs</p>
+      <p class="section-label">Known income &amp; costs</p>
       <ConfidenceBadge meta={effect.confidence} />
     </div>
     <p class="mt-1 text-[11px] text-fg-faint" title="Known income minus true costs. Moving money between assets does not count.">
@@ -128,63 +99,25 @@
     <div class="mt-4 space-y-2 text-sm">
       <p class="flex items-baseline justify-between gap-3"><span class="text-fg-muted">Income</span><span class="tnum font-medium text-positive">+{formatMoneyCompact(effect.income.value)}</span></p>
       <p class="flex items-baseline justify-between gap-3"><span class="text-fg-muted">Costs</span><span class="tnum font-medium text-negative">−{formatMoneyCompact(effect.expenses.value)}</span></p>
-      <p class="flex items-baseline justify-between gap-3 border-t border-border pt-2"><span class="text-fg">Economic effect</span><span class="tnum text-[15px] font-semibold {(effect.net.value ?? 0) >= 0 ? 'text-positive' : 'text-negative'}">{effect.net.value === null ? "—" : formatSignedMoneyCompact(effect.net.value)}</span></p>
+      <p class="flex items-baseline justify-between gap-3 border-t border-border pt-2"><span class="text-fg">Net</span><span class="tnum text-[15px] font-semibold {(effect.net.value ?? 0) >= 0 ? 'text-positive' : 'text-negative'}">{effect.net.value === null ? "—" : formatSignedMoneyCompact(effect.net.value)}</span></p>
     </div>
     <p class="mt-2 text-[11px] leading-relaxed text-fg-faint">
       This and the net worth change answer different questions — net worth also moves when prices shift and when you convert
       value between forms, so they rarely match.
     </p>
-    {#if topCosts.length > 0}
-      <p class="mt-3 text-[11px] font-medium uppercase tracking-[0.12em] text-fg-faint">Biggest costs</p>
-      <ul class="mt-1.5 space-y-1">
-        {#each topCosts as c (c.key)}
-          <li class="flex items-baseline justify-between gap-3 text-[12.5px]">
-            <span class="text-fg-muted" title={c.provenance === "estimated" ? "Estimated value of items consumed — the log records the use, not its cost" : undefined}>{c.label}</span>
-            <span class="tnum text-fg-muted">−{formatMoneyCompact(c.total)}</span>
-          </li>
-        {/each}
-      </ul>
-    {/if}
   </div>
 
-  <!-- ── Asset shifts: value changing form ── -->
-  {#if shifts.length > 0}
-    <div class="section-rule pt-7">
-      <p class="section-label">Asset shifts</p>
-      <p class="mt-1 text-[11px] text-fg-faint">Value changing form — not gains, not losses.</p>
-      <ul class="mt-3 space-y-2">
-        {#each shifts as s (s.label)}
-          <li class="flex items-baseline justify-between gap-4 text-sm" title={s.hint}>
-            <span class="text-fg-muted">{s.label}</span>
-            <span class="tnum font-medium text-fg">{s.amount}</span>
-          </li>
-        {/each}
-      </ul>
-    </div>
-  {/if}
-
-  <!-- ── What mattered: the largest recorded movements ── -->
-  {#if topMovements.length > 0}
-    <div class="section-rule pt-7">
-      <p class="section-label">What mattered most</p>
-      <ul class="mt-3 space-y-2">
-        {#each topMovements as m (m.id)}
-          <li class="flex items-baseline justify-between gap-4 border-b border-border/60 py-2 last:border-0">
-            <span class="min-w-0 truncate text-[13.5px] text-fg-muted" title={m.description ?? m.label}>
-              {m.label}{#if (m.count ?? 1) > 1}<span class="ml-1.5 text-[10px] uppercase tracking-wide text-fg-faint">×{m.count}</span>{/if}
-            </span>
-            <span class="tnum shrink-0 text-[13.5px] font-medium {movementTone(m.role)}">{formatMoneyCompact(m.amount)}</span>
-          </li>
-        {/each}
-      </ul>
-    </div>
-  {/if}
-
-  <!-- ── Honesty: unexplained residual, when material ── -->
+  <!-- ── Honest residual: neutral context, never an error banner ── -->
   {#if unexplainedMaterial}
-    <div class="rounded-tile border border-warning/30 bg-warning/5 px-4 py-3 text-sm text-warning">
-      <span class="font-medium">Unexplained {formatSignedMoneyCompact(unexplained)} of the net worth change.</span>
-      Recorded events don't fully explain the snapshot move — the remainder is shown, not forced into a category.
+    <div class="section-rule pt-7 text-[13px] leading-relaxed">
+      <p class="text-fg-muted">
+        {formatSignedMoneyCompact(Math.abs(unexplained ?? 0))} of the net worth change could not be attributed to recorded
+        activity or price moves.
+      </p>
+      <p class="mt-1 text-[11px] text-fg-faint">
+        Shown, not forced into a category — the <button class="underline" onclick={() => setDashboardMode("advanced")}>reconciliation</button> (Advanced) and the
+        cash details below carry the full split.
+      </p>
     </div>
   {/if}
 

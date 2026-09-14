@@ -111,3 +111,26 @@ Found during the settings/theming epic's own walkthroughs:
 | PF-045 | Today | Header showed "Updated just now" next to the amber "stale — refreshing" chip: the age label reads a clock anchored to the served payload's own fetch time, so a stale payload claimed "just now" forever | P2 | FIXED — the Updated label is suppressed while `data.stale` (the chip alone tells the story); a stale payload no longer prints a contradictory age |
 | PF-046 | Economy (Simple) | "What changed" could list $0 rows (Bank $0) — technically available, zero informational value | P2 | FIXED — zero-change rows are filtered; "Nothing moved this period" empty state when all categories are flat; full table remains in Advanced |
 | PF-047 | Today | "Activity behind the moves" printed cramped separators ("-$819.8k·Consumed value") — Svelte whitespace collapse | P3 | FIXED — explicit spaced separators |
+
+### V1.0 product-wide summary hierarchy + Simple maturity pass
+
+Block inventory (Phase 3, before edits): every route's visible blocks were
+classified A (primary outcome) / B (actionable now) / C (useful context) /
+D (supporting analysis) / E (technical-forensic) / F (low-value-redundant).
+Primary-slot offenders found and fixed below; the classified inventory is
+reflected in the UI-DESIGN summary-composition rules.
+
+| ID | Route | Issue | Severity | Status |
+|----|-------|-------|----------|--------|
+| PF-048 | Progression | 1D summary grid filled fixed 4 slots: "Gain per day — less than a day of history" (dead card) and "Awards 1D = 0" (meaningless zero) occupied primary positions; the useful gym-attributed gain sat in a strip below | P1 | FIXED — conditional summary grid: Total battlestats / Battlestat gain (sub "all gym-attributed" when the split is trivial) / Gain per day ONLY when a full day of history exists / Gym-attributed only when the split is informative / Training sessions·E; awards moved into the Milestones panel (shown only when ≠ 0) |
+| PF-049 | Progression | Period repeated three times near the top ("1D in training" heading, "grew by +15.7k across 1D" sentence, "1D change" card label) | P2 | FIXED — human range headline named once ("Training today" / "Training — last 7 days" / "Training — selected range"); sentence reads "+15.7k battlestats"; grid label "Battlestat gain" |
+| PF-050 | Economy (Simple) | Simple still showed three lenses over the same events (What changed / Asset shifts / What mattered most) plus accounting vocabulary — not curated | P1 | FIXED — Simple = Net worth change → Main drivers → Known income & costs → neutral residual note → cash-details disclosure; Asset shifts, What mattered most and Biggest costs remain in Advanced (conversions lens, Major movements rail, effect lens) |
+| PF-051 | Economy (Simple) | Material unexplained residual rendered as a large amber warning banner for a normal partial-attribution state | P2 | FIXED — neutral "X of the net worth change could not be attributed … shown, not forced into a category" with pointer to reconciliation; amber reserved for genuine caution |
+| PF-052 | Overview (Simple) | Simple strip carried accounting perspectives (economic effect, moved into assets, largest shift) — Economy work, not dashboard content | P2 | FIXED — Simple strip = Cash on hand + Battlestats today + Training today (sessions · ~E · Xanax count); Advanced keeps its cash-movement cells |
+| PF-053 | Combat | "MUGS 0 / MUGGED 0" occupied hero summary slots when no mugging occurred | P2 | FIXED — mugs/mugged cells render only when > 0 (losses 0 kept — a clean record is meaningful) |
+
+Deliberately unchanged after audit: Stocks (summary already outcome-first,
+no zero heroes), Merits (unspent/invested/recommendation summary correct),
+Crimes (attempts/success/value summary correct), Travel (est. labels quiet,
+status first), Overview Advanced (financial context allowed below the
+dashboard), Today (top already outcome-first after PF-045).

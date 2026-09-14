@@ -77,6 +77,32 @@ label.
   `formatMoneyCompact` / `formatSignedMoneyCompact`; full precision is reserved
   for ledger rows where exactness is the point.
 
+### Summary composition rules (V1.0 hierarchy pass)
+
+- **Summary admission rule** — a metric may occupy a top-level summary card
+  only if it answers one of: *Where am I now? / Am I improving? / What
+  changed? / What should I act on? / What is the most important result?* —
+  for the **selected range**.
+- **Range-aware rule** — rates like gain-per-day appear only when the range
+  makes them meaningful (a full day of observed history). Short ranges
+  substitute metrics that do answer the question (gym-attributed gain,
+  sessions, training energy).
+- **Zero / unavailable rule** — no hero slot for a meaningless 0 or an
+  em-dash. Meaningful zeros stay (0 losses, a fully reconciled residual);
+  zeros that only mean "nothing happened" (awards today, mugs made) hide
+  until they have a value. A primary card rendering "—" should be
+  exceptional.
+- **Conditional composition** — summary grids render however many cards
+  earn a slot. Never pad to a fixed count; whitespace beats filler.
+- **Simple mode** — a curated interpretation of the data, not
+  Advanced-minus-rows: each event gets ONE primary representation;
+  additional lenses (asset shifts, notable movements, cost breakdowns)
+  live in Advanced.
+- **Residual styling** — an unattributed residual is neutral context
+  ("could not be attributed … shown, not forced into a category"), never a
+  warning banner by default. Amber is reserved for genuine caution or
+  required action.
+
 ## Layout rules
 
 - **Summary first, explanation second, technical detail last** (V0.2

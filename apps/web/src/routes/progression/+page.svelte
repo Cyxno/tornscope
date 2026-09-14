@@ -54,6 +54,85 @@
 
   const period = $derived(periodLabel(dateRange.preset));
 
+  // Human range headline (Phase: period-copy cleanup) — the period is named
+  // once here instead of repeating in the masthead sentence and grid labels.
+  const rangeHeadline = $derived.by(() => {
+    switch (dateRange.preset) {
+      case "today":
+      case "1d":
+        return "Training today";
+      case "7d":
+        return "Training — last 7 days";
+      case "14d":
+        return "Training — last 14 days";
+      case "30d":
+        return "Training — last 30 days";
+      case "90d":
+        return "Training — last 90 days";
+      case "this_month":
+        return "Training — this month";
+      case "prev_month":
+        return "Training — last month";
+      case "this_year":
+        return "Training — this year";
+      case "all":
+        return "Training — all time";
+      default:
+        return "Training — selected range";
+    }
+  });
+
+  // Conditional summary composition (Summary admission rule): a card must
+  // answer "where am I / am I improving / what did it take" for the
+  // SELECTED range. Gain/day appears only when a full day of history makes
+  // it meaningful; gym-attributed appears only when the split is
+  // informative (not when every gained stat is gym); awards live in
+  // Milestones — a zero there never occupies a hero slot.
+  const summaryCards = $derived.by(() => {
+    const p = progression;
+    if (!p) return [] as Array<{ label: string; value: string; provenance: "exact" | "derived" | "estimated"; tone?: "neutral" | "positive" | "negative" | "accent"; sub?: string | null }>;
+    const cards: Array<{ label: string; value: string; provenance: "exact" | "derived" | "estimated"; tone?: "neutral" | "positive" | "negative" | "accent"; sub?: string | null }> = [];
+    cards.push({ label: "Total battlestats", value: formatKpiValue(p.summary.totalBattlestats, formatNumberCompact), provenance: "exact", tone: "accent" });
+    if (p.summary.totalDelta.value !== null) {
+      const allGym =
+        p.battlestats.attribution?.gym !== null &&
+        p.battlestats.attribution?.gym === p.summary.totalDelta.value;
+      cards.push({
+        label: "Battlestat gain",
+        value: formatSignedNumberCompact(p.summary.totalDelta.value),
+        provenance: "derived",
+        tone: p.summary.totalDelta.value >= 0 ? "positive" : "negative",
+        sub:
+          p.battlestats.changePct !== null
+            ? `${p.battlestats.changePct >= 0 ? "+" : ""}${p.battlestats.changePct.toFixed(2)}%${allGym ? " · all gym-attributed" : ""}`
+            : p.battlestats.baselineKind === "tracked_since"
+              ? "since tracking began"
+              : allGym
+                ? "all gym-attributed"
+                : null,
+      });
+    }
+    if (p.summary.gainPerDay.value !== null) {
+      cards.push({ label: "Gain per day", value: formatNumberCompact(p.summary.gainPerDay.value), provenance: "derived" });
+    }
+    const gym = p.battlestats.attribution?.gym ?? null;
+    if (gym !== null && p.summary.totalDelta.value !== null && gym !== p.summary.totalDelta.value) {
+      cards.push({ label: "Gym-attributed", value: "+" + formatNumberCompact(gym), provenance: "derived", sub: "of the battlestat gain" });
+    }
+    if (p.summary.sessions > 0) {
+      cards.push({
+        label: "Training",
+        value: `${p.summary.sessions} session${p.summary.sessions === 1 ? "" : "s"}`,
+        provenance: "estimated",
+        sub: p.summary.energyTrained.value !== null ? `~${formatNumberCompact(p.summary.energyTrained.value)} E inferred` : null,
+      });
+    }
+    return cards;
+  });
+  const summaryGridClass = $derived(
+    summaryCards.length >= 5 ? "lg:grid-cols-5" : summaryCards.length === 4 ? "md:grid-cols-4" : summaryCards.length === 3 ? "md:grid-cols-3" : "md:grid-cols-2"
+  );
+
   // Permission-aware sections: unavailable data must never render as zeros.
   const statAv = $derived(progression?.availability?.battlestats);
   const statBlocked = $derived(statAv !== undefined && !availabilityHasData(statAv));
@@ -198,7 +277,7 @@
     <!-- ═══ Editorial masthead ═══ -->
     <section aria-labelledby="prog-masthead" class="rounded-card border border-border bg-surface px-5 py-5 shadow-panel sm:px-7">
       <div class="flex flex-wrap items-center justify-between gap-2">
-        <h2 id="prog-masthead" class="section-label !tracking-[0.12em]">{period} in training</h2>
+        <h2 id="prog-masthead" class="section-label !tracking-[0.12em]">{rangeHeadline}</h2>
         <div class="flex flex-wrap items-center gap-2">
           <span class="chip chip-quiet !border-border !text-[10px]" title="Battlestat values recorded by Torn, hourly">exact</span>
           <span class="chip chip-quiet !border-border !text-[10px]" title="Computed directly from exact observations">derived</span>
@@ -209,11 +288,10 @@
         {#if progression.summary.totalDelta.value !== null && progression.battlestats.baselineKind === 'tracked_since'}
           Battlestat tracking began {formatDate(progression.battlestats.trackedSince)} — inside this range — so the
           <span class="tnum font-semibold {progression.summary.totalDelta.value >= 0 ? 'text-positive' : 'text-negative'}">{formatSignedNumberCompact(progression.summary.totalDelta.value)}</span>
-          change covers only the tracked portion, not a full {period === "All" ? "history" : period}.
+          change covers only the tracked portion.
         {:else if progression.summary.totalDelta.value !== null}
-          Your battlestats grew by
           <span class="tnum font-semibold {progression.summary.totalDelta.value >= 0 ? 'text-positive' : 'text-negative'}">{formatSignedNumberCompact(progression.summary.totalDelta.value)}</span>
-          across {period === "All" ? "all time" : period}{#if progression.summary.gainPerDay.value !== null} — about {formatNumberCompact(progression.summary.gainPerDay.value)} per day{/if}.
+          battlestats{#if progression.summary.gainPerDay.value !== null} — about {formatNumberCompact(progression.summary.gainPerDay.value)} per day{/if}.
         {:else if progression.battlestats.trackedSince !== null}
           Battlestat history is still accumulating — nothing in this range yet.
         {:else}
@@ -222,7 +300,7 @@
       </p>
       <p class="mt-2 max-w-4xl text-sm leading-relaxed text-fg-muted">
         {#if progression.energy.covered}
-          {progression.summary.energyTrained.value !== null ? `~${formatNumberCompact(progression.summary.energyTrained.value)}` : "—"} of inferred training energy went into {progression.summary.sessions} inferred session{progression.summary.sessions === 1 ? "" : "s"}{#if progression.summary.likelyJumps > 0}, including {progression.summary.likelyJumps} likely happy jump{progression.summary.likelyJumps === 1 ? "" : "s"}{/if}.
+          {#if progression.summary.energyTrained.value !== null}~{formatNumberCompact(progression.summary.energyTrained.value)} E trained across {progression.summary.sessions} session{progression.summary.sessions === 1 ? "" : "s"}{#if progression.summary.likelyJumps > 0}, including {progression.summary.likelyJumps} likely happy jump{progression.summary.likelyJumps === 1 ? "" : "s"}{/if}.{:else}{progression.summary.sessions} session{progression.summary.sessions === 1 ? "" : "s"} in this range.{/if}
         {:else}
           Energy analytics begin with the first bar snapshot — Torn only exposes bars live, so TornScope records them from now on.
         {/if}
@@ -245,11 +323,15 @@
           action={{ label: "Review API access in Settings", run: () => void goto("/settings?tab=api") }}
         />
       {:else}
-        <div class="grid grid-cols-2 gap-px overflow-hidden rounded-card border border-border bg-border shadow-panel md:grid-cols-4">
-          <Stat label="Total battlestats" value={formatKpiValue(progression.summary.totalBattlestats, formatNumberCompact)} provenance="exact" tone="accent" confidence={progression.battlestats.confidence} confidenceTooltip={confidenceTitle(progression.battlestats.confidence)} />
-          <Stat label="{period} change" value={progression.summary.totalDelta.value !== null ? formatSignedNumberCompact(progression.summary.totalDelta.value) : progression.battlestats.trackedSince !== null ? "Not enough history yet" : "—"} provenance="derived" confidence={progression.battlestats.confidence} tone={progression.summary.totalDelta.value === null ? "neutral" : progression.summary.totalDelta.value >= 0 ? "positive" : "negative"} sub={progression.battlestats.changePct !== null ? `${progression.battlestats.changePct >= 0 ? "+" : ""}${progression.battlestats.changePct.toFixed(2)}%` : progression.battlestats.baselineKind === "tracked_since" ? "since tracking began" : null} />
-          <Stat label="Gain per day" value={formatKpiValue(progression.summary.gainPerDay, formatNumberCompact)} provenance="derived" confidence={progression.battlestats.confidence} sub={progression.summary.gainPerDay.value === null && progression.battlestats.spanDays != null && progression.battlestats.spanDays < 1 ? "less than a day of history" : progression.summary.gainPerDay.value === null && progression.summary.totalDelta.value === null ? "needs baseline history" : null} />
-          <Stat label="Awards {period}" value={progression.profile.awardsDelta !== null ? formatSignedNumberCompact(progression.profile.awardsDelta) : "—"} provenance="derived" confidence={progression.battlestats.confidence} sub={progression.profile.awards !== null ? `${progression.profile.awards} total` : null} />
+        <!-- Conditional summary composition (UI-DESIGN §Summary admission):
+             only meaningful, range-appropriate metrics occupy the grid —
+             gain/day appears only when a full day of history exists, awards
+             live in Milestones, and the grid renders however many cards
+             earn a slot. -->
+        <div class="grid grid-cols-2 gap-px overflow-hidden rounded-card border border-border bg-border shadow-panel {summaryGridClass}">
+          {#each summaryCards as card (card.label)}
+            <Stat label={card.label} value={card.value} provenance={card.provenance} confidence={progression.battlestats.confidence} confidenceTooltip={confidenceTitle(progression.battlestats.confidence)} tone={card.tone} sub={card.sub} />
+          {/each}
         </div>
 
         <!-- Attribution: total change split into gym / job / other. Non-gym
@@ -332,7 +414,13 @@
             </div>
           </Panel>
           <Panel title="Milestones" caption="Threshold crossings from exact observations — the window is shown when the exact moment is not known">
-            {#if milestones.length === 0 && levelChanges.length === 0}
+            {#if progression.profile.awardsDelta !== null && progression.profile.awardsDelta !== 0}
+              <p class="mb-2.5 flex items-baseline justify-between gap-3 border-b border-border/60 pb-2.5 text-[13px]" title="Award and honor grants from Torn — each grants a merit point">
+                <span class="text-fg">Awards earned</span>
+                <span class="tnum font-medium text-positive">+{progression.profile.awardsDelta}{#if progression.profile.awards !== null}<span class="ml-1.5 text-[11px] text-fg-faint">{progression.profile.awards} total</span>{/if}</span>
+              </p>
+            {/if}
+            {#if milestones.length === 0 && levelChanges.length === 0 && !(progression.profile.awardsDelta !== null && progression.profile.awardsDelta !== 0)}
               <StateMessage state="empty" compact title="No milestone crossings in this range" />
             {:else}
               <ul class="space-y-2.5 text-[13px]">
