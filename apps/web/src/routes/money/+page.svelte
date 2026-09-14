@@ -368,6 +368,11 @@
   {:else if error && !economy}
     <StateMessage state="error" title="Could not load economy analytics" hint={error} action={{ label: "Retry", run: () => (reloadToken += 1) }} />
   {:else if economy}
+    <!-- ═══ Simple: the wealth result first — wallet turnover never leads ═══ -->
+    {#if prefs.mode === "simple"}
+      <EconomySimple economy={economy} period={period} />
+    {/if}
+
     <!-- ═══ Editorial summary — what happened, in words, before numbers ═══ -->
     <section aria-labelledby="economy-editorial" class="rounded-card border border-border bg-surface px-5 py-5 shadow-panel sm:px-7">
       <div class="flex flex-wrap items-center justify-between gap-2">
@@ -391,14 +396,11 @@
       {/if}
     </section>
 
-    <!-- ═══ Lens switcher (mobile / tablet — desktop shows every lens) ═══ -->
+    <!-- ═══ Lens switcher (mobile / tablet — desktop shows every lens; Advanced only) ═══ -->
+    {#if prefs.mode === "advanced"}
     <div class="lg:hidden">
       <LensSwitcher tabs={LENSES} active={activeLens} onselect={(id) => (activeLens = id)} />
     </div>
-
-    <!-- ═══ Simple: the wealth result first, wallet turnover demoted ═══ -->
-    {#if prefs.mode === "simple"}
-      <EconomySimple economy={economy} period={period} />
     {/if}
 
     {#if prefs.mode === "advanced"}

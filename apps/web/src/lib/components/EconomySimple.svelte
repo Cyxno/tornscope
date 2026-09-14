@@ -40,7 +40,23 @@
     if (economy.conversions.bankTransfers > 0) rows.push({ label: "Bank transfers", amount: formatMoneyCompact(economy.conversions.bankTransfers), hint: "Internal movements between wallet and bank" });
     return rows;
   });
-  const topMovements = $derived(economy.majorMovements.slice(0, 3));
+  const topMovements = $derived.by(() => {
+    // Largest first, but "what mattered" must not read as a duplicated row:
+    // repeated labels (e.g. several City Bank movements) merge into one row
+    // with a ×N count and the COMBINED amount — semantic dedupe, never
+    // string-blind removal, and the figure stays the honest total.
+    const out: Array<{ id: string; label: string; description: string | null; role: string; amount: number; count: number }> = [];
+    for (const m of economy.majorMovements) {
+      const existing = out.find((o) => o.label === m.label);
+      if (existing) {
+        existing.amount += m.amount;
+        existing.count += 1;
+        continue;
+      }
+      out.push({ id: m.id, label: m.label, description: m.description, role: m.role, amount: m.amount, count: 1 });
+    }
+    return out.slice(0, 3);
+  });
   const movementTone = (role: string): string => (role === "income" ? "text-positive" : role === "expense" ? "text-negative" : "text-fg");
 </script>
 
@@ -132,7 +148,9 @@
       <ul class="mt-3 space-y-2">
         {#each topMovements as m (m.id)}
           <li class="flex items-baseline justify-between gap-4 border-b border-border/60 py-2 last:border-0">
-            <span class="min-w-0 truncate text-[13.5px] text-fg-muted" title={m.description ?? m.label}>{m.label}</span>
+            <span class="min-w-0 truncate text-[13.5px] text-fg-muted" title={m.description ?? m.label}>
+              {m.label}{#if (m.count ?? 1) > 1}<span class="ml-1.5 text-[10px] uppercase tracking-wide text-fg-faint">×{m.count}</span>{/if}
+            </span>
             <span class="tnum shrink-0 text-[13.5px] font-medium {movementTone(m.role)}">{formatMoneyCompact(m.amount)}</span>
           </li>
         {/each}
