@@ -7,12 +7,12 @@
   import { dateRange, me, prefs, overviewSectionOrder, setDashboardMode, DASHBOARD_MODES } from "$lib/state.svelte";
   import { clientPermissionMessage } from "$lib/capabilities";
   import { confidenceTitle } from "$lib/confidence";
-  import { formatRelative, formatClock, greetingForHour } from "$lib/reltime";
+  import { formatDateInZone, formatRelative, greetingForHour } from "$lib/reltime";
   import ConfidenceBadge from "$lib/components/ConfidenceBadge.svelte";
   import Chart from "$lib/components/Chart.svelte";
   import SegmentedDateRange from "$lib/components/SegmentedDateRange.svelte";
   import StateMessage from "$lib/components/StateMessage.svelte";
-  import { C, TOOLTIP, GRID, timeAxis, valueAxis, moneyValueAxis, moneyTooltipValue, dayLabel, hourLabel, tealArea, MOTION } from "$lib/charts";
+  import { C, GRID, timeAxis, valueAxis, moneyValueAxis, moneyTooltipValue, dayLabel, hourLabel, axisTimeTooltip, tealArea, MOTION } from "$lib/charts";
   import * as td from "$lib/time-display.svelte.js";
 
   /**
@@ -66,7 +66,18 @@
 
   const period = $derived(periodLabel(dateRange.preset));
 
-  const greeting = $derived(greetingForHour(new Date().getUTCHours()));
+  // Greeting follows the DISPLAY zone clock — a UTC host/browser must never
+  // greet "Good morning" at the user's local noon (V1.0 sanity pass).
+  const greeting = $derived(greetingForHour(td.displayHour(Date.now())));
+
+  // The masthead names the PROFILE-timezone day the Today summary covers —
+  // the same day semantics as the summary itself (display zone may differ
+  // near midnight; the day key is the profile's, the summary is explicit).
+  const profileZone = $derived(me.data?.timezone || "UTC");
+  const todayHeading = $derived.by(() => {
+    if (todaySummary) return formatDateInZone(todaySummary.range.from, profileZone);
+    return formatDateInZone(Math.floor(Date.now() / 1000), profileZone);
+  });
 
   const statusLine = $derived.by(() => {
     if (!today) return null;
@@ -88,7 +99,7 @@
     const interval = data.range.interval;
     return {
       ...MOTION,
-      tooltip: { ...TOOLTIP, trigger: "axis", valueFormatter: moneyTooltipValue() },
+      tooltip: axisTimeTooltip(data.networthSeries.map((p) => p.t), moneyTooltipValue()),
       grid: { ...GRID, top: 8, bottom: 0 },
       xAxis: timeAxis(data.networthSeries.map((p) => (interval === "hour" ? hourLabel(p.t) : dayLabel(p.t)))),
       yAxis: { ...moneyValueAxis(), splitNumber: 4 },
@@ -302,7 +313,7 @@
     <section class="section-rule" aria-label="Today's story" style="order: {order.today};">
       <div class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
         <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <h2 class="section-label">Today — {todaySummary ? td.displayDate(todaySummary.range.from) : td.displayDate(Math.floor(Date.now() / 1000))}</h2>
+          <h2 class="section-label">Today — {todayHeading}</h2>
           {#if todaySummary?.ongoingDay}<span class="chip chip-warning !py-0 !text-[9px]">day in progress</span>{/if}
           {#if todaySummary}
             <ConfidenceBadge meta={todaySummary.overallConfidence} tooltip={confidenceTitle(todaySummary.overallConfidence)} />

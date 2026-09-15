@@ -147,3 +147,35 @@ new presentation layer. Canonical storage/comparison remains UTC.
 | PF-054 | product-wide | All timestamps rendered in UTC regardless of the user's real day; no way to choose; charts and tables could disagree with the user's clock | P1 | FIXED — Settings → General → Time display (Local [default] / Torn time (UTC)), browser-local preference; central `datetime.ts` + `time-display.svelte.ts` (Intl, DST-correct, formatter cache); swept every route's event tables, timelines, countdowns and chart axes; alternate-zone tooltips on significant Today timestamps; contracts in docs/DATETIME.md; timezone/DST/SSR tests (UTC, Europe/Amsterdam incl. DST transition days, America/New_York, Asia/Tokyo) |
 | PF-055 | all analytics routes | Selected range reset to the stored default on every full page load; one global range leaked across routes | P2 | FIXED — per-route range memory (`tornscope.routeRange.v1`): each route reopens with its own last preset; the Settings default still governs first visits; custom windows remain session-only |
 | PF-056 | Today | Day boundary semantic (profile timezone, default UTC = Torn server day) was undocumented — a local-time user near midnight could not tell which day the page meant | P2 | FIXED — masthead captions "day boundary {tz}" with a tooltip; display timezone stays independent of analytical grouping (verified near-midnight: a 23:30 UTC event displays 00:30 Amsterdam but remains in the same analytical day) |
+
+### V1.0 final settings + date/range sanity pass
+
+Pre-release usability audit of the two-day-semantics product (Today =
+profile-timezone day; 1D = Torn/UTC day) and every browser-local setting.
+Full test matrix: packages/shared/tests/today-vs-1d.test.ts and
+apps/web/tests/prefs.test.ts.
+
+| ID | Route | Issue | Severity | Status |
+|----|-------|-------|----------|--------|
+| PF-057 | Settings (Time display) | Help text claimed "Analytics day boundaries (Today, the 1D range) follow your profile timezone" — factually wrong (1D is a UTC/Torn day) and self-contradictory in one sentence | P2 | FIXED — copy states the display-vs-analytics contract: time display changes how timestamps are shown, never how analytics are grouped; Today = profile timezone, 1D and all ranges = Torn days (UTC) |
+| PF-058 | Progression | Last route rendering dates through the UTC-only shared formatters — training sessions, milestones and "tracked since" ignored the Local/Torn preference (near-midnight dates read a day off in local mode) | P2 | FIXED — all six sites render through the display-zone helpers; session window carries the alternate-zone tooltip |
+| PF-059 | Progression | Range headline "Training today" labeled the UTC current day "today" — the same word naming two different analytical days (Today page = profile day) | P2 | FIXED — headline reads "Training — current Torn day" / "last N Torn days"; "today" is reserved for the profile-timezone day |
+| PF-060 | Timeline | Feed grouped rows into UTC-day buckets but rendered display-zone headings — near midnight in local mode, rows appeared under the wrong day heading | P2 | FIXED — feed buckets keyed in the display zone, so every sticky heading names the day its rows actually show (presentation-only grouping; analytics untouched) |
+| PF-061 | Range control | Preset buttons (1D/7D/…/All) had no stated semantics; custom picker presented local date inputs that are interpreted as Torn (UTC) days without saying so | P2 | FIXED — per-preset tooltips ("Current Torn day (UTC) — in progress", "Last N Torn days (UTC), today included", …) and a custom-form caption "Dates are Torn calendar days (UTC)" |
+| PF-062 | Overview / Today | Greetings read the UTC hour — "Good morning" could render at local noon | P3 | FIXED — greeting reads the display-zone hour (td.displayHour), skew-corrected on Today |
+| PF-063 | Overview | "Today —" masthead date rendered the profile day's start in the DISPLAY zone (could disagree with the profile day for far-apart zones) | P3 | FIXED — masthead renders the day key in the profile timezone, matching the summary semantics |
+| PF-064 | Notifications | Delivery history "Fired at HH:MM (UTC)" labeled the display-preference time with the profile timezone — wrong whenever the two differ | P2 | FIXED — full display-zone datetime with the alternate-zone tooltip; the misleading caption removed |
+| PF-065 | Notifications | Quiet hours showed a bare "(UTC)" tag with no explanation of what governs it; the daily-summary time input had no zone context; the daily_summary_ready type promised "at your local time" while the engine uses the profile timezone | P2 | FIXED — quiet-hours label tooltip states "follows your profile timezone, not this device's clock"; summary-time input names the profile zone; notification copy now says "on your profile timezone" (engine behavior verified consistent: minutes-since-midnight in User.timezone end-to-end) |
+| PF-066 | Devices | Push-device list showed a raw toLocaleDateString "since" date (bypassed the display preference) and the API's lastSeenAt was never shown | P3 | FIXED — display-zone date with alternate-zone tooltip; "last seen {relative}" added with exact time in tooltip; current browser stays labeled "This browser" |
+| PF-067 | Charts | Axis tooltips repeated the compact axis label ("14/9") instead of an exact timestamp — hourly charts showed no date at all | P3 | FIXED — shared axisTimeTooltip titles every axis-trigger tooltip with the full display-zone datetime plus the alternate zone ("14-09-2026 22:43 · 20:43 Torn time (UTC)"); applied across Overview/Economy/Combat/Crimes/Drugs/Travel/Progression |
+| PF-068 | Settings | ?tab= deep links pushed history entries but back/forward did not restore the tab | P3 | FIXED — popstate re-reads ?tab= |
+| PF-069 | product-wide | Preference parsing lived in three modules with duplicated whitelists (drift risk); stale-permission "last refreshed" date bypassed the display preference; sync page extracted clock times via .slice(11) on a formatted string | P3 | FIXED — prefs.ts centralizes every browser-local key + pure fallback parsers (malformed storage → shipped default, unit-tested); capabilities.ts renders the refreshed date via the display zone; sync rows use displayTime |
+| PF-070 | Economy | Editorial lead read "Across 1D, …" — jargon label inside prose | P3 | FIXED — prose period names ("the current Torn day", "the last 7 Torn days", …) |
+
+Deliberately NOT changed (documented decisions): display-timezone preference
+still never touches analytical grouping; 1D keeps its Torn-day meaning (a
+tooltip, not a rename); no global timezone badge (masthead captions +
+tooltips + Settings state suffice); no "reset remembered ranges" control
+(route memories are harmless presets — reselecting or clearing site data
+recovers, and the Settings default still governs first visits); custom-range
+semantics stay UTC-day based (now captioned, not changed).

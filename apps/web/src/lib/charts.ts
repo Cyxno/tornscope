@@ -1,6 +1,6 @@
 import { formatMoneyCompact } from "@tornscope/shared";
 import { appearance, resolvedTheme, prefersReducedMotion } from "$lib/appearance-state.svelte";
-import { chartDay, chartHour } from "$lib/time-display.svelte.js";
+import { alternateTimeTooltip, chartDay, chartHour, displayDateTime } from "$lib/time-display.svelte.js";
 import { CATEGORICAL, RAMPS, BATTLESTATS } from "$lib/chart-palettes";
 import type { ChartPalette, ResolvedTheme } from "$lib/appearance.svelte";
 
@@ -304,4 +304,31 @@ export function dayLabel(t: number): string {
 
 export function hourLabel(t: number): string {
   return chartHour(t);
+}
+
+/**
+ * Axis tooltip titled with the FULL display-zone timestamp plus the
+ * alternate-zone line — a hovered point reads as an exact moment ("14-09-2026
+ * 22:43 · 20:43 Torn time (UTC)"), not the compact axis label ("14/9").
+ * `buckets` are the timestamps behind the axis categories, in the same order
+ * as the xAxis data (V1.0: closes the chart-tooltip P3 without restructuring
+ * how pages build options).
+ */
+export function axisTimeTooltip(buckets: number[], valueFormatter?: (v: unknown) => string): Record<string, unknown> {
+  const fmt = valueFormatter ?? ((v: unknown) => (v === null || v === undefined ? "—" : typeof v === "number" ? v.toLocaleString("en-US") : String(v)));
+  return {
+    ...TOOLTIP,
+    trigger: "axis",
+    formatter: (params: unknown) => {
+      const list = (Array.isArray(params) ? params : [params]) as Array<{ dataIndex?: number; marker?: string; seriesName?: string; value?: unknown }>;
+      const ts = list[0]?.dataIndex !== undefined ? buckets[list[0].dataIndex] : undefined;
+      if (ts === undefined) return "";
+      const alt = alternateTimeTooltip(ts);
+      const head = `${displayDateTime(ts)}${alt ? `<span style="opacity:.65"> · ${alt}</span>` : ""}`;
+      const rows = list
+        .map((p) => `${p.marker ?? ""} ${p.seriesName ?? ""} <b>${fmt(p.value)}</b>`)
+        .join("<br/>");
+      return rows ? `${head}<br/>${rows}` : head;
+    },
+  };
 }

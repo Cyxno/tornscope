@@ -5,7 +5,24 @@
   /**
    * Segmented control for the global date range. Active segment is inverted
    * (light on dark); Custom unfolds an inline two-date form.
+   *
+   * Semantics (documented, not implied): every preset is a whole number of
+   * TORN CALENDAR DAYS (UTC) ending with the current one — "1D" is the
+   * current Torn day, still in progress. Tooltips carry that meaning so the
+   * control never has to be guessed at; the Today page, by contrast, uses
+   * the profile timezone (clarified there and in Settings).
    */
+  const PRESET_HINTS: Record<string, string> = {
+    "1d": "Current Torn day (UTC) — in progress",
+    "7d": "Last 7 Torn days (UTC), today included",
+    "14d": "Last 14 Torn days (UTC), today included",
+    "30d": "Last 30 Torn days (UTC), today included",
+    "90d": "Last 90 Torn days (UTC), today included",
+    this_month: "The current calendar month (UTC), in progress",
+    this_year: "The current calendar year (UTC), in progress",
+    all: "Everything on record",
+  };
+
   // Per-route memory (V1.0 QOL): a route reopens with its own last preset;
   // the Settings default still governs first-ever visits.
   onMount(() => {
@@ -46,6 +63,7 @@
         class="rounded-full px-3 py-1 text-xs font-medium transition-all {dateRange.preset === preset.value && !showCustom
           ? 'bg-fg font-semibold text-bg'
           : 'text-fg-muted hover:text-fg'}"
+        title={PRESET_HINTS[preset.value] ?? preset.label}
         onclick={() => selectPreset(preset.value)}
       >
         {preset.label}
@@ -55,6 +73,7 @@
       class="rounded-full px-3 py-1 text-xs font-medium transition-all {dateRange.preset === 'custom' || showCustom
         ? 'bg-fg font-semibold text-bg'
         : 'text-fg-muted hover:text-fg'}"
+      title="Pick exact dates — whole Torn calendar days (UTC)"
       onclick={() => (showCustom = !showCustom)}
       aria-expanded={showCustom}
     >
@@ -74,5 +93,6 @@
       <input type="date" bind:value={customTo} class="input !h-8 w-36 [color-scheme:dark]" />
     </label>
     <button class="btn btn-primary btn-sm" onclick={applyCustom}>Apply range</button>
+    <span class="text-[11px] text-fg-faint">Dates are Torn calendar days (UTC) — the same day boundaries analytics use.</span>
   </div>
 {/if}

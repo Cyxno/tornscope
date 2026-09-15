@@ -179,7 +179,7 @@ export const NOTIFICATION_TYPES: NotificationTypeMeta[] = [
   /* ---- Account & progression ---------------------------------------------- */
   {
     id: "daily_summary_ready", label: "Daily summary ready", group: "account", defaultEnabled: true,
-    description: "A nudge that today's TornScope summary is prepared, at your local time. Once per day.",
+    description: "A nudge that today's TornScope summary is ready — once per day, on your profile timezone.",
     urgency: "normal", quietHours: "defer", maxDeferralAgeSeconds: 4 * 3600,
     requires: null, clickPath: "/today", provenance: "derived", config: ["summaryTimeMin"],
   },

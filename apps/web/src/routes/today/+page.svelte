@@ -95,7 +95,9 @@
   /* Derived presentation helpers                                        */
   /* ------------------------------------------------------------------ */
 
-  const greeting = $derived(greetingForHour(new Date(serverNowMs).getUTCHours()));
+  // Greeting follows the DISPLAY zone (the clock the user sees), computed
+  // from the skew-corrected server time; never the host/UTC clock.
+  const greeting = $derived(greetingForHour(td.displayHour(serverNowMs)));
 
   const statusLine = $derived.by(() => {
     if (!data) return "";
@@ -130,11 +132,6 @@
     const display = cooldownDisplay(cd, serverNowMs);
     if (display === null) return null;
     return { label: display.active ? formatCountdownCompact(display.remainingSeconds) : "Ready", active: display.active };
-  }
-
-  function fmtFullAt(bar: LiveBar | null): string {
-    if (!bar || bar.regenState !== "regenerating" || bar.fullAt === null) return "";
-    return ` · ${td.displayDateTime(bar.fullAt)}`;
   }
 
   const travel = $derived(data?.travel ?? null);
@@ -338,11 +335,11 @@
                   <div class="h-full rounded-full bg-accent/70" style={`width:${flightProgress}%`}></div>
                 </div>
                 <div class="mt-1 flex justify-between text-[11px] text-fg-faint">
-                  <span>{travel.departedAt !== null ? td.displayDateTime(travel.departedAt) : ""}</span>
+                  <span title={td.alternateTimeTooltip(travel.departedAt ?? undefined)}>{travel.departedAt !== null ? td.displayDateTime(travel.departedAt) : ""}</span>
                   {#if travel.durationSeconds}
                     <span>flight {Math.round(travel.durationSeconds / 60)}m</span>
                   {/if}
-                  <span>{td.displayDateTime(travel.landsAt)}</span>
+                  <span title={td.alternateTimeTooltip(travel.landsAt ?? undefined)}>{td.displayDateTime(travel.landsAt)}</span>
                 </div>
               {/if}
             {/if}
@@ -428,7 +425,7 @@
               {/if}
               {#if bank.investedAt !== null}
                 <span class="text-fg-faint">Invested</span>
-                <span class="tnum text-right text-fg-muted">{td.displayDateTime(bank.investedAt)}</span>
+                <span class="tnum text-right text-fg-muted" title={td.alternateTimeTooltip(bank.investedAt)}>{td.displayDateTime(bank.investedAt)}</span>
               {/if}
             </div>
           </div>
@@ -454,11 +451,11 @@
             {/if}
             {#if education.state === "complete"}
               <p class="text-sm font-semibold text-positive">Course complete</p>
-            {:else if education.completesAt !== null}
+              {:else if education.completesAt !== null}
               <p class="text-sm text-fg-muted">
                 <span class="tnum font-semibold text-fg"><Countdown seconds={remainingSeconds(serverNowMs, education.completesAt)} style="compact" /></span>
                 remaining
-                <span class="tnum text-xs text-fg-faint">· {td.displayDateTime(education.completesAt)}</span>
+                <span class="tnum text-xs text-fg-faint" title={td.alternateTimeTooltip(education.completesAt)}>· {td.displayDateTime(education.completesAt)}</span>
               </p>
             {/if}
           </div>

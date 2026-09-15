@@ -17,7 +17,7 @@
   import StateMessage from "$lib/components/StateMessage.svelte";
   import ProvenanceBadge from "$lib/components/ProvenanceBadge.svelte";
   import { availabilityMessage, availabilityHasData } from "$lib/capabilities";
-  import { C, ct, TOOLTIP, LEGEND, GRID, timeAxis, valueAxis, moneyValueAxis, moneyTooltipValue, dayLabel, tealArea, MOTION, surface } from "$lib/charts";
+  import { C, ct, TOOLTIP, LEGEND, GRID, timeAxis, valueAxis, moneyValueAxis, moneyTooltipValue, dayLabel, axisTimeTooltip, tealArea, MOTION, surface } from "$lib/charts";
   import * as td from "$lib/time-display.svelte.js";
 
   let economy = $state<EconomySummaryResponse | null>(null);
@@ -163,7 +163,18 @@
     if (!economy) return { lead: null, support: [] };
     const sentences: string[] = [];
     let lead: string | null = null;
-    const periodName = period === "All" ? "all time" : period;
+    // Plain-language period names in prose: "Across 1D" reads like jargon,
+    // and the Torn-day (UTC) basis is the honest wording (V1.0 copy pass).
+    const periodName: string =
+      period === "All" ? "all time"
+      : period === "1D" ? "the current Torn day"
+      : period === "7D" ? "the last 7 Torn days"
+      : period === "14D" ? "the last 14 Torn days"
+      : period === "30D" ? "the last 30 Torn days"
+      : period === "90D" ? "the last 90 Torn days"
+      : period === "This Month" ? "this month"
+      : period === "This Year" ? "this year"
+      : "the selected range";
     if (nwChange && nwChange.value !== null) {
       lead = `Across ${periodName}, your net worth ${nwChange.value >= 0 ? "grew" : "fell"} by ${formatMoneyCompact(Math.abs(nwChange.value))} — the official total of everything you own.`;
     } else if (ecoEffect && ecoEffect.net.value !== null) {
@@ -318,7 +329,7 @@
     if (series.length === 0) return null;
     return {
       ...MOTION,
-      tooltip: { ...TOOLTIP, trigger: "axis", valueFormatter: moneyTooltipValue() },
+      tooltip: axisTimeTooltip(series.map((p) => p.t), moneyTooltipValue()),
       grid: { ...GRID, top: 20 },
       xAxis: timeAxis(series.map((p) => dayLabel(p.t))),
       yAxis: moneyValueAxis(),
@@ -341,7 +352,7 @@
     if (series.length === 0) return null;
     return {
       ...MOTION,
-      tooltip: { ...TOOLTIP, trigger: "axis", valueFormatter: moneyTooltipValue() },
+      tooltip: axisTimeTooltip(series.map((p) => p.t), moneyTooltipValue()),
       legend: { ...LEGEND, data: ["Cash received", "Cash spent"], top: 0, right: 0 },
       grid: GRID,
       xAxis: timeAxis(series.map((p) => dayLabel(p.t)), { boundaryGap: true }),

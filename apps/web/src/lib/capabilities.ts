@@ -1,6 +1,7 @@
 import type { FeatureAvailabilityDto, KeyCapabilitiesDto } from "@tornscope/shared";
 import { me } from "./state.svelte";
 import { featureAvailability, FEATURE_REQUIREMENTS, moduleAvailability } from "@tornscope/shared";
+import { displayDate } from "./time-display.svelte.js";
 
 /**
  * Client-side mapping of permission states to the StateMessage variants.
@@ -38,7 +39,8 @@ export function availabilityMessage(
     };
   }
   if (av.state === "stale_permission") {
-    const refreshed = av.lastRefreshedAt ? new Date(av.lastRefreshedAt * 1000).toLocaleDateString("en-GB", { year: "numeric", month: "short", day: "numeric" }) : null;
+    // Display-zone date per the Local/Torn preference — one format system.
+    const refreshed = av.lastRefreshedAt ? displayDate(av.lastRefreshedAt) : null;
     return {
       state: "stale",
       title: "Historical data available — not refreshing",

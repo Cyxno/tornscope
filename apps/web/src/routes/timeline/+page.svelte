@@ -2,11 +2,10 @@
   import { createLoadGuard } from "$lib/loadGuard";
   import { goto } from "$app/navigation";
   import type { TimelineEventDto, Paginated } from "@tornscope/shared";
-  import { formatMoneyCompact } from "@tornscope/shared";
+  import { dayKeyInZone, formatMoneyCompact } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
   import { dateRange, me } from "$lib/state.svelte";
   import { clientPermissionMessage } from "$lib/capabilities";
-  import { formatDayHeading, formatClock } from "$lib/reltime";
   import PageHeader from "$lib/components/PageHeader.svelte";
   import StateMessage from "$lib/components/StateMessage.svelte";
   import Icon, { type IconName } from "$lib/components/Icon.svelte";
@@ -84,7 +83,11 @@
     void load(true);
   });
 
-  /* Group descending items into UTC day buckets */
+  /* Group descending items into day buckets keyed in the DISPLAY zone, so a
+     sticky heading always names the day its rows actually show. (The old
+     UTC bucketing under a display-zone heading mislabeled rows near
+     midnight in local mode; analytics grouping is unaffected — this feed
+     is presentation.) */
   const timelineBlocked = $derived.by(() => {
     const caps = me.data?.capabilities ?? null;
     // The timeline is fed by logs OR events — blocked only when both are missing.
@@ -92,15 +95,17 @@
   });
   const dayGroups = $derived.by(() => {
     if (!events) return [];
-    const map = new Map<number, TimelineEventDto[]>();
+    const zone = td.displayTimeZone();
+    const map = new Map<string, TimelineEventDto[]>();
     for (const item of events.items) {
-      const d = new Date(item.occurredAt * 1000);
-      const day = Math.floor(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) / 1000);
-      const list = map.get(day);
+      const key = dayKeyInZone(item.occurredAt, zone);
+      const list = map.get(key);
       if (list) list.push(item);
-      else map.set(day, [item]);
+      else map.set(key, [item]);
     }
-    return [...map.entries()].sort((a, b) => b[0] - a[0]).map(([day, list]) => ({ day, list }));
+    return [...map.entries()]
+      .sort((a, b) => b[1][0]!.occurredAt - a[1][0]!.occurredAt)
+      .map(([key, list]) => ({ key, list }));
   });
 
   const typeFilters = [
@@ -147,7 +152,7 @@
     <StateMessage state="empty" title="Quiet in this range" hint={me.data?.isDemo ? "Synthetic example data — the demo dataset has no timeline entries here." : "No timeline entries match. Widen the date range or wait for the next sync."} />
   {:else if events}
     <div class="space-y-8">
-      {#each dayGroups as group (group.day)}
+      {#each dayGroups as group (group.key)}
         <section>
           <!-- Date anchor: sticky, the ledger's section rule -->
           <h2 class="section-label sticky top-0 z-10 -mx-2 border-b border-border bg-bg/90 px-2 py-2 backdrop-blur-sm">{td.displayDayHeading(group.list[0]!.occurredAt)}</h2>

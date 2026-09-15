@@ -8,6 +8,7 @@ import {
   displayDate,
   displayDateTime,
   displayTime,
+  hourInZone,
   plural,
   type TimeDisplayMode,
 } from "../src/lib/datetime.js";
@@ -117,5 +118,18 @@ describe("SSR safety and pluralization", () => {
     expect(plural(1, "session")).toBe("1 session");
     expect(plural(2, "session")).toBe("2 sessions");
     expect(plural(2, "Xanax", "Xanax")).toBe("2 Xanax");
+  });
+});
+
+describe("wall-clock hour per zone (greeting source)", () => {
+  it("reads the hour of the ZONE, never the host clock", () => {
+    // 2026-07-15 23:30 UTC: already 01:30 tomorrow in Amsterdam.
+    const lateUtc = Date.UTC(2026, 6, 15, 23, 30, 0);
+    expect(hourInZone(lateUtc, "UTC")).toBe(23);
+    expect(hourInZone(lateUtc, "Europe/Amsterdam")).toBe(1);
+    expect(hourInZone(lateUtc, "America/New_York")).toBe(19);
+    expect(hourInZone(lateUtc, "Asia/Tokyo")).toBe(8);
+    // A host running UTC must not leak into a zoned read (and vice versa):
+    expect(hourInZone(Date.UTC(2026, 6, 15, 12, 0, 0), "UTC")).toBe(12);
   });
 });

@@ -10,19 +10,6 @@ export function formatRelative(ts: number | null | undefined): string {
   return `${Math.floor(diff / 86_400)}d ago`;
 }
 
-/** "Friday 4 Sep" style UTC day heading for the journal feed (day first). */
-export function formatDayHeading(ts: number): string {
-  const d = new Date(ts * 1000);
-  return d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short", timeZone: "UTC" });
-}
-
-/** "22:18" UTC clock time. */
-export function formatClock(ts: number): string {
-  const d = new Date(ts * 1000);
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
-}
-
 const p2 = (n: number) => String(n).padStart(2, "0");
 
 /**
@@ -65,7 +52,8 @@ export function formatDateInZone(ts: number | null | undefined, timeZone: string
   }
 }
 
-/** Greeting word for the current hour in the configured timezone. */
+/** Greeting word for a wall-clock hour (0–23) — callers pass the
+ *  DISPLAY-zone hour (see td.displayHour), never the host/UTC clock. */
 export function greetingForHour(hour: number): string {
   if (hour < 5) return "Good night";
   if (hour < 12) return "Good morning";

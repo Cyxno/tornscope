@@ -7,11 +7,10 @@
     formatNumberCompact,
     formatSignedNumberCompact,
     periodLabel,
-    formatDateTime,
-    formatDate,
   } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
   import { dateRange } from "$lib/state.svelte";
+  import * as td from "$lib/time-display.svelte.js";
   import PageHeader from "$lib/components/PageHeader.svelte";
   import Panel from "$lib/components/Panel.svelte";
   import Stat from "$lib/components/Stat.svelte";
@@ -21,7 +20,7 @@
   import ProvenanceBadge from "$lib/components/ProvenanceBadge.svelte";
   import { availabilityMessage, availabilityHasData } from "$lib/capabilities";
   import { confidenceTitle } from "$lib/confidence";
-  import { C, ct, TOOLTIP, LEGEND, GRID, timeAxis, valueAxis, dayLabel, MOTION } from "$lib/charts";
+  import { C, ct, LEGEND, GRID, timeAxis, valueAxis, dayLabel, axisTimeTooltip, MOTION } from "$lib/charts";
 
   let progression = $state<ProgressionResponse | null>(null);
   let loading = $state(true);
@@ -56,19 +55,21 @@
 
   // Human range headline (Phase: period-copy cleanup) — the period is named
   // once here instead of repeating in the masthead sentence and grid labels.
+  // Ranges are TORN calendar days (UTC); "today" is reserved for the
+  // profile-timezone day on the Today page, so 1d never says "today" here.
   const rangeHeadline = $derived.by(() => {
     switch (dateRange.preset) {
       case "today":
       case "1d":
-        return "Training today";
+        return "Training — current Torn day";
       case "7d":
-        return "Training — last 7 days";
+        return "Training — last 7 Torn days";
       case "14d":
-        return "Training — last 14 days";
+        return "Training — last 14 Torn days";
       case "30d":
-        return "Training — last 30 days";
+        return "Training — last 30 Torn days";
       case "90d":
-        return "Training — last 90 days";
+        return "Training — last 90 Torn days";
       case "this_month":
         return "Training — this month";
       case "prev_month":
@@ -181,6 +182,7 @@
     const growth = chartMode === "growth";
     return {
       labels: shown.map((p) => dayLabel(p.t)),
+      times: shown.map((p) => p.t),
       series: STAT_META.filter((s) => visibleStats.has(s.key)).map((s) => ({
         name: s.label,
         type: "line" as const,
@@ -202,7 +204,7 @@
     if (!chartData) return null;
     return {
       ...MOTION,
-      tooltip: { ...TOOLTIP, trigger: "axis" },
+      tooltip: axisTimeTooltip(chartData.times),
       legend: { ...LEGEND, data: chartData.series.map((s) => s.name), top: 0, right: 0 },
       grid: GRID,
       xAxis: timeAxis(chartData.labels),
@@ -290,7 +292,7 @@
       </div>
       <p class="mt-3 max-w-4xl font-display text-lg leading-relaxed text-fg sm:text-xl">
         {#if progression.summary.totalDelta.value !== null && progression.battlestats.baselineKind === 'tracked_since'}
-          Battlestat tracking began {formatDate(progression.battlestats.trackedSince)} — inside this range — so the
+          Battlestat tracking began {td.displayDate(progression.battlestats.trackedSince)} — inside this range — so the
           <span class="tnum font-semibold {progression.summary.totalDelta.value >= 0 ? 'text-positive' : 'text-negative'}">{formatSignedNumberCompact(progression.summary.totalDelta.value)}</span>
           change covers only the tracked portion.
         {:else if progression.summary.totalDelta.value !== null}
@@ -316,7 +318,7 @@
       <div class="flex flex-wrap items-baseline justify-between gap-2">
         <h2 class="section-label text-[12px]"><span class="mr-2 text-accent">A</span> Battlestat progression — hourly observations from Torn personal stats</h2>
         {#if progression.battlestats.trackedSince !== null}
-          <span class="text-[11px] text-fg-faint">Tracked since {formatDate(progression.battlestats.trackedSince)}</span>
+          <span class="text-[11px] text-fg-faint">Tracked since {td.displayDate(progression.battlestats.trackedSince)}</span>
         {/if}
       </div>
       {#if statBlocked && statAv}
@@ -433,13 +435,13 @@
                 {#each milestones.slice(0, 8) as m (m.kind + m.threshold + m.crossedBetween[0])}
                   <li class="flex items-baseline justify-between gap-3">
                     <span class="text-fg">{m.label} crossed {formatNumberCompact(m.threshold)}</span>
-                    <span class="tnum text-[11px] text-fg-faint" title="Crossed between these two observations">{formatDate(m.crossedBetween[0])} → {formatDate(m.crossedBetween[1])}</span>
+                    <span class="tnum text-[11px] text-fg-faint" title="Crossed between these two observations">{td.displayDate(m.crossedBetween[0])} → {td.displayDate(m.crossedBetween[1])}</span>
                   </li>
                 {/each}
                 {#each levelChanges as lv (lv.t)}
                   <li class="flex items-baseline justify-between gap-3">
                     <span class="text-fg">Level {lv.level}</span>
-                    <span class="tnum text-[11px] text-fg-faint">{formatDate(lv.t)}</span>
+                    <span class="tnum text-[11px] text-fg-faint">{td.displayDate(lv.t)}</span>
                   </li>
                 {/each}
               </ul>
@@ -500,7 +502,7 @@
               <tbody>
                 {#each progression.training.sessions.slice().reverse().slice(0, 12) as session (session.startedAt)}
                   <tr>
-                    <td class="tnum whitespace-nowrap text-xs text-fg-faint">{formatDateTime(session.startedAt)} → {formatDateTime(session.endedAt).slice(-5)}</td>
+                    <td class="tnum whitespace-nowrap text-xs text-fg-faint"><span title={td.alternateTimeTooltip(session.startedAt)}>{td.displayDateTime(session.startedAt)}</span> → {td.displayTime(session.endedAt)}</td>
                     <td class="tnum text-right {session.energySpent !== null ? 'text-negative' : 'text-fg-faint'}" title={session.energySpent !== null ? "Bounded inference: includes Xanax energy delivered between snapshots; regeneration inside the burst is not separable" : undefined}>{session.energySpent !== null ? `~${formatNumberCompact(session.energySpent)}` : "—"}</td>
                     <td class="tnum text-right {session.gymGain !== null && session.gymGain > 0 ? 'text-positive' : 'text-fg-faint'}" title={session.nonGymJobGain > 0 ? `+${formatNumberCompact(session.totalGain ?? 0)} observed, of which ${formatNumberCompact(session.nonGymJobGain)} was job/company gains — not gym` : session.friendTrains > 0 ? `${session.friendTrains} stat trains received in the bracket — gym share not separable` : undefined}>{session.gymGain !== null ? `+${formatNumberCompact(session.gymGain)}` : "—"}{#if session.nonGymJobGain > 0}<span class="ml-1 text-[10px] text-fg-faint" title="Job/company stat gains inside the bracket — excluded from gym attribution">{formatNumberCompact(session.nonGymJobGain)} job</span>{/if}</td>
                     <td class="tnum text-right text-fg-muted">{session.gainPerEnergy !== null ? session.gainPerEnergy.toFixed(1) : "—"}</td>
@@ -542,7 +544,7 @@
               <summary class="flex cursor-pointer flex-wrap items-center justify-between gap-3 px-5 py-4 [&::-webkit-details-marker]:hidden">
                 <div class="min-w-0">
                   <p class="text-[13px] font-semibold text-fg">
-                    {formatDate(jump.trainedFrom)}
+                    {td.displayDate(jump.trainedFrom)}
                     <span class="ml-2 font-normal text-fg-muted">Likely happy jump</span>
                     <span class="ml-2 chip {jump.confidence === 'likely' ? 'chip-positive' : 'chip-warning'} !px-1.5 !text-[9px] !uppercase">{jump.confidence}</span>
                   </p>

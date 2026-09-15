@@ -90,7 +90,7 @@
       case "retrying":
         return {
           label: "Retry",
-          value: op.retryAt ? td.displayDateTime(op.retryAt).slice(11) : "pending",
+          value: op.retryAt ? td.displayTime(op.retryAt) : "pending",
           countdown: op.retryAt ? `in ${formatDuration(op.retryAt - Date.now() / 1000)}` : undefined,
         };
       case "delayed":
@@ -101,7 +101,7 @@
       case "never_run":
         return { label: "Next run", value: "—" };
       default:
-        return { label: "Next run", value: row.nextRunAt ? td.displayDateTime(row.nextRunAt).slice(11) : "—" };
+        return { label: "Next run", value: row.nextRunAt ? td.displayTime(row.nextRunAt) : "—" };
     }
   }
 

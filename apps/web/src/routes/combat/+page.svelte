@@ -11,7 +11,7 @@
   import SegmentedDateRange from "$lib/components/SegmentedDateRange.svelte";
   import StateMessage from "$lib/components/StateMessage.svelte";
   import { availabilityMessage, availabilityHasData } from "$lib/capabilities";
-  import { C, TOOLTIP, LEGEND, GRID, timeAxis, valueAxis, dayLabel } from "$lib/charts";
+  import { C, LEGEND, GRID, timeAxis, valueAxis, dayLabel, axisTimeTooltip } from "$lib/charts";
   import * as td from "$lib/time-display.svelte.js";
 
   let summary = $state<CombatSummaryResponse | null>(null);
@@ -61,7 +61,7 @@
   const activityOption = $derived.by(() => {
     if (!summary || summary.dailySeries.length === 0) return null;
     return {
-      tooltip: { ...TOOLTIP, trigger: "axis" },
+      tooltip: axisTimeTooltip(summary.dailySeries.map((p) => p.t)),
       legend: { ...LEGEND, data: ["Outgoing (I attacked)", "Incoming (attacked me)"], top: 0, right: 0 },
       grid: GRID,
       xAxis: timeAxis(summary.dailySeries.map((p) => dayLabel(p.t))),
@@ -77,7 +77,7 @@
   const winLossOption = $derived.by(() => {
     if (!summary || summary.dailySeries.length === 0) return null;
     return {
-      tooltip: { ...TOOLTIP, trigger: "axis" },
+      tooltip: axisTimeTooltip(summary.dailySeries.map((p) => p.t)),
       legend: { ...LEGEND, data: ["Outgoing win", "Outgoing loss", "Defended incoming", "Lost incoming"], top: 0, right: 0 },
       grid: GRID,
       xAxis: timeAxis(summary.dailySeries.map((p) => dayLabel(p.t))),

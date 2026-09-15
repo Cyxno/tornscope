@@ -42,11 +42,17 @@ changes; presentation is a single browser-local preference.
 | `7D`/`14D`/`30D`/`90D` | the last N UTC days, inclusive of today |
 | `Month` / `Year` | current UTC month / year |
 | `All` | everything recorded |
-| `Custom` | user-entered UTC dates (`00:00:00Z` → `23:59:59Z`); a one-sided entry clamps to epoch / now |
+| `Custom` | user-entered **Torn calendar days (UTC)** (`00:00:00Z` → `23:59:59Z`); a one-sided entry clamps to epoch / now. The picker captions this: "Dates are Torn calendar days (UTC)" |
 
 Display timezone and analytical grouping timezone are deliberately
 independent: a 23:30 UTC event displays as 00:30 next day in Amsterdam but
 stays inside the same analytical UTC day everywhere.
+
+The range control carries the semantics in tooltips (no guessing):
+`1D — Current Torn day (UTC) — in progress`, `7D — Last 7 Torn days (UTC),
+today included`, and so on. The Today masthead carries the profile-timezone
+meaning (`day boundary {tz}`), and Settings → Time display states the
+display-vs-analytics distinction in plain language.
 
 ## Format hierarchy
 
@@ -68,6 +74,18 @@ stays locale-neutral per the financial format contract; dates/times use
   `Intl` formatter cache, DST-safe — unit-tested against
   UTC/Europe/Amsterdam/America/New_York/Asia/Tokyo).
 - Preference + reactive wrappers: `apps/web/src/lib/time-display.svelte.ts`.
+- Browser-local preference parsing (keys, malformed-storage fallbacks):
+  `apps/web/src/lib/prefs.ts` — pure and unit-tested
+  (`apps/web/tests/prefs.test.ts`).
 - Route components import `* as td from "$lib/time-display.svelte.js"`.
   The UTC-only `formatDate`/`formatDateTime` (shared) remain for canonical
-  server-side rendering (push text, docs examples).
+  server-side rendering (push text, docs examples) — the Progression page
+  was the last UI consumer and now uses the display-zone helpers.
+- Today-vs-1D contract tests: `packages/shared/tests/today-vs-1d.test.ts`
+  (near-midnight cases in four reference zones, DST day lengths, countdown
+  timezone-independence).
+- Chart axis tooltips title with the full display-zone timestamp plus the
+  alternate zone (`axisTimeTooltip` in `apps/web/src/lib/charts.ts`) — the
+  former "compact axis label only" P3 is closed.
+- Greetings read the DISPLAY-zone hour (`hourInZone` / `td.displayHour`),
+  not the host clock.

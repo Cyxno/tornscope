@@ -45,8 +45,8 @@ describe("progression summary composition", () => {
 
   it("the period is named once — human range headline replaces repeated tokens", () => {
     expect(progression).toContain("rangeHeadline");
-    expect(progression).toContain('"Training today"');
-    expect(progression).toContain('"Training — last 7 days"');
+    expect(progression).toContain('"Training — current Torn day"');
+    expect(progression).toContain('"Training — last 7 Torn days"');
     expect(progression).toContain('"Training — selected range"');
     expect(progression).not.toContain("{period} in training");
     expect(progression).not.toContain('label="{period} change"');

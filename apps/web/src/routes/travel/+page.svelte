@@ -11,7 +11,7 @@
   import SegmentedDateRange from "$lib/components/SegmentedDateRange.svelte";
   import StateMessage from "$lib/components/StateMessage.svelte";
   import { availabilityMessage, availabilityHasData } from "$lib/capabilities";
-  import { C, TOOLTIP, GRID, timeAxis, valueAxis, moneyValueAxis, moneyTooltipValue, dayLabel, MOTION } from "$lib/charts";
+  import { C, GRID, timeAxis, valueAxis, moneyValueAxis, moneyTooltipValue, dayLabel, axisTimeTooltip, MOTION } from "$lib/charts";
   import * as td from "$lib/time-display.svelte.js";
 
   let summary = $state<TravelSummaryResponse | null>(null);
@@ -84,7 +84,7 @@
     if (!summary || summary.profitSeries.length === 0) return null;
     return {
       ...MOTION,
-      tooltip: { ...TOOLTIP, trigger: "axis", valueFormatter: moneyTooltipValue() },
+      tooltip: axisTimeTooltip(summary.profitSeries.map((p) => p.t), moneyTooltipValue()),
       grid: GRID,
       xAxis: timeAxis(summary.profitSeries.map((p) => dayLabel(p.t)), { boundaryGap: true }),
       yAxis: moneyValueAxis(),

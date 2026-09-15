@@ -12,7 +12,7 @@
   import SegmentedDateRange from "$lib/components/SegmentedDateRange.svelte";
   import StateMessage from "$lib/components/StateMessage.svelte";
   import { availabilityMessage, availabilityHasData } from "$lib/capabilities";
-  import { C, ct, TOOLTIP, LEGEND, GRID, timeAxis, countAxis, dayLabel, MOTION, surface, accentRgba } from "$lib/charts";
+  import { C, ct, TOOLTIP, LEGEND, GRID, timeAxis, countAxis, dayLabel, axisTimeTooltip, MOTION, surface, accentRgba } from "$lib/charts";
   import * as td from "$lib/time-display.svelte.js";
 
   let data = $state<DrugsSummaryResponse | null>(null);
@@ -71,7 +71,7 @@
     if (!data || data.dailySeries.every((p) => p.good === 0 && p.bad === 0)) return null;
     return {
       ...MOTION,
-      tooltip: { ...TOOLTIP, trigger: "axis" },
+      tooltip: axisTimeTooltip(data.dailySeries.map((p) => p.t)),
       legend: { ...LEGEND, data: ["Successful", "Overdose"], top: 0, right: 0 },
       grid: { ...GRID, bottom: 34 },
       dataZoom: [

@@ -5,6 +5,7 @@
   import { CAPABILITY_LABELS, DELIVERY_REASON_LABELS, DELIVERY_STATUSES, NOTIFICATION_GROUPS, NOTIFICATION_TYPES, type DeliveryReason, type DeliveryStatus } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
   import { me } from "$lib/state.svelte";
+  import { formatRelative } from "$lib/reltime";
   import * as td from "$lib/time-display.svelte.js";
   import StateMessage from "./StateMessage.svelte";
   import { detectPushCapability, isIOS, isStandalone, type PushCapability } from "$lib/pwa";
@@ -353,7 +354,10 @@
           <li class="flex items-center justify-between gap-3">
             <span class="min-w-0 truncate">
               {#if device.current}<span class="font-medium text-fg">This browser</span>{:else}{device.label ?? device.userAgent?.slice(0, 40) ?? "Device"}{/if}
-              <span class="text-fg-faint">· since {new Date(device.createdAt * 1000).toLocaleDateString("en-GB")}</span>
+              <span class="text-fg-faint" title={td.alternateTimeTooltip(device.createdAt)}>· since {td.displayDate(device.createdAt)}</span>
+              {#if device.lastSeenAt}
+                <span class="text-fg-faint" title={td.alternateTimeTooltip(device.lastSeenAt)}>· last seen {formatRelative(device.lastSeenAt)}</span>
+              {/if}
             </span>
             {#if !device.current}
               <button class="shrink-0 text-fg-faint underline decoration-border underline-offset-2 transition-colors hover:text-negative" onclick={() => void disableDevice(device.id)}>
@@ -376,7 +380,7 @@
       <div class="mt-3 space-y-2 text-[13px]">
         <p class="font-medium text-fg">
           Quiet hours
-          <span class="ml-1 text-xs font-normal text-fg-faint">({timezone})</span>
+          <span class="ml-1 text-xs font-normal text-fg-faint" title={`Quiet hours follow your profile timezone (${timezone}), not this device's clock.`}>({timezone})</span>
         </p>
         <div class="flex flex-wrap items-center gap-2">
           <input
@@ -491,6 +495,7 @@
                           <input
                             type="time"
                             class="rounded-lg border border-border bg-bg-raise px-2 py-0.5 text-xs text-fg"
+                            title={`Profile timezone (${timezone})`}
                             value={minutesToTime(status.preferences.typeConfig.summaryTimeMin)}
                             onchange={(e) => {
                               const v = (e.currentTarget as HTMLInputElement).value;
@@ -555,7 +560,9 @@
               </summary>
               <div class="mt-2 space-y-1 text-xs text-fg-faint">
                 <p>{entry.body}</p>
-                <p>Fact provenance: {entry.provenance}. Fired at {td.displayTime(entry.occurredAt)} ({timezone}).</p>
+                <!-- Full datetime in the display zone; the tooltip carries the
+                     alternate zone so the fired-at moment is unambiguous. -->
+                <p title={td.alternateTimeTooltip(entry.occurredAt)}>Fact provenance: {entry.provenance}. Fired at {td.displayDateTime(entry.occurredAt)}.</p>
                 {#each entry.deliveries as d (d.device ?? "")}
                   <p>
                     → {d.device ?? "Device"}: {d.status.includes("_") ? DELIVERY_STATUS_LABELS[d.status as DeliveryStatus] ?? humanizeStatus(d.status) : d.status}{d.reason ? ` (${DELIVERY_REASON_LABELS[d.reason as DeliveryReason] ?? d.reason})` : ""}{d.sentAt ? ` · ${td.displayTime(d.sentAt)}` : ""}{d.attempts > 1 ? ` · ${d.attempts} attempts` : ""}
