@@ -75,5 +75,12 @@ webcode=$(curl -s -o /dev/null -w "%{http_code}" -m 10 "$WEB_URL" || echo 000)
 echo "    web -> 200"
 
 api_build=$(curl -s -m 5 -D - -o /dev/null "$READY_URL" 2>/dev/null | tr -d '\r' | awk 'tolower($1)=="x-tornscope-build:"{print $2}')
-echo "==> Production deploy OK — running build: ${api_build:-<unknown>} (expected ${GIT_SHA_SHORT})"
-[[ "$api_build" == "$GIT_SHA_SHORT" ]] || echo "    WARNING: x-tornscope-build ($api_build) != deployed SHA ($GIT_SHA_SHORT) — image may be stale."
+# The running build MUST be the deployed commit — a stale image can never
+# count as a successful deploy (V1.0 hardening: this used to warn and
+# continue, and even compared the full-SHA header to the short SHA).
+source "$(dirname "$0")/lib/build-identity.sh"
+if ! verify_build_identity "$GIT_SHA" "$GIT_SHA_SHORT" "$api_build"; then
+  echo "deploy-prod: deploy FAILED — running build does not match the deployed commit." >&2
+  exit 1
+fi
+echo "==> Production deploy OK — running build: ${api_build} (expected ${GIT_SHA_SHORT})"
