@@ -1,7 +1,7 @@
 # Database migrations: rules, release strategy and the upgrade rehearsal
 
-Production (`main`) and development (`develop`) databases diverge while v0.2 is
-being built — that is expected and fine. What keeps that divergence safe is a
+Production (`main`) and development (`develop`) databases diverge between
+releases — that is expected and fine. What keeps that divergence safe is a
 single rule:
 
 > **Every schema change ships as a committed Prisma migration.**
@@ -42,8 +42,8 @@ itself never moves anywhere.**
 
 ## The required pre-release upgrade rehearsal
 
-Before promoting `develop` -> `main` for a release (e.g. v0.2.0), prove the
-migrations against a copy of the real production database:
+Before promoting `develop` -> `main` for a release, prove the migrations
+against a copy of the real production database:
 
 ```bash
 # from the develop checkout

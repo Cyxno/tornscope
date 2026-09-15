@@ -41,7 +41,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          # Must match the root package.json "packageManager" pin exactly —
+          # enforced by scripts/version-check.mjs (preflight + local).
+          version: 10.34.5
       - uses: actions/setup-node@v4
         with:
           node-version: 22
