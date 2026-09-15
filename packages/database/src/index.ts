@@ -10,4 +10,8 @@ export * from "./repositories/sync-state.js";
 export * from "./repositories/settings.js";
 export * from "./repositories/profile.js";
 export * from "./travel/assemble.js";
+export { maybeTopUpDemoData, DEMO_TOPUP_WATERMARK_KEY, DEMO_TOPUP_MIN_INTERVAL_SEC, DEMO_TOPUP_MAX_CATCHUP_SEC } from "./demo/topup.js";
+export type { TopUpResult, TopUpStatus } from "./demo/topup.js";
+export { generateDemoHistory } from "./demo/generator.js";
+export type { DemoContinuationState, DemoGenerationResult } from "./demo/generator.js";
 export * from "./repositories/faction.js";

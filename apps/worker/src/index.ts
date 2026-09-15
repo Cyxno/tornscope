@@ -1,5 +1,6 @@
 import { enqueueDueSyncs } from "./scheduler.js";
 import { maybeRunDailyMaintenance } from "./maintenance.js";
+import { maybeTopUpDemoData } from "@tornscope/database";
 import { evaluateNotifications } from "./notifications/engine.js";
 import { runResourceSync } from "./sync/runner.js";
 import { env, logger } from "./env.js";
@@ -60,6 +61,10 @@ async function main(): Promise<void> {
   const schedulerWorker = createSchedulerWorker(env.redisUrl, async () => {
     await enqueueDueSyncs(syncQueue);
     await maybeRunDailyMaintenance();
+    // Demo freshness (V1.0): extend the synthetic demo history toward now —
+    // self-throttled (min 6h via the demo watermark), pure DB generation,
+    // no Torn requests, no push. Cheap no-op while the demo is current.
+    await maybeTopUpDemoData();
     // Push notification evaluation: self-throttled (min 2 min), only for
     // profiles with an active device subscription. Never per-minute Torn
     // polling — timer checks are gated by stored next-eligible timestamps.

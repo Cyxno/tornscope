@@ -20,7 +20,8 @@
     "studio": "prisma studio",
     "seed:demo": "prisma migrate deploy && tsx src/seed/demo.ts",
     "audit": "tsx src/audit/audit.ts",
-    "renormalize": "tsx src/renormalize/renormalize.ts"
+    "renormalize": "tsx src/renormalize/renormalize.ts",
+    "topup:demo": "tsx src/demo/topup-cli.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.16.2",

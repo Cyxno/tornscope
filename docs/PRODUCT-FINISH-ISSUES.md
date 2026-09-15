@@ -199,3 +199,9 @@ roles income/expense/conversion_in/conversion_out/transfer were already
 evidence-based — no inference was invented); API contracts untouched
 (presentation-only rework); consumption-as-cost model preserved; travel
 estimated profit keeps its economic (estimated) framing; no DB migrations.
+
+### V1.0 demo freshness (synthetic top-up)
+
+| ID | Route | Issue | Severity | Status |
+|----|-------|-------|----------|--------|
+| PF-072 | demo environment | The demo's historical dataset was generated once by `seed:demo` up to `Date.now()` at seed time and then froze — the newest 2–3+ days became empty over time (travel even stopped 2 days before seed time), making recent demo ranges look broken | P1 | FIXED — deterministic incremental top-up (`packages/database/src/demo/`): shared generator primitives for full seed and top-up (one synthetic model, no drift), per-(family, UTC day) hash-seeded randomness (cross-window determinism), idempotent sourceRefs + skipDuplicates, watermark-based self-throttled scheduling (6h) in the worker, 45-day bounded catch-up, wallet-ledger coherent networth tracking continued from the latest state, travel chains continued to the present (no artificial 2-day stop), no Torn calls / no push / no real-user or catalog writes (guard-tested), manual `pnpm demo:topup` command, docs in DATABASE-MIGRATIONS.md |

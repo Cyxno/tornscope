@@ -119,6 +119,39 @@ Pre-0.2 baseline history (all shipped to production between 2026-09-04 and
 for the full list; each was applied to production by its corresponding
 production deploy.
 
+## Demo data lifecycle
+
+The public demo (`demo@tornscope.local`, `isDemo = true`, user-scoped
+`source='demo'` rows only) has two distinct paths:
+
+- **Full seed** — `pnpm demo:seed` (database: `seed:demo`). Destructive:
+  deletes and recreates the demo profile with 180 days of synthetic history,
+  the signature day, faction/OC fixtures and the demo notification ledger.
+  For initial setup and manual recovery only.
+- **Incremental top-up** — `pnpm demo:topup` (database: `topup:demo`,
+  `--force` ignores the throttle) and automatic in the worker's scheduler
+  tick. Non-destructive: preserves the demo profile and extends history
+  toward now.
+
+Top-up properties:
+
+- deterministic per UTC day bucket (hash-seeded RNG per family + day — no
+  sequential state), so the same day generates identical rows in any window;
+- idempotent: every row dedupes on its unique sourceRef / snapshot key;
+  safe to run repeatedly; interrupted runs converge on rerun;
+- self-throttled to once per 6 hours via the
+  `demo_topup_watermark_at` AppSetting on the demo user; catch-up is
+  bounded to 45 days (beyond that the log says a manual reseed is required);
+  a current demo is a cheap no-op (two reads);
+- pure DB generation: never calls the Torn API (guard-tested), never writes
+  notifications/push, never touches real users or the global item catalog;
+- wallet-ledger coherent: tracked wallet cash is derived from the recorded
+  synthetic ledger (plus the demo's small documented drift), with bank
+  withdrawals recorded in the ledger when cash would run dry;
+- after success it refreshes the demo's synthetic SyncState health
+  timestamps (deliberate: keeps the demo UI healthy; no real sync is
+  implied) and advances the watermark.
+
 ## Dev data policy
 
 - Dev/staging normally runs demo/synthetic data (`pnpm seed:demo`).

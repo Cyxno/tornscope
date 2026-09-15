@@ -27,6 +27,7 @@
     "db:migrate": "pnpm --filter @tornscope/database migrate:deploy",
     "db:studio": "pnpm --filter @tornscope/database studio",
     "seed:demo": "pnpm --filter @tornscope/database seed:demo",
+    "demo:topup": "pnpm --filter @tornscope/database topup:demo",
     "lint": "eslint .",
     "torn:audit": "pnpm --filter @tornscope/database run audit",
     "torn:renormalize": "pnpm --filter @tornscope/database renormalize",

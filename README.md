@@ -333,6 +333,10 @@ pnpm seed:demo
 
 Seeds 180 days of synthetic history (drugs, rehab, travel with plushies/flowers, money ledger, networth snapshots, timeline) for a dedicated `isDemo = true` user. The UI shows a **Demo mode** banner. Demo rows use `source = 'demo'` and a separate user — they are never mixed with a real player's data. Re-running the command replaces demo data only.
 
+### `pnpm demo:topup`
+
+Non-destructive incremental freshness for the demo dataset: extends the synthetic history toward now (deterministic, idempotent, no Torn calls, no push, no effect on real users). The worker runs it automatically at most once every 6 hours; the manual command is for on-demand top-ups (`--force` ignores the throttle). Full reset stays `pnpm seed:demo` — see docs/DATABASE-MIGRATIONS.md § Demo data lifecycle.
+
 ## Development
 
 ```bash
