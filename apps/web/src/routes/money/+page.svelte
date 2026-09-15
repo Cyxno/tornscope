@@ -17,7 +17,7 @@
   import StateMessage from "$lib/components/StateMessage.svelte";
   import ProvenanceBadge from "$lib/components/ProvenanceBadge.svelte";
   import { availabilityMessage, availabilityHasData } from "$lib/capabilities";
-  import { C, ct, TOOLTIP, LEGEND, GRID, timeAxis, valueAxis, moneyValueAxis, moneyTooltipValue, dayLabel, axisTimeTooltip, tealArea, MOTION, surface } from "$lib/charts";
+  import { C, ct, TOOLTIP, LEGEND, GRID, timeAxis, valueAxis, moneyValueAxis, moneyTooltipValue, dayLabel, axisTimeTooltip, tealArea, MOTION, surface, categoricalColors } from "$lib/charts";
   import * as td from "$lib/time-display.svelte.js";
 
   let economy = $state<EconomySummaryResponse | null>(null);
@@ -267,10 +267,10 @@
   const estimatedContributors = $derived((economy?.explanation.contributors ?? []).filter((c) => c.certainty === "estimated"));
   const residualContributors = $derived((economy?.explanation.contributors ?? []).filter((c) => c.certainty === "unexplained"));
 
-  /** Distinct pie ramps: inflow (greens/teals) vs outflow (reds/ambers) —
-   *  theme- and palette-aware via the shared chart theme. */
-  const INFLOW_PALETTE = $derived(ct().inflowRamp);
-  const OUTFLOW_PALETTE = $derived(ct().outflowRamp);
+  /** Neutral categorical palette for BOTH wallet donuts: the slices are
+   *  categories, not sentiments — direction colors would brand inflow as
+   *  gain and outflow as loss (V1.0 sign-is-not-sentiment). */
+  const CATEGORICAL_PALETTE = $derived(categoricalColors());
   const OTHERS_COLOR = $derived(ct().theme === "light" ? "#83826f" : "#6e6e78");
   const DONUT_TOP_N = 5;
 
@@ -319,10 +319,13 @@
     };
   }
 
-  const receivedSlices = $derived(donutSlices(economy?.cashFlow.incomeByCategory ?? [], INFLOW_PALETTE, incomeLabel, OTHERS_COLOR));
-  const spentSlices = $derived(donutSlices(economy?.cashFlow.expensesByCategory ?? [], OUTFLOW_PALETTE, expenseLabel, OTHERS_COLOR));
-  const receivedDonut = $derived(receivedSlices.length > 0 ? donutOption(receivedSlices, "Cash received") : null);
-  const spentDonut = $derived(spentSlices.length > 0 ? donutOption(spentSlices, "Cash spent") : null);
+  // Both donuts use the NEUTRAL categorical palette: they break wallet
+  // transport down by category, and green-vs-red ramps would brand inflow
+  // as gain and outflow as loss (V1.0 sign-is-not-sentiment).
+  const receivedSlices = $derived(donutSlices(economy?.cashFlow.incomeByCategory ?? [], CATEGORICAL_PALETTE, incomeLabel, OTHERS_COLOR));
+  const spentSlices = $derived(donutSlices(economy?.cashFlow.expensesByCategory ?? [], CATEGORICAL_PALETTE, expenseLabel, OTHERS_COLOR));
+  const receivedDonut = $derived(receivedSlices.length > 0 ? donutOption(receivedSlices, "Wallet inflow") : null);
+  const spentDonut = $derived(spentSlices.length > 0 ? donutOption(spentSlices, "Wallet outflow") : null);
 
   const cumulativeOption = $derived.by(() => {
     const series = economy?.series.cumulativeNet ?? [];
@@ -353,13 +356,15 @@
     return {
       ...MOTION,
       tooltip: axisTimeTooltip(series.map((p) => p.t), moneyTooltipValue()),
-      legend: { ...LEGEND, data: ["Cash received", "Cash spent"], top: 0, right: 0 },
+      // Neutral series styling: wallet in/out is transport — red/green here
+      // would read as gain/loss (V1.0 sign-is-not-sentiment).
+      legend: { ...LEGEND, data: ["Wallet inflow", "Wallet outflow"], top: 0, right: 0 },
       grid: GRID,
       xAxis: timeAxis(series.map((p) => dayLabel(p.t)), { boundaryGap: true }),
       yAxis: moneyValueAxis(),
       series: [
-        { name: "Cash received", type: "bar", data: series.map((p) => p.income), barMaxWidth: 12, itemStyle: { color: C.positive, borderRadius: [3, 3, 0, 0] } },
-        { name: "Cash spent", type: "bar", data: series.map((p) => -p.expenses), barMaxWidth: 12, itemStyle: { color: C.negative, borderRadius: [3, 3, 0, 0] } },
+        { name: "Wallet inflow", type: "bar", data: series.map((p) => p.income), barMaxWidth: 12, itemStyle: { color: C.accent, borderRadius: [3, 3, 0, 0] } },
+        { name: "Wallet outflow", type: "bar", data: series.map((p) => -p.expenses), barMaxWidth: 12, itemStyle: { color: C.neutral, borderRadius: [3, 3, 0, 0] } },
       ],
     };
   });
@@ -752,18 +757,21 @@
           <!-- ─────────────── Lens 4 · Cash movement ─────────────── -->
           <div id="lens-panel-cash" role="tabpanel" aria-labelledby="lens-tab-cash" class="space-y-5 {activeLens === 'cash' ? '' : 'max-lg:hidden'}">
             <div class="flex flex-wrap items-baseline justify-between gap-2">
-              <h2 class="section-label text-[12px]"><span class="mr-2 text-accent">4</span> Cash movement — money that moved through your wallet</h2>
+              <h2 class="section-label text-[12px]"><span class="mr-2 text-accent">4</span> Cash movement — money that moved through your wallet (transport, not P&amp;L)</h2>
               <span class="chip chip-quiet !border-border !text-[10px]" title="Cash in and out is not the same as income and expense">cash ≠ income</span>
             </div>
             <div class="grid grid-cols-2 gap-px overflow-hidden rounded-card border border-border bg-border shadow-panel md:grid-cols-4">
-              <Stat label="{period} Cash received" value={formatKpiValue(economy.cashFlow.income)} provenance="exact" tone="positive" confidence={economy.confidence?.cashFlow} sub={`earned ${formatMoneyCompact(economy.cashFlow.trueIncome)} · asset sales ${formatMoneyCompact(economy.cashFlow.assetInflow)}`} />
-              <Stat label="{period} Cash spent" value={formatKpiValue(economy.cashFlow.expenses)} provenance="exact" tone="negative" confidence={economy.confidence?.cashFlow} sub={`true expenses ${formatMoneyCompact(economy.cashFlow.trueExpense)} · asset purchases ${formatMoneyCompact(economy.cashFlow.assetOutflow)}`} />
+              <!-- Neutral transport (V1.0 sign-is-not-sentiment): the wallet
+                   totals carry NO sentiment; the economic splits (earned /
+                   true expenses) inside the subs keep theirs. -->
+              <Stat label="{period} Wallet inflow" value={formatKpiValue(economy.cashFlow.income)} provenance="exact" tone="neutral" confidence={economy.confidence?.cashFlow} sub={`earned ${formatMoneyCompact(economy.cashFlow.trueIncome)} · asset sales ${formatMoneyCompact(economy.cashFlow.assetInflow)} (movement)`} />
+              <Stat label="{period} Wallet outflow" value={formatKpiValue(economy.cashFlow.expenses)} provenance="exact" tone="neutral" confidence={economy.confidence?.cashFlow} sub={`true expenses ${formatMoneyCompact(economy.cashFlow.trueExpense)} · asset purchases ${formatMoneyCompact(economy.cashFlow.assetOutflow)} (movement)`} />
               <Stat
                 label="{period} Net cash movement"
                 value={formatKpiValue(economy.cashFlow.netCashFlow)}
                 provenance="exact"
                 confidence={economy.confidence?.cashFlow}
-                tone={economy.cashFlow.netCashFlow.value === null ? "neutral" : economy.cashFlow.netCashFlow.value >= 0 ? "positive" : "negative"}
+                tone="neutral"
               />
               <Stat label="Unclassified rows" value={String(economy.cashFlow.unclassifiedCount)} provenance="exact" confidence={economy.confidence?.cashFlow} sub={economy.cashFlow.unclassifiedCount > 0 ? "recorded, not yet interpretable" : "every row classified"} />
             </div>
@@ -771,7 +779,7 @@
             <!-- Donut legends need ~210px min-content per column; two chart panels only
                  genuinely fit side by side on very wide screens. -->
             <section class="grid gap-6 min-[1500px]:grid-cols-2">
-              <Panel title="Cash received vs spent" caption="Per-bucket cash movement in both directions — cash flow, not income" flush>
+              <Panel title="Wallet inflow vs outflow" caption="Per-bucket wallet movement in both directions — transport, not income" flush>
                 {#if !flowOption}
                   <StateMessage state="empty" compact title="No flow to show" />
                 {:else}
@@ -784,7 +792,7 @@
                 {:else}
                   <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
                     <div class="min-w-0">
-                      <p class="mb-1 text-center text-[11px] font-semibold uppercase tracking-[0.13em] text-positive">Cash received</p>
+                      <p class="mb-1 text-center text-[11px] font-semibold uppercase tracking-[0.13em] text-fg-muted">Wallet inflow</p>
                       {#if receivedDonut}
                         <Chart option={receivedDonut} height={170} />
                       {:else}
@@ -802,7 +810,7 @@
                       </ul>
                     </div>
                     <div class="min-w-0">
-                      <p class="mb-1 text-center text-[11px] font-semibold uppercase tracking-[0.13em] text-negative">Cash spent</p>
+                      <p class="mb-1 text-center text-[11px] font-semibold uppercase tracking-[0.13em] text-fg-muted">Wallet outflow</p>
                       {#if spentDonut}
                         <Chart option={spentDonut} height={170} />
                       {:else}
@@ -824,9 +832,9 @@
               </Panel>
             </section>
 
-            <Panel title="Cash received by category" caption="Asset sales are conversions (value you already owned changing form) — they are not earnings">
+            <Panel title="Wallet inflow by category" caption="Asset sales are conversions (value you already owned changing form) — they are not earnings">
               {#if incomeBreakdown.length === 0}
-                <StateMessage state="empty" compact title="No cash received in this range" />
+                <StateMessage state="empty" compact title="No wallet inflow in this range" />
               {:else}
                 <div class="overflow-x-auto">
                   <table class="tsv-table">
@@ -854,8 +862,8 @@
                         </tr>
                       {/each}
                       <tr class="font-semibold [&>td]:border-t [&>td]:border-border">
-                        <td colspan="2" class="text-fg">Total cash received</td>
-                        <td class="tnum text-right text-positive">{economy.cashFlow.income.value !== null ? formatMoneyCompact(economy.cashFlow.income.value) : "—"}</td>
+                        <td colspan="2" class="text-fg">Total wallet inflow</td>
+                        <td class="tnum text-right text-fg">{economy.cashFlow.income.value !== null ? formatMoneyCompact(economy.cashFlow.income.value) : "—"}</td>
                         <td class="tnum text-right text-fg-faint">100%</td>
                       </tr>
                     </tbody>
@@ -864,7 +872,7 @@
               {/if}
             </Panel>
 
-            <Panel title="Cash spent by category" caption="Buying inventory is an asset purchase — using it later is consumption (economic effect lens), never the same accounting event">
+            <Panel title="Wallet outflow by category" caption="Buying inventory is an asset purchase — using it later is consumption (economic effect lens), never the same accounting event">
               {#if expenseBreakdown.length === 0}
                 <StateMessage state="empty" compact title="No cash expenses in this range" />
               {:else}
@@ -894,8 +902,8 @@
                         </tr>
                       {/each}
                       <tr class="font-semibold [&>td]:border-t [&>td]:border-border">
-                        <td colspan="2" class="text-fg">Total cash spent</td>
-                        <td class="tnum text-right text-negative">{economy.cashFlow.expenses.value !== null ? formatMoneyCompact(economy.cashFlow.expenses.value) : "—"}</td>
+                        <td colspan="2" class="text-fg">Total wallet outflow</td>
+                        <td class="tnum text-right text-fg">{economy.cashFlow.expenses.value !== null ? formatMoneyCompact(economy.cashFlow.expenses.value) : "—"}</td>
                         <td class="tnum text-right text-fg-faint">100%</td>
                       </tr>
                     </tbody>
@@ -927,8 +935,8 @@
             </p>
             <dl class="mt-4 space-y-1.5 text-[13px]">
               <div class="flex items-baseline justify-between gap-3"><dt class="text-fg-muted">Opening wallet</dt><dd class="tnum text-fg-faint">—</dd></div>
-              <div class="flex items-baseline justify-between gap-3"><dt class="text-fg-muted">Recorded inflows</dt><dd class="tnum text-positive">{wallet.openingWallet !== null || wallet.closingWallet !== null ? `+${formatMoneyCompact(wallet.recordedInflows)}` : "—"}</dd></div>
-              <div class="flex items-baseline justify-between gap-3"><dt class="text-fg-muted">Recorded outflows</dt><dd class="tnum text-negative">{wallet.openingWallet !== null || wallet.closingWallet !== null ? `-${formatMoneyCompact(wallet.recordedOutflows)}` : "—"}</dd></div>
+              <div class="flex items-baseline justify-between gap-3"><dt class="text-fg-muted">Recorded inflows</dt><dd class="tnum text-fg">{wallet.openingWallet !== null || wallet.closingWallet !== null ? `+${formatMoneyCompact(wallet.recordedInflows)}` : "—"}</dd></div>
+              <div class="flex items-baseline justify-between gap-3"><dt class="text-fg-muted">Recorded outflows</dt><dd class="tnum text-fg">{wallet.openingWallet !== null || wallet.closingWallet !== null ? `-${formatMoneyCompact(wallet.recordedOutflows)}` : "—"}</dd></div>
               <div class="flex items-baseline justify-between gap-3"><dt class="text-fg-muted">Expected closing</dt><dd class="tnum text-fg-faint">—</dd></div>
               <div class="flex items-baseline justify-between gap-3"><dt class="text-fg-muted">Actual closing</dt><dd class="tnum text-fg-faint">—</dd></div>
               <div class="flex items-baseline justify-between gap-3 border-t border-border pt-1.5"><dt class="font-medium text-fg">Residual</dt><dd class="tnum font-semibold text-fg-faint">—</dd></div>
@@ -939,8 +947,8 @@
                 <dt class="text-fg-muted">Opening wallet{#if wallet.openingSnapshotAt !== null}<span class="ml-1.5 text-[10px] text-fg-faint">{td.displayDate(wallet.openingSnapshotAt)}</span>{/if}</dt>
                 <dd class="tnum text-fg">{formatMoneyCompact(wallet.openingWallet)}</dd>
               </div>
-              <div class="flex items-baseline justify-between gap-3"><dt class="text-fg-muted">Recorded inflows</dt><dd class="tnum text-positive">+{formatMoneyCompact(wallet.recordedInflows)}</dd></div>
-              <div class="flex items-baseline justify-between gap-3"><dt class="text-fg-muted">Recorded outflows</dt><dd class="tnum text-negative">-{formatMoneyCompact(wallet.recordedOutflows)}</dd></div>
+              <div class="flex items-baseline justify-between gap-3"><dt class="text-fg-muted">Recorded inflows</dt><dd class="tnum text-fg">+{formatMoneyCompact(wallet.recordedInflows)}</dd></div>
+              <div class="flex items-baseline justify-between gap-3"><dt class="text-fg-muted">Recorded outflows</dt><dd class="tnum text-fg">-{formatMoneyCompact(wallet.recordedOutflows)}</dd></div>
               <div class="flex items-baseline justify-between gap-3"><dt class="text-fg-muted">Expected closing</dt><dd class="tnum text-fg">{wallet.expectedClosingWallet !== null ? formatMoneyCompact(wallet.expectedClosingWallet) : "—"}</dd></div>
               <div class="flex items-baseline justify-between gap-3">
                 <dt class="text-fg-muted">Actual closing{#if wallet.closingSnapshotAt !== null}<span class="ml-1.5 text-[10px] text-fg-faint">{td.displayDate(wallet.closingSnapshotAt)}</span>{/if}</dt>
@@ -1058,10 +1066,10 @@
                     <span class="chip">{humanLabel(event.category)}</span>
                   </td>
                   <td class="max-w-[360px] truncate text-fg" title={event.description ?? ""}>{event.description ?? event.subcategory ?? "—"}</td>
-                  <td class="tnum text-right font-medium {event.direction === 'income' ? 'text-positive' : 'text-fg-faint'}">
+                  <td class="tnum text-right font-medium text-fg-muted">
                     {event.direction === "income" ? formatMoneyFull(event.amount) : ""}
                   </td>
-                  <td class="tnum text-right font-medium {event.direction === 'expense' ? 'text-negative' : 'text-fg-faint'}">
+                  <td class="tnum text-right font-medium text-fg-muted">
                     {event.direction === "expense" ? formatMoneyFull(-event.amount) : ""}
                   </td>
                 </tr>

@@ -14,10 +14,14 @@ import { join } from "node:path";
 const page = readFileSync(join(__dirname, "../src/routes/money/+page.svelte"), "utf8");
 
 describe("economy page semantic copy", () => {
-  it("labels cash movement as cash, never as income/expenses", () => {
-    expect(page).toContain("Cash received");
-    expect(page).toContain("Cash spent");
+  it("labels cash movement as transport (wallet in/out), never as income/expenses", () => {
+    // V1.0 financial semantics: wallet transport is named neutrally — the
+    // green/red "Cash received/spent" framing is gone.
+    expect(page).toContain("Wallet inflow");
+    expect(page).toContain("Wallet outflow");
     expect(page).toContain("Net cash movement");
+    expect(page).not.toContain('label="{period} Cash received"');
+    expect(page).not.toContain('label="{period} Cash spent"');
     // The words Income/Expenses must not appear as KPI labels.
     expect(page).not.toMatch(/label="\{period\} Income"/);
     expect(page).not.toMatch(/label="\{period\} Expenses"/);

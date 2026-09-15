@@ -109,6 +109,46 @@ vs display-day separation.
   warning banner by default. Amber is reserved for genuine caution or
   required action.
 
+### Financial semantic hierarchy (V1.0 financial-semantics pass)
+
+Every financial surface presents information in this order of importance —
+wealth first, wallet last:
+
+1. **Wealth** — official Torn net worth and its change (the primary outcome).
+2. **Economic result** — true income and true costs: value actually earned or
+   consumed/lost for good.
+3. **Valuation** — owned-asset price movement (already inside the snapshot
+   delta; labeled "incl. price moves" where shown).
+4. **Conversion** — value moved between forms: cash↔assets, bank deposits and
+   withdrawals, faction balance movement. Neutral by definition.
+5. **Liquidity** — cash on hand and wallet flow: the transport layer.
+6. **Forensics** — raw ledger, reconciliation and residuals.
+
+Contracts enforced in code and tests:
+
+- **Sign is not sentiment.** Numeric sign and visual color are separate.
+  `sentimentFor(meaning, value)` (packages/shared/src/finance.ts) is the only
+  tone authority: wealth/economic/valuation figures take gain/loss color;
+  conversion, liquidity and unresolved figures are NEUTRAL (text-fg /
+  text-fg-muted) however large or negative. A red −$8m wallet movement is a
+  bug, not a style choice.
+- **Cash outflow ≠ loss; cash inflow ≠ profit.** Asset sales are proceeds
+  ("movement, not income"); asset purchases are movement ("value still
+  owned, not spent"). Profit language requires a cost basis; proceeds alone
+  are never profit.
+- **Charts follow the same rule.** Wallet-flow series render in neutral/
+  accent colors (never positive/negative); category donuts use the neutral
+  categorical palette, not green/red ramps. Net-worth and economic-result
+  series keep gain/loss colors.
+- **The mixed ledger is neutral.** Timeline / recent-activity amounts mix
+  income, purchases and transfers — they render sign-colored never.
+- **Conversion narratives are hedged.** "Moved into assets" claims require
+  the classified asset-purchase figure to dominate the gross outflow
+  (`explainWealthStory`); otherwise the UI says nothing rather than
+  misframing. Never "exactly $X moved", never "bad purchase", never "fees".
+- **Residual stays visible.** Unexplained differences are labeled
+  unexplained/unresolved — never a fake balancing category.
+
 ## Layout rules
 
 - **Summary first, explanation second, technical detail last** (V0.2

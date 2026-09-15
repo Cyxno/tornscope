@@ -179,3 +179,23 @@ tooltips + Settings state suffice); no "reset remembered ranges" control
 (route memories are harmless presets — reselecting or clearing site data
 recovers, and the Settings default still governs first visits); custom-range
 semantics stay UTC-day based (now captioned, not changed).
+
+### V1.0 financial semantics rework — wealth-first, asset-movement-neutral
+
+Product-wide root cause: financial surfaces presented wallet throughput
+(cash received/spent, net wallet movement) with directional red/green, so
+routine Torn behavior — moving cash into banks, stocks and items — read as
+losses and gains. In Torn, holding little cash is intentional (wallet cash
+is exposed to mugging), so CASH OUTFLOW ≠ LOSS and CASH INFLOW ≠ PROFIT.
+The wallet is a transport layer; red/green are reserved for economic
+meaning (net worth change, true income/costs, valuation).
+
+| ID | Route | Issue | Severity | Status |
+|----|-------|-------|----------|--------|
+| PF-071 | product-wide (Overview, Economy, Today, Timeline, components) | Wallet throughput was sign-colored (green received / red spent / sign-toned net movement), asset conversions read as profit/loss, and "Cash spent"/"Known cash spent" labels framed transport as economics. Users had to mentally reconstruct whether money was lost or merely moved (real-profile case: NW +$5.04m next to a red −$8.59m wallet movement read as a huge loss) | P1 | FIXED — shared semantic model (`packages/shared/src/finance.ts`): `sentimentFor(meaning, value)` is the single sign-vs-sentiment authority (wealth/economic/valuation colored; conversion/liquidity/unresolved always neutral) + `explainWealthStory` hedged narrative with defensibility guardrails (classified purchases must dominate gross outflow; never exact amounts, never "bad purchase"). Overview Advanced strip rebuilt wealth-first (true income green / true costs red / asset movement neutral / cash-on-hand as liquidity with a "low cash is normal" note; net cash movement demoted to a quiet neutral line; the old colored wallet trio removed). Economy: wallet in/out stats + totals + reconciliation rows neutral, renames to Wallet inflow/outflow, flow chart bars accent/neutral-gray (was green/red), both donuts on the neutral categorical palette (was green vs red ramps), raw-ledger In/Out columns neutral. Today/Overview lenses: Received/Spent → Inflow/Outflow neutral with "Movement only — not profit/loss" copy; economic net sign-toned consistently; mixed-ledger amounts (timeline, recent activity, daily-summary annotations) neutral. WalletEquation rows neutral. Canonical fixtures A–H + defensibility tests pin the semantics (`packages/shared/tests/finance.test.ts`); presentation contracts updated (`economy-presentation`, `economy-copy`). Contract documented in docs/UI-DESIGN.md § Financial semantic hierarchy. |
+
+Deliberately unchanged: canonical ledger/analytics classifications (event
+roles income/expense/conversion_in/conversion_out/transfer were already
+evidence-based — no inference was invented); API contracts untouched
+(presentation-only rework); consumption-as-cost model preserved; travel
+estimated profit keeps its economic (estimated) framing; no DB migrations.

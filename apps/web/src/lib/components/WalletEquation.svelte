@@ -72,8 +72,8 @@
   </summary>
   <div class="mt-3 space-y-1 border-t border-border/60 pt-3 text-[13px]" data-testid="wallet-equation">
     <p class="flex items-baseline justify-between gap-3"><span class="text-fg-muted">Opening wallet{wallet.openingAt !== null ? ` · ${td.displayDateTime(wallet.openingAt)}` : ""}</span><span class="tnum text-fg">{wallet.opening !== null ? formatMoneyFull(wallet.opening) : "—"}</span></p>
-    <p class="flex items-baseline justify-between gap-3"><span class="text-fg-muted">Known cash received</span><span class="tnum text-positive">+{formatMoneyFull(wallet.knownReceived)}</span></p>
-    <p class="flex items-baseline justify-between gap-3"><span class="text-fg-muted">Known cash spent</span><span class="tnum text-negative">−{formatMoneyFull(wallet.knownSpent)}</span></p>
+    <p class="flex items-baseline justify-between gap-3"><span class="text-fg-muted">Known cash in</span><span class="tnum text-fg">+{formatMoneyFull(wallet.knownReceived)}</span></p>
+    <p class="flex items-baseline justify-between gap-3"><span class="text-fg-muted">Known cash out</span><span class="tnum text-fg">−{formatMoneyFull(wallet.knownSpent)}</span></p>
     <p class="flex items-baseline justify-between gap-3 border-t border-border/60 pt-1.5"><span class="text-fg">Expected closing</span><span class="tnum font-medium text-fg">{wallet.expectedClosing !== null ? formatMoneyFull(wallet.expectedClosing) : "—"}</span></p>
     <p class="flex items-baseline justify-between gap-3"><span class="text-fg-muted">Actual closing wallet</span><span class="tnum text-fg">{wallet.actualClosing !== null ? formatMoneyFull(wallet.actualClosing) : "—"}</span></p>
     {#if wallet.residual !== null && wallet.quality !== "exact"}

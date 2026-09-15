@@ -76,6 +76,12 @@ export function palettePreview(id: ChartPalette): string[] {
 export function palettePreviewFor(id: ChartPalette, theme: ResolvedTheme): string[] {
   return [...CATEGORICAL[id][theme]];
 }
+/** The LIVE categorical palette (theme/palette-reactive) for charts whose
+ *  series are categories — never sentiments (V1.0 sign-is-not-sentiment). */
+export function categoricalColors(): string[] {
+  const mode: ResolvedTheme = resolvedTheme() === "light" ? "light" : "dark";
+  return [...CATEGORICAL[appearance.palette][mode]];
+}
 export function accentPreviewFor(id: string, theme: ResolvedTheme): string {
   return ACCENT_FAMILIES[id]?.[theme].main ?? ACCENT_FAMILIES.teal[theme].main;
 }
@@ -151,6 +157,9 @@ export function ct(): ChartTheme {
    existing `C.accent`-style call sites are theme/palette reactive. */
 export const C = {
   get accent() { return ct().accent; },
+  /** Neutral series color (the categorical palette's gray slot) — for
+   *  movement/transport series that must NOT read as gain/loss. */
+  get neutral() { return ct().palette[7] ?? ct().label; },
   get accentStrong() { return ct().accentStrong; },
   get accentDeep() { return ct().accentDeep; },
   get positive() { return ct().positive; },

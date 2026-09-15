@@ -132,10 +132,14 @@ describe("daily summary UI (v0.2 item #2)", () => {
     expect(wallet).toContain("Partially reconciled");
     expect(wallet).toContain("Unexplained movement");
     expect(wallet).toContain("data-testid=\"wallet-equation\"");
-    // The equation itself: opening + received − spent = expected vs actual.
+    // The equation itself: opening + in − out = expected vs actual.
+    // (V1.0 financial semantics: neutral transport naming — "in/out", not
+    // "received/spent", which framed movement as economics.)
     expect(wallet).toContain("Opening wallet");
-    expect(wallet).toContain("Known cash received");
-    expect(wallet).toContain("Known cash spent");
+    expect(wallet).toContain("Known cash in");
+    expect(wallet).toContain("Known cash out");
+    expect(wallet).not.toContain("Known cash received");
+    expect(wallet).not.toContain("Known cash spent");
     expect(wallet).toContain("Expected closing");
     expect(wallet).toContain("Actual closing wallet");
     expect(wallet).toContain("Unexplained");

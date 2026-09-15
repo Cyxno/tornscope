@@ -335,7 +335,9 @@
             <p class="mt-4 text-[11px] uppercase tracking-[0.12em] text-fg-faint">Activity behind the moves</p>
             <p class="mt-1.5 text-[12.5px] leading-relaxed text-fg-muted">
               {#each summary.netWorth.activity ?? [] as a, i (a.kind + a.label)}
-                {#if i > 0}{" · "}{/if}{a.label}{" "}<span class="tnum {a.magnitude !== null && a.magnitude >= 0 ? 'text-positive' : 'text-negative'}">{a.magnitude === null ? "—" : formatSignedMoneyCompact(a.magnitude)}</span>{#if a.certainty === "estimated"}<span class="text-[10px] uppercase text-fg-faint"> est.</span>{/if}
+                <!-- Neutral: annotations mix economic and conversion kinds — the
+                     category rows above already carry the sentiment. -->
+                {#if i > 0}{" · "}{/if}{a.label}{" "}<span class="tnum text-fg-muted">{a.magnitude === null ? "—" : formatSignedMoneyCompact(a.magnitude)}</span>{#if a.certainty === "estimated"}<span class="text-[10px] uppercase text-fg-faint"> est.</span>{/if}
               {/each}
               <span class="text-fg-faint"> — already included in the category rows above.</span>
             </p>
@@ -356,9 +358,10 @@
           <ConfidenceBadge meta={summary.cashFlow.confidence} tooltip={confidenceTitle(summary.cashFlow.confidence)} />
         </div>
         <div class="mt-3 space-y-1.5 text-sm">
-          <p class="flex items-baseline justify-between gap-3"><span class="text-fg-muted">Received</span><span class="tnum font-medium text-positive">{formatKpiValue(summary.cashFlow.received)}</span></p>
-          <p class="flex items-baseline justify-between gap-3"><span class="text-fg-muted">Spent</span><span class="tnum font-medium text-negative">{formatKpiValue(summary.cashFlow.spent)}</span></p>
+          <p class="flex items-baseline justify-between gap-3"><span class="text-fg-muted">Inflow</span><span class="tnum font-medium text-fg">{formatKpiValue(summary.cashFlow.received)}</span></p>
+          <p class="flex items-baseline justify-between gap-3"><span class="text-fg-muted">Outflow</span><span class="tnum font-medium text-fg">{formatKpiValue(summary.cashFlow.spent)}</span></p>
           <p class="flex items-baseline justify-between gap-3 border-t border-border pt-1.5"><span class="text-fg">Net movement</span><span class="tnum font-semibold text-fg">{formatKpiValue(summary.cashFlow.net, formatSignedMoneyCompact)}</span></p>
+          <p class="mt-1.5 text-[11px] text-fg-faint">Movement only — not profit/loss.</p>
         </div>
         {#if summary.cashFlow.topInflow.length > 0 || summary.cashFlow.topOutflow.length > 0}
           <p class="mt-3 text-[11px] leading-relaxed text-fg-faint">
@@ -376,7 +379,7 @@
         <div class="mt-3 space-y-1.5 text-sm">
           <p class="flex items-baseline justify-between gap-3"><span class="text-fg-muted">True income</span><span class="tnum font-medium text-positive">{formatKpiValue(summary.economicEffect.trueIncome)}</span></p>
           <p class="flex items-baseline justify-between gap-3"><span class="text-fg-muted">True expenses</span><span class="tnum font-medium text-negative">{formatKpiValue(summary.economicEffect.trueExpense)}</span></p>
-          <p class="flex items-baseline justify-between gap-3 border-t border-border pt-1.5"><span class="text-fg">Economic net</span><span class="tnum font-semibold text-fg">{formatKpiValue(summary.economicEffect.net, formatSignedMoneyCompact)}</span></p>
+          <p class="flex items-baseline justify-between gap-3 border-t border-border pt-1.5"><span class="text-fg">Economic net</span><span class="tnum font-semibold {summary.economicEffect.net.value === null ? 'text-fg-faint' : summary.economicEffect.net.value >= 0 ? 'text-positive' : 'text-negative'}">{formatKpiValue(summary.economicEffect.net, formatSignedMoneyCompact)}</span></p>
         </div>
         <p class="mt-3 text-[11px] leading-relaxed text-fg-faint">Earned or lost value — conversions are excluded here.</p>
       </div>

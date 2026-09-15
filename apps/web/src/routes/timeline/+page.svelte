@@ -179,7 +179,9 @@
                   {/if}
                 </span>
                 {#if event.amount !== null && event.amount !== undefined}
-                  <span class="tnum text-right text-[13px] font-medium {event.amount >= 0 ? 'text-positive' : 'text-negative'}">
+                  <!-- Neutral: the feed mixes income, purchases and transfers —
+                       sign stays in the text, never in the sentiment. -->
+                  <span class="tnum text-right text-[13px] font-medium text-fg">
                     {event.amount >= 0 ? '+' : ''}{formatMoneyCompact(event.amount)}
                   </span>
                 {/if}
