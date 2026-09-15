@@ -52,8 +52,6 @@ export const env = {
   appBaseUrl: process.env.APP_BASE_URL ?? "http://localhost:5173",
   /** Public origin users browse (used only for documentation/headers). */
   publicBaseUrl: process.env.PUBLIC_BASE_URL ?? "",
-  /** Extra origins allowed for cookie-authenticated mutations (CSV). */
-  allowedOrigins: process.env.ALLOWED_ORIGINS ?? "",
   /**
    * Trust X-Forwarded-* headers when the API sits behind the reverse proxy.
    * Parsed from TRUST_PROXY (see parseTrustProxy). Set TRUST_PROXY=false
@@ -77,8 +75,9 @@ export const env = {
   build: resolveBuildVersion(),
   /**
    * Hosted abuse limits (roadmap #8). Centralized, env-tunable so a
-   * self-hoster can loosen them; defaults suit a public beta. Security
-   * BASICS (auth, CSRF, SSRF, isolation) never depend on these.
+   * self-hoster can loosen them; defaults are deliberately conservative for
+   * a public single-node deployment. Security BASICS (auth, CSRF, SSRF,
+   * isolation) never depend on these.
    */
   hosted: {
     /** Active sessions allowed per profile; oldest (by last-seen) are
@@ -90,6 +89,37 @@ export const env = {
     maxPushDevices: clampInt(process.env.HOSTED_MAX_PUSH_DEVICES, 10, 1, 25),
   },
 } as const;
+
+/**
+ * Normalized ALLOWED_ORIGINS (V1.0 hardening): full ORIGIN strings
+ * (scheme + host + port), never bare hosts. Pure + exported so request
+ * paths and tests re-parse cheaply:
+ *   - `https://example.com`        → accepted as-is;
+ *   - `https://example.com:443`    → normalized to `https://example.com`;
+ *   - entries with a path/query or a non-http(s) scheme are rejected
+ *     (an origin has no path — accepting one would silently never match).
+ */
+export function parseAllowedOrigins(raw: string | undefined): string[] {
+  const out = new Set<string>();
+  for (const value of (raw ?? "").split(",")) {
+    const entry = value.trim();
+    if (!entry) continue;
+    try {
+      const url = new URL(entry);
+      if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("scheme");
+      if (url.pathname !== "/" || url.search || url.hash) throw new Error("path");
+      out.add(url.origin);
+    } catch {
+      // Boot-time visibility: an operator typo must not silently shrink the
+      // allowed set to "everything looks fine until a browser shows up".
+      console.warn(`[env] ignoring malformed ALLOWED_ORIGINS entry: ${JSON.stringify(entry)}`);
+    }
+  }
+  return [...out];
+}
+
+/** The deployment's configured extra origins, normalized once at boot. */
+export const allowedOrigins: string[] = parseAllowedOrigins(process.env.ALLOWED_ORIGINS);
 
 function resolveBuildVersion(): { version: string; environment: string } {
   const override = process.env.APP_VERSION?.trim();

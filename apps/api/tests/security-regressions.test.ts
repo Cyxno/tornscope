@@ -16,13 +16,15 @@ const db = getPrismaClient();
 const cleanupUserIds: string[] = [];
 
 
-function originReq(opts: { origin?: string; host?: string; forwardedHost?: string; method?: string; cookie?: string } = {}): any {
+function originReq(opts: { origin?: string; host?: string; forwardedHost?: string; forwardedProto?: string; protocol?: string; method?: string; cookie?: string } = {}): any {
   const headers: Record<string, string> = {};
   if (opts.origin !== undefined) headers.origin = opts.origin;
   if (opts.host !== undefined) headers.host = opts.host;
   if (opts.forwardedHost !== undefined) headers["x-forwarded-host"] = opts.forwardedHost;
-  if (opts.cookie !== undefined) headers.cookie = opts.cookie;
-  return { method: opts.method ?? "POST", headers, ip: "10.1.1.1" };
+  if (opts.forwardedProto !== undefined) headers["x-forwarded-proto"] = opts.forwardedProto;
+  // protocol defaults like a real Fastify request (socket scheme when no
+  // trusted proxy overrides it).
+  return { method: opts.method ?? "POST", headers, ip: "10.1.1.1", protocol: opts.protocol ?? "http" };
 }
 
 afterAll(async () => {
@@ -61,6 +63,56 @@ suite("assertSameOrigin (CSRF defense behind the web proxy)", () => {
 
   it("rejects a malformed origin", () => {
     expect(() => assertSameOrigin(originReq({ origin: "not-a-url", host: "api:3000", forwardedHost: "x" }))).toThrow(/Cross-origin/);
+  });
+
+  // ---- Full-origin comparison (V1.0 hardening: scheme + host + port) ----
+
+  it("accepts a trusted forwarded https origin with default-port normalization", () => {
+    // The proxy forwards the browser-facing scheme + host: x-forwarded-proto
+    // is honored ONLY under TRUST_PROXY (default true).
+    expect(() =>
+      assertSameOrigin(originReq({ origin: "https://tornscope.example.com", host: "api:3000", forwardedHost: "tornscope.example.com", forwardedProto: "https" }))
+    ).not.toThrow();
+  });
+
+  it("rejects an http origin when the browser-facing scheme is https (scheme downgrades are a different origin)", () => {
+    // Host matches, scheme does not — the pre-hardening host-only compare
+    // accepted this.
+    expect(() =>
+      assertSameOrigin(originReq({ origin: "http://tornscope.example.com", host: "api:3000", forwardedHost: "tornscope.example.com", forwardedProto: "https" }))
+    ).toThrow(/Cross-origin/);
+  });
+
+  it("rejects an https origin when the effective scheme is http (upgrade is still a different origin)", () => {
+    expect(() =>
+      assertSameOrigin(originReq({ origin: "https://192.168.1.2:5173", host: "192.168.1.2:5173", protocol: "http" }))
+    ).toThrow(/Cross-origin/);
+  });
+
+  it("rejects a wrong port even with the same host and scheme", () => {
+    expect(() =>
+      assertSameOrigin(originReq({ origin: "http://192.168.1.2:5174", host: "192.168.1.2:5173", forwardedHost: "192.168.1.2:5173" }))
+    ).toThrow(/Cross-origin/);
+  });
+
+  it("accepts a full-origin ALLOWED_ORIGINS entry and normalizes default ports", () => {
+    process.env.ALLOWED_ORIGINS = "https://alt.example.com:443, https://extra.example.com/path?bad";
+    try {
+      // Default port normalizes to the bare origin.
+      expect(() =>
+        assertSameOrigin(originReq({ origin: "https://alt.example.com", host: "api:3000" }))
+      ).not.toThrow();
+      // Path/query entries are origins-invalid: they never match anything.
+      expect(() =>
+        assertSameOrigin(originReq({ origin: "https://extra.example.com", host: "api:3000" }))
+      ).toThrow(/Cross-origin/);
+    } finally {
+      delete process.env.ALLOWED_ORIGINS;
+    }
+  });
+
+  it("still allows Origin-less mutations (curl / server-to-server)", () => {
+    expect(() => assertSameOrigin(originReq({ host: "api:3000" }))).not.toThrow();
   });
 });
 

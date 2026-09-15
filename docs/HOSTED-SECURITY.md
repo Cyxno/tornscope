@@ -60,9 +60,26 @@ worker → Torn API (outbound, key-scoped); worker/API → push providers
 | Heavy analytics GETs | global fallback + row caps | IP |
 
 Limiters are in-process (single-node V1): they reset on API restart and do
-not span replicas — documented, accepted for the beta; per-route windows are
-small enough that restart-timed bursts stay bounded. Scale-out would move
-`checkRateLimit` + `@fastify/rate-limit` to the Redis store.
+not span replicas — a documented V1 trade-off, not a beta stopgap; per-route
+windows are small enough that restart-timed bursts stay bounded. Scale-out
+would move `checkRateLimit` + `@fastify/rate-limit` to the Redis store.
+
+## Outbound Torn rate limiting (V1 architecture)
+
+Each process (API, worker) serializes ALL of its outbound Torn traffic
+through one process-local limiter (`packages/torn-api/src/rate-limiter.ts`,
+default ≥700ms spacing ≈ 85/min per process). There is no cross-process
+coordination. Accepted for V1 single-node because the per-user bound still
+holds: the worker's whole contribution is capped at ~85/min regardless of
+user count, the API adds only ~14/min per actively-viewed profile (Today
+live polling) plus occasional key validations, so worst-case alignment
+reaches roughly the documented 100 requests/min/user limit only transiently
+— and Torn code-5 responses are retried with exponential backoff as the
+designed second line of defense. Scaling to multiple worker processes
+invalidates this arithmetic: raise `TORN_API_MIN_REQUEST_INTERVAL_MS` per
+process (the budgets must sum under the per-user limit) or introduce a
+shared Redis limiter. Torn identity is NEVER placed in limiter state or
+logs — identity lives only in the request payload.
 
 ## 3. Session & profile model
 

@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import { getPrismaClient, ensureSyncStates } from "@tornscope/database";
 import { deleteApiKey, getMe, saveApiKey, type SaveApiKeyResult } from "../src/services/me.js";
 import { getSyncHealth } from "../src/services/syncStatus.js";
-import { buildServer } from "../src/server.js";
+import { buildServer, requestHasBody } from "../src/server.js";
 import { enqueueDueSyncs } from "../../worker/src/scheduler.js";
 import { runResourceSync } from "../../worker/src/sync/runner.js";
 import { CAPABILITY_RECHECK_SECONDS } from "@tornscope/shared";
@@ -120,6 +120,35 @@ suite("body-less mutations + disconnect semantics", () => {
     const response = await app.inject({ method: "DELETE", url: "/api/settings/api-key", headers: { "content-type": "application/json" } });
     expect(response.statusCode).not.toBe(400);
     expect(response.body).not.toContain("Body cannot be empty");
+    await app.close();
+  });
+
+  it("a POST with a JSON content-type and NO body reaches route logic (no parser error)", async () => {
+    const app = await buildServer();
+    // The route may itself answer 4xx for the missing payload — the parser
+    // 400 must specifically never happen ("Body cannot be empty when
+    // content-type is set" is Fastify's parser, not route logic).
+    const response = await app.inject({ method: "POST", url: "/api/settings/api-key", headers: { "content-type": "application/json" } });
+    expect(response.body).not.toContain("Body cannot be empty");
+    await app.close();
+  });
+
+  it("requestHasBody treats chunked transfer framing as a body even without content-length", () => {
+    // A chunked request has NO content-length — the pre-hardening logic
+    // misread it as body-less and stripped its content-type.
+    expect(requestHasBody({ "content-length": "42" })).toBe(true);
+    expect(requestHasBody({ "content-length": "0" })).toBe(false);
+    expect(requestHasBody({})).toBe(false);
+    expect(requestHasBody({ "transfer-encoding": "chunked" })).toBe(true);
+    expect(requestHasBody({ "transfer-encoding": "gzip, chunked" })).toBe(true);
+    expect(requestHasBody({ "content-length": "0", "transfer-encoding": "chunked" })).toBe(true);
+    expect(requestHasBody({ "transfer-encoding": "gzip" })).toBe(false);
+  });
+
+  it("a GET carrying an incidental content-type and no body is unaffected", async () => {
+    const app = await buildServer();
+    const response = await app.inject({ method: "GET", url: "/api/health", headers: { "content-type": "application/json" } });
+    expect(response.statusCode).toBe(200);
     await app.close();
   });
 

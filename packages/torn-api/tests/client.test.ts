@@ -105,6 +105,47 @@ describe("TornApiClient", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
+  it("retries Torn rate-limit responses (code 5) with backoff, then succeeds", async () => {
+    // Combined API+worker traffic can transiently reach the documented
+    // per-user limit — code 5 MUST be retried, never surfaced (the designed
+    // second line of defense for the process-local limiter architecture).
+    let calls = 0;
+    const fetchImpl = vi.fn(async () => {
+      calls += 1;
+      if (calls === 1) return jsonResponse({ error: { code: 5, error: "Too many requests" } });
+      return jsonResponse({ profile: { id: 7 } });
+    });
+    const client = clientWith(fetchImpl);
+    const result = await client.get("/user/profile");
+    expect((result as { profile: { id: number } }).profile.id).toBe(7);
+    expect(calls).toBe(2);
+  });
+
+  it("limiter spacing is process-local by design: two instances never coordinate", async () => {
+    // Documented V1 architecture (see rate-limiter.ts header and
+    // docs/HOSTED-SECURITY.md): API and worker each pace their own traffic.
+    // This pins the assumption so any future cross-process coordination is a
+    // conscious change.
+    const a = new RateLimiter(20);
+    const b = new RateLimiter(20);
+    const start = Date.now();
+    await Promise.all([a.run(async () => undefined), b.run(async () => undefined)]);
+    // Two independent limiters do NOT serialize against each other: both
+    // first calls run immediately (each instance spaces only ITS OWN runs).
+    expect(Date.now() - start).toBeLessThan(20);
+    let lastStart = 0;
+    let spaced = true;
+    const probe = new RateLimiter(25);
+    for (let i = 0; i < 3; i++) {
+      await probe.run(async () => {
+        const now = Date.now();
+        if (i > 0 && now - lastStart < 20) spaced = false;
+        lastStart = now;
+      });
+    }
+    expect(spaced).toBe(true); // but each instance does space its own runs
+  });
+
   it("follows _metadata.links.next pagination", async () => {
     const pages = [
       { log: [{ id: 1 }], _metadata: { links: { next: "https://api.torn.com/v2/user/log?offset=2&key=TESTKEY123" } } },

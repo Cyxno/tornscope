@@ -7,15 +7,21 @@
  * per-route windows and the global per-IP limit.
  */
 const buckets = new Map<string, number[]>();
+// Denial telemetry is only consulted for 30s after a denial; entries older
+// than 10 minutes are pure dead weight, so the same prune pass drops them.
+const LAST_DENIAL_TTL_MS = 10 * 60_000;
 const lastDenialLogAt = new Map<string, number>();
 
 /** Drop fully-expired buckets occasionally so the map cannot grow forever. */
 function prune(now: number): void {
-  if (buckets.size < 5000) return;
+  if (buckets.size < 5000 && lastDenialLogAt.size < 1000) return;
   for (const [key, hits] of buckets) {
     const alive = hits.filter((t) => now - t < 3_600_000);
     if (alive.length === 0) buckets.delete(key);
     else buckets.set(key, alive);
+  }
+  for (const [key, at] of lastDenialLogAt) {
+    if (now - at > LAST_DENIAL_TTL_MS) lastDenialLogAt.delete(key);
   }
 }
 

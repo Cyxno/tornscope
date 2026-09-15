@@ -60,6 +60,23 @@ if [[ "$page" != "200" ]]; then
 fi
 echo "==> Web page returned 200"
 
+# Build-identity assertion (V1.0 hardening): the READY api container must
+# report exactly the GIT_SHA the images were built with — catches stale
+# cached images / miswired GIT_SHA injection masquerading as a green build.
+# Expected value: SMOKE_EXPECT_SHA, else $GIT_SHA, else "dev" (local builds
+# without an injected SHA legitimately stamp "dev").
+expected_sha="${SMOKE_EXPECT_SHA:-${GIT_SHA:-dev}}"
+build_header=$(curl -s -m 5 -D - -o /dev/null "$WEB_URL/api/ready" 2>/dev/null | tr -d '\r' | awk 'tolower($1)=="x-tornscope-build:"{print $2}')
+if [[ -z "$build_header" ]]; then
+  fail "API did not return an x-tornscope-build header — build identity unknown"
+  exit 1
+fi
+if [[ "$build_header" != "$expected_sha" ]]; then
+  fail "Build identity drift: x-tornscope-build ($build_header) != expected ($expected_sha) — stale image or broken GIT_SHA wiring"
+  exit 1
+fi
+echo "==> Build identity verified: ${build_header}"
+
 # Stack composition: exactly the five production services should be up.
 running=$(docker compose ps --status running --services 2>/dev/null || echo "")
 missing=""

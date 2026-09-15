@@ -1,6 +1,6 @@
 import { TornApiError, TornNetworkError } from "@tornscope/torn-api";
 import { claimResource, completeResource, progressResource, recordSyncRun, ensureSyncStates } from "@tornscope/database";
-import { CAPABILITY_RECHECK_SECONDS, deriveKeyCapabilities, hasCompleteCapabilityShape, normalizeCapabilitiesWithFallback, resourceAllowed, resourceRequirementLabel, tornKindToReason, type KeyCapabilities, type SyncResource } from "@tornscope/shared";
+import { CAPABILITY_RECHECK_SECONDS, deriveKeyCapabilities, hasCompleteCapabilityShape, normalizeCapabilitiesWithFallback, resourceAllowed, resourceRequirementLabel, tornKindToReason, TtlMap, type KeyCapabilities, type SyncResource } from "@tornscope/shared";
 import { SYNC_HANDLERS } from "./handlers.js";
 import { getWorkerContext } from "../context.js";
 import { logger } from "../env.js";
@@ -20,7 +20,14 @@ export interface SyncOutcome {
  */
 const CAPABILITY_DETECTION_TTL_MS = 10 * 60_000;
 
-const capabilityDetectionCache = new Map<string, { caps: KeyCapabilities; expiresAt: number }>();
+// TTL-bounded (TtlMap): expired credential detections are swept lazily, so
+// credentials from deleted profiles cannot accumulate forever. Ceiling 1_000
+// covers every plausible credential count on a single node many times over.
+const capabilityDetectionCache = new TtlMap<KeyCapabilities>({
+  ttlMs: CAPABILITY_DETECTION_TTL_MS,
+  maxEntries: 1_000,
+  sweepEvery: 16,
+});
 
 /**
  * Time-based liveness heartbeat for the CURRENT run: refreshes
@@ -63,7 +70,7 @@ async function resolveCapabilities(
   if (stored) return stored;
 
   const cached = capabilityDetectionCache.get(credential.id);
-  if (cached && cached.expiresAt > Date.now()) return cached.caps;
+  if (cached) return cached;
   try {
     const info = await ctx.torn(apiKey).keyInfo();
     const raw = (info.info.selections ?? {}) as { user?: unknown; faction?: unknown };
@@ -77,7 +84,7 @@ async function resolveCapabilities(
       },
       typeof info.info.access.level === "number" ? info.info.access.level : null
     );
-    capabilityDetectionCache.set(credential.id, { caps, expiresAt: Date.now() + CAPABILITY_DETECTION_TTL_MS });
+    capabilityDetectionCache.set(credential.id, caps);
     await ctx.db.apiCredential.update({ where: { id: credential.id }, data: { capabilities: caps as never } });
     logger.info({ userId }, "capabilities backfilled from /key/info");
     return caps;

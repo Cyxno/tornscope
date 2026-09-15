@@ -7,6 +7,14 @@ import { resolveBuildIdentity } from "@tornscope/shared";
 import { registerRoutes } from "./routes.js";
 import { AppError } from "./errors.js";
 
+/** Whether a request can carry a body: an explicit non-zero content-length
+ *  OR chunked transfer framing (which has no content-length at all). */
+export function requestHasBody(headers: Record<string, unknown>): boolean {
+  const transferEncoding = (headers["transfer-encoding"] ?? "").toString().toLowerCase();
+  const contentLength = headers["content-length"];
+  return transferEncoding.includes("chunked") || (contentLength !== undefined && contentLength !== "0");
+}
+
 /** Build the configured Fastify server (not started). */
 export async function buildServer(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -39,11 +47,15 @@ export async function buildServer(): Promise<FastifyInstance> {
   // A body-less mutation carrying "content-type: application/json" would hit
   // the JSON parser and fail with "Body cannot be empty..." before route
   // logic runs. Proxies and generic clients like to stamp that header, so
-  // strip it whenever there is no body to parse (defense in depth — the web
+  // strip it whenever no body can be present (defense in depth — the web
   // proxy and browser client also avoid sending it).
+  //
+  // "No body" means: an explicit content-length of 0 (or no length header)
+  // AND no chunked transfer framing. A chunked request has no
+  // content-length at all, so pre-hardening logic misread it as body-less
+  // and stripped the content-type — the JSON body then never parsed.
   app.addHook("onRequest", async (req) => {
-    const hasBody = req.headers["content-length"] !== undefined && req.headers["content-length"] !== "0";
-    if (!hasBody && req.headers["content-type"]) {
+    if (!requestHasBody(req.headers) && req.headers["content-type"]) {
       delete req.headers["content-type"];
     }
   });

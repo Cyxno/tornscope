@@ -1,7 +1,7 @@
 # Hosted Deployment Guide
 
-The supported public-beta topology and every setting that matters for
-running one safely. Self-hosters on a trusted LAN can skip the hosted-only
+The supported single-node topology and every setting that matters for
+running it safely. Self-hosters on a trusted LAN can skip the hosted-only
 items; nothing here is required for local use.
 
 ## Supported topology

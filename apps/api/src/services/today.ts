@@ -25,7 +25,7 @@ import type {
   TornUserTravel,
 } from "@tornscope/torn-api";
 import { TornApiError } from "@tornscope/torn-api";
-import { normalizeCapabilitiesWithFallback, type KeyCapabilities } from "@tornscope/shared";
+import { normalizeCapabilitiesWithFallback, TtlMap, type KeyCapabilities } from "@tornscope/shared";
 import { getApiContext } from "../context.js";
 import { errors } from "../errors.js";
 
@@ -47,12 +47,17 @@ import { errors } from "../errors.js";
 const CACHE_TTL_MS = Number(process.env.TODAY_CACHE_TTL_MS ?? 30_000);
 const EDUCATION_CATALOG_TTL_MS = 24 * 60 * 60 * 1000;
 
-interface CacheEntry {
-  expiresAt: number;
-  promise: Promise<TodayResponse>;
-}
-
-const cache = new Map<string, CacheEntry>();
+// TTL-bounded (TtlMap): a user who never returns is eventually swept, so the
+// map cannot grow with one-time visitors. The 5_000-entry ceiling is an
+// emergency bound, not a tuning knob — 5k concurrent live payloads (~KBs
+// each) is orders of magnitude beyond any single-node deployment; eviction
+// order is expired-first, then oldest, so active users are never evicted.
+// Sweeps are lazy (at most one per 64 writes) — no timers, no per-request cost.
+const cache = new TtlMap<Promise<TodayResponse>>({
+  ttlMs: CACHE_TTL_MS,
+  maxEntries: 5_000,
+  sweepEvery: 64,
+});
 const refreshInFlight = new Map<string, Promise<TodayResponse>>();
 
 let educationCatalog: { fetchedAt: number; byCourseId: Map<number, { name: string; category: string }> } | null = null;
@@ -80,12 +85,12 @@ export function clearEducationCatalogCache(): void {
  */
 export async function getToday(user: { id: string; isDemo: boolean }): Promise<TodayResponse> {
   const now = Date.now();
-  const entry = cache.get(user.id);
-  if (entry && entry.expiresAt > now) return entry.promise;
+  const cached = cache.get(user.id);
+  if (cached) return cached;
 
   if (user.isDemo) {
     const promise = Promise.resolve(buildDemoToday());
-    cache.set(user.id, { expiresAt: now + CACHE_TTL_MS, promise });
+    cache.set(user.id, promise);
     return promise;
   }
 
@@ -94,7 +99,7 @@ export async function getToday(user: { id: string; isDemo: boolean }): Promise<T
     // Serve the persisted copy for this cache window; revalidate once in the
     // background. The served promise is already resolved — a burst of cold
     // requests is never queued behind the upstream fetch.
-    cache.set(user.id, { expiresAt: now + CACHE_TTL_MS, promise: Promise.resolve(lastKnown) });
+    cache.set(user.id, Promise.resolve(lastKnown));
     startBackgroundRefresh(user);
     return lastKnown;
   }
@@ -112,7 +117,7 @@ function startRefresh(user: { id: string }): Promise<TodayResponse> {
   const promise = fetchToday(user.id)
     .then(async (res) => {
       refreshInFlight.delete(user.id);
-      cache.set(user.id, { expiresAt: Date.now() + CACHE_TTL_MS, promise: Promise.resolve(res) });
+      cache.set(user.id, Promise.resolve(res));
       await persistLastKnown(user.id, res).catch(() => undefined);
       return res;
     })

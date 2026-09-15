@@ -47,7 +47,7 @@ dev_db=$(grep -E '^POSTGRES_DB=' "$ENV_FILE_ABS" | head -1 | cut -d= -f2-)
 [[ "$dev_db" == *_dev ]] || die "POSTGRES_DB ('$dev_db') does not end in _dev — dev must use a clearly separate database name."
 
 if ! grep -Eq '^PUBLIC_ENV_LABEL=.+' "$ENV_FILE_ABS"; then
-  echo "    WARNING: PUBLIC_ENV_LABEL is empty — the dev UI will show 'Beta' instead of a dev marker."
+  echo "    WARNING: PUBLIC_ENV_LABEL is empty — the dev UI will show the default environment marker instead of a dev marker."
 fi
 
 echo "==> Dev/staging deploy from develop @ $(git rev-parse --short HEAD)"

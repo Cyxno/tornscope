@@ -1,7 +1,8 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { getPrismaClient } from "@tornscope/database";
-import { env } from "./env.js";
+import { TtlMap } from "@tornscope/shared";
+import { env, parseAllowedOrigins } from "./env.js";
 import { AppError } from "./errors.js";
 
 /**
@@ -139,9 +140,35 @@ async function userForSession(
 }
 
 /** Max NEW anonymous profiles one IP may create per hour (session abuse
- *  guard). Env-tunable for self-hosters; default suits a public beta. */
+ *  guard). Env-tunable for self-hosters; defaults are deliberately
+ *  conservative for a public single-node deployment. The map is TTL-bounded
+ *  (TtlMap): an IP whose last hit is older than the window is fully dropped
+ *  from retained state, so one-time visitor IPs cannot grow it forever. */
 const PROFILE_CREATION_LIMIT = env.hosted.profileCreationsPerIpPerHour;
-const profileCreationHits = new Map<string, number[]>();
+const PROFILE_CREATION_WINDOW_MS = 3600_000;
+const profileCreationHits = new TtlMap<number[]>({
+  ttlMs: PROFILE_CREATION_WINDOW_MS,
+  maxEntries: 10_000,
+  sweepEvery: 32,
+});
+
+/** Test hooks: retained-state size / deterministic reset + hit registration
+ *  (so cleanup behavior is provable without creating real profiles). */
+export function profileCreationHitsSizeForTests(): number {
+  return profileCreationHits.size;
+}
+export function profileCreationHitsRetainedForTests(): number {
+  return profileCreationHits.retainedSize;
+}
+export function sweepProfileCreationHitsForTests(): number {
+  return profileCreationHits.sweep();
+}
+export function resetProfileCreationHitsForTests(): void {
+  profileCreationHits.sweep(Number.POSITIVE_INFINITY);
+}
+export function recordProfileCreationHitForTests(ip: string): void {
+  registerProfileCreationHit(ip, Date.now());
+}
 
 export class ProfileCreationRateLimited extends Error {
   readonly statusCode = 429;
@@ -201,6 +228,17 @@ export function clearBootstrapForTests(): void {
   inFlightBootstrap.clear();
 }
 
+/**
+ * Record this attempt in the per-IP sliding window. Kept as its own step so
+ * tests can prove retained-state cleanup (an IP whose hits are all expired
+ * vanishes from the map) without creating real profiles.
+ */
+function registerProfileCreationHit(ip: string, now: number): void {
+  const hits = (profileCreationHits.get(ip) ?? []).filter((t) => now - t < PROFILE_CREATION_WINDOW_MS);
+  hits.push(now);
+  profileCreationHits.set(ip, hits);
+}
+
 /** Create a fresh anonymous profile + session and set the cookie. */
 async function createAnonymousSession(db: ReturnType<typeof getPrismaClient>, req: FastifyRequest, reply: FastifyReply): Promise<SessionUser> {
   // Session-abuse guard: bots hammering the API without cookies must not be
@@ -211,7 +249,7 @@ async function createAnonymousSession(db: ReturnType<typeof getPrismaClient>, re
   // mint a fresh spoofed IP per request.
   const ip = req.ip ?? "unknown";
   const now = Date.now();
-  const hits = (profileCreationHits.get(ip) ?? []).filter((t) => now - t < 3600_000);
+  const hits = (profileCreationHits.get(ip) ?? []).filter((t) => now - t < PROFILE_CREATION_WINDOW_MS);
   if (hits.length >= PROFILE_CREATION_LIMIT) {
     throw new ProfileCreationRateLimited();
   }
@@ -222,8 +260,7 @@ async function createAnonymousSession(db: ReturnType<typeof getPrismaClient>, re
   const startedAt = now;
   inFlightBootstrap.set(ip, { startedAt });
   try {
-    hits.push(now);
-    profileCreationHits.set(ip, hits);
+    registerProfileCreationHit(ip, now);
     const suffix = randomBytes(3).toString("hex");
     const user = await db.user.create({ data: { displayName: `Guest ${suffix}`, role: "user" } });
     const token = newSessionToken();
@@ -275,41 +312,65 @@ export async function resolveSessionUser(req: FastifyRequest, reply: FastifyRepl
  * header on cross-site requests, so a mismatched Origin is rejected.
  * SameSite=Lax is the first layer; this is the second.
  *
- * The API always sits behind the web app's same-origin proxy: the proxy keeps
- * the browser's Origin header but rewrites Host to the internal `api:3000`.
- * With TRUST_PROXY (default), the forwarded host is the real browser-facing
- * host and is accepted alongside Host. A cross-SITE attacker's page still
- * fails both — its Origin is evil.com, while x-forwarded-host is set by our
- * proxy, never by the attacker.
+ * FULL-ORIGIN comparison (V1.0 hardening): a browser origin is
+ * scheme + host + port, so the whole origin string is compared — not just
+ * the host. An `http://` page on an otherwise-matching host is a DIFFERENT
+ * origin and is rejected when the browser-facing scheme is https.
+ *
+ * The effective browser-facing origins are derived, in order:
+ *   1. `req.protocol` + Host — Fastify resolves req.protocol honoring
+ *      TRUST_PROXY, so this is the socket scheme unless a trusted proxy
+ *      says otherwise (same decision as the session cookie's Secure flag);
+ *   2. x-forwarded-proto + x-forwarded-host — ONLY when TRUST_PROXY is on
+ *      (the same-origin proxy rewrites Host to the internal `api:3000` but
+ *      forwards the browser's scheme/host; a direct client cannot spoof
+ *      these past an untrusted hop);
+ *   3. ALLOWED_ORIGINS — configured full origins, normalized once at boot.
+ *
+ * A cross-SITE attacker's page fails all three — its Origin is evil.com,
+ * while the forwarded headers are set by our proxy, never by the attacker.
+ * Requests WITHOUT an Origin header pass: non-browser clients (curl,
+ * server-to-server) never send one, and browsers always do on cross-site
+ * mutations — which is the threat this check exists for.
  */
 export function assertSameOrigin(req: FastifyRequest): void {
   if (req.method === "GET" || req.method === "HEAD") return;
   const origin = req.headers.origin;
   if (!origin) return; // non-browser client (curl / server-to-server)
-  const allowed = new Set<string>();
+  let originValue = "";
+  try {
+    originValue = new URL(origin).origin;
+  } catch {
+    originValue = "";
+  }
+  if (!originValue || originValue === "null") {
+    throw Object.assign(new Error("Cross-origin request rejected."), { statusCode: 403 });
+  }
+
+  // Re-parsed per mutation request (cheap; mutations only) so env changes in
+  // tests and operators' per-process config always reflect current state.
+  const allowed = new Set<string>(parseAllowedOrigins(process.env.ALLOWED_ORIGINS));
   const host = req.headers.host;
-  if (host) allowed.add(host);
+  if (host) {
+    try {
+      allowed.add(new URL(`${req.protocol}://${host}`).origin);
+    } catch {
+      // malformed Host — nothing to add
+    }
+  }
   if (env.trustProxy) {
     const forwardedHost = (req.headers["x-forwarded-host"] ?? "").toString().split(",")[0]?.trim();
-    if (forwardedHost) allowed.add(forwardedHost);
-  }
-  for (const extra of (process.env.ALLOWED_ORIGINS ?? "").split(",")) {
-    const trimmed = extra.trim();
-    if (trimmed) {
+    const forwardedProto = (req.headers["x-forwarded-proto"] ?? "").toString().split(",")[0]?.trim();
+    if (forwardedHost) {
       try {
-        allowed.add(new URL(trimmed).host);
+        allowed.add(new URL(`${forwardedProto || req.protocol}://${forwardedHost}`).origin);
       } catch {
-        // ignore malformed entries
+        // malformed forwarded header — nothing to add
       }
     }
   }
-  let originHost = "";
-  try {
-    originHost = new URL(origin).host;
-  } catch {
-    originHost = "";
-  }
-  if (!originHost || !allowed.has(originHost)) {
+
+  if (!allowed.has(originValue)) {
     throw Object.assign(new Error("Cross-origin request rejected."), { statusCode: 403 });
   }
 }
