@@ -15,4 +15,19 @@ if (process.env.TEST_DATABASE_URL) {
   process.env.API_KEY_ENCRYPTION_KEY ??= "a".repeat(64);
   process.env.TORN_API_MIN_REQUEST_INTERVAL_MS ??= "0";
   process.env.REDIS_URL ??= "redis://127.0.0.1:6379/15";
+  // Bound every Prisma pool so Vitest's default parallelism (one client per
+  // test file, files running across many workers) can never exhaust the
+  // server's max_connections — the exact failure that broke hosted CI
+  // ("FATAL: sorry, too many clients already"). Files that never call
+  // $disconnect leak their pool until the worker exits; small per-client
+  // pools keep the worst case (all workers × all leaked clients) safely
+  // under the PostgreSQL default of 100 connections while still serving
+  // every suite sequentially within its own file.
+  const boundPool = (url) => {
+    if (!url) return url;
+    const limit = 2;
+    return /[?&]connection_limit=/.test(url) ? url : url + (url.includes("?") ? "&" : "?") + `connection_limit=${limit}`;
+  };
+  process.env.TEST_DATABASE_URL = boundPool(process.env.TEST_DATABASE_URL);
+  process.env.DATABASE_URL = boundPool(process.env.DATABASE_URL);
 }
