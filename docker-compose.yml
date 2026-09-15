@@ -18,7 +18,9 @@ services:
     # Database is bound to localhost only; historical data may be unrecoverable
     # from Torn later, so treat this volume as precious and back it up.
     ports:
-      - "127.0.0.1:5432:5432"
+      # Host port overridable (smoke runs on a shared host map a free port);
+      # inside the compose network it is always 5432.
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
 
   redis:
     image: redis:7-alpine
@@ -80,7 +82,7 @@ services:
       TRUST_PROXY: ${TRUST_PROXY:-true}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:${API_HOST_PORT:-3000}:3000"
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 15s
@@ -156,7 +158,9 @@ services:
       # dev/staging set e.g. "Development" so staging cannot pose as public beta.
       PUBLIC_ENV_LABEL: ${PUBLIC_ENV_LABEL:-}
     ports:
-      - "127.0.0.1:5173:5173"
+      # Host port overridable so a smoke run can coexist with a real
+      # deployment on the same host (never touches other compose projects).
+      - "127.0.0.1:${WEB_HOST_PORT:-5173}:5173"
     depends_on:
       - api
 
