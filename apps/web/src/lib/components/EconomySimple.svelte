@@ -108,6 +108,24 @@
     </p>
   </div>
 
+  <!-- ── Value moved: the conversion layer, explicitly neutral ── -->
+  <div class="section-rule pt-7">
+    <p class="section-label">Value moved between forms</p>
+    <div class="mt-4 space-y-2 text-sm">
+      <p class="flex items-baseline justify-between gap-3" title="Cash spent acquiring assets you still own — a change of form, not a cost.">
+        <span class="text-fg-muted">Cash → assets</span>
+        <span class="tnum font-medium text-fg">{economy.conversions.cashIntoAssets.value === null ? "—" : formatMoneyCompact(economy.conversions.cashIntoAssets.value)}</span>
+      </p>
+      <p class="flex items-baseline justify-between gap-3" title="Cash received from selling assets — proceeds, not profit.">
+        <span class="text-fg-muted">Assets → cash</span>
+        <span class="tnum font-medium text-fg">{economy.conversions.assetsIntoCash.value === null ? "—" : formatMoneyCompact(economy.conversions.assetsIntoCash.value)}</span>
+      </p>
+    </div>
+    <p class="mt-2 text-[11px] leading-relaxed text-fg-faint">
+      Movement between forms — neutral by definition, neither income nor spending.
+    </p>
+  </div>
+
   <!-- ── Honest residual: neutral context, never an error banner ── -->
   {#if unexplainedMaterial}
     <div class="section-rule pt-7 text-[13px] leading-relaxed">

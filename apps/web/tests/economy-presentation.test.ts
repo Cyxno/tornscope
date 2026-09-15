@@ -81,31 +81,61 @@ describe("economy advanced view", () => {
 });
 
 describe("overview hierarchy", () => {
-  it("Simple strip is a dashboard: cash on hand + training outcome, no accounting heroes", () => {
-    // V1.0 hierarchy pass: the accounting perspectives moved out of the
-    // Overview Simple strip (they live in Economy).
+  it("Simple strip is a dashboard: training outcome + liquidity, no accounting heroes", () => {
+    // V1.0 hierarchy pass: accounting perspectives live in Economy; the
+    // financial-semantics pass demoted cash-on-hand to liquidity context.
     const stripStart = overview.indexOf('<dl class="mt-6 grid');
     const stripEnd = overview.indexOf("</dl>", stripStart);
     const strip = overview.slice(stripStart, stripEnd);
-    expect(strip).toContain("Cash on hand");
-    expect(strip).toContain("Battlestats today");
-    expect(strip).toContain("Training today");
     const simpleSlice = strip.slice(strip.indexOf('prefs.mode === "simple"'), strip.indexOf('{:else}'));
+    expect(simpleSlice).toContain("Battlestats today");
+    expect(simpleSlice).toContain("Training today");
+    expect(simpleSlice).toContain("Cash on hand");
+    expect(simpleSlice).toContain("liquidity"); // low cash framed as normal
     expect(simpleSlice).not.toContain("economic effect");
-    expect(simpleSlice).not.toContain("moved into assets");
-    expect(simpleSlice).not.toContain("largest shift");
-    // Wallet turnover exists only on the Advanced branch, after Simple's.
-    const simpleBranch = strip.indexOf('prefs.mode === "simple"');
-    const advancedBranch = strip.indexOf("{:else}");
-    const walletTurnover = strip.indexOf("net wallet movement");
-    expect(simpleBranch).toBeGreaterThan(-1);
-    expect(advancedBranch).toBeGreaterThan(simpleBranch);
-    expect(walletTurnover).toBeGreaterThan(advancedBranch);
-    expect(strip.slice(simpleBranch, advancedBranch)).not.toContain("wallet");
+    expect(simpleSlice).not.toContain("true income");
+    expect(simpleSlice).not.toContain("wallet inflow");
   });
 
-  it("explains the Torn wallet context on the Advanced branch only", () => {
-    expect(overview).toContain("players store money in banks, stocks and items rather than holding cash");
+  it("Advanced strip is wealth-first: economic result colored, conversion neutral, wallet demoted", () => {
+    const stripStart = overview.indexOf('<dl class="mt-6 grid');
+    const stripEnd = overview.indexOf("</dl>", stripStart);
+    const strip = overview.slice(stripStart, stripEnd);
+    const advancedSlice = strip.slice(strip.indexOf("{:else}"), stripEnd);
+    // ECONOMIC: true income/costs keep red/green.
+    expect(advancedSlice).toContain("true income");
+    expect(advancedSlice).toContain("text-positive");
+    expect(advancedSlice).toContain("true costs");
+    expect(advancedSlice).toContain("text-negative");
+    // CONVERSION: asset movement is one neutral cell.
+    expect(advancedSlice).toContain("asset movement");
+    expect(advancedSlice).toContain("neutral, not P&amp;L");
+    // LIQUIDITY: cash on hand last, framed as liquidity; the old colored
+    // wallet trio is gone entirely.
+    const cashIdx = advancedSlice.indexOf("Cash on hand");
+    expect(cashIdx).toBeGreaterThan(advancedSlice.indexOf("asset movement"));
+    expect(advancedSlice).not.toContain("net wallet movement");
+    expect(advancedSlice).not.toContain("{period} cash received");
+    expect(advancedSlice).not.toContain("{period} cash spent");
+    // No sign-derived sentiment on any liquidity/transport figure.
+    expect(advancedSlice).not.toMatch(/walletInflow - walletOutflow >= 0 ? 'text-positive'/);
+  });
+
+  it("net cash movement survives only as a quiet neutral contextual line", () => {
+    const idx = overview.indexOf("Net cash movement");
+    expect(idx).toBeGreaterThan(-1);
+    const context = overview.slice(idx, idx + 500);
+    expect(context).toContain("transport, not profit/loss");
+    expect(overview.slice(idx - 100, idx + 500)).toContain("text-fg-faint");
+  });
+
+  it("the wealth story headline renders under the hero when defensible", () => {
+    expect(overview).toContain("explainWealthStory");
+    expect(overview).toContain("wealthStory?.headline");
+  });
+
+  it("explains the Torn wallet context (framing kept, wording updated)", () => {
+    expect(overview).toContain("wallet cash is exposed to mugging");
     // The known-income-vs-costs explanation lives in EconomySimple now.
     expect(simple).toContain("Known income minus true costs — moving money between assets does not count.");
   });

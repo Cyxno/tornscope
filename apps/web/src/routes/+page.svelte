@@ -8,6 +8,7 @@
   import { clientPermissionMessage } from "$lib/capabilities";
   import { confidenceTitle } from "$lib/confidence";
   import { formatDateInZone, formatRelative, greetingForHour } from "$lib/reltime";
+  import { explainWealthStory } from "@tornscope/shared";
   import ConfidenceBadge from "$lib/components/ConfidenceBadge.svelte";
   import Chart from "$lib/components/Chart.svelte";
   import SegmentedDateRange from "$lib/components/SegmentedDateRange.svelte";
@@ -120,6 +121,24 @@
 
   /* Today story: drivers scaled to the largest absolute movement */
   const drivers = $derived(todaySummary?.netWorth.drivers ?? []);
+
+  /* Wealth story (V1.0 financial semantics): the one hedged plain-language
+     narrative under the hero — only when classified asset purchases
+     defensibly dominate the wallet outflow. Explains the acceptance case:
+     wealth +$5m while the wallet moved −$8.6m must never read as a loss. */
+  const wealthStory = $derived(
+    data
+      ? explainWealthStory({
+          netWorthChange: data.networthChange.value,
+          trueIncome: data.financial.trueIncome,
+          trueCosts: data.financial.trueExpense,
+          movedIntoAssets: data.financial.assetPurchases,
+          movedBackToCash: data.financial.assetSales,
+          walletOutflow: data.financial.cashOutflow.value,
+          walletMovement: data.wallet.walletInflow - data.wallet.walletOutflow,
+        })
+      : null
+  );
   const driverMax = $derived(Math.max(1, ...drivers.map((d) => Math.abs(d.magnitude === null ? 0 : d.magnitude))));
 
   // Permission gates: never a fake zero when the key cannot see the data.
@@ -250,22 +269,22 @@
         {/if}
       </div>
 
-      <!-- Open hairline strip: period movement, no outer border.
-           Simple leads with the wealth story (economic effect, asset
-           shifts); wallet turnover is Advanced-only detail — in Torn,
-           cash passing through the wallet is normal, not performance. -->
+      {#if wealthStory?.headline}
+        <p class="mt-4 text-[13px] leading-relaxed text-fg-muted" title="Derived from classified money events (earned vs asset conversion) — hedged on purpose; the exact split lives in the Economy reconciliation.">
+          {wealthStory.headline}
+        </p>
+      {/if}
+
+      <!-- Open hairline strip. Financial hierarchy (V1.0 semantics):
+           WEALTH (hero above) → ECONOMIC result → CONVERSION → LIQUIDITY.
+           Red/green are reserved for economic meaning; asset movement is
+           neutral transport. Full wallet accounting lives in Economy. -->
       <dl class="mt-6 grid grid-cols-2 gap-y-5 md:grid-cols-4 md:divide-x md:divide-border">
-        <div class="md:pr-6">
-          <dt class="flex items-center gap-2 text-[11px] font-medium text-fg-faint">
-            Cash on hand <ConfidenceBadge meta={data.confidence?.networth} />
-          </dt>
-          <dd class="tnum mt-1 text-[22px] font-semibold text-fg">{formatKpiValue(data.cash)}</dd>
-        </div>
         {#if prefs.mode === "simple"}
           <!-- Dashboard cells (V1.0 hierarchy pass): training outcome joins
-               cash-on-hand; the accounting perspectives belong to Economy,
+               liquidity; the accounting perspectives belong to Economy,
                not the Overview dashboard. -->
-          <div class="md:px-6">
+          <div class="md:pr-6">
             <dt class="text-[11px] font-medium text-fg-faint" title="Battlestats gained today from hourly Torn snapshots — not a profit figure">Battlestats today</dt>
             <dd class="tnum mt-1 text-[22px] font-semibold {(todaySummary?.progression?.battlestatGain.value ?? 0) >= 0 ? 'text-positive' : 'text-negative'}">
               {todaySummary?.progression?.battlestatGain.value != null ? formatSignedNumberCompact(todaySummary.progression.battlestatGain.value) : '—'}
@@ -281,32 +300,47 @@
               {#if (todaySummary?.progression?.energyTrained.value ?? null) !== null}~{formatNumberCompact(todaySummary?.progression?.energyTrained.value)} E{/if}{#if (todaySummary?.drugs.xanax.consumed ?? 0) > 0} · {todaySummary?.drugs.xanax.consumed} Xanax{/if}
             </dd>
           </div>
-        {:else}
           <div class="md:px-6">
-            <dt class="text-[11px] font-medium text-fg-faint">{period} cash received</dt>
-            <dd class="tnum mt-1 text-[22px] font-semibold text-positive">{formatKpiValue(data.financial.cashInflow)}</dd>
-            <dd class="mt-0.5 text-[11px] text-fg-faint">earned {formatMoneyCompact(data.financial.cashReceived?.earned.total ?? data.financial.trueIncome)} · asset sales {formatMoneyCompact(data.financial.cashReceived?.assetSales.total ?? data.financial.assetSales)}</dd>
+            <dt class="flex items-center gap-2 text-[11px] font-medium text-fg-faint">
+              Cash on hand <ConfidenceBadge meta={data.confidence?.networth} />
+            </dt>
+            <dd class="tnum mt-1 text-[22px] font-semibold text-fg">{formatKpiValue(data.cash)}</dd>
+            <dd class="mt-0.5 text-[11px] text-fg-faint" title="Liquid cash. In Torn, holding little cash is intentional and healthy — wallet cash is exposed to mugging, so most wealth lives in banks, stocks and items.">liquidity — low cash is normal, not a warning</dd>
+          </div>
+        {:else}
+          <div class="md:pr-6">
+            <dt class="text-[11px] font-medium text-fg-faint" title="Earned or received-for-good money — raises economic value directly. Asset sales are NOT income (they are conversion).">{period} true income</dt>
+            <dd class="tnum mt-1 text-[22px] font-semibold text-positive">{formatMoneyCompact(data.financial.trueIncome)}</dd>
+            <dd class="mt-0.5 text-[11px] text-fg-faint">wallet inflow {formatKpiValue(data.financial.cashInflow)} incl. asset sales — movement, not income</dd>
           </div>
           <div class="md:px-6">
-            <dt class="text-[11px] font-medium text-fg-faint">{period} cash spent</dt>
-            <dd class="tnum mt-1 text-[22px] font-semibold text-negative">{formatKpiValue(data.financial.cashOutflow)}</dd>
-            <dd class="mt-0.5 text-[11px] text-fg-faint">true expenses {formatMoneyCompact(data.financial.trueExpense)} · asset purchases {formatMoneyCompact(data.financial.assetPurchases)}</dd>
+            <dt class="text-[11px] font-medium text-fg-faint" title="Value consumed or lost for good. Asset purchases are NOT costs — the value is still owned in another form.">{period} true costs</dt>
+            <dd class="tnum mt-1 text-[22px] font-semibold text-negative">{formatMoneyCompact(data.financial.trueExpense)}</dd>
+            <dd class="mt-0.5 text-[11px] text-fg-faint">wallet outflow {formatKpiValue(data.financial.cashOutflow)} incl. asset purchases — movement, not loss</dd>
+          </div>
+          <div class="md:px-6">
+            <dt class="text-[11px] font-medium text-fg-faint" title="Cash spent acquiring assets you still own, and cash received selling them — a change of form in both directions, not profit or loss.">{period} asset movement</dt>
+            <dd class="tnum mt-1 text-[22px] font-semibold text-fg">
+              {formatMoneyCompact(data.financial.assetPurchases)} in · {formatMoneyCompact(data.financial.assetSales)} back
+            </dd>
+            <dd class="mt-0.5 text-[11px] text-fg-faint">movement between forms — neutral, not P&amp;L</dd>
           </div>
           <div class="md:pl-6">
-            <dt class="text-[11px] font-medium text-fg-faint" title="Cash that entered or left your wallet. In Torn this is often temporary — players store money in banks, stocks and items rather than holding cash.">{period} net wallet movement</dt>
-            <dd class="tnum mt-1 text-[22px] font-semibold {data.wallet.walletInflow - data.wallet.walletOutflow >= 0 ? 'text-positive' : 'text-negative'}">
-              {formatSignedMoneyCompact(data.wallet.walletInflow - data.wallet.walletOutflow)}
-            </dd>
-            <dd class="mt-0.5 text-[11px] text-fg-faint">
-              {#if data.wallet.coverage !== "unavailable" && data.wallet.startingCash !== null && data.wallet.unreconciled !== null}
-                reconciliation {formatSignedMoneyCompact(data.wallet.unreconciled)}
-              {:else}
-                cash arithmetic — not profit
-              {/if}
-            </dd>
+            <dt class="flex items-center gap-2 text-[11px] font-medium text-fg-faint">
+              Cash on hand <ConfidenceBadge meta={data.confidence?.networth} />
+            </dt>
+            <dd class="tnum mt-1 text-[22px] font-semibold text-fg">{formatKpiValue(data.cash)}</dd>
+            <dd class="mt-0.5 text-[11px] text-fg-faint" title="Liquid cash. In Torn, holding little cash is intentional and healthy — wallet cash is exposed to mugging, so most wealth lives in banks, stocks and items.">liquidity — low cash is normal, not a warning</dd>
           </div>
         {/if}
       </dl>
+      {#if prefs.mode !== "simple" && data.wallet.coverage !== "unavailable"}
+        <!-- Liquidity transport, demoted to a quiet contextual line: the
+             net cash figure is movement arithmetic, never a P&L row. -->
+        <p class="mt-4 text-[11px] text-fg-faint" title="Net cash movement is wallet arithmetic (cash in minus cash out). In Torn most of it is money changing form — not profit or loss.">
+          Net cash movement {formatSignedMoneyCompact(data.wallet.walletInflow - data.wallet.walletOutflow)} — transport, not profit/loss{data.wallet.unreconciled !== null ? ` · reconciliation ${formatSignedMoneyCompact(data.wallet.unreconciled)}` : ""}
+        </p>
+      {/if}
     </section>
 
     <!-- ── Today story: the day as a signed ledger ── -->
@@ -380,10 +414,11 @@
             <div>
               <p class="section-label mb-2">Cash movement</p>
               <dl class="space-y-1 text-[13px]">
-                <div class="flex items-baseline justify-between gap-3"><dt class="text-fg-muted">Received</dt><dd class="tnum font-medium text-positive">{formatKpiValue(todaySummary.cashFlow.received, formatSignedMoneyCompact)}</dd></div>
-                <div class="flex items-baseline justify-between gap-3"><dt class="text-fg-muted">Spent</dt><dd class="tnum font-medium text-negative">{formatKpiValue(todaySummary.cashFlow.spent, formatMoneyCompact)}</dd></div>
-                <div class="flex items-baseline justify-between gap-3"><dt class="text-fg">Net movement</dt><dd class="tnum font-semibold {todaySummary.cashFlow.net.value === null ? 'text-fg-faint' : todaySummary.cashFlow.net.value >= 0 ? 'text-positive' : 'text-negative'}">{formatKpiValue(todaySummary.cashFlow.net, formatSignedMoneyCompact)}</dd></div>
+                <div class="flex items-baseline justify-between gap-3"><dt class="text-fg-muted">Inflow</dt><dd class="tnum font-medium text-fg">{formatKpiValue(todaySummary.cashFlow.received, formatSignedMoneyCompact)}</dd></div>
+                <div class="flex items-baseline justify-between gap-3"><dt class="text-fg-muted">Outflow</dt><dd class="tnum font-medium text-fg">{formatKpiValue(todaySummary.cashFlow.spent, formatMoneyCompact)}</dd></div>
+                <div class="flex items-baseline justify-between gap-3"><dt class="text-fg">Net movement</dt><dd class="tnum font-semibold text-fg">{formatKpiValue(todaySummary.cashFlow.net, formatSignedMoneyCompact)}</dd></div>
               </dl>
+              <p class="mt-1.5 text-[11px] text-fg-faint">Movement only — not profit/loss.</p>
             </div>
             <div>
               <p class="section-label mb-2">Economic effect</p>
@@ -433,7 +468,9 @@
               <span class="tnum text-[11px] text-fg-faint">{td.displayTime(event.occurredAt)}</span>
               <span class="min-w-0 truncate text-[13px] text-fg" title={event.title}>{event.title}</span>
               {#if event.amount !== null && event.amount !== undefined}
-                <span class="tnum text-[13px] font-medium {event.amount >= 0 ? 'text-positive' : 'text-negative'}">
+                <!-- Neutral: a mixed feed (income, purchases, transfers) must not
+                     color by sign — sign stays in the text, not the sentiment. -->
+                <span class="tnum text-[13px] font-medium text-fg">
                   {event.amount >= 0 ? '+' : ''}{formatMoneyCompact(event.amount)}
                 </span>
               {:else}
