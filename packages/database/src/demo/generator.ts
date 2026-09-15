@@ -197,6 +197,7 @@ export async function generateDemoHistory(db: ReturnType<typeof getPrismaClient>
       }
       const overdose = drugRng.chance(0.035);
       const at = dayStart + drugRng.between(0, 23) * HOUR + drugRng.between(0, HOUR - 1);
+      if (at >= to) continue; // never generate the future
       plannedDrugs.push({ occurredAt: at, drug, overdose, ref: `${REF_PREFIX}:drug:${day}:${i}` });
     }
 
@@ -205,8 +206,12 @@ export async function generateDemoHistory(db: ReturnType<typeof getPrismaClient>
     if (rehabToday) {
       const at = dayStart + 14 * HOUR;
       const cost = rehabRng.between(80_000, 900_000);
-      plannedRehabs.push({ occurredAt: at, cost, ref: `${REF_PREFIX}:rehab:${day}`, sessions: rehabRng.between(2, 4), percent: rehabRng.weightedPick([{ weight: 4, value: 20 }, { weight: 3, value: 40 }, { weight: 2, value: 60 }, { weight: 1, value: 80 }]).value, removed: rehabRng.between(40, 140) });
-      moneyRows.push({ userId, occurredAt: new Date(at * 1000), category: "rehab", direction: "expense", amount: -BigInt(cost), source: "demo", sourceRef: `${REF_PREFIX}:rehabmoney:${day}`, description: "Drug rehabilitation paid" });
+      const percent = rehabRng.weightedPick([{ weight: 4, value: 20 }, { weight: 3, value: 40 }, { weight: 2, value: 60 }, { weight: 1, value: 80 }]).value;
+      const removed = rehabRng.between(40, 140);
+      if (at < to) {
+        plannedRehabs.push({ occurredAt: at, cost, ref: `${REF_PREFIX}:rehab:${day}`, sessions: rehabRng.between(2, 4), percent, removed });
+        moneyRows.push({ userId, occurredAt: new Date(at * 1000), category: "rehab", direction: "expense", amount: -BigInt(cost), source: "demo", sourceRef: `${REF_PREFIX}:rehabmoney:${day}`, description: "Drug rehabilitation paid" });
+      }
     }
 
     // Money ledger for the day (hourly flow + day-kind economics).
@@ -217,6 +222,7 @@ export async function generateDemoHistory(db: ReturnType<typeof getPrismaClient>
       const perHour = moneyRng.chance(0.4) ? 1 : 2;
       for (let i = 0; i < perHour; i++) {
         const at = hourStart + moneyRng.between(0, HOUR - 1);
+        if (at >= to) continue; // never generate the future
         if (moneyRng.chance(incomeP)) {
           const seed = moneyRng.weightedPick(MONEY_SEEDS);
           moneyRows.push({ userId, occurredAt: new Date(at * 1000), category: seed.category, subcategory: null, direction: "income", amount: BigInt(moneyRng.between(seed.min, seed.max)), source: "demo", sourceRef: `${REF_PREFIX}:money:${day}:${h}:${i}`, description: seed.label });
@@ -229,7 +235,7 @@ export async function generateDemoHistory(db: ReturnType<typeof getPrismaClient>
     }
     if (kind === "income") {
       // Salary lands at 08:15 — real wealth growth (fixture-D shape).
-      moneyRows.push({ userId, occurredAt: new Date((dayStart + 8 * HOUR + 15 * 60) * 1000), category: "salary", direction: "income", amount: 365_000n, source: "demo", sourceRef: `${REF_PREFIX}:salary:${day}`, description: "Salary money receive" });
+      if (dayStart + 8 * HOUR < to) moneyRows.push({ userId, occurredAt: new Date((dayStart + 8 * HOUR + 15 * 60) * 1000), category: "salary", direction: "income", amount: 365_000n, source: "demo", sourceRef: `${REF_PREFIX}:salary:${day}`, description: "Salary money receive" });
     }
     if (kind === "conversion") {
       // Large matched buy+sell: cash dips while asset value absorbs it — the
@@ -255,7 +261,7 @@ export async function generateDemoHistory(db: ReturnType<typeof getPrismaClient>
     // Same-day bank conversion pair (invest morning, withdraw evening with a
     // small proportional yield) — deterministic per day, no cross-day state.
     // (Density ~0.35/day mirrors the original seed's per-hour rolls.)
-    if (moneyRng.chance(0.35)) {
+    if (moneyRng.chance(0.35) && dayStart + 20 * HOUR < to) {
       const invest = moneyRng.between(200_000, 2_000_000);
       const yieldPct = moneyRng.between(4, 12) / 10_000; // ~0.04–0.12% same-day
       moneyRows.push({ userId, occurredAt: new Date((dayStart + 9 * HOUR) * 1000), category: "city_bank", subcategory: null, direction: "neutral", amount: -BigInt(invest), source: "demo", sourceRef: `${REF_PREFIX}:bankdep:${day}`, description: "Bank invest" });
@@ -265,9 +271,11 @@ export async function generateDemoHistory(db: ReturnType<typeof getPrismaClient>
     // Combat + crimes: occasional, day-scoped (no index-based refs).
     const crimeCount = miscRng.between(0, 2);
     for (let i = 0; i < crimeCount; i++) {
+      const crimeAt = dayStart + miscRng.between(0, 23) * HOUR + miscRng.between(0, HOUR - 1);
+      if (crimeAt >= to) continue; // never generate the future
       const success = !miscRng.chance(1 / 3);
       plannedCrimes.push({
-        occurredAt: dayStart + miscRng.between(0, 23) * HOUR + miscRng.between(0, HOUR - 1),
+        occurredAt: crimeAt,
         ref: `${REF_PREFIX}:crime:${day}:${i}`,
         success,
         nerve: 2 + miscRng.between(0, 3),
@@ -280,8 +288,10 @@ export async function generateDemoHistory(db: ReturnType<typeof getPrismaClient>
     }
     const combatCount = miscRng.between(0, 2);
     for (let i = 0; i < combatCount; i++) {
+      const at = dayStart + miscRng.between(0, 23) * HOUR + miscRng.between(0, HOUR - 1);
+      if (at >= to) continue; // never generate the future
       plannedCombat.push({
-        occurredAt: dayStart + miscRng.between(0, 23) * HOUR + miscRng.between(0, HOUR - 1),
+        occurredAt: at,
         ref: `${REF_PREFIX}:attack:${day}:${i}`,
         incoming: miscRng.chance(1 / 9),
         opponent: miscRng.pick(COMBAT_OPPONENTS),
