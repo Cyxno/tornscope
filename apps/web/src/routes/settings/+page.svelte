@@ -13,6 +13,7 @@ import NotificationsSettings from "$lib/components/NotificationsSettings.svelte"
   import AppearanceTab from "$lib/components/settings/AppearanceTab.svelte";
   import { prefs, setDashboardMode, DASHBOARD_MODES, setFocusArea, FOCUS_AREAS } from "$lib/state.svelte";
   import { timeDisplay, setTimeDisplay, currentZoneLabel } from "$lib/time-display.svelte.js";
+  import { DATE_PRESETS, DEFAULT_RANGE_PRESETS, PREF_KEYS, parseDefaultRange } from "$lib/prefs.js";
 
   const envLabel = publicEnv.PUBLIC_ENV_LABEL?.trim() || "Public Beta";
 
@@ -181,26 +182,28 @@ import NotificationsSettings from "$lib/components/NotificationsSettings.svelte"
     if (raw && (TAB_IDS as string[]).includes(raw)) activeTab = raw as TabId;
   });
 
+  // Back/forward must keep the tab in sync with the URL: switchTab pushes
+  // history entries, so popstate has to re-read ?tab= (Phase: URL sanity).
+  function onPopState(): void {
+    const raw = new URLSearchParams(window.location.search).get("tab");
+    activeTab = raw && (TAB_IDS as string[]).includes(raw) ? (raw as TabId) : "general";
+  }
+
   /* ── Default date range (General tab, browser-local like appearance) ── */
-  const DEFAULT_RANGES = [
-    { value: "1d", label: "1D" },
-    { value: "7d", label: "7D" },
-    { value: "14d", label: "14D" },
-    { value: "30d", label: "30D" },
-    { value: "90d", label: "90D" },
-  ] as const;
+  const DEFAULT_RANGES = DEFAULT_RANGE_PRESETS.map((value) => ({
+    value,
+    label: DATE_PRESETS.find((p) => p.value === value)?.label ?? value.toUpperCase(),
+  }));
   type DefaultRange = (typeof DEFAULT_RANGES)[number]["value"];
-  const RANGE_KEY = "tornscope.defaultRange.v1";
   let defaultRange = $state<DefaultRange>("30d");
   $effect(() => {
     try {
-      const raw = window.localStorage.getItem(RANGE_KEY);
-      if (raw && DEFAULT_RANGES.some((r) => r.value === raw)) defaultRange = raw as DefaultRange;
+      defaultRange = parseDefaultRange(window.localStorage.getItem(PREF_KEYS.defaultRange));
     } catch { /* storage unavailable */ }
   });
   function setDefaultRange(next: DefaultRange): void {
     defaultRange = next;
-    try { window.localStorage.setItem(RANGE_KEY, next); } catch { /* storage unavailable */ }
+    try { window.localStorage.setItem(PREF_KEYS.defaultRange, next); } catch { /* storage unavailable */ }
   }
 
     function switchTab(next: TabId) {
@@ -271,6 +274,8 @@ import NotificationsSettings from "$lib/components/NotificationsSettings.svelte"
 </script>
 
 <svelte:head><title>Settings · TornScope</title></svelte:head>
+
+<svelte:window onpopstate={onPopState} />
 
 <div class="space-y-8 lg:space-y-10">
   <PageHeader
@@ -355,9 +360,9 @@ import NotificationsSettings from "$lib/components/NotificationsSettings.svelte"
         </button>
       </div>
       <p class="mt-3 text-[11px] leading-relaxed text-fg-faint">
-        Currently showing {currentZoneLabel()}. Local uses this device's timezone and handles daylight-saving changes per
-        event. Analytics day boundaries (Today, the 1D range) follow your profile timezone — Torn's server day is UTC.
-        Stored in this browser.
+        Currently showing {currentZoneLabel()}. Local follows this device's timezone and handles daylight-saving changes per
+        event. Display only — it never changes how analytics are grouped: the Today page follows your profile timezone, while
+        1D and every other range use Torn days (UTC). Stored in this browser.
       </p>
     </Panel>
 

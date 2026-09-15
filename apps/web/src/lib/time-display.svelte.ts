@@ -7,8 +7,10 @@ import {
   displayDateTime as displayDateTimePure,
   displayDayHeading as displayDayHeadingPure,
   displayTime as displayTimePure,
+  hourInZone,
   type TimeDisplayMode,
 } from "./datetime.js";
+import { PREF_KEYS, parseTimeDisplay } from "./prefs.js";
 
 /**
  * Time DISPLAY preference (browser-local, V1.0 QOL pass):
@@ -22,13 +24,10 @@ import {
 
 export type { TimeDisplayMode };
 
-const TIME_DISPLAY_KEY = "tornscope.timeDisplay.v1";
-
 function storedTimeDisplay(): TimeDisplayMode {
   if (typeof window === "undefined") return "local";
   try {
-    const raw = window.localStorage.getItem(TIME_DISPLAY_KEY);
-    return raw === "torn" ? "torn" : "local";
+    return parseTimeDisplay(window.localStorage.getItem(PREF_KEYS.timeDisplay));
   } catch {
     return "local";
   }
@@ -39,7 +38,7 @@ export const timeDisplay = $state<{ mode: TimeDisplayMode }>({ mode: storedTimeD
 export function setTimeDisplay(mode: TimeDisplayMode): void {
   timeDisplay.mode = mode;
   try {
-    window.localStorage.setItem(TIME_DISPLAY_KEY, mode);
+    window.localStorage.setItem(PREF_KEYS.timeDisplay, mode);
   } catch {
     /* storage unavailable */
   }
@@ -87,6 +86,12 @@ export function chartHour(ts: number): string {
 export function alternateTimeTooltip(ts: number | null | undefined): string {
   if (!ts) return "";
   return alternateTimeTooltipPure(ts, timeDisplay.mode, browserTimeZoneSafe());
+}
+
+/** Hour (0–23) of the given instant in the DISPLAY zone — greetings should
+ *  follow the clock the user sees, never the host/UTC clock. */
+export function displayHour(tsMs: number): number {
+  return hourInZone(tsMs, displayTimeZone());
 }
 
 /** Caption for the alternate zone, e.g. "Torn time (UTC)". */

@@ -128,6 +128,14 @@ export function browserTimeZone(): string {
   }
 }
 
+/** Hour (0–23) of the given instant in the given timezone. Greetings and
+ *  other wall-clock reactions must read the DISPLAY zone, never the host
+ *  clock (a UTC host would otherwise greet "Good morning" at local noon). */
+export function hourInZone(tsMs: number, zone: string): number {
+  const p = parts(Math.floor(tsMs / 1000), zone, { hour: "2-digit", minute: "2-digit" });
+  return Number(p.get("hour")) % 24;
+}
+
 /** Pluralize a count with a stable unit: "1 session" / "2 sessions". */
 export function plural(count: number, singular: string, pluralForm = `${singular}s`): string {
   return `${count} ${count === 1 ? singular : pluralForm}`;

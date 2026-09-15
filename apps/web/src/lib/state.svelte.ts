@@ -1,28 +1,20 @@
 import type { DateRangePreset } from "@tornscope/shared";
+import { DATE_PRESETS, PREF_KEYS, isRememberablePreset, parseDashboardMode, parseDefaultRange, parseFocus, parseRouteRanges } from "./prefs.js";
+import { FOCUS_AREAS } from "./focus.js";
 
 /**
  * Global app state (Svelte 5 runes module): current date range filter and
  * the signed-in player snapshot from /api/me.
  */
 
-export const DATE_PRESETS: Array<{ value: DateRangePreset; label: string }> = [
-  { value: "1d", label: "1D" },
-  { value: "7d", label: "7D" },
-  { value: "14d", label: "14D" },
-  { value: "30d", label: "30D" },
-  { value: "90d", label: "90D" },
-  { value: "this_month", label: "Month" },
-  { value: "this_year", label: "Year" },
-  { value: "all", label: "All" },
-];
+export { DATE_PRESETS };
 
 /** Browser-local default range preference (Settings › General). Read once
  *  at module load; in-session range changes are never persisted back. */
 function storedDefaultPreset(): DateRangePreset {
   if (typeof window === "undefined") return "30d";
   try {
-    const raw = window.localStorage.getItem("tornscope.defaultRange.v1");
-    return DATE_PRESETS.some((p) => p.value === raw) ? (raw as DateRangePreset) : "30d";
+    return parseDefaultRange(window.localStorage.getItem(PREF_KEYS.defaultRange));
   } catch {
     return "30d";
   }
@@ -57,26 +49,23 @@ export async function refreshMe(): Promise<void> {
 }
 
 /** Per-route range memory (V1.0 QOL): each analytics route remembers its
- *  own preset in this browser. Custom windows stay session-only. */
-const ROUTE_RANGES_KEY = "tornscope.routeRange.v1";
+ *  own preset in this browser. Custom windows stay session-only. Parsing
+ *  lives in prefs.ts (pure, testable): unknown presets and malformed JSON
+ *  are dropped, never crashed on. */
+const ROUTE_RANGES_KEY = PREF_KEYS.routeRanges;
+const routeRanges: Record<string, DateRangePreset> = loadRouteRanges();
+
 function loadRouteRanges(): Record<string, DateRangePreset> {
   if (typeof window === "undefined") return {};
   try {
-    const raw = window.localStorage.getItem(ROUTE_RANGES_KEY);
-    const parsed = raw ? (JSON.parse(raw) as Record<string, string>) : {};
-    const out: Record<string, DateRangePreset> = {};
-    for (const [route, preset] of Object.entries(parsed)) {
-      if (DATE_PRESETS.some((p) => p.value === preset)) out[route] = preset as DateRangePreset;
-    }
-    return out;
+    return parseRouteRanges(window.localStorage.getItem(ROUTE_RANGES_KEY));
   } catch {
     return {};
   }
 }
-const routeRanges: Record<string, DateRangePreset> = loadRouteRanges();
 
 export function rememberRouteRange(route: string, preset: DateRangePreset): void {
-  if (preset === "custom") return;
+  if (!isRememberablePreset(preset)) return;
   routeRanges[route] = preset;
   try {
     window.localStorage.setItem(ROUTE_RANGES_KEY, JSON.stringify(routeRanges));
@@ -126,19 +115,17 @@ export function setCustomRange(from: number, to: number): void {
  */
 
 import type { DashboardMode, FocusArea } from "./focus.js";
-import { FOCUS_AREAS } from "./focus.js";
 
 export { DASHBOARD_MODES, FOCUS_AREAS, overviewSectionOrder } from "./focus.js";
 export type { DashboardMode, FocusArea } from "./focus.js";
 
-const MODE_KEY = "tornscope.mode.v1";
-const FOCUS_KEY = "tornscope.focus.v1";
+const MODE_KEY = PREF_KEYS.mode;
+const FOCUS_KEY = PREF_KEYS.focus;
 
 function storedMode(): DashboardMode {
   if (typeof window === "undefined") return "simple";
   try {
-    const raw = window.localStorage.getItem(MODE_KEY);
-    return raw === "advanced" ? "advanced" : "simple";
+    return parseDashboardMode(window.localStorage.getItem(MODE_KEY));
   } catch {
     return "simple";
   }
@@ -147,8 +134,7 @@ function storedMode(): DashboardMode {
 function storedFocus(): FocusArea {
   if (typeof window === "undefined") return "everything";
   try {
-    const raw = window.localStorage.getItem(FOCUS_KEY);
-    return FOCUS_AREAS.some((f) => f.value === raw) ? (raw as FocusArea) : "everything";
+    return parseFocus(window.localStorage.getItem(FOCUS_KEY), FOCUS_AREAS.map((f) => f.value), "everything");
   } catch {
     return "everything";
   }
