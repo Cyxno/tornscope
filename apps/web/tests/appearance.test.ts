@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { CATEGORICAL, BATTLESTATS, RAMPS } from "../src/lib/chart-palettes";
-import { DEFAULT_APPEARANCE, parseStoredAppearance } from "../src/lib/appearance.svelte";
+import { DEFAULT_APPEARANCE, parseStoredAppearance, resolveCanvas } from "../src/lib/appearance.svelte";
 
 /**
  * Appearance system contracts (v0.2 settings redesign + theming epic).
@@ -50,7 +50,7 @@ describe("preference model fallbacks", () => {
   });
 
   it("valid values survive the round trip", () => {
-    const stored = { theme: "light", accent: "violet", palette: "colorblind", density: "compact", motion: "reduced" };
+    const stored = { theme: "light", accent: "violet", palette: "colorblind", density: "compact", motion: "reduced", canvas: "mist" };
     expect(parseStoredAppearance(stored)).toEqual(stored);
   });
 });
@@ -156,5 +156,62 @@ describe("density + motion tokenization", () => {
 
   it("compact keeps touch-target heights on phones", () => {
     expect(css).toMatch(/\(min-width: 640px\)[\s\S]*?\[data-density="compact"\] \.input/);
+  });
+});
+
+describe("canvas background presets (V1.0 appearance)", () => {
+  const bootstrap = read("../static/appearance-bootstrap.js");
+  const css = read("app.css");
+
+  it("canvas is part of the preference model with a stable default", () => {
+    expect(DEFAULT_APPEARANCE.canvas).toBe("graphite");
+    // Existing users with no stored key keep the pre-1.0 look.
+    expect(parseStoredAppearance({ theme: "dark", accent: "blue" }).canvas).toBe("graphite");
+  });
+
+  it("malformed/unknown canvas values fall back instead of breaking", () => {
+    expect(parseStoredAppearance({ canvas: "neon-night" }).canvas).toBe("graphite");
+    expect(parseStoredAppearance({ canvas: 42 }).canvas).toBe("graphite");
+    expect(parseStoredAppearance({ canvas: null }).canvas).toBe("graphite");
+    expect(parseStoredAppearance("{}").canvas).toBe("graphite");
+  });
+
+  it("every allowed preset survives the round trip", () => {
+    for (const canvas of ["graphite", "midnight", "charcoal", "slate", "paper", "warm", "mist"]) {
+      expect(parseStoredAppearance({ canvas }).canvas).toBe(canvas);
+    }
+  });
+
+  it("resolves family-correct canvases; cross-family falls back to the family default", () => {
+    expect(resolveCanvas("dark", "graphite")).toBe("graphite");
+    expect(resolveCanvas("dark", "midnight")).toBe("midnight");
+    expect(resolveCanvas("dark", "mist")).toBe("graphite"); // light preset under dark
+    expect(resolveCanvas("light", "paper")).toBe("paper");
+    expect(resolveCanvas("light", "warm")).toBe("warm");
+    expect(resolveCanvas("light", "midnight")).toBe("paper"); // dark preset under light
+  });
+
+  it("the bootstrap applies data-canvas pre-paint with family fallback", () => {
+    expect(bootstrap).toContain("dataset.canvas");
+    expect(bootstrap).toContain('"graphite"');
+    expect(bootstrap).toContain('"paper"');
+  });
+
+  it("every non-default preset has canvas token overrides in app.css", () => {
+    for (const canvas of ["midnight", "charcoal", "slate", "warm", "mist"]) {
+      expect(css, `missing [data-canvas="${canvas}"]`).toContain(`[data-canvas="${canvas}"]`);
+    }
+  });
+
+  it("canvas presets restyle the canvas layer only — semantics untouched", () => {
+    // Financial semantic colors stay in the theme blocks, never in canvas blocks.
+    const canvasBlocks = css.slice(css.indexOf("Canvas (background) presets"), css.indexOf("Accent presets"));
+    expect(canvasBlocks).not.toContain("--ds-positive:");
+    expect(canvasBlocks).not.toContain("--ds-negative:");
+    expect(canvasBlocks).not.toContain("--ds-accent:");
+  });
+
+  it("charts track the canvas surface", () => {
+    expect(read("lib/charts.ts")).toContain("CANVAS_SURFACE");
   });
 });

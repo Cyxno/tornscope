@@ -17,9 +17,22 @@ import type { ChartPalette, ResolvedTheme } from "$lib/appearance.svelte";
  * deliberately NOT affected by the accent preference.
  */
 
-/** Keep in sync with --ds-surface in app.css (donut hole / tooltip). */
+/** Keep in sync with --ds-surface in app.css (donut hole / tooltip).
+ *  Canvas-aware: each background preset carries its surface into charts. */
+const CANVAS_SURFACE: Record<string, { dark: string; light: string }> = {
+  graphite: { dark: "#141417", light: "#fbfaf6" },
+  midnight: { dark: "#10131c", light: "#fbfaf6" },
+  charcoal: { dark: "#191a1b", light: "#fbfaf6" },
+  slate: { dark: "#171d26", light: "#fbfaf6" },
+  paper: { dark: "#141417", light: "#fbfaf6" },
+  warm: { dark: "#141417", light: "#fbf7ee" },
+  mist: { dark: "#141417", light: "#f7fafa" },
+};
 export function surface(): string {
-  return resolvedTheme() === "light" ? "#fbfaf6" : "#141417";
+  const theme: ResolvedTheme = resolvedTheme() === "light" ? "light" : "dark";
+  const canvas = typeof document !== "undefined" ? document.documentElement.dataset.canvas ?? "" : "";
+  const entry = CANVAS_SURFACE[canvas] ?? CANVAS_SURFACE.graphite;
+  return theme === "light" ? entry.light : entry.dark;
 }
 
 /** Canvas-safe accent family per preference — keep in sync with the

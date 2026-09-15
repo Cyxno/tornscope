@@ -22,6 +22,10 @@ export type AccentPreference = "teal" | "blue" | "indigo" | "violet" | "emerald"
 export type ChartPalette = "default" | "muted" | "high-contrast" | "colorblind" | "monochrome";
 export type DensityPreference = "comfortable" | "compact";
 export type MotionPreference = "system" | "reduced" | "full";
+/** Canvas/background character. Each value belongs to one theme family;
+ *  the resolved canvas always matches the resolved theme (a light preset is
+ *  silently swapped to the dark family default while dark, and vice versa). */
+export type CanvasPreference = "graphite" | "midnight" | "charcoal" | "slate" | "paper" | "warm" | "mist";
 
 export interface Appearance {
   theme: ThemePreference;
@@ -29,6 +33,7 @@ export interface Appearance {
   palette: ChartPalette;
   density: DensityPreference;
   motion: MotionPreference;
+  canvas: CanvasPreference;
 }
 
 export const DEFAULT_APPEARANCE: Appearance = {
@@ -37,6 +42,7 @@ export const DEFAULT_APPEARANCE: Appearance = {
   palette: "default",
   density: "comfortable",
   motion: "system",
+  canvas: "graphite",
 };
 
 const STORAGE_KEY = "tornscope.appearance.v1";
@@ -46,6 +52,8 @@ export const ACCENTS: AccentPreference[] = ["teal", "blue", "indigo", "violet", 
 export const PALETTES: ChartPalette[] = ["default", "muted", "high-contrast", "colorblind", "monochrome"];
 export const DENSITIES: DensityPreference[] = ["comfortable", "compact"];
 export const MOTIONS: MotionPreference[] = ["system", "reduced", "full"];
+export const CANVAS_DARK: CanvasPreference[] = ["graphite", "midnight", "charcoal", "slate"];
+export const CANVAS_LIGHT: CanvasPreference[] = ["paper", "warm", "mist"];
 
 export function isTheme(v: unknown): v is ThemePreference {
   return THEMES.includes(v as ThemePreference);
@@ -62,6 +70,18 @@ export function isDensity(v: unknown): v is DensityPreference {
 export function isMotion(v: unknown): v is MotionPreference {
   return MOTIONS.includes(v as MotionPreference);
 }
+export function isCanvas(v: unknown): v is CanvasPreference {
+  return CANVAS_DARK.includes(v as CanvasPreference) || CANVAS_LIGHT.includes(v as CanvasPreference);
+}
+export function canvasFamily(canvas: CanvasPreference): "dark" | "light" {
+  return (CANVAS_LIGHT as string[]).includes(canvas) ? "light" : "dark";
+}
+/** The canvas actually rendered for the resolved theme: a preset from the
+ *  other family silently falls back to that theme's default (current look).
+ *  Existing users with no stored canvas keep the pre-1.0 look by default. */
+export function resolveCanvas(theme: ResolvedTheme, canvas: CanvasPreference): CanvasPreference {
+  return canvasFamily(canvas) === theme ? canvas : theme === "dark" ? "graphite" : "paper";
+}
 
 /** Parse a stored blob; unknown/invalid fields fall back to defaults. */
 export function parseStoredAppearance(raw: unknown): Appearance {
@@ -74,6 +94,7 @@ export function parseStoredAppearance(raw: unknown): Appearance {
     palette: isPalette(src.palette) ? src.palette : base.palette,
     density: isDensity(src.density) ? src.density : base.density,
     motion: isMotion(src.motion) ? src.motion : base.motion,
+    canvas: isCanvas(src.canvas) ? src.canvas : base.canvas,
   };
 }
 

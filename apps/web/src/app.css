@@ -107,6 +107,95 @@
   color-scheme: light;
 }
 
+/* ═══════════════ Canvas (background) presets ═══════════════
+   Restrained background characters per theme family. The attribute is
+   family-corrected before paint (see appearance bootstrap), so each preset
+   only ever appears on its own theme. Only canvas/surface/border layers
+   shift — typography, semantics and accents are untouched. "graphite" and
+   "paper" ARE the theme defaults (no overrides). */
+
+[data-canvas="midnight"] {
+  --ds-bg: #07090f;
+  --ds-bg-raise: #0b0e16;
+  --ds-surface: #10131c;
+  --ds-surface-2: #151926;
+  --ds-surface-3: #1a1f30;
+  --ds-border: #1c2233;
+  --ds-border-strong: #2a3350;
+  --ds-fg: #eef0f7;
+  --ds-fg-muted: #a3a9bd;
+  --ds-fg-faint: #7b81a0;
+  --ds-table-row-hover: rgb(21 25 38 / 0.5);
+  --ds-table-rule: rgb(28 34 51 / 0.55);
+  --ds-skeleton-stop: #1c2233;
+  --ds-shadow-panel: 0 1px 2px rgb(0 0 0 / 0.25), 0 12px 32px -20px rgb(0 0 0 / 0.5);
+  --ds-shadow-pop: 0 24px 64px -24px rgb(0 0 0 / 0.7);
+}
+
+[data-canvas="charcoal"] {
+  --ds-bg: #0f0f10;
+  --ds-bg-raise: #141416;
+  --ds-surface: #191a1b;
+  --ds-surface-2: #1f2022;
+  --ds-surface-3: #26272a;
+  --ds-border: #2a2b2e;
+  --ds-border-strong: #3d3e42;
+  --ds-fg: #f2f2ef;
+  --ds-fg-muted: #a4a4a0;
+  --ds-fg-faint: #82827f;
+  --ds-table-row-hover: rgb(31 32 34 / 0.5);
+  --ds-table-rule: rgb(42 43 46 / 0.55);
+  --ds-skeleton-stop: #26272a;
+}
+
+[data-canvas="slate"] {
+  --ds-bg: #0e1216;
+  --ds-bg-raise: #131820;
+  --ds-surface: #171d26;
+  --ds-surface-2: #1d2430;
+  --ds-surface-3: #242c3a;
+  --ds-border: #232b38;
+  --ds-border-strong: #333e50;
+  --ds-fg: #eef2f6;
+  --ds-fg-muted: #a2aab6;
+  --ds-fg-faint: #7e8798;
+  --ds-table-row-hover: rgb(29 36 48 / 0.5);
+  --ds-table-rule: rgb(35 43 56 / 0.55);
+  --ds-skeleton-stop: #232b38;
+}
+
+[data-canvas="warm"] {
+  --ds-bg: #f7f1e6;
+  --ds-bg-raise: #f0e9da;
+  --ds-surface: #fbf7ee;
+  --ds-surface-2: #f1eadb;
+  --ds-surface-3: #eae1cf;
+  --ds-border: #e0d7c2;
+  --ds-border-strong: #cfc4a9;
+  --ds-fg: #2b2418;
+  --ds-fg-muted: #635846;
+  --ds-fg-faint: #8d8371;
+  --ds-table-row-hover: rgb(241 234 219 / 0.6);
+  --ds-table-rule: rgb(224 215 194 / 0.7);
+  --ds-skeleton-stop: #e0d7c2;
+}
+
+[data-canvas="mist"] {
+  --ds-bg: #edf1f2;
+  --ds-bg-raise: #e5eaec;
+  --ds-surface: #f7fafa;
+  --ds-surface-2: #e9eef0;
+  --ds-surface-3: #dfe6e9;
+  --ds-border: #d5dee1;
+  --ds-border-strong: #bac7cc;
+  --ds-fg: #1f272a;
+  --ds-fg-muted: #4f5c60;
+  --ds-fg-faint: #75838a;
+  --ds-table-row-hover: rgb(233 238 240 / 0.6);
+  --ds-table-rule: rgb(213 222 225 / 0.7);
+  --ds-skeleton-stop: #d5dee1;
+}
+
 /* ═══════════════ Accent presets ═══════════════
    Accents restyle the interactive/highlight layer ONLY — positive, negative,
    warning and info above are semantic and never change with the accent.

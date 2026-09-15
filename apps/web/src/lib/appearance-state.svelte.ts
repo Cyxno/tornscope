@@ -3,7 +3,9 @@ import {
   DEFAULT_APPEARANCE,
   loadStoredAppearance,
   saveStoredAppearance,
+  resolveCanvas,
   type Appearance,
+  type CanvasPreference,
   type ResolvedTheme,
 } from "./appearance.svelte";
 
@@ -42,9 +44,14 @@ const reducedMotionDerived = $derived(
   appearance.motion === "reduced" ? true : appearance.motion === "full" ? false : systemReducedMatches
 );
 
+/** The canvas actually rendered for the resolved theme. */
+export function resolvedCanvas(): CanvasPreference {
+  return resolveCanvas(resolvedThemeDerived, appearance.canvas);
+}
+
 /** Stable signature of everything that should force a chart repaint. */
 export function appearanceSignature(): string {
-  return [resolvedThemeDerived, appearance.accent, appearance.palette, appearance.density, appearance.motion].join(":");
+  return [resolvedThemeDerived, appearance.accent, appearance.palette, appearance.density, appearance.motion, appearance.canvas].join(":");
 }
 
 export function prefersReducedMotion(): boolean {
@@ -81,13 +88,30 @@ export function initAppearance(): void {
   applyToDocument();
 }
 
+/** Browser-chrome tint per resolved canvas (keep in sync with app.css). */
+const CANVAS_CHROME: Record<string, { dark: string; light: string }> = {
+  graphite: { dark: "#0a0a0c", light: "#f4f3ee" },
+  midnight: { dark: "#07090f", light: "#f4f3ee" },
+  charcoal: { dark: "#0f0f10", light: "#f4f3ee" },
+  slate: { dark: "#0e1216", light: "#f4f3ee" },
+  paper: { dark: "#0a0a0c", light: "#f4f3ee" },
+  warm: { dark: "#0a0a0c", light: "#f7f1e6" },
+  mist: { dark: "#0a0a0c", light: "#edf1f2" },
+};
+
 function applyToDocument(): void {
   const de = document.documentElement;
-  de.dataset.theme = resolvedThemeDerived;
+  const theme = resolvedThemeDerived;
+  const canvas = resolveCanvas(theme, appearance.canvas);
+  de.dataset.theme = theme;
   de.dataset.accent = appearance.accent;
   de.dataset.density = appearance.density;
   de.dataset.motion = appearance.motion;
+  de.dataset.canvas = canvas;
   // Browser chrome tint follows the resolved canvas in both themes.
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute("content", resolvedThemeDerived === "dark" ? "#0a0a0c" : "#f4f3ee");
+  if (meta) {
+    const tint = CANVAS_CHROME[canvas] ?? CANVAS_CHROME.graphite;
+    meta.setAttribute("content", theme === "dark" ? tint.dark : tint.light);
+  }
 }

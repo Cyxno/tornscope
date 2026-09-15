@@ -1,6 +1,8 @@
 <script lang="ts">
-  import { ACCENTS, PALETTES, type AccentPreference, type ChartPalette, type DensityPreference, type MotionPreference, type ThemePreference } from "$lib/appearance.svelte";
+  import { CANVAS_DARK, CANVAS_LIGHT, resolveCanvas, type CanvasPreference, type ChartPalette } from "$lib/appearance.svelte";
+  import { ACCENTS, PALETTES, type AccentPreference, type DensityPreference, type MotionPreference, type ThemePreference } from "$lib/appearance.svelte";
   import { appearance, applyAppearance, resolvedTheme } from "$lib/appearance-state.svelte";
+  import type { ResolvedTheme } from "$lib/appearance.svelte";
   import { accentPreviewFor, palettePreviewFor } from "$lib/charts";
 
   /**
@@ -51,6 +53,19 @@
     { value: "full", label: "Full", hint: "All motion enabled" },
   ];
 
+  const CANVAS_META: Record<CanvasPreference, { label: string; hint: string; swatch: string }> = {
+    graphite: { label: "Graphite", hint: "Current dark — warm graphite", swatch: "#0a0a0c" },
+    midnight: { label: "Midnight", hint: "Very dark blue-gray", swatch: "#0b0e16" },
+    charcoal: { label: "Charcoal", hint: "Softer neutral dark", swatch: "#141416" },
+    slate: { label: "Slate", hint: "Cooler dark gray", swatch: "#131820" },
+    paper: { label: "Paper", hint: "Current light — warm paper", swatch: "#f4f3ee" },
+    warm: { label: "Warm Paper", hint: "Subtle warm off-white", swatch: "#f7f1e6" },
+    mist: { label: "Cool Mist", hint: "Subtle cool off-white", swatch: "#edf1f2" },
+  };
+  const isDark = () => resolvedTheme() === "dark";
+  const canvasOptions = () => (isDark() ? CANVAS_DARK : CANVAS_LIGHT);
+  const currentCanvas = () => resolveCanvas(resolvedTheme(), appearance.canvas);
+
   function resetAppearance(): void {
     applyAppearance({ theme: "system", accent: "teal", palette: "default", density: "comfortable", motion: "system" });
   }
@@ -79,6 +94,31 @@
         </button>
       {/each}
     </div>
+  </section>
+
+  <!-- Background preset: family-scoped to the resolved theme. -->
+  <section aria-labelledby="appearance-canvas" class="space-y-3">
+    <h2 id="appearance-canvas" class="section-label">Background</h2>
+    <div class="flex flex-wrap gap-2" role="group" aria-label="Background preset">
+      {#each canvasOptions() as canvas (canvas)}
+        <button
+          class="flex min-w-[108px] flex-col items-start gap-2 rounded-tile border px-3.5 py-3 text-left transition-colors {currentCanvas() === canvas
+            ? 'border-accent bg-accent/5'
+            : 'border-border bg-surface hover:border-border-strong'}"
+          aria-pressed={currentCanvas() === canvas}
+          onclick={() => applyAppearance({ canvas })}
+        >
+          <span class="flex items-center gap-2" aria-hidden="true">
+            <span class="h-4 w-4 rounded-full border border-border" style={`background: ${CANVAS_META[canvas].swatch}`}></span>
+            <span class="text-[13px] font-medium text-fg">{CANVAS_META[canvas].label}</span>
+          </span>
+          <span class="text-[11px] leading-snug text-fg-faint">{CANVAS_META[canvas].hint}</span>
+        </button>
+      {/each}
+    </div>
+    <p class="text-[11px] leading-relaxed text-fg-faint">
+      Background character for {isDark() ? "dark" : "light"} mode — typography and financial colors are untouched.
+    </p>
   </section>
 
   <!-- Accent -->
