@@ -9,6 +9,7 @@ export * from "./capabilities.js";
 export * from "./contracts.js";
 export * from "./format.js";
 export * from "./ttl-cache.js";
+export * from "./finance.js";
 export * from "./today.js";
 export * from "./queues.js";
 export * from "./oc.js";
