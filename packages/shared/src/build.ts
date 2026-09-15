@@ -4,7 +4,7 @@
  * Version lives only in the root package.json (every workspace package
  * carries the same value); the git SHA arrives via the GIT_SHA build arg;
  * the environment label arrives via ENV_LABEL (e.g. "Development") with
- * "Public Beta" as the production default. No other place may format a
+ * "Public Testing" as the production default. No other place may format a
  * version/SHA/env triple — the API root + health payloads and the UI build
  * line all render `formatBuildIdentity(resolveBuildIdentity(...))`.
  */
@@ -15,7 +15,7 @@ export interface BuildIdentity {
   /** Full deployed git SHA ("dev" for local builds). */
   gitSha: string;
   /** Environment label: "Development" on non-public deployments, else
-   *  "Public Beta" (the shipped pre-release designation). */
+   *  "Public Testing" (the shipped pre-release designation). */
   environment: string;
 }
 
@@ -23,7 +23,7 @@ export function resolveBuildIdentity(input: { version?: string | null; gitSha?: 
   return {
     version: input.version?.trim() || "0.0.0-dev",
     gitSha: input.gitSha?.trim() || "dev",
-    environment: input.environment?.trim() || "Public Beta",
+    environment: input.environment?.trim() || "Public Testing",
   };
 }
 

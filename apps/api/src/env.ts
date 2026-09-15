@@ -141,7 +141,7 @@ function resolveBuildVersion(): { version: string; environment: string } {
       // fall through to the safe placeholder
     }
   }
-  return { version: version || "0.0.0-dev", environment: process.env.ENV_LABEL?.trim() || "Public Beta" };
+  return { version: version || "0.0.0-dev", environment: process.env.ENV_LABEL?.trim() || "Public Testing" };
 }
 
 function clampInt(raw: string | undefined, fallback: number, min: number, max: number): number {

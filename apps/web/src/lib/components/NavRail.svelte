@@ -14,10 +14,10 @@
    * labeled from xl up, icon-only between lg and xl. Below lg the compact
    * top bar + bottom tab bar take over (Header / MobileNav).
    *
-   * Environment chip: production shows "Beta" (never stable/GA); dev/staging
+   * Environment chip: production shows "Public Testing"; dev/staging
    * shows its PUBLIC_ENV_LABEL so staging can never pose as the beta.
    */
-  const envLabel = publicEnv.PUBLIC_ENV_LABEL?.trim() || "Beta";
+  const envLabel = publicEnv.PUBLIC_ENV_LABEL?.trim() || "Public Testing";
 
   const syncTone = $derived(
     me.data?.syncHealth.running ? "bg-accent live-dot" : me.data?.syncHealth.lastSuccessAt ? "bg-positive" : "bg-fg-faint"
@@ -40,7 +40,7 @@
       <span class="block text-[14.5px] font-semibold leading-tight tracking-tight text-fg">TornScope</span>
       <span
         class="mt-0.5 inline-block rounded-full border border-accent/30 bg-accent/10 px-1.5 text-[8.5px] font-semibold uppercase leading-[1.4] tracking-[0.14em] text-accent"
-        title={envLabel === "Beta" ? "TornScope is in public beta" : "Development environment — not the public beta"}
+        title={envLabel === "Public Testing" ? "TornScope 1.0.0 — public testing" : "Development environment — not the public testing site"}
       >{envLabel}</span>
     </span>
   </a>

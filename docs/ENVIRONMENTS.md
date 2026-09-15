@@ -6,7 +6,7 @@ TornScope runs as two fully isolated stacks on the same server:
 |---|---|---|
 | Branch | `main` | `develop` |
 | Checkout on the server | `/workspace/tornscope` | `/workspace/tornscope-dev` |
-| Release line | `0.1.x` — Public Beta (e.g. v0.1.3) | `0.2.0-dev` — future Beta 2 |
+| Release line | `1.0.0` — Public Testing | next `1.0.x`/`1.1.0-dev` on `develop` |
 | URL | https://tornscope.cyxno.eu | https://torn.familievalk.com (private) |
 | Compose project | `tornscope` | `tornscope-dev` |
 | Compose file | `docker-compose.unraid.yml` | `docker-compose.dev.yml` |
@@ -84,10 +84,10 @@ silently loses a production fix.
 
 ## Versioning
 
-- `0.1.x` — Public Beta 1 patch/hotfix line (production today: v0.1.3)
-- `0.2.0` — Public Beta 2, the current development milestone on `develop`
+- `1.0.0` — first stable release (production: PUBLIC TESTING)
+- historical: `0.1.x` — Public Beta 1 (v0.1.3); `0.2.x` — Public Beta 2 line
 - `0.2.x` — Beta 2 patch line
-- `0.3.0` — Beta 3, and so on; `1.0.0` = stable
+- `1.0.0` — first stable release (production environment label: PUBLIC TESTING)
 - `develop` carries a non-release version in `package.json`
   (e.g. `0.2.0-dev.0`) and shows a **Development** chip in the UI, so the
   staging site can never be mistaken for the public beta. Production keeps

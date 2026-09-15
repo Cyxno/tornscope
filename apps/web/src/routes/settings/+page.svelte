@@ -15,7 +15,7 @@ import NotificationsSettings from "$lib/components/NotificationsSettings.svelte"
   import { timeDisplay, setTimeDisplay, currentZoneLabel } from "$lib/time-display.svelte.js";
   import { DATE_PRESETS, DEFAULT_RANGE_PRESETS, PREF_KEYS, parseDefaultRange } from "$lib/prefs.js";
 
-  const envLabel = publicEnv.PUBLIC_ENV_LABEL?.trim() || "Public Beta";
+  const envLabel = publicEnv.PUBLIC_ENV_LABEL?.trim() || "Public Testing";
 
   loadBuildIdentity();
 
@@ -728,8 +728,8 @@ import NotificationsSettings from "$lib/components/NotificationsSettings.svelte"
         <dt class="text-[11px] font-medium text-fg-faint">Status</dt>
         <dd class="mt-1">
           <span class="inline-flex items-center gap-2 text-fg">
-            Public Beta
-            <span class="chip chip-accent !text-[9px] font-semibold uppercase tracking-[0.14em]">Beta</span>
+            Public Testing
+            <span class="chip chip-accent !text-[9px] font-semibold uppercase tracking-[0.14em]">v1.0.0</span>
           </span>
         </dd>
       </div>
@@ -751,7 +751,7 @@ import NotificationsSettings from "$lib/components/NotificationsSettings.svelte"
     </dl>
     <div class="mt-5 max-w-2xl space-y-2 border-t border-border pt-4 text-[13px] leading-relaxed text-fg-muted">
       <p>
-        TornScope is in public beta: historical tracking and analytics are actively being refined, and updates
+        TornScope is in active public testing: historical tracking and analytics are actively being refined, and updates
         may occasionally include fixes and database migrations. Collected history is kept across updates — if you
         self-host this instance, keep your own backups as well.
       </p>

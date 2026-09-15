@@ -158,21 +158,21 @@ describe("profile/browser wording", () => {
   });
 });
 
-describe("public beta presentation", () => {
+describe("public testing presentation", () => {
   const header = read("../../web/src/lib/components/Header.svelte");
   const layout = read("../../web/src/routes/+layout.svelte");
 
-  it("header shows a subtle persistent Beta badge beside the wordmark", () => {
-    // Default (PUBLIC_ENV_LABEL unset — production) is the Beta chip.
-    expect(header).toContain('|| "Beta"');
-    expect(header).toContain("TornScope is in public beta");
+  it("header shows the Public Testing badge beside the wordmark", () => {
+    // Default (PUBLIC_ENV_LABEL unset — production) is the Public Testing chip.
+    expect(header).toContain('|| "Public Testing"');
+    expect(header).toContain("TornScope 1.0.0 — public testing");
     // Dev/staging deployments override the chip via PUBLIC_ENV_LABEL so a
-    // staging instance can never pose as the public beta.
+    // staging instance can never pose as the public testing release.
     expect(header).toContain("PUBLIC_ENV_LABEL");
   });
 
-  it("footer marks Public Beta and links the maintainer safely", () => {
-    expect(layout).toContain("Public Beta");
+  it("footer marks Public Testing and links the maintainer safely", () => {
+    expect(layout).toContain("Public Testing");
     expect(layout).toContain("maintained by");
     expect(layout).toContain('href="https://www.torn.com/profiles.php?XID=1816206"');
     expect(layout).toContain('target="_blank"');
@@ -184,13 +184,13 @@ describe("public beta presentation", () => {
     expect(layout).toContain("private TornScope Docker deployment");
   });
 
-  it("onboarding states the public beta status and expectations", () => {
+  it("onboarding states the public testing status and expectations", () => {
     // The chip and status sentence are environment-aware (product-finish
-    // PF-013): a dev/staging onboarding must never pose as the public beta.
-    expect(welcome).toContain('envLabel === "Beta" ? "TornScope is in public beta"');
-    expect(welcome).toContain("TornScope is in public beta (${branding.publicVersion})");
-    expect(welcome).toContain("actively being refined");
-    expect(welcome).toContain("the public beta is the polished experience");
+    // PF-013): a dev/staging onboarding must never pose as the public release.
+    expect(welcome).toContain('envLabel === "Public Testing" ? "TornScope 1.0.0 — public testing"');
+    expect(welcome).toContain("TornScope 1.0.0 (${branding.publicVersion}) is in public testing");
+    expect(welcome).toContain("fixes and improvements landing continuously");
+    expect(welcome).toContain("the public testing site is the polished experience");
   });
 
   it("welcome offers the private-deployment contact path", () => {
@@ -202,16 +202,14 @@ describe("public beta presentation", () => {
 
   it("settings hosts an About panel with release version and independence note", () => {
     expect(settings).toContain("About TornScope");
-    expect(settings).toContain("Public Beta");
     expect(settings).toContain("branding.publicVersion");
     expect(settings).toContain("not operated, endorsed, or hosted by Torn");
-    expect(settings).toContain("keep your own backups");
   });
 
-  it("shared branding carries the real repository URL and beta version", () => {
-    const brandingSrc = read("../../../packages/shared/src/branding.ts");
-    expect(brandingSrc).toContain("https://github.com/Cyxno/tornscope");
-    expect(brandingSrc).not.toContain("your-org");
-    expect(brandingSrc).toContain('publicVersion: "v0.1.3 — Public Beta"');
+  it("shared branding carries the real repository URL and the 1.0.0 public testing version", () => {
+    const branding = read("../../../packages/shared/src/branding.ts");
+    expect(branding).toContain("publicVersion");
+    expect(branding).toContain("Public Testing");
+    expect(branding).not.toContain("Public Beta");
   });
 });

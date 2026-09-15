@@ -190,7 +190,7 @@ services:
       CLIENT_IP_HEADER: ${CLIENT_IP_HEADER:-}
       CLIENT_IP_DEPTH: ${CLIENT_IP_DEPTH:-1}
       # Visible UI environment chip. Keep empty in production (shows "Beta");
-      # dev/staging set e.g. "Development" so staging cannot pose as public beta.
+      # dev/staging set e.g. "Development" so staging cannot pose as public testing.
       PUBLIC_ENV_LABEL: ${PUBLIC_ENV_LABEL:-}
     labels:
       - "net.unraid.docker.icon=https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/docker.png"
