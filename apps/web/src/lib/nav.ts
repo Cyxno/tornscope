@@ -48,6 +48,7 @@ export const NAV_GROUPS: Array<{ id: NavItem["group"]; label: string; items: Nav
     id: "system",
     label: "System",
     items: [
+      { href: "/changelog", label: "Changelog", icon: "changelog", group: "system" },
       { href: "/sync", label: "Sync status", icon: "sync", group: "system" },
       { href: "/settings", label: "Settings", icon: "settings", group: "system" },
     ],
