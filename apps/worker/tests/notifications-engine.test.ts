@@ -57,6 +57,8 @@ import {
   ingest,
   retryFailedForUser,
   deliverEvent,
+  evaluateNotifications,
+  timelineActivationBoundary,
   BARS_MAX_AGE_SECONDS,
   RETRY_BACKOFF_MINUTES,
   type IngestContext,
@@ -166,6 +168,7 @@ beforeAll(async () => {
       await db.syncState.deleteMany({ where: { userId: id } }).catch(() => undefined);
       await db.moneyEvent.deleteMany({ where: { userId: id } }).catch(() => undefined);
       await db.networthSnapshot.deleteMany({ where: { userId: id } }).catch(() => undefined);
+      await db.timelineEvent.deleteMany({ where: { userId: id } }).catch(() => undefined);
       await db.apiCredential.deleteMany({ where: { userId: id } }).catch(() => undefined);
       await db.user.deleteMany({ where: { id } }).catch(() => undefined);
     }
@@ -668,5 +671,53 @@ suite("privacy + isolation", () => {
     const deliveriesText = JSON.stringify(deliveries, Object.keys(deliveries[0] ?? {}).filter((k) => k !== "subscriptionId"));
     expect(deliveriesText).not.toContain("fcm.googleapis.com");
     void deliveriesText;
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* 1.0.1 regression: timeline attention activation boundary                    */
+/* -------------------------------------------------------------------------- */
+
+suite("timeline attention boundary (1.0.1 regression)", () => {
+  it("boundary stays in the milliseconds domain — never Date(ms)*1000", () => {
+    // enabledAt 1h ago, as Prisma hands it over (epoch ms).
+    const enabledAt = new Date((nowSec - 3600) * 1000);
+    const boundary = timelineActivationBoundary(enabledAt);
+    expect(boundary.getTime()).toBe(enabledAt.getTime() - 60_000);
+    // The 1.0.0 bug produced Dates around year 58659 (≈1.79e15 ms). A sane
+    // boundary for a 2026-era enabledAt can never be more than a minute
+    // before it, and must always be representable far below the epoch-second
+    // magnitude expressed in ms.
+    expect(boundary.getTime()).toBeLessThan(4_000_000_000_000);
+  });
+
+  it("timeline attention query executes and advances the cursor (no frozen-cursor crash loop)", async () => {
+    process.env.VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY ?? "test-vapid-public";
+    process.env.VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY ?? "test-vapid-private";
+    const userId = await makeProfile({ devices: 1, toggles: { mail: true } });
+    // Cursor frozen behind the newest row — exactly the 1.0.0 crash-loop state.
+    await db.notificationState.create({ data: { userId, lastTimelineSeq: 0n } });
+    const event = await db.timelineEvent.create({
+      data: {
+        userId,
+        occurredAt: new Date((nowSec - 60) * 1000),
+        type: "torn_event",
+        title: "You received mail",
+        source: "torn_log",
+        sourceRef: `torn_event:regress-${userId}`,
+      },
+    });
+    // Previously the enabledAt*1000 argument made this whole evaluation throw
+    // (Prisma rejected the year-58659 Date), so the cursor never advanced and
+    // the same user failed every tick. It must now complete cleanly.
+    await evaluateNotifications();
+    const state = await db.notificationState.findUnique({ where: { userId } });
+    expect(state?.lastTimelineSeq).toBe(event.seq);
+    const notification = await db.notificationEvent.findFirst({ where: { userId, type: "mail" } });
+    expect(notification).not.toBeNull();
+    // Second evaluation is idempotent: cursor already at the high-water mark.
+    await evaluateNotifications();
+    const again = await db.notificationEvent.findMany({ where: { userId, type: "mail" } });
+    expect(again).toHaveLength(1);
   });
 });

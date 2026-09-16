@@ -4,6 +4,7 @@ export * from "./normalizers/extract.js";
 export * from "./normalizers/logs.js";
 export * from "./normalizers/armory.js";
 export * from "./normalizers/titles.js";
+export * from "./normalizers/guards.js";
 export * from "./repositories/ingest.js";
 export * from "./repositories/catalog.js";
 export * from "./repositories/sync-state.js";

@@ -1,5 +1,6 @@
 import { Prisma } from "../generated/client/client.js";
 import type { PrismaClientType } from "../client.js";
+import { rejectImplausibleRows, isPlausibleIngestedDate } from "../normalizers/guards.js";
 import type {
   ConsumptionEventInput,
   CrimeEventInput,
@@ -19,8 +20,10 @@ import type {
 
 export async function insertDrugEvents(db: PrismaClientType, userId: string, events: DrugEventInput[]): Promise<number> {
   if (events.length === 0) return 0;
+  const plausible = rejectImplausibleRows(events, (e) => e.occurredAt, (e) => e.sourceRef);
+  if (plausible.length === 0) return 0;
   const result = await db.drugEvent.createMany({
-    data: events.map((e) => ({
+    data: plausible.map((e) => ({
       userId,
       occurredAt: e.occurredAt,
       drugItemId: e.drugItemId,
@@ -37,8 +40,10 @@ export async function insertDrugEvents(db: PrismaClientType, userId: string, eve
 
 export async function insertConsumptionEvents(db: PrismaClientType, userId: string, events: ConsumptionEventInput[]): Promise<number> {
   if (events.length === 0) return 0;
+  const plausible = rejectImplausibleRows(events, (e) => e.occurredAt, (e) => e.sourceRef);
+  if (plausible.length === 0) return 0;
   const result = await db.consumptionEvent.createMany({
-    data: events.map((e) => ({
+    data: plausible.map((e) => ({
       userId,
       occurredAt: e.occurredAt,
       itemId: e.itemId,
@@ -67,8 +72,10 @@ export async function insertConsumptionEvents(db: PrismaClientType, userId: stri
 
 export async function insertCrimeEvents(db: PrismaClientType, userId: string, events: CrimeEventInput[]): Promise<number> {
   if (events.length === 0) return 0;
+  const plausible = rejectImplausibleRows(events, (e) => e.occurredAt, (e) => e.sourceRef);
+  if (plausible.length === 0) return 0;
   const result = await db.crimeEvent.createMany({
-    data: events.map((e) => ({
+    data: plausible.map((e) => ({
       userId,
       occurredAt: e.occurredAt,
       crimeId: e.crimeId,
@@ -104,8 +111,10 @@ export interface CombatEventInput {
 
 export async function insertCombatEvents(db: PrismaClientType, userId: string, events: CombatEventInput[]): Promise<number> {
   if (events.length === 0) return 0;
+  const plausible = rejectImplausibleRows(events, (e) => e.occurredAt, (e) => `attack:${e.attackId}`);
+  if (plausible.length === 0) return 0;
   const result = await db.combatEvent.createMany({
-    data: events.map((e) => ({
+    data: plausible.map((e) => ({
       userId,
       occurredAt: e.occurredAt,
       direction: e.direction,
@@ -124,8 +133,10 @@ export async function insertCombatEvents(db: PrismaClientType, userId: string, e
 
 export async function insertRehabEvents(db: PrismaClientType, userId: string, events: RehabEventInput[]): Promise<number> {
   if (events.length === 0) return 0;
+  const plausible = rejectImplausibleRows(events, (e) => e.occurredAt, (e) => e.sourceRef);
+  if (plausible.length === 0) return 0;
   const result = await db.rehabEvent.createMany({
-    data: events.map((e) => ({
+    data: plausible.map((e) => ({
       userId,
       occurredAt: e.occurredAt,
       rehabPercent: e.rehabPercent,
@@ -143,8 +154,10 @@ export async function insertRehabEvents(db: PrismaClientType, userId: string, ev
 
 export async function insertTravelTransitions(db: PrismaClientType, userId: string, events: TravelTransitionInput[]): Promise<number> {
   if (events.length === 0) return 0;
+  const plausible = rejectImplausibleRows(events, (e) => e.occurredAt, (e) => e.sourceRef);
+  if (plausible.length === 0) return 0;
   const result = await db.travelTransition.createMany({
-    data: events.map((e) => ({
+    data: plausible.map((e) => ({
       userId,
       occurredAt: e.occurredAt,
       type: e.type,
@@ -161,8 +174,10 @@ export async function insertTravelTransitions(db: PrismaClientType, userId: stri
 
 export async function insertTravelItemEvents(db: PrismaClientType, userId: string, events: TravelItemEventInput[]): Promise<number> {
   if (events.length === 0) return 0;
+  const plausible = rejectImplausibleRows(events, (e) => e.occurredAt, (e) => e.sourceRef);
+  if (plausible.length === 0) return 0;
   const result = await db.travelItemEvent.createMany({
-    data: events.map((e) => ({
+    data: plausible.map((e) => ({
       userId,
       occurredAt: e.occurredAt,
       destination: e.destination,
@@ -183,8 +198,10 @@ export async function insertTravelItemEvents(db: PrismaClientType, userId: strin
 
 export async function insertMoneyEvents(db: PrismaClientType, userId: string, events: MoneyEventInput[]): Promise<number> {
   if (events.length === 0) return 0;
+  const plausible = rejectImplausibleRows(events, (e) => e.occurredAt, (e) => e.sourceRef);
+  if (plausible.length === 0) return 0;
   const result = await db.moneyEvent.createMany({
-    data: events.map((e) => ({
+    data: plausible.map((e) => ({
       userId,
       occurredAt: e.occurredAt,
       category: e.category,
@@ -204,8 +221,10 @@ export async function insertMoneyEvents(db: PrismaClientType, userId: string, ev
 
 export async function insertTimelineEvents(db: PrismaClientType, userId: string, events: TimelineEventInput[]): Promise<number> {
   if (events.length === 0) return 0;
+  const plausible = rejectImplausibleRows(events, (e) => e.occurredAt, (e) => e.sourceRef);
+  if (plausible.length === 0) return 0;
   const result = await db.timelineEvent.createMany({
-    data: events.map((e) => ({
+    data: plausible.map((e) => ({
       userId,
       occurredAt: e.occurredAt,
       type: e.type,
@@ -300,6 +319,10 @@ export interface NetworthSnapshotInput {
 }
 
 export async function insertNetworthSnapshot(db: PrismaClientType, userId: string, input: NetworthSnapshotInput): Promise<void> {
+  if (!isPlausibleIngestedDate(input.capturedAt)) {
+    console.warn(`[ingest-guard] rejected implausible networth snapshot timestamp ${input.capturedAt.toISOString()} — snapshot dropped, never persisted`);
+    return;
+  }
   await db.networthSnapshot.upsert({
     where: { userId_capturedAt: { userId, capturedAt: input.capturedAt } },
     create: { userId, ...input, raw: input.raw === undefined ? Prisma.JsonNull : (input.raw as Prisma.InputJsonValue) },
@@ -475,8 +498,9 @@ export interface FactionArmoryEventInput {
  * duplicate.
  */
 export async function upsertFactionArmoryEvents(db: PrismaClientType, userId: string, events: readonly FactionArmoryEventInput[]): Promise<number> {
+  const plausible = rejectImplausibleRows(events, (e) => e.occurredAt, (e) => e.sourceRef);
   let stored = 0;
-  for (const e of events) {
+  for (const e of plausible) {
     const existing = await db.factionArmoryEvent.findUnique({ where: { userId_source_sourceRef: { userId, source: "torn_faction_news", sourceRef: e.sourceRef } }, select: { id: true } });
     if (existing) continue;
     await db.factionArmoryEvent.create({

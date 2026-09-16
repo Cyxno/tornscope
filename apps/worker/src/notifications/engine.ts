@@ -384,6 +384,18 @@ export async function retryFailedForUser(userId: string): Promise<void> {
 /* Per-user evaluation                                                         */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Activation boundary for timeline attention: the instant push was enabled,
+ * minus 60s of clock slack. `enabledAt` comes from Prisma, whose DateTime is
+ * already epoch MILLISECONDS — multiplying again yields Dates in far-future
+ * millennia that the query engine rejects outright (regression 1.0.1: the
+ * crashed findMany left the timeline cursor frozen and the evaluation
+ * retry-looping every tick for affected users).
+ */
+export function timelineActivationBoundary(enabledAt: Date): Date {
+  return new Date(enabledAt.getTime() - 60_000);
+}
+
 /** One live Torn call for all timer sources (single /user selection set). */
 async function fetchLiveTimers(userId: string, tornBaseUrl: string, minIntervalMs: number): Promise<LiveTimerState | null> {
   const db = getPrismaClient();
@@ -421,8 +433,7 @@ async function fetchLiveTimers(userId: string, tornBaseUrl: string, minIntervalM
   };
 }
 
-async function evaluateUser(userId: string, timezone: string): Promise<void> {
-  const db = getPrismaClient();
+async function evaluateUser(userId: string, timezone: string): Promise<void> {  const db = getPrismaClient();
   const prefs = await db.notificationPreference.findUnique({ where: { userId } });
   if (!prefs) return;
   const [credential] = await Promise.all([
@@ -459,7 +470,7 @@ async function evaluateUser(userId: string, timezone: string): Promise<void> {
   }
   if (maxSeq > lastSeq) {
     const rows = await db.timelineEvent.findMany({
-      where: { userId, seq: { gt: lastSeq }, occurredAt: { gte: new Date(prefs.enabledAt.getTime() * 1000 - 60_000) } },
+      where: { userId, seq: { gt: lastSeq }, occurredAt: { gte: timelineActivationBoundary(prefs.enabledAt) } },
       orderBy: { id: "asc" },
       take: MAX_EVENTS_PER_TICK,
       select: { id: true, title: true, seq: true, occurredAt: true },
