@@ -81,6 +81,16 @@ function accentRgb(): string {
   return accentFamily().rgb;
 }
 
+/** Accent as "r, g, b" commas — the legacy rgba() form. Every color that
+ *  reaches a CANVAS surface must use this: ECharts 6 (zrender) re-parses
+ *  gradient stops itself on emphasis/tooltip re-renders, and its parser
+ *  rejects the modern space-separated `rgb(r g b / a)` syntax — the failed
+ *  parse threw `addColorStop(undefined)` on every hovered frame, blanking
+ *  the chart until the pointer left (Overview net-worth hover bug). */
+function accentRgbComma(): string {
+  return accentFamily().rgb.split(" ").join(", ");
+}
+
 /** Preview helpers for the Appearance tab (reactive to theme). */
 export function palettePreview(id: ChartPalette): string[] {
   const mode: ResolvedTheme = resolvedTheme() === "light" ? "light" : "dark";
@@ -104,8 +114,10 @@ export function accentPreviewHex(id: string): string {
   return ACCENT_FAMILIES[id]?.[mode].main ?? ACCENT_FAMILIES.teal[mode].main;
 }
 
+/** Accent with alpha for canvas colors — always the legacy rgba() form
+ *  (see accentRgbComma: zrender cannot parse the modern space syntax). */
 export function accentRgba(alpha: number): string {
-  return `rgb(${accentRgb()} / ${alpha})`;
+  return `rgba(${accentRgbComma()}, ${alpha})`;
 }
 
 export interface ChartTheme {
@@ -229,7 +241,7 @@ export const MOTION = {
 
 /** Accent gradient area fill for hero line charts. */
 export function tealArea(): Record<string, unknown> {
-  const rgb = accentRgb();
+  const rgb = accentRgbComma();
   return {
     color: {
       type: "linear",
@@ -238,8 +250,8 @@ export function tealArea(): Record<string, unknown> {
       x2: 0,
       y2: 1,
       colorStops: [
-        { offset: 0, color: `rgb(${rgb} / 0.2)` },
-        { offset: 1, color: `rgb(${rgb} / 0)` },
+        { offset: 0, color: `rgba(${rgb}, 0.2)` },
+        { offset: 1, color: `rgba(${rgb}, 0)` },
       ],
     },
   };
