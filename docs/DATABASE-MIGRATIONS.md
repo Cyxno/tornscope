@@ -169,5 +169,6 @@ Top-up properties:
   command path the rehearsal script uses, so restore capability is exercised
   regularly, not just assumed.
 - Postgres data lives in `/mnt/user/appdata/tornscope/postgres` and is covered
-  by normal appdata backups; the dev stack's data lives in
-  `/mnt/user/appdata/tornscope-dev/postgres`.
+  by normal appdata backups. There is no permanent dev stack; if a temporary
+  environment is created for migration testing, its data directory is
+  disposable and must be destroyed with the rest of that environment.
