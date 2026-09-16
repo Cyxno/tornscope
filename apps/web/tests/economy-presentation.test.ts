@@ -206,3 +206,34 @@ describe("bank color semantics", () => {
     expect(liveNow).toMatch(/value: "Matured — collect", tone: "warning"/);
   });
 });
+
+describe("Received vs spent mix legend containment (1.0.1 regression)", () => {
+  const start = money.indexOf('title="Received vs spent mix"');
+  const end = money.indexOf("</Panel>", start);
+  const mixPanel = money.slice(start, end);
+
+  it("donut columns are container-driven, not viewport-driven", () => {
+    // At ≥1500px this panel can be a narrow grid column while the viewport
+    // is huge — a viewport breakpoint (sm:grid-cols-2) kept two donut
+    // columns alive in a ~300px panel and the legends collided across the
+    // column midpoint. Container queries stack them based on the space the
+    // panel actually has.
+    expect(mixPanel).toContain('<div class="@container">');
+    expect(mixPanel).toContain("@min-[560px]:grid-cols-2");
+    expect(mixPanel).not.toContain('class="grid grid-cols-1 gap-6 sm:grid-cols-2"');
+  });
+
+  it("legend rows are isolated per column — names truncate, values never shrink or wrap", () => {
+    // Every row keeps min-w-0 so the truncating name absorbs pressure; the
+    // amount and percentage are shrink-0 and never wrap, so they stay at the
+    // row edge inside their own column.
+    const rows = mixPanel.split("<li ").slice(1);
+    expect(rows.length).toBeGreaterThanOrEqual(2);
+    for (const row of rows) {
+      expect(row).toContain("min-w-0");
+      expect(row).toContain("truncate");
+      expect(row).toMatch(/tnum shrink-0 whitespace-nowrap/);
+      expect(row).toMatch(/w-9 shrink-0 text-right/);
+    }
+  });
+});

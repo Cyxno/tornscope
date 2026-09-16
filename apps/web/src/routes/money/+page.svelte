@@ -790,42 +790,52 @@
                 {#if (economy.cashFlow.incomeByCategory ?? []).length === 0 && (economy.cashFlow.expensesByCategory ?? []).length === 0}
                   <StateMessage state="empty" compact title="No categories to break down" />
                 {:else}
-                  <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                    <div class="min-w-0">
-                      <p class="mb-1 text-center text-[11px] font-semibold uppercase tracking-[0.13em] text-fg-muted">Wallet inflow</p>
-                      {#if receivedDonut}
-                        <Chart option={receivedDonut} height={170} />
-                      {:else}
-                        <div class="flex h-[170px] items-center justify-center text-xs text-fg-faint">No received cash in this range</div>
-                      {/if}
-                      <ul class="mx-auto mt-2 grid max-w-sm gap-1 text-xs">
-                        {#each receivedSlices as slice (slice.name)}
-                          <li class="flex items-baseline gap-2">
-                            <span class="h-2 w-2 shrink-0 rounded-full" style="background: {slice.color}"></span>
-                            <span class="min-w-0 flex-1 truncate text-fg-muted" title={slice.name}>{slice.name}</span>
-                            <span class="tnum text-fg-muted">{formatMoneyCompact(slice.value)}</span>
-                            <span class="tnum w-9 text-right text-fg-faint">{Math.round(slice.share * 100)}%</span>
-                          </li>
-                        {/each}
-                      </ul>
-                    </div>
-                    <div class="min-w-0">
-                      <p class="mb-1 text-center text-[11px] font-semibold uppercase tracking-[0.13em] text-fg-muted">Wallet outflow</p>
-                      {#if spentDonut}
-                        <Chart option={spentDonut} height={170} />
-                      {:else}
-                        <div class="flex h-[170px] items-center justify-center text-xs text-fg-faint">No spent cash in this range</div>
-                      {/if}
-                      <ul class="mx-auto mt-2 grid max-w-sm gap-1 text-xs">
-                        {#each spentSlices as slice (slice.name)}
-                          <li class="flex items-baseline gap-2">
-                            <span class="h-2 w-2 shrink-0 rounded-full" style="background: {slice.color}"></span>
-                            <span class="min-w-0 flex-1 truncate text-fg-muted" title={slice.name}>{slice.name}</span>
-                            <span class="tnum text-fg-muted">{formatMoneyCompact(slice.value)}</span>
-                            <span class="tnum w-9 text-right text-fg-faint">{Math.round(slice.share * 100)}%</span>
-                          </li>
-                        {/each}
-                      </ul>
+                  <!-- Container-driven columns: two donuts sit side by side only
+                       when THIS panel is wide enough for two contained legend
+                       columns (~280px each). Viewport breakpoints lied here —
+                       at ≥1500px this panel can be a narrow grid column while
+                       the viewport is huge, and the two legends collided
+                       across the midpoint. min-w-0 + w-full + shrink-0 keep
+                       every row inside its own column: names truncate, amounts
+                       and percentages never cross the boundary. -->
+                  <div class="@container">
+                    <div class="grid grid-cols-1 gap-6 @min-[560px]:grid-cols-2">
+                      <div class="min-w-0">
+                        <p class="mb-1 text-center text-[11px] font-semibold uppercase tracking-[0.13em] text-fg-muted">Wallet inflow</p>
+                        {#if receivedDonut}
+                          <Chart option={receivedDonut} height={170} />
+                        {:else}
+                          <div class="flex h-[170px] items-center justify-center text-xs text-fg-faint">No received cash in this range</div>
+                        {/if}
+                        <ul class="mx-auto mt-2 grid w-full max-w-sm gap-1 text-xs">
+                          {#each receivedSlices as slice (slice.name)}
+                            <li class="flex min-w-0 items-baseline gap-2">
+                              <span class="h-2 w-2 shrink-0 rounded-full" style="background: {slice.color}"></span>
+                              <span class="min-w-0 flex-1 truncate text-fg-muted" title={slice.name}>{slice.name}</span>
+                              <span class="tnum shrink-0 whitespace-nowrap text-fg-muted">{formatMoneyCompact(slice.value)}</span>
+                              <span class="tnum w-9 shrink-0 text-right text-fg-faint">{Math.round(slice.share * 100)}%</span>
+                            </li>
+                          {/each}
+                        </ul>
+                      </div>
+                      <div class="min-w-0">
+                        <p class="mb-1 text-center text-[11px] font-semibold uppercase tracking-[0.13em] text-fg-muted">Wallet outflow</p>
+                        {#if spentDonut}
+                          <Chart option={spentDonut} height={170} />
+                        {:else}
+                          <div class="flex h-[170px] items-center justify-center text-xs text-fg-faint">No spent cash in this range</div>
+                        {/if}
+                        <ul class="mx-auto mt-2 grid w-full max-w-sm gap-1 text-xs">
+                          {#each spentSlices as slice (slice.name)}
+                            <li class="flex min-w-0 items-baseline gap-2">
+                              <span class="h-2 w-2 shrink-0 rounded-full" style="background: {slice.color}"></span>
+                              <span class="min-w-0 flex-1 truncate text-fg-muted" title={slice.name}>{slice.name}</span>
+                              <span class="tnum shrink-0 whitespace-nowrap text-fg-muted">{formatMoneyCompact(slice.value)}</span>
+                              <span class="tnum w-9 shrink-0 text-right text-fg-faint">{Math.round(slice.share * 100)}%</span>
+                            </li>
+                          {/each}
+                        </ul>
+                      </div>
                     </div>
                   </div>
                 {/if}
