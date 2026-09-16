@@ -456,7 +456,17 @@ export async function generateDemoHistory(db: ReturnType<typeof getPrismaClient>
   // Bars and stat snapshots share the burst grid (gridOffset), exactly like
   // the original seed: a burst drains within bar steps and its stat gain
   // lands on the first snapshot at/after the burst end — adjacent bracket.
-  const barsFromAligned = barsFrom + (gridOffset % 300);
+  //
+  // ANCHOR FIRST, THEN APPLY THE OFFSET — exactly once. `barsFrom`/
+  // `statsFrom` derive from `now - N*DAY`, which already carries the seed
+  // moment's sub-hour phase; adding gridOffset on top rotated the snapshot
+  // grid to phase 2*gridOffset while bursts sit at phase gridOffset. For a
+  // band of seed wall-clock phases the hourly snapshot then landed INSIDE
+  // the training bracket carrying pre-gain stats, so the bracket delta was
+  // zero, every session degraded to "possible" and summary.energyTrained
+  // came out 0 — deterministic per seed time (CI vs local 1.0.1 divergence).
+  const barsFromAligned = barsFrom - (barsFrom % 300) + (gridOffset % 300);
+  const statsStart = statsFrom - (statsFrom % HOUR) + (gridOffset % HOUR);
 
   // Training bursts per day (grid-anchored like the seed): 08:00 always;
   // 19:00 on every third UTC day; the 19:00 burst is a HAPPY JUMP on days
@@ -549,7 +559,6 @@ export async function generateDemoHistory(db: ReturnType<typeof getPrismaClient>
   const { xanax: cumXanax, ecstasy: cumEcstasy, overdoses } = state.cum;
   let { refills: cumRefills, candy: cumCandy, awards: cumAwards } = state.cum;
   const statRng = rngFor("stats", from, to);
-  const statsStart = statsFrom + (gridOffset % HOUR);
   for (let t = statsStart; t < to; t += HOUR) {
     const day = utcDayNumber(t);
     for (const burst of bursts) {
