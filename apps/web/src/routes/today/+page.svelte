@@ -12,7 +12,7 @@
   import { me } from "$lib/state.svelte";
   import { greetingForHour } from "$lib/reltime";
   import * as td from "$lib/time-display.svelte.js";
-  import { cooldownDisplay } from "$lib/live";
+  import { cooldownDisplay, overCapText } from "$lib/live";
   import StateMessage from "$lib/components/StateMessage.svelte";
   import Countdown from "$lib/components/Countdown.svelte";
   import Icon from "$lib/components/Icon.svelte";
@@ -113,6 +113,12 @@
 
   function barState(bar: LiveBar | null): { text: string; tone: "muted" | "positive" | "warning" | "accent" } {
     if (!bar) return { text: "Unavailable", tone: "muted" };
+    // Stacked (current above the natural cap, e.g. energy 400/150 on Xanax):
+    // show the real numbers and the over-cap amount. Regen IS stopped above
+    // the cap, but the energy was never lost — never render the clamped
+    // "Full" nor an invented countdown. Normal accent treatment: stacking is
+    // intentional, not an error.
+    if (bar.current > bar.max) return { text: overCapText(bar.current - bar.max), tone: "accent" };
     if (bar.regenState === "full") return { text: "Full", tone: "positive" };
     if (bar.regenState === "regenerating" && bar.fullAt !== null) {
       const left = remainingSeconds(serverNowMs, bar.fullAt);
@@ -289,7 +295,7 @@
             {#if bar}
               <div class="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-surface-2" role="progressbar" aria-label={bar.label} aria-valuenow={bar.percent} aria-valuemin={0} aria-valuemax={100}>
                 <div
-                  class="h-full rounded-full {bar.regenState === 'paused' ? 'bg-warning/70' : 'bg-gradient-to-r from-accent-strong to-accent'}"
+                  class="h-full rounded-full {bar.regenState === 'paused' && bar.current <= bar.max ? 'bg-warning/70' : 'bg-gradient-to-r from-accent-strong to-accent'}"
                   style={`width:${Math.min(100, Math.max(2, bar.percent))}%`}
                 ></div>
               </div>

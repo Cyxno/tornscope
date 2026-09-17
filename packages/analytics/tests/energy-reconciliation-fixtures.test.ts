@@ -245,3 +245,25 @@ describe("fixture — real problematic-day shape (sanitized from the user's day)
     expect(sessions[0]!.gainPerEnergy).toBeCloseTo(1_400 / (XANAX_ENERGY_ESTIMATE + 100), 5);
   });
 });
+
+describe("fixture — the stack is banked and directly observed: 150/150 -> 400/150 (1.0.4 display regression)", () => {
+  // The canonical over-cap case this display bug came from: Xanax taken at
+  // the full natural cap, and the player HOLDS the stacked energy (no
+  // immediate training). The next snapshot directly observes 400 against a
+  // 150 natural cap. The ledger must keep the whole +250 as delivered and
+  // observed — no cap clipping, no "lost at cap", nothing unresolved.
+  const points = bars([
+    [T, 150],
+    [T + 300, 400],
+  ]);
+  const gains = [xanax(T + 120)];
+
+  it("keeps the full +250 delivered and observed above the natural cap", () => {
+    const ledger = expectReconciliation(points, gains);
+    expect(ledger.knownGains).toBe(XANAX_ENERGY_ESTIMATE);
+    expect(ledger.inferredSpent).toBe(0); // nothing was spent — it is banked
+    expect(ledger.unresolvedGains).toBe(0); // the delivery is fully visible
+    expect(ledger.reconciliation.closing).toBe(400);
+    expect(ledger.reconciliation.closing - ledger.reconciliation.opening!).toBe(250);
+  });
+});

@@ -34,10 +34,19 @@ export const CHANGELOG_KINDS: ChangelogKind[] = ["Added", "Improved", "Fixed", "
 
 export const CHANGELOG: ChangelogRelease[] = [
   {
+    version: "1.0.4",
+    stage: "Public Testing",
+    current: true,
+    summary: "Fixed over-capped (stacked) energy being displayed as full — the real value is now shown everywhere, with an honest over-cap note.",
+    changes: [
+      { kind: "Fixed", text: "Overview / Today — Energy above its natural cap is no longer clamped to \"150 / 150\". Stacked energy — e.g. 400/150 after a Xanax — now shows the real numbers (\"400 / 150\") with a calm \"Stacked · +250 over cap\" note instead of a misleading \"Full\". No full-at countdown is invented while over cap (Torn supplies none: regeneration really is stopped until you drop below the cap), and the normal energy accent is kept — a stack is intentional, not an error. Your natural cap (100 or 150) is always the denominator, never hardcoded." },
+      { kind: "Technical", text: "Bar semantics made explicit across the API contract: current (the real Torn value — may legitimately exceed the cap), natural cap, and bar fill (bounded 0–100%) are now separate concepts, with a derived overCap amount exposed by the Today API. Regression tests pin the whole range — 100/150, 150/150, 151/150, 400/150, 1000/150 and 350/100 — the API contract itself (raw Torn 400/150 in → 400/150 out), and the energy ledger (a banked Xanax +250 reconciles exactly — energy above the cap is real, nothing is lost)." },
+    ],
+  },
+  {
     version: "1.0.3",
     date: "2026-09-17",
     stage: "Public Testing",
-    current: true,
     summary: "Fixed test push delivery for Apple devices, and rebuilt the Overview \"Right now\" area as an action board with direct Torn.com links.",
     changes: [
       { kind: "Fixed", text: "Notifications — test pushes (and all alerts) now actually arrive on iPhone/iPad. Apple's push service rejected deliveries with 403 BadJwtToken because the server identified itself with a reserved-TLD mailto address; the subject is now the site's own https address. Desktop providers had accepted the old value, which is why only Apple devices were affected." },

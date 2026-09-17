@@ -72,11 +72,6 @@ describe("compose env consistency", () => {
       const worker = serviceEnvKeys(content, "worker");
       expect(api.length, "api service env block parsed").toBeGreaterThan(5);
       expect(worker.length, "worker service env block parsed").toBeGreaterThan(5);
-      // GIT_SHA flows as a BUILD ARG (baked identity), not runtime env.
-      const apiArgs = serviceBlock(content, "api").includes("GIT_SHA:");
-      const workerArgs = serviceBlock(content, "worker").includes("GIT_SHA:");
-      expect(apiArgs, `${file}: api build receives GIT_SHA`).toBe(true);
-      expect(workerArgs, `${file}: worker build receives GIT_SHA`).toBe(true);
       for (const key of SHARED_CRITICAL.filter((k) => k !== "GIT_SHA")) {
         expect(api, `${file}: api has ${key}`).toContain(key);
         expect(worker, `${file}: worker has ${key}`).toContain(key);
@@ -92,6 +87,36 @@ describe("compose env consistency", () => {
       }
     });
   }
+
+  // GIT_SHA flows as a BUILD ARG (baked build identity), not runtime env.
+  // Since 1.0.4 the base compose pulls PREBUILT GHCR images (the publish
+  // workflow bakes GIT_SHA); only the files that actually build — dev, the
+  // Unraid production file and the source-build override — must pass it.
+  describe("build identity (GIT_SHA build args)", () => {
+    const buildFiles = ["docker-compose.dev.yml", "docker-compose.unraid.yml", "docker-compose.build.yml"] as const;
+
+    for (const file of buildFiles) {
+      it(`${file}: every built app service receives GIT_SHA`, () => {
+        const content = readFileSync(fileURLToPath(new URL(`../../../${file}`, import.meta.url)), "utf8");
+        for (const service of ["api", "worker", "web"]) {
+          expect(serviceBlock(content, service).includes("GIT_SHA:"), `${file}: ${service} build receives GIT_SHA`).toBe(true);
+        }
+      });
+    }
+
+    it("docker-compose.yml: prebuilt images come from GHCR (GIT_SHA baked at publish)", () => {
+      const content = readFileSync(fileURLToPath(new URL("../../../docker-compose.yml", import.meta.url)), "utf8");
+      for (const service of ["migrate", "api", "worker", "web"]) {
+        expect(serviceBlock(content, service).includes("${TORNSCOPE_REGISTRY:-ghcr.io/cyxno}/tornscope-"), `${service} uses the prebuilt image`).toBe(true);
+      }
+    });
+
+    it("docker-compose.build.yml: the migrate build keeps its own image (never clobbers the api image tag)", () => {
+      const content = readFileSync(fileURLToPath(new URL("../../../docker-compose.build.yml", import.meta.url)), "utf8");
+      expect(serviceBlock(content, "migrate")).toContain("tornscope-migrate:local");
+      expect(serviceBlock(content, "migrate")).toContain("target: migrator");
+    });
+  });
 
   it("root package.json is the only version source (workspace packages match)", () => {
     const root = JSON.parse(readFileSync(fileURLToPath(new URL("../../../package.json", import.meta.url)), "utf8")).version as string;

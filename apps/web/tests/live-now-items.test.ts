@@ -166,3 +166,56 @@ describe("whole-card action shape (uniformity)", () => {
     expect(board.timers).toEqual([]);
   });
 });
+
+/* -------------------------------------------------------------------------- */
+/* Over-cap stacked bars (the 1.0.4 energy regression)                        */
+/* -------------------------------------------------------------------------- */
+
+describe("over-cap stacked energy card (1.0.4 regression)", () => {
+  function withEnergy(t: TodayResponse, energy: Partial<NonNullable<TodayResponse["bars"]["energy"]>>): TodayResponse {
+    return { ...t, bars: { ...t.bars, energy: { ...t.bars.energy!, ...energy } as TodayResponse["bars"]["energy"] } };
+  }
+
+  function energyCard(t: TodayResponse) {
+    return deriveLiveBoard(t, NO_OCS, NOW_MS, fakeDisplayTime).bars.find((i) => i.key === "energy")!;
+  }
+
+  it("shows the real 400/150 with stacked copy — never the clamped 150/150", () => {
+    const card = energyCard(withEnergy(todayPayload(), { current: 400, max: 150, percent: 100, fullAt: null, regenState: "paused" }));
+    expect(card.state).toBe("400 / 150");
+    expect(card.relative).toBe("Stacked · +250 over cap");
+    // No fabricated "Full at" countdown while over cap.
+    expect(card.absolute).toBeNull();
+    // Bar stays contained at full fill with the normal accent treatment.
+    expect(card.pct).toBe(100);
+    expect(card.ready).toBe(false);
+    expect(card.tone).toBe("accent");
+  });
+
+  it("stack amount scales with the real value: 1000/150 and +1 over", () => {
+    const huge = energyCard(withEnergy(todayPayload(), { current: 1000, max: 150, percent: 100, fullAt: null, regenState: "paused" }));
+    expect(huge.state).toBe("1000 / 150");
+    expect(huge.relative).toBe("Stacked · +850 over cap");
+    const one = energyCard(withEnergy(todayPayload(), { current: 151, max: 150, percent: 100, fullAt: null, regenState: "paused" }));
+    expect(one.relative).toBe("Stacked · +1 over cap");
+  });
+
+  it("100-cap accounts: 350/100 stays 350/100 (+250 over cap)", () => {
+    const card = energyCard(withEnergy(todayPayload(), { current: 350, max: 100, percent: 100, fullAt: null, regenState: "paused" }));
+    expect(card.state).toBe("350 / 100");
+    expect(card.relative).toBe("Stacked · +250 over cap");
+  });
+
+  it("at-cap 150/150 still reads Full (ready), not stacked", () => {
+    const card = energyCard(withEnergy(todayPayload(), { current: 150, max: 150, percent: 100, fullAt: null, regenState: "full" }));
+    expect(card.state).toBe("150 / 150");
+    expect(card.ready).toBe(true);
+  });
+
+  it("regenerating 100/150 keeps the Full-in countdown and never says stacked", () => {
+    const card = energyCard(todayPayload());
+    expect(card.state).toBe("50 / 100");
+    // deriveBars passes the bare countdown through (the card UI adds "Full in").
+    expect(card.relative).toBe("1h 00m");
+  });
+});

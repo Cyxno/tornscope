@@ -12,7 +12,7 @@ import {
   normalizeTornTimestamp,
   toPlayerStatus,
 } from "../src/services/today.js";
-import { buildUpcomingEvents } from "@tornscope/shared";
+import { buildUpcomingEvents, LiveBarSchema } from "@tornscope/shared";
 import type { TornEducationCategory, TornUserProfile } from "@tornscope/torn-api";
 import fixtures from "../../../packages/torn-api/tests/fixtures/today-selections.json";
 
@@ -44,6 +44,54 @@ describe("today service: bars", () => {
     expect(bars.energy.regenState).toBe("paused");
     expect(bars.energy.remainingSeconds).toBeNull();
     expect(bars.nerve.regenState).toBe("full");
+  });
+
+  it("API contract: a stacked over-cap Torn payload reaches the response as 400/150", () => {
+    // The 1.0.3 regression root cause lived in the bar model: current was
+    // clamped to maximum, so the API handed every surface a fabricated
+    // "150/150". This pins the backend contract: raw Torn 400/150 in,
+    // 400/150 out — with the derived over-cap amount and regen stopped.
+    const torn = {
+      bars: {
+        energy: { current: 400, maximum: 150, increment: 5, interval: 600, full_time: 0 },
+        nerve: { current: 10, maximum: 10, increment: 1, interval: 300, full_time: 0 },
+        happy: { current: 500, maximum: 500, increment: 5, interval: 300, full_time: 0 },
+        life: { current: 1000, maximum: 1000, increment: 30, interval: 900, full_time: 0 },
+      },
+    };
+    const bars = assembleBars(now, torn as never);
+    expect(bars.energy.current).toBe(400);
+    expect(bars.energy.max).toBe(150);
+    expect(bars.energy.overCap).toBe(250);
+    expect(bars.energy.percent).toBe(100);
+    expect(bars.energy.regenState).toBe("paused");
+    expect(bars.energy.fullAt).toBeNull();
+    expect(bars.energy.remainingSeconds).toBeNull();
+    // Still a valid published contract object (Zod), so UI/persistence paths
+    // cannot silently drift from the schema.
+    expect(() => LiveBarSchema.parse(bars.energy)).not.toThrow();
+  });
+
+  it("over-cap bars never emit a Full-at upcoming event (no regen above cap)", () => {
+    const torn = {
+      bars: {
+        energy: { current: 400, maximum: 150, increment: 5, interval: 600, full_time: 0 },
+        nerve: { current: 10, maximum: 10, increment: 1, interval: 300, full_time: 0 },
+        happy: { current: 500, maximum: 500, increment: 5, interval: 300, full_time: 0 },
+        life: { current: 1000, maximum: 1000, increment: 30, interval: 900, full_time: 0 },
+      },
+    };
+    const bars = assembleBars(now, torn as never);
+    const upcoming = buildUpcomingEvents(collectUpcoming(now, {
+      bars,
+      cooldowns: assembleCooldowns(now, fixtures.cooldowns as never),
+      travel: assembleTravel(now, travelingFixture, fixtures.travel_flying as never, null, null),
+      education: { state: "idle", courseId: null, courseName: null, categoryName: null, completesAt: null, remainingSeconds: null, provenance: "exact", unavailableReason: null, requiredAccess: null },
+      bank: assembleBank(now, fixtures.money as never),
+      hospital: null,
+      jail: null,
+    }));
+    expect(upcoming.map((u) => u.id)).not.toContain("bar:energy");
   });
 });
 

@@ -45,10 +45,63 @@ describe("buildLiveBar", () => {
     expect(bar.fullAt).toBeNull();
   });
 
-  it("clamps values above 100% (Torn may report current > maximum transiently)", () => {
+  it("keeps a stacked over-cap current intact — energy 400/150 (Xanax)", () => {
+    // The 1.0.3 regression: current was clamped to the cap, so a player
+    // holding 400 energy saw "150/150, not regenerating". The natural cap is
+    // NOT a display cap: the real value must survive the model untouched.
+    const bar = buildLiveBar(now, "energy", { current: 400, maximum: 150, increment: 5, interval: 600, full_time: 0 });
+    expect(bar.current).toBe(400);
+    expect(bar.max).toBe(150);
+    expect(bar.overCap).toBe(250);
+    expect(bar.percent).toBe(100); // fill bounded — visualization only
+    expect(bar.regenState).toBe("paused"); // regen stopped above the cap
+    expect(bar.fullAt).toBeNull(); // Torn supplies no full time over cap
+    expect(bar.remainingSeconds).toBeNull(); // never a fabricated countdown
+  });
+
+  it("never implies regeneration while over cap, whatever full_time says", () => {
+    const bar = buildLiveBar(now, "energy", { current: 250, maximum: 150, increment: 5, interval: 600, full_time: 600 });
+    expect(bar.overCap).toBe(100);
+    expect(bar.regenState).toBe("paused");
+  });
+
+  it("stacks stay unclamped at extremes: 1000/150 and +1 over", () => {
+    const huge = buildLiveBar(now, "energy", { current: 1000, maximum: 150, increment: 5, interval: 600, full_time: 0 });
+    expect(huge.current).toBe(1000);
+    expect(huge.overCap).toBe(850);
+    const one = buildLiveBar(now, "energy", { current: 151, maximum: 150, increment: 5, interval: 600, full_time: 0 });
+    expect(one.current).toBe(151);
+    expect(one.overCap).toBe(1);
+    expect(one.regenState).toBe("paused");
+  });
+
+  it("100-cap accounts stack too: 350/100 stays 350/100 (+250)", () => {
+    const bar = buildLiveBar(now, "energy", { current: 350, maximum: 100, increment: 5, interval: 600, full_time: 0 });
+    expect(bar.current).toBe(350);
+    expect(bar.max).toBe(100);
+    expect(bar.overCap).toBe(250);
+    expect(bar.percent).toBe(100);
+  });
+
+  it("canonical Xanax regression: 150/150 -> 400/150 delivers the full +250", () => {
+    const before = buildLiveBar(now, "energy", { current: 150, maximum: 150, increment: 5, interval: 600, full_time: 0 });
+    expect(before.regenState).toBe("full");
+    expect(before.overCap).toBe(0);
+    const after = buildLiveBar(now, "energy", { current: 400, maximum: 150, increment: 5, interval: 600, full_time: 0 });
+    // Xanax-delivered energy above the natural cap is REAL energy: the whole
+    // +250 arrives in current, nothing is clipped at the cap.
+    expect(after.current - before.current).toBe(250);
+    expect(after.overCap).toBe(250);
+  });
+
+  it("keeps transient over-max values for other bars too (life 4200/4150)", () => {
+    // Torn can report current > maximum on any bar (e.g. life ticks); the
+    // model is uniform: value preserved, fill bounded.
     const bar = buildLiveBar(now, "life", { current: 4200, maximum: 4150, increment: 30, interval: 900, full_time: 0 });
-    expect(bar.percent).toBeLessThanOrEqual(100);
-    expect(bar.current).toBeLessThanOrEqual(bar.max);
+    expect(bar.current).toBe(4200);
+    expect(bar.max).toBe(4150);
+    expect(bar.overCap).toBe(50);
+    expect(bar.percent).toBe(100);
   });
 
   it("keeps full times exact across timezones (pure absolute arithmetic)", () => {

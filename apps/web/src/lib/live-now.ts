@@ -71,6 +71,24 @@ function deriveBars(today: TodayResponse, serverNowMs: number, displayTime: (tsS
     const bar = kind === "energy" ? today.bars.energy : kind === "nerve" ? today.bars.nerve : today.bars.happy;
     const d = barFullDisplay(bar, serverNowMs);
     if (!bar || !d) continue;
+    if (d.overCap) {
+      // Stacked (e.g. energy 400/150 on Xanax): show the REAL current, the
+      // natural cap and the over-cap amount. No countdown exists (regen is
+      // stopped above the cap) and the bar stays contained at 100% fill with
+      // the normal accent treatment — stacking is intentional, not an error.
+      out.push(item({
+        key: kind,
+        label,
+        state: `${bar.current} / ${bar.max}`,
+        relative: d.text,
+        pct: 100,
+        tone: "accent",
+        ready: false,
+        tornUrl: url,
+        tornLabel: action,
+      }));
+      continue;
+    }
     if (d.full) {
       out.push(item({ key: kind, label, state: `${bar.current} / ${bar.max}`, pct: 100, tone: "positive", ready: true, tornUrl: url, tornLabel: action }));
       continue;

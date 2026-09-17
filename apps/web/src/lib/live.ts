@@ -45,6 +45,15 @@ export interface BarFullDisplay {
   full: boolean;
   /** Seconds until full; null when full or indeterminable. */
   remainingSeconds: number | null;
+  /** current exceeds the natural cap (stacking) — regen stopped, no countdown. */
+  overCap: boolean;
+  /** How far current is over the natural cap (0 unless overCap). */
+  overBy: number;
+}
+
+/** Canonical over-cap copy, shared by Today and the Overview Right-now board. */
+export function overCapText(overBy: number): string {
+  return `Stacked · +${overBy.toLocaleString("en-US")} over cap`;
 }
 
 export function barFullDisplay(
@@ -52,14 +61,22 @@ export function barFullDisplay(
   serverNowMs: number
 ): BarFullDisplay | null {
   if (!bar) return null;
+  // Stacked (Xanax, training stacks): current legitimately exceeds the
+  // natural cap. Regen is stopped and Torn supplies no full time — show the
+  // real numbers with the over-cap amount, never a countdown and never the
+  // "not regenerating" fallback.
+  const overBy = Math.max(0, bar.current - bar.max);
+  if (overBy > 0) {
+    return { text: overCapText(overBy), full: false, remainingSeconds: null, overCap: true, overBy };
+  }
   if (bar.regenState === "full" || bar.current >= bar.max) {
-    return { text: "Full", full: true, remainingSeconds: null };
+    return { text: "Full", full: true, remainingSeconds: null, overCap: false, overBy: 0 };
   }
   if (bar.regenState === "regenerating" && bar.fullAt !== null) {
     const left = remainingSeconds(serverNowMs, bar.fullAt);
-    if (left === null || left <= 0) return { text: "Full", full: true, remainingSeconds: null };
-    return { text: `Full in ${formatCountdownCompact(left)}`, full: false, remainingSeconds: left };
+    if (left === null || left <= 0) return { text: "Full", full: true, remainingSeconds: null, overCap: false, overBy: 0 };
+    return { text: `Full in ${formatCountdownCompact(left)}`, full: false, remainingSeconds: left, overCap: false, overBy: 0 };
   }
   // Regen paused/unknown: never invent a timer.
-  return { text: "—", full: false, remainingSeconds: null };
+  return { text: "—", full: false, remainingSeconds: null, overCap: false, overBy: 0 };
 }

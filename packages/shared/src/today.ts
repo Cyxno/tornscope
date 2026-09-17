@@ -34,9 +34,14 @@ export type BarRegenState = (typeof BAR_REGEN_STATES)[number];
 export const LiveBarSchema = z.object({
   key: z.enum(TODAY_BAR_KEYS),
   label: z.string(),
+  /** Actual Torn value — MAY exceed `max` (stacking: 400/150, 1000/150). Never clamped. */
   current: z.number(),
+  /** Natural cap where passive regeneration stops — NOT a display cap. */
   max: z.number(),
+  /** Bar FILL percentage, bounded 0-100. Visualization only — never the value. */
   percent: z.number(),
+  /** How far current exceeds the natural cap: max(0, current - max). Derived. */
+  overCap: z.number().default(0),
   /** Amount regenerated per Torn tick (null when Torn does not expose it). */
   increment: z.number().nullable(),
   /** Seconds between regen ticks (null when not exposed). */
@@ -66,9 +71,22 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 /**
- * Build a LiveBar from Torn primitives. Never invents a full time:
- * when Torn reports full_time = 0 while the bar is not full, regen is
- * paused/capped and remainingSeconds stays null ("full time unavailable").
+ * Build a LiveBar from Torn primitives.
+ *
+ * SEMANTICS (three distinct concepts — never conflate them):
+ *   current   — the ACTUAL Torn value. It legitimately exceeds the natural
+ *               cap through stacking (Xanax, training stacks: 400/150,
+ *               1000/150). Clamping it would fabricate "150/150" and hide
+ *               the stack (1.0.4 regression: Overview showed Energy
+ *               150/150 "not regenerating" while the player held 400).
+ *   max       — the natural cap where passive regeneration stops.
+ *   percent   — the bar FILL (bounded 0-100). Visualization only; the only
+ *               place capping is allowed.
+ *
+ * Never invents a full time: Torn omits/zeroes `full_time` once the natural
+ * cap is reached (regen stopped — including while OVER cap), so a stacked
+ * bar is "paused" with no countdown. When current later drops below the
+ * cap, regen resumes per Torn's normal rules and the countdown returns.
  *
  * Torn v2 /user/bars `full_time` is SECONDS REMAINING until the bar is full
  * (verified live 2026-09: energy 25/150 -> full_time 14540). Some older
@@ -78,14 +96,17 @@ function clamp(value: number, min: number, max: number): number {
  */
 export function buildLiveBar(nowSec: number, key: TodayBarKey, torn: TornBarPrimitives): LiveBar {
   const max = torn.maximum > 0 ? torn.maximum : 0;
-  const current = clamp(torn.current, 0, max || torn.current);
+  const current = Math.max(0, torn.current);
   const percent = max > 0 ? clamp((current / max) * 100, 0, 100) : 0;
+  const overCap = Math.max(0, current - max);
   const fullAt = torn.full_time > 0 ? (torn.full_time >= 1e9 ? torn.full_time : nowSec + torn.full_time) : null;
-  const full = max > 0 && current >= max;
+  const atCap = max > 0 && current === max;
   const regenPerHour =
     torn.increment > 0 && torn.interval > 0 ? (torn.increment / torn.interval) * 3600 : null;
 
-  const regenState: BarRegenState = full ? "full" : fullAt ? "regenerating" : "paused";
+  // Over cap: regeneration is stopped (never "regenerating"), but the bar is
+  // not "full" either — that state is reserved for exactly at cap.
+  const regenState: BarRegenState = overCap > 0 ? "paused" : atCap ? "full" : fullAt ? "regenerating" : "paused";
 
   return {
     key,
@@ -93,6 +114,7 @@ export function buildLiveBar(nowSec: number, key: TodayBarKey, torn: TornBarPrim
     current,
     max,
     percent: Math.round(percent * 10) / 10,
+    overCap,
     increment: torn.increment > 0 ? torn.increment : null,
     intervalSeconds: torn.interval > 0 ? torn.interval : null,
     fullAt,
