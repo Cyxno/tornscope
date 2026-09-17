@@ -17,7 +17,7 @@ export interface ChangelogEntry {
 }
 
 export interface ChangelogRelease {
-  /** Exact release tag (e.g. "v1.0.0"); the current in-progress release uses its plain version ("1.0.2") until tagged. */
+  /** Exact release tag (e.g. "v1.0.0"); the current in-progress release uses its plain version ("1.0.3") until tagged. */
   version: string;
   /** Release date (YYYY-MM-DD) when known — from the tag, never guessed. */
   date?: string;
@@ -34,10 +34,23 @@ export const CHANGELOG_KINDS: ChangelogKind[] = ["Added", "Improved", "Fixed", "
 
 export const CHANGELOG: ChangelogRelease[] = [
   {
-    version: "1.0.2",
+    version: "1.0.3",
     date: "2026-09-17",
     stage: "Public Testing",
     current: true,
+    summary: "Fixed test push delivery for Apple devices, and rebuilt the Overview \"Right now\" area as an action board with direct Torn.com links.",
+    changes: [
+      { kind: "Fixed", text: "Notifications — test pushes (and all alerts) now actually arrive on iPhone/iPad. Apple's push service rejected deliveries with 403 BadJwtToken because the server identified itself with a reserved-TLD mailto address; the subject is now the site's own https address. Desktop providers had accepted the old value, which is why only Apple devices were affected." },
+      { kind: "Improved", text: "Overview — \"Right now\" is now an action board: Energy/Nerve/Happy bars are larger with readable values, travel shows the destination, the big countdown and the exact landing time together, and every timer card carries a direct \"Torn ↗\" action." },
+      { kind: "Improved", text: "Overview — travel, organized crime, education and bank actions now open Torn.com directly (the game where you act); TornScope's own analytics remain one click behind as history links." },
+      { kind: "Improved", text: "Notifications — a failed test push now says why: subscription expired (re-enable), push service rejected the delivery (operator config), or a transient failure that retries automatically." },
+      { kind: "Technical", text: "Push delivery telemetry: every failed send is logged with the subscription id, endpoint host, provider status and rejection reason — never endpoint tokens or key material. A provider rejection no longer revokes valid devices; only 404/410 does." },
+    ],
+  },
+  {
+    version: "1.0.2",
+    date: "2026-09-17",
+    stage: "Public Testing",
     summary: "Hotfix: enabling push notifications failed on every browser — most visibly on iPhone, where Safari reports it as \"The string contains invalid characters.\"",
     changes: [
       { kind: "Fixed", text: "Notifications — enabling push works again. The server's VAPID public key is base64URL; a settings-rebuild regression fed it to the browser's decoder unnormalized, which browsers reject (WebKit's wording: \"The string contains invalid characters.\") before subscription even starts." },

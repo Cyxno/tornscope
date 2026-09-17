@@ -3,12 +3,14 @@ import { getPrismaClient, EncryptionService, encryptionFromEnv } from "@tornscop
 import {
   checkPushEndpoint,
   classifyAttentionEvent,
+  classifyPushSendOutcome,
   DEFAULT_TYPE_TOGGLES,
   decideQuietHours,
   diffTimerTransitions,
   notificationType,
   normalizeTypeToggles,
   normalizeTypeConfig,
+  providerRejectionReason,
   type LiveTimerState,
   type QuietHoursSettings,
   type ResolvedTypeConfig,
@@ -71,13 +73,20 @@ function pushReady(): boolean {
   return process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY ? true : false;
 }
 
+/** VAPID subject fallback mirroring the API's env.ts rule: the public https
+ *  origin when known. Apple's push service rejects reserved-TLD mailto:
+ *  subjects with 403 BadJwtToken (1.0.3 production finding), so the inert
+ *  mailto default is only for dev setups with no public origin. */
+function vapidSubject(): string {
+  const explicit = (process.env.VAPID_SUBJECT ?? "").trim();
+  if (explicit) return explicit;
+  const publicOrigin = (process.env.PUBLIC_BASE_URL ?? "").trim();
+  return /^https:\/\/\S+$/i.test(publicOrigin) ? publicOrigin : "mailto:alerts@tornscope.local";
+}
+
 function webpushClient(): typeof webpush {
   if (!webpushReady) {
-    webpush.setVapidDetails(
-      process.env.VAPID_SUBJECT ?? "mailto:alerts@tornscope.local",
-      process.env.VAPID_PUBLIC_KEY ?? "",
-      process.env.VAPID_PRIVATE_KEY ?? ""
-    );
+    webpush.setVapidDetails(vapidSubject(), process.env.VAPID_PUBLIC_KEY ?? "", process.env.VAPID_PRIVATE_KEY ?? "");
     webpushReady = true;
   }
   return webpush;
@@ -280,7 +289,7 @@ async function deliverToSubscriptions(
 }
 
 async function sendToSubscriptionRow(
-  sub: { endpoint: string; p256dh: string; auth: string },
+  sub: { id: string; endpoint: string; p256dh: string; auth: string },
   payload: string
 ): Promise<"sent" | "gone" | "error"> {
   // SSRF guard (defense in depth — endpoints are validated at subscribe
@@ -293,9 +302,32 @@ async function sendToSubscriptionRow(
     return "sent";
   } catch (err) {
     const status = (err as { statusCode?: number }).statusCode;
-    if (status === 404 || status === 410) return "gone";
-    logger.warn({ status, err: (err as Error).message }, "push delivery failed");
-    return "error";
+    // 401/403 are SERVER-CONFIG rejections (bad VAPID subject/keys — 1.0.3:
+    // Apple answered 403 BadJwtToken while the subscription was fine), so
+    // they must NOT revoke; they retry like transient failures. Only the
+    // provider saying the subscription no longer exists (404/410) revokes.
+    const outcome = classifyPushSendOutcome(status);
+    logger.warn(
+      {
+        subscriptionId: sub.id,
+        endpointHost: safeEndpointHost(sub.endpoint),
+        outcome,
+        statusCode: status ?? null,
+        providerReason: providerRejectionReason((err as { body?: unknown }).body),
+      },
+      "push delivery failed"
+    );
+    return outcome === "gone" ? "gone" : "error";
+  }
+}
+
+/** Host of a push endpoint for logging — never the full endpoint (it
+ *  embeds the subscription token). Unparsable endpoints log as null. */
+function safeEndpointHost(endpoint: string): string | null {
+  try {
+    return new URL(endpoint).host;
+  } catch {
+    return null;
   }
 }
 

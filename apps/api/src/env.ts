@@ -63,6 +63,24 @@ export function validateVapidConfig(): void {
   if (privateBytes !== 32) {
     logger.warn({ privateBytes }, "VAPID_PRIVATE_KEY does not decode to a 32-byte scalar — push delivery will fail");
   }
+  // 1.0.3 production finding: Apple's push service (web.push.apple.com)
+  // answers 403 BadJwtToken for VAPID subjects that are mailto: URLs on
+  // reserved TLDs (.local etc.) — every iOS/PWA delivery fails while
+  // desktop providers accept the same JWT. Warn loudly on that shape.
+  if (/^mailto:[^@]*@[^.]*\.(local|localhost|test|example|invalid)\b/i.test(env.vapidSubject)) {
+    logger.warn(
+      { subject: env.vapidSubject },
+      "VAPID_SUBJECT is a mailto: address on a reserved TLD — Apple (iOS/PWA) rejects it with BadJwtToken. Use an https:// origin or a real-domain mailto:"
+    );
+  }
+}
+
+/** VAPID subject fallback: the site's https origin when known — Apple
+ *  accepts https: and real-domain mailto: subjects, but NOT reserved-TLD
+ *  mailto: (see validateVapidConfig). Dev setups without a public origin
+ *  keep the inert mailto default (no Apple devices there). */
+function vapidSubjectDefault(publicBaseUrl: string): string {
+  return /^https:\/\/\S+$/i.test(publicBaseUrl) ? publicBaseUrl : "mailto:alerts@tornscope.local";
 }
 
 export const env = {
@@ -85,10 +103,12 @@ export const env = {
   /** Web Push VAPID keys. Private key NEVER leaves the server; the public
    *  key is served to browsers (required for push subscription). Values are
    *  trimmed: stray whitespace/CRLF from env-file parsing would otherwise
-   *  break every client-side key decode and server-side VAPID signing. */
+   *  break every client-side key decode and server-side VAPID signing.
+   *  The subject defaults to the public https origin — see
+   *  vapidSubjectDefault (Apple rejects reserved-TLD mailto: subjects). */
   vapidPublicKey: (process.env.VAPID_PUBLIC_KEY ?? "").trim(),
   vapidPrivateKey: (process.env.VAPID_PRIVATE_KEY ?? "").trim(),
-  vapidSubject: (process.env.VAPID_SUBJECT ?? "mailto:alerts@tornscope.local").trim(),
+  vapidSubject: (process.env.VAPID_SUBJECT ?? "").trim() || vapidSubjectDefault((process.env.PUBLIC_BASE_URL ?? "").trim()),
   /** Owner binding stays enabled until explicitly disabled post-migration. */
   /** Abandoned anonymous profiles older than this are cleaned up. */
   guestRetentionDays: Number(process.env.GUEST_PROFILE_RETENTION_DAYS ?? 60),

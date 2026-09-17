@@ -381,6 +381,7 @@ export const DELIVERY_REASONS = [
   "device_disabled",
   "stale_event",
   "unsupported_browser",
+  "provider_rejected",
 ] as const;
 export type DeliveryReason = (typeof DELIVERY_REASONS)[number];
 
@@ -397,7 +398,54 @@ export const DELIVERY_REASON_LABELS: Record<DeliveryReason, string> = {
   device_disabled: "Device was disabled",
   stale_event: "Event was too old to notify",
   unsupported_browser: "Browser does not support push",
+  provider_rejected: "Push service rejected the delivery",
 };
+
+/* -------------------------------------------------------------------------- */
+/* Provider send outcomes (shared by the API test path and the worker)         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * What the Web Push provider said about one send attempt:
+ * - "sent"          — provider accepted (2xx). Proves acceptance, not display.
+ * - "gone"          — 404/410: the subscription no longer exists. Revoke it.
+ * - "rate-limited"  — 429: retry later with backoff; never revoke.
+ * - "rejected"      — 401/403/4xx-auth: provider refused (bad VAPID subject,
+ *                     bad keys, forbidden). Never revoke — the subscription
+ *                     itself may be fine (1.0.3: Apple 403 BadJwtToken was a
+ *                     server-config issue, and the subscription was valid).
+ * - "network-error" — no HTTP status: DNS/TLS/timeout. Retry, never revoke.
+ */
+export type PushSendOutcome = "sent" | "gone" | "rate-limited" | "rejected" | "network-error";
+
+/** Classify a web-push error by its provider status code. */
+export function classifyPushSendOutcome(statusCode: number | undefined): PushSendOutcome {
+  switch (statusCode) {
+    case 404:
+    case 410:
+      return "gone";
+    case 429:
+      return "rate-limited";
+    case 401:
+    case 403:
+      return "rejected";
+    default:
+      return "network-error";
+  }
+}
+
+/** Safe provider-reason extraction: parses the provider body for a
+ *  `"reason"` field (Apple/autopush convention) without ever logging the
+ *  body itself, which can echo endpoint tokens. */
+export function providerRejectionReason(body: unknown): string | null {
+  if (typeof body !== "string" || body.length === 0 || body.length > 200) return null;
+  try {
+    const parsed = JSON.parse(body) as { reason?: unknown };
+    return typeof parsed.reason === "string" ? parsed.reason.slice(0, 60) : null;
+  } catch {
+    return null;
+  }
+}
 
 /** Delivery lifecycle statuses. Web Push proves ACCEPTANCE, never display. */
 export const DELIVERY_STATUSES = [

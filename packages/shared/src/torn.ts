@@ -58,6 +58,7 @@ export type TornDrugName = (typeof TORN_DRUG_NAMES)[number];
  * lives at page.php?sid=travel. Drugs/medical/boosters are all used from the
  * inventory page (item.php); Torn exposes no stable per-category anchor, so
  * no fake deep links are invented here.
+ * organizedCrime is the faction "Crimes" tab the OC UI deep-links to.
  */
 export const TORN_URLS = {
   travel: "https://www.torn.com/page.php?sid=travel",
@@ -67,6 +68,33 @@ export const TORN_URLS = {
   /** Live-bar quick links (audited 2026-09): gym + crimes hubs are stable. */
   gym: "https://www.torn.com/gym.php",
   crimes: "https://www.torn.com/page.php?sid=crimes",
+  organizedCrime: "https://www.torn.com/factions.php?step=your&type=1#/tab=crimes",
+  hospital: "https://www.torn.com/hospital.php",
+  jail: "https://www.torn.com/jail.php",
+} as const;
+
+export type TornUrlKey = keyof typeof TORN_URLS;
+
+/**
+ * Guard for rendering external Torn destinations: only https URLs on the
+ * game's own domain pass. Every dynamic/derived link goes through this —
+ * no user- or data-derived URL is ever rendered raw. Returns null for
+ * anything off-domain so callers can fall back to the static map.
+ */
+export function safeTornUrl(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "https:" && parsed.hostname === "www.torn.com" ? parsed.href : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Attributes every external Torn link must carry (B4): a new tab that
+ *  cannot reference this app back. Spread onto <a> elements. */
+export const TORN_LINK_ATTRS = {
+  target: "_blank",
+  rel: "noopener noreferrer",
 } as const;
 
 /* -------------------------------------------------------------------------- */

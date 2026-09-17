@@ -187,8 +187,8 @@ describe('release-candidate QA regressions', () => {
     expect(simple).toContain('Nothing moved this period');
   });
 
-  it('the Overview strip carries a Happy bar — energy/nerve/happy at a glance', () => {
-    expect(liveNow).toContain('barChip("happy")');
+  it('the Overview board carries a Happy bar — energy/nerve/happy at a glance (1.0.3 action-board rewrite)', () => {
+    expect(liveNow).toContain('barItem("happy")');
     expect(liveNow).toContain('today?.bars.happy');
   });
 
@@ -200,10 +200,10 @@ describe('release-candidate QA regressions', () => {
 describe("bank color semantics", () => {
   it("a healthy bank countdown is neutral; only a matured investment warns", () => {
     // Real-user finding: "Bank" rendered warning-yellow for a normal active
-    // investment. Warning is reserved for the actionable "Matured — collect"
-    // state; the countdown is a neutral timer.
-    expect(liveNow).toMatch(/value: `matures in \$\{formatCountdownCompact\(left\)\}`, tone: "neutral"/);
-    expect(liveNow).toMatch(/value: "Matured — collect", tone: "warning"/);
+    // investment. Warning is reserved for the actionable "Matured" state;
+    // the countdown is a neutral timer. (1.0.3: same rule, action-board shape.)
+    expect(liveNow).toMatch(/tone: "neutral", ready: false, tornUrl: TORN_URLS\.bank/);
+    expect(liveNow).toMatch(/tone: "warning", ready: true, tornUrl: TORN_URLS\.bank/);
   });
 });
 

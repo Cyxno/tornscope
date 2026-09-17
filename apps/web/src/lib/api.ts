@@ -230,6 +230,7 @@ export const endpoints = {
     typeConfig?: Record<string, number>;
   }) => api.post<NotificationsStatusResponse["preferences"]>("/notifications/preferences", prefs),
   notificationsHistory: () => api.get<NotificationHistoryResponse>("/notifications/history"),
-  notificationsTest: (endpoint: string) => api.post<{ sent: boolean }>("/notifications/test", { endpoint }),
+  notificationsTest: (endpoint: string) =>
+    api.post<{ sent: boolean; outcome: "sent" | "expired" | "provider-rejected" | "failed" }>("/notifications/test", { endpoint }),
   notificationsVapidPublicKey: () => api.get<{ publicKey: string | null }>("/notifications/vapid-public-key"),
 };

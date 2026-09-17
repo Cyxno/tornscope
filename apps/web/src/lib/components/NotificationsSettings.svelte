@@ -142,7 +142,9 @@
       const result = await endpoints.notificationsTest(currentEndpoint);
       notice = result.sent
         ? { tone: "ok", text: "Test notification sent — check this device." }
-        : { tone: "err", text: "The notification could not be delivered." };
+        : result.outcome === "provider-rejected"
+          ? { tone: "err", text: "Push delivery was rejected by the push service. The operator must check the server's push configuration." }
+          : { tone: "err", text: "The test notification could not be delivered — it will retry automatically." };
       await refresh();
     } catch (err) {
       notice = { tone: "err", text: pushFailureText(err) };

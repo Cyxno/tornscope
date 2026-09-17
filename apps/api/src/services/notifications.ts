@@ -2,13 +2,16 @@ import webpush from "web-push";
 import { getPrismaClient } from "@tornscope/database";
 import {
   checkPushEndpoint,
+  classifyPushSendOutcome,
   DEFAULT_TYPE_TOGGLES,
   DELIVERY_REASON_LABELS,
   normalizeTypeConfig,
   normalizeTypeToggles,
+  providerRejectionReason,
   type NotificationHistoryResponse,
+  type PushSendOutcome,
 } from "@tornscope/shared";
-import { env } from "../env.js";
+import { env, logger } from "../env.js";
 import { assertPublicEndpoint } from "./push-ssrf.js";
 import { errors } from "../errors.js";
 import type { SessionUser } from "../auth.js";
@@ -317,17 +320,22 @@ export interface PushPayload {
 }
 
 /**
- * Send a payload to one subscription. Returns "gone" for 404/410 so callers
- * can revoke dead registrations instead of retrying forever. Endpoints that
- * fail the structural guard (e.g. legacy rows stored before endpoint
- * validation) are also reported "gone": they are never legitimate browser
- * registrations and must not be sent to.
+ * Send a payload to one subscription. Provider status decides the outcome:
+ * 404/410 → "gone" (revoke), 429 → "rate-limited", 401/403 → "rejected"
+ * (server-config problem — never revoke a possibly-valid subscription),
+ * anything else → "network-error". Every non-sent outcome is logged with
+ * safe structured fields (subscription id, endpoint host only, status,
+ * provider reason string) so delivery failures are diagnosable from logs
+ * without leaking endpoint tokens or key material.
  */
 export async function sendToSubscription(
-  sub: { endpoint: string; p256dh: string; auth: string },
+  sub: { id?: string; endpoint: string; p256dh: string; auth: string },
   payload: PushPayload
-): Promise<"sent" | "gone" | "error"> {
-  if (!checkPushEndpoint(sub.endpoint).allowed) return "gone";
+): Promise<PushSendOutcome> {
+  if (!checkPushEndpoint(sub.endpoint).allowed) {
+    logger.warn({ subscriptionId: sub.id ?? null, endpointHost: safeEndpointHost(sub.endpoint), outcome: "gone", reasonCode: "endpoint_failed_ssrf_guard" }, "push send blocked");
+    return "gone";
+  }
   try {
     const wp = configuredWebPush();
     await wp.sendNotification(
@@ -337,8 +345,29 @@ export async function sendToSubscription(
     return "sent";
   } catch (err) {
     const status = (err as { statusCode?: number }).statusCode;
-    if (status === 404 || status === 410) return "gone";
-    return "error";
+    const outcome = classifyPushSendOutcome(status);
+    logger.warn(
+      {
+        subscriptionId: sub.id ?? null,
+        endpointHost: safeEndpointHost(sub.endpoint),
+        outcome,
+        statusCode: status ?? null,
+        providerReason: providerRejectionReason((err as { body?: unknown }).body),
+        notificationType: payload.tag,
+      },
+      "push delivery failed"
+    );
+    return outcome;
+  }
+}
+
+/** Host of a push endpoint for logging — never the full endpoint (it embeds
+ *  the subscription token). Unparsable endpoints log as null. */
+function safeEndpointHost(endpoint: string): string | null {
+  try {
+    return new URL(endpoint).host;
+  } catch {
+    return null;
   }
 }
 
@@ -346,8 +375,14 @@ export async function sendToSubscription(
  * POST /api/notifications/test — real pipeline, this device only, explicit
  * user action. Recorded in the delivery ledger (type "test"), never queued:
  * an explicit test cannot be stale, so quiet hours do not defer it.
+ * The response distinguishes the outcomes the UI can act on: an expired
+ * subscription (re-enable), a provider rejection (operator config — the
+ * subscription itself is fine), and a plain delivery failure.
  */
-export async function sendTestNotification(user: SessionUser, endpoint: string): Promise<{ sent: boolean }> {
+export async function sendTestNotification(
+  user: SessionUser,
+  endpoint: string
+): Promise<{ sent: boolean; outcome: "sent" | "expired" | "provider-rejected" | "failed" }> {
   const db = getPrismaClient();
   const sub = await db.pushSubscription.findFirst({
     where: { userId: user.id, endpoint, revokedAt: null },
@@ -376,11 +411,18 @@ export async function sendTestNotification(user: SessionUser, endpoint: string):
     throw errors.notFound("This browser's subscription has expired — re-enable notifications.");
   }
   // Ledger: one logical event + one per-device delivery (the clicked device).
+  // A provider rejection (401/403) is NOT the subscription's fault — the
+  // reason field says so instead of the misleading "rate limited".
+  const reasonByOutcome: Partial<Record<PushSendOutcome, string | null>> = {
+    "rejected": "provider_rejected",
+    "rate-limited": "rate_limited",
+    "network-error": null,
+  };
   const event = await db.notificationEvent.create({
     data: {
       userId: user.id, type: "test", dedupeKey: `test:${now.getTime()}`, occurredAt: now,
       title: payload.title, body: payload.body, clickPath: "/today",
-      status: result === "sent" ? "delivered" : "failed", reason: result === "error" ? "rate_limited" : null,
+      status: result === "sent" ? "delivered" : "failed", reason: result === "sent" ? null : reasonByOutcome[result] ?? null,
     },
     select: { id: true },
   }).catch(() => null);
@@ -389,11 +431,14 @@ export async function sendTestNotification(user: SessionUser, endpoint: string):
       data: {
         userId: user.id, subscriptionId: sub.id, eventKey: `test:${now.getTime()}`,
         notificationType: "test", eventId: event.id,
-        status: result === "sent" ? "sent" : "failed", reason: result === "error" ? "rate_limited" : null,
+        status: result === "sent" ? "sent" : "failed", reason: result === "sent" ? null : reasonByOutcome[result] ?? null,
       },
     }).catch(() => undefined);
   }
-  return { sent: result === "sent" };
+  return {
+    sent: result === "sent",
+    outcome: result === "sent" ? "sent" : result === "rate-limited" || result === "network-error" ? "failed" : result === "rejected" ? "provider-rejected" : "failed",
+  };
 }
 
 /** Shared icon paths (kept in one place for SW + API payloads). */
