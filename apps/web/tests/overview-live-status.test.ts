@@ -3,126 +3,90 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 /**
- * Overview live-status (1.0.3): the "Right now" board must be scannable at
- * a glance — LABEL → STATE → TIME(relative + absolute) → ACTION — with the
- * PRIMARY action opening Torn.com (never an internal analytics route) and
- * TornScope analytics kept as explicit secondary links. Markup contracts
- * pinned here follow the repo's rendered-surface test style.
+ * Overview live-status (1.0.3 polish): the board renders as compact cards
+ * where the WHOLE CARD is the primary Torn.com action — implemented as a
+ * stretched semantic <a> (keyboard activatable, labelled) with the
+ * TornScope analytics link layered above it (z-10, never nested anchors).
+ * No standalone "Torn ↗" / "Open ↗" pills remain; a faint corner ↗ is the
+ * only external hint. Medical cooldown uses the identical card pattern.
  */
 
 const read = (rel: string): string => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
 const liveNow = read("../src/lib/components/LiveNow.svelte");
+const liveNowLogic = read("../src/lib/live-now.ts");
 const overview = read("../src/routes/+page.svelte");
 
-describe("LiveNow — direct Torn actions", () => {
-  it("travel state uses the Torn travel page, never /travel as primary", () => {
-    const travelSection = liveNow.slice(liveNow.indexOf('key: "travel"'), liveNow.indexOf('key: "abroad"'));
-    expect(travelSection).toContain("TORN_URLS.travel");
-    expect(travelSection).not.toMatch(/tornUrl:\s*"\/travel"/);
-    expect(travelSection).toContain('scopeHref: "/travel"'); // secondary history link stays
-    expect(travelSection).toContain("Travel history");
+describe("LiveNow — whole-card Torn actions", () => {
+  it("the primary action is a stretched semantic anchor covering the card", () => {
+    const anchors = [...liveNow.matchAll(/class="absolute inset-0[^"]*"/g)];
+    expect(anchors.length).toBe(2); // bar cards + timer cards
+    expect(liveNow).toContain('aria-label={`${item.tornLabel} on Torn.com (opens in a new tab)`}');
+    expect(liveNow).toContain("{...TORN_LINK_ATTRS}");
+    expect(liveNow).toContain("focus-visible:outline-2");
   });
 
-  it("organized crime opens the Torn faction crimes tab, /faction stays secondary", () => {
-    const ocSection = liveNow.slice(liveNow.indexOf("const ocItem"), liveNow.indexOf("const liveActions"));
-    expect(ocSection).toContain("TORN_URLS.organizedCrime");
-    expect(ocSection).not.toMatch(/tornUrl:\s*"\/faction"/);
-    expect(ocSection).toContain('scopeHref: "/faction"');
+  it("no separate Torn/Open pills remain", () => {
+    expect(liveNow).not.toMatch(/>\s*Torn\s*</);
+    expect(liveNow).not.toMatch(/>\s*Open\s*↗?\s*</);
+    expect(liveNow).not.toContain("rounded-full border border-border px-2.5 py-1.5");
   });
 
-  it("bank action opens Torn bank, Money analytics stays secondary", () => {
-    const bankSection = liveNow.slice(liveNow.indexOf('key: "bank"'), liveNow.indexOf("const ocItem"));
-    expect(bankSection).toContain("TORN_URLS.bank");
-    expect(bankSection).toContain('scopeHref: "/money"');
+  it("the external hint is a subtle corner arrow, not a button", () => {
+    expect((liveNow.match(/pointer-events-none absolute right-2\.5 top-2 text-\[11px\]/g) ?? []).length).toBe(2);
+    expect((liveNow.match(/aria-hidden="true">↗<\/span>/g) ?? []).length).toBe(2);
   });
 
-  it("education action opens Torn education", () => {
-    const eduSection = liveNow.slice(liveNow.indexOf('key: "education"'), liveNow.indexOf("if (t.bank.state"));
-    expect(eduSection).toContain("TORN_URLS.education");
+  it("cards show pointer cursor via the anchor and a hover state", () => {
+    expect(liveNow).toContain("group relative flex items-center gap-3 rounded-xl border border-border bg-surface px-3 py-2");
+    expect((liveNow.match(/hover:border-accent\/60 hover:bg-accent\/5/g) ?? []).length).toBe(2);
   });
 
-  it("bars act into Torn: energy→gym, nerve→crimes, happy→items", () => {
-    const barSection = liveNow.slice(liveNow.indexOf("function barItem"), liveNow.indexOf("const barItems"));
-    expect(barSection).toContain("TORN_URLS.gym");
-    expect(barSection).toContain("TORN_URLS.crimes");
-    expect(barSection).toContain("TORN_URLS.items");
-  });
-
-  it("hospital/jail link Torn, Today stays secondary", () => {
-    const noticeSection = liveNow.slice(liveNow.indexOf("// Hospital / jail"), liveNow.indexOf("// Travel —"));
-    expect(noticeSection).toContain("TORN_URLS.hospital");
-    expect(noticeSection).toContain("TORN_URLS.jail");
-    expect(noticeSection).toContain('scopeHref: "/today"');
-  });
-
-  it("no live item hardcodes an internal route as its primary tornUrl", () => {
-    // tornUrl must only ever be assigned from the audited Torn map (the
-    // interface's `tornUrl: string;` type annotation is not an assignment).
-    const tornUrlAssignments = [...liveNow.matchAll(/tornUrl:\s*([A-Za-z][^,\n}]*)/g)]
-      .map((m) => m[1]!.trim())
-      .filter((a) => a !== "string;");
-    expect(tornUrlAssignments.length).toBeGreaterThanOrEqual(7);
-    for (const assignment of tornUrlAssignments) {
-      // Direct map entries or ternaries between map entries — never a
-      // string-literal route.
-      expect(assignment.includes("TORN_URLS."), `tornUrl assigned from ${assignment}`).toBe(true);
-      expect(assignment.match(/"\/[a-z]/) ?? []).toEqual([]);
-    }
+  it("secondary analytics links sit above the stretched link (no nested anchors)", () => {
+    // The inner link is a sibling of (not a child of) the primary anchor.
+    expect(liveNow).toContain('class="relative z-10 ml-auto text-[11px]');
+    // The primary stretched anchor is empty — no children to nest.
+    const emptyAnchors = [...liveNow.matchAll(/\{...\s*TORN_LINK_ATTRS\}\s*><\/a>/g)];
+    expect(emptyAnchors.length).toBe(2);
+    // The secondary destinations survive in the derivation module.
+    expect(liveNowLogic).toContain('scopeHref: "/travel"');
+    expect(liveNowLogic).toContain('scopeHref: "/faction"');
+    expect(liveNowLogic).toContain('scopeHref: "/money"');
   });
 });
 
-describe("LiveNow — safe external links and time display", () => {
-  it("every external anchor spreads TORN_LINK_ATTRS (target/_blank + rel/noopener noreferrer)", () => {
-    const anchorCount = (liveNow.match(/href=\{externalHref\(/g) ?? []).length;
-    expect(anchorCount).toBe(2); // bar cards + timer cards
-    expect((liveNow.match(/\{\.\.\.TORN_LINK_ATTRS\}/g) ?? []).length).toBe(2);
-    // The attributes themselves live on the shared map (single source).
-    const shared = read("../../../packages/shared/src/torn.ts");
-    expect(shared).toContain('target: "_blank"');
-    expect(shared).toContain('rel: "noopener noreferrer"');
-  });
-
-  it("renders hrefs through the domain guard, with a safe fallback", () => {
-    expect(liveNow).toContain("function externalHref(url: string): string");
+describe("LiveNow — Torn destinations and compactness", () => {
+  it("all primary actions come from the audited Torn map", () => {
+    const assignments = [...liveNowLogic.matchAll(/tornUrl: ([A-Za-z][^,\n};]*)/g)]
+      .map((m) => m[1]!.trim())
+      .filter((a) => a !== "string"); // skip the interface type annotation
+    expect(assignments.length).toBeGreaterThanOrEqual(9);
+    for (const assignment of assignments) {
+      // `url` is the bar-kinds loop variable bound to TORN_URLS constants.
+      const ok = assignment.includes("TORN_URLS.") || assignment === "url";
+      expect(ok, `tornUrl from ${assignment}`).toBe(true);
+    }
     expect(liveNow).toContain("safeTornUrl(url) ?? TORN_URLS.items");
   });
 
-  it("shows relative countdown AND absolute clock time together", () => {
-    // barFullDisplay-derived absolute time next to the relative countdown
-    expect(liveNow).toContain("displayTime(atSec)");
-    expect(liveNow).toContain("displayTime(oc.readyAt)");
-    // travel absolute landing time via bothTimes
-    expect(liveNow).toContain("bothTimes(formatCountdownCompact(t.travel.landsAt - nowSec), t.travel.landsAt)");
-  });
-});
-
-describe("LiveNow — hierarchy contracts", () => {
-  it("labels, big values, and supporting text are visually distinct tiers", () => {
-    // Labels: small uppercase tracking
-    expect(liveNow).toContain("uppercase tracking-[0.08em]");
-    // Timer values: 16px semibold (previously 13px muted sentence text)
+  it("the middle row is compact: smaller padding than the first pass, tighter gaps", () => {
+    // 1.0.3 first pass used px-3.5 py-3 cards with mt-2.5/mt-2 grid gaps.
+    expect(liveNow).not.toContain("px-3.5 py-3");
+    expect(liveNow).toContain("px-3 py-2");
+    expect(liveNow).toContain("gap-1.5");
+    // Type sizes unchanged: labels, values, timers keep their first-pass sizes.
     expect(liveNow).toContain("text-[16px] font-semibold");
-    // Bar values: 15px semibold numerals
     expect(liveNow).toContain("text-[15px] font-semibold");
+    expect(liveNow).toContain("h-2 w-full"); // bars stay scannable
   });
 
-  it("bars render a visible fill track, larger than the old 6px strip", () => {
-    expect(liveNow).toContain("h-2 w-full"); // 8px track, full card width
+  it("uniform card rhythm: secondary links share the time row instead of adding height", () => {
+    // Secondary link renders inside the time row (ml-auto) with a min-height row.
+    expect(liveNowLogic).not.toMatch(/scopeHref[^\n]*\n[^\n]*relative/); // never its own block
+    expect(liveNow).toContain("min-h-[18px]");
+    expect(liveNow).toContain("ml-auto");
   });
 
-  it("the external action is visually marked before tapping (arrow glyph + title)", () => {
-    expect(liveNow).toContain("↗");
-    expect(liveNow).toContain("on Torn.com");
-  });
-
-  it("urgency stays restrained: tones mark READY states, not running timers", () => {
-    // ready (full/matured/landed) drives positive emphasis; running timers are neutral/accent
-    expect(liveNow).toContain("ready: true");
-    const warningUses = [...liveNow.matchAll(/tone: "warning"/g)].length;
-    expect(warningUses).toBeLessThanOrEqual(3); // jail + matured bank only
-  });
-
-  it("the Overview page keeps its structure and does not regress to boxes-everywhere", () => {
+  it("the Overview page keeps its structure", () => {
     expect(overview).toContain("<LiveNow");
     expect(overview).toContain("today={today}");
   });

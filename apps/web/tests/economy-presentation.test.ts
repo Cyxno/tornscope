@@ -188,8 +188,9 @@ describe('release-candidate QA regressions', () => {
   });
 
   it('the Overview board carries a Happy bar — energy/nerve/happy at a glance (1.0.3 action-board rewrite)', () => {
-    expect(liveNow).toContain('barItem("happy")');
-    expect(liveNow).toContain('today?.bars.happy');
+    const liveNowLogic = read("../../web/src/lib/live-now.ts");
+    expect(liveNowLogic).toContain('kind: "happy"');
+    expect(liveNowLogic).toContain("today.bars.happy");
   });
 
   it('the Today updated label is suppressed while the payload is stale (no contradictory "updated just now")', () => {
@@ -198,12 +199,15 @@ describe('release-candidate QA regressions', () => {
 });
 
 describe("bank color semantics", () => {
-  it("a healthy bank countdown is neutral; only a matured investment warns", () => {
+  it("a healthy bank investment is neutral; only a matured investment warns", () => {
     // Real-user finding: "Bank" rendered warning-yellow for a normal active
-    // investment. Warning is reserved for the actionable "Matured" state;
-    // the countdown is a neutral timer. (1.0.3: same rule, action-board shape.)
-    expect(liveNow).toMatch(/tone: "neutral", ready: false, tornUrl: TORN_URLS\.bank/);
-    expect(liveNow).toMatch(/tone: "warning", ready: true, tornUrl: TORN_URLS\.bank/);
+    // investment. Warning is reserved for the collectable state. (1.0.3:
+    // logic moved to the tested derivation module and renders for ANY
+    // active investment — maturity distance no longer hides the card.)
+    const liveNowLogic = read("../../web/src/lib/live-now.ts");
+    expect(liveNowLogic).toMatch(/state: "Investment active", relative: formatCountdownCompact\(left\)/);
+    expect(liveNowLogic).toContain('state: "Investment matured", tone: "warning", ready: true');
+    expect(liveNowLogic).toMatch(/t\.bank\.state === "active" \|\| t\.bank\.state === "mature"/);
   });
 });
 
