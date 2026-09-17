@@ -1,5 +1,5 @@
 import { buildServer } from "./server.js";
-import { env, logger } from "./env.js";
+import { env, logger, validateVapidConfig } from "./env.js";
 import { getApiContext } from "./context.js";
 
 /** API entry point. */
@@ -9,6 +9,9 @@ async function main(): Promise<void> {
   }
   // Validate the encryption master key at boot (fail fast).
   getApiContext();
+  // Push configuration: shape problems warn loudly here instead of
+  // surfacing only as user-facing subscription failures.
+  validateVapidConfig();
 
   const app = await buildServer();
   await app.listen({ port: env.port, host: env.host });

@@ -8,7 +8,8 @@
   import { formatRelative } from "$lib/reltime";
   import * as td from "$lib/time-display.svelte.js";
   import StateMessage from "./StateMessage.svelte";
-  import { detectPushCapability, isIOS, isStandalone, type PushCapability } from "$lib/pwa";
+  import { detectPushCapability, type PushCapability } from "$lib/pwa";
+  import { browserPush, enablePush, enablePushFailureText } from "$lib/push";
 
   /**
    * Notification settings — the user-control surface for the canonical type
@@ -57,14 +58,9 @@
     permission = support.kind === "ok" ? support.permission : "default";
   }
 
-  function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
-    const padding = "=".repeat((4 - (base64String.length % 4)) % 8);
-    const raw = atob(base64String);
-    const buffer = new ArrayBuffer(raw.length);
-    const output = new Uint8Array(buffer);
-    for (let i = 0; i < raw.length; i++) output[i] = raw.charCodeAt(i);
-    return output;
-  }
+  // VAPID key decoding and the enable pipeline live in $lib/push (tested
+  // there): the server's key is base64URL and must be normalized before
+  // atob() — see the regression note in that module.
 
   async function refresh(): Promise<void> {
     try {
@@ -94,43 +90,27 @@
   async function enable(): Promise<void> {
     busy = true;
     notice = null;
-    try {
-      const keyRes = await endpoints.notificationsVapidPublicKey();
-      if (!keyRes.publicKey) {
-        notice = { tone: "err", text: "Push is not configured on this server yet." };
-        return;
-      }
-      if (Notification.permission !== "granted") {
-        const requested = await Notification.requestPermission();
-        permission = requested;
-        support = { kind: "ok", permission: requested };
-        if (requested !== "granted") {
-          notice = { tone: "err", text: "Browser permission was not granted." };
-          return;
-        }
-      }
-      const reg = await ensureServiceWorker();
-      const existing = await reg.pushManager.getSubscription();
-      const sub =
-        existing ??
-        (await reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(keyRes.publicKey),
-        }));
-      const json = sub.toJSON();
-      if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) {
-        notice = { tone: "err", text: "The browser returned an incomplete subscription." };
-        return;
-      }
-      currentEndpoint = json.endpoint;
-      await endpoints.notificationsSubscribe({ endpoint: json.endpoint, keys: json.keys as { p256dh: string; auth: string } });
+    const outcome = await enablePush(browserPush(), {
+      vapidPublicKey: () => endpoints.notificationsVapidPublicKey().then((res) => res.publicKey),
+      registerSubscription: (subscription) => endpoints.notificationsSubscribe(subscription).then(() => undefined),
+    });
+    // Re-read live state: the permission prompt may have changed it, and the
+    // header guidance keys off `permission === "denied"`.
+    detectSupport();
+    if (outcome.ok) {
+      currentEndpoint = outcome.endpoint;
       notice = { tone: "ok", text: "Notifications enabled on this device." };
       await refresh();
-    } catch (err) {
-      notice = { tone: "err", text: err instanceof ApiClientError ? err.message : (err as Error).message };
-    } finally {
-      busy = false;
+    } else {
+      notice = { tone: "err", text: enablePushFailureText(outcome.kind) };
     }
+    busy = false;
+  }
+
+  // Server-authored messages (ApiClientError) are fine to surface; anything
+  // else is a raw browser exception and must never reach the user verbatim.
+  function pushFailureText(err: unknown): string {
+    return err instanceof ApiClientError ? err.message : enablePushFailureText("unknown");
   }
 
   async function disableThisDevice(): Promise<void> {
@@ -143,7 +123,7 @@
       notice = { tone: "ok", text: "Notifications disabled on this device." };
       await refresh();
     } catch (err) {
-      notice = { tone: "err", text: err instanceof ApiClientError ? err.message : (err as Error).message };
+      notice = { tone: "err", text: pushFailureText(err) };
     } finally {
       busy = false;
     }
@@ -165,7 +145,7 @@
         : { tone: "err", text: "The notification could not be delivered." };
       await refresh();
     } catch (err) {
-      notice = { tone: "err", text: err instanceof ApiClientError ? err.message : (err as Error).message };
+      notice = { tone: "err", text: pushFailureText(err) };
     } finally {
       testing = false;
     }

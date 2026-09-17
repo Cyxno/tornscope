@@ -41,6 +41,30 @@ function parseTrustProxy(raw: string | undefined): boolean | string {
   return value;
 }
 
+/** Decoded byte length of a base64url/base64 VAPID value, or null when the
+ *  string is not decodable. Lengths only — never the material itself. */
+function vapidDecodedLength(value: string): number | null {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (value.length % 4)) % 4);
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(normalized)) return null;
+  const bytes = Buffer.from(normalized, "base64");
+  return bytes.length > 0 ? bytes.length : null;
+}
+
+/** Boot-time push configuration sanity: warn (never crash) when keys are
+ *  present but not the P-256 shapes web-push expects, so a bad key is
+ *  diagnosable from server logs instead of from user-facing errors. */
+export function validateVapidConfig(): void {
+  if (env.vapidPublicKey === "" && env.vapidPrivateKey === "") return;
+  const publicBytes = vapidDecodedLength(env.vapidPublicKey);
+  const privateBytes = vapidDecodedLength(env.vapidPrivateKey);
+  if (publicBytes !== 65) {
+    logger.warn({ publicBytes }, "VAPID_PUBLIC_KEY does not decode to a 65-byte P-256 public key — push subscriptions will fail");
+  }
+  if (privateBytes !== 32) {
+    logger.warn({ privateBytes }, "VAPID_PRIVATE_KEY does not decode to a 32-byte scalar — push delivery will fail");
+  }
+}
+
 export const env = {
   port: Number(process.env.API_PORT ?? 3000),
   host: process.env.API_HOST ?? "0.0.0.0",
@@ -59,10 +83,12 @@ export const env = {
    */
   trustProxy: parseTrustProxy(process.env.TRUST_PROXY),
   /** Web Push VAPID keys. Private key NEVER leaves the server; the public
-   *  key is served to browsers (required for push subscription). */
-  vapidPublicKey: process.env.VAPID_PUBLIC_KEY ?? "",
-  vapidPrivateKey: process.env.VAPID_PRIVATE_KEY ?? "",
-  vapidSubject: process.env.VAPID_SUBJECT ?? "mailto:alerts@tornscope.local",
+   *  key is served to browsers (required for push subscription). Values are
+   *  trimmed: stray whitespace/CRLF from env-file parsing would otherwise
+   *  break every client-side key decode and server-side VAPID signing. */
+  vapidPublicKey: (process.env.VAPID_PUBLIC_KEY ?? "").trim(),
+  vapidPrivateKey: (process.env.VAPID_PRIVATE_KEY ?? "").trim(),
+  vapidSubject: (process.env.VAPID_SUBJECT ?? "mailto:alerts@tornscope.local").trim(),
   /** Owner binding stays enabled until explicitly disabled post-migration. */
   /** Abandoned anonymous profiles older than this are cleaned up. */
   guestRetentionDays: Number(process.env.GUEST_PROFILE_RETENTION_DAYS ?? 60),

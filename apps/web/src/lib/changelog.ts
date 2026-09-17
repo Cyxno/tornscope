@@ -17,7 +17,7 @@ export interface ChangelogEntry {
 }
 
 export interface ChangelogRelease {
-  /** Exact release tag (e.g. "v1.0.0"); the current in-progress release uses its plain version ("1.0.1") until tagged. */
+  /** Exact release tag (e.g. "v1.0.0"); the current in-progress release uses its plain version ("1.0.2") until tagged. */
   version: string;
   /** Release date (YYYY-MM-DD) when known — from the tag, never guessed. */
   date?: string;
@@ -34,10 +34,21 @@ export const CHANGELOG_KINDS: ChangelogKind[] = ["Added", "Improved", "Fixed", "
 
 export const CHANGELOG: ChangelogRelease[] = [
   {
+    version: "1.0.2",
+    date: "2026-09-17",
+    stage: "Public Testing",
+    current: true,
+    summary: "Hotfix: enabling push notifications failed on every browser — most visibly on iPhone, where Safari reports it as \"The string contains invalid characters.\"",
+    changes: [
+      { kind: "Fixed", text: "Notifications — enabling push works again. The server's VAPID public key is base64URL; a settings-rebuild regression fed it to the browser's decoder unnormalized, which browsers reject (WebKit's wording: \"The string contains invalid characters.\") before subscription even starts." },
+      { kind: "Improved", text: "Notifications — enable/disable/test failures now explain themselves in plain language (permission blocked, server key misconfigured, service worker unavailable, subscription refused) instead of surfacing raw browser exceptions." },
+      { kind: "Technical", text: "Push key decoding and the enable pipeline moved into a tested module (base64url normalization, 65-byte P-256 validation) with secret-free diagnostic logging; the API trims VAPID env values and warns at boot when a key has the wrong shape." },
+    ],
+  },
+  {
     version: "1.0.1",
     date: "2026-09-16",
     stage: "Public Testing",
-    current: true,
     summary: "First maintenance release on the production-only workflow: two chart fixes, a notification reliability fix and this changelog.",
     changes: [
       { kind: "Fixed", text: "Overview — the net-worth chart no longer blanks while you hover it; the tooltip, line and area stay visible and mouse-out is clean." },
