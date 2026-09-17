@@ -16,7 +16,7 @@
  * TornScope analytics route as an explicit secondary link.
  */
 import type { TodayResponse } from "@tornscope/shared";
-import { formatCountdownCompact, remainingSeconds, TORN_URLS } from "@tornscope/shared";
+import { formatCountdownCompact, formatMoneyCompact, remainingSeconds, TORN_URLS } from "@tornscope/shared";
 import { cooldownDisplay, barFullDisplay } from "./live";
 
 export interface LiveItem {
@@ -181,18 +181,26 @@ function deriveTimers(
 
   // Bank investment — renders for ANY active investment, however far the
   // maturity (the 1.0.3 regression: investments beyond a 7-day window
-  // disappeared). Warning only when the money is collectable.
+  // disappeared). MATURE = READY TO COLLECT (B): Torn keeps the payout in
+  // the bank until the user withdraws, and reports it by CLEARING the
+  // until-timestamp — so a mature state with no timer is the actionable
+  // case, shown with the payout amount as the prominent figure.
   if (t.bank.state === "active" || t.bank.state === "mature") {
     const left = t.bank.maturesAt !== null ? t.bank.maturesAt - nowSec : null;
     if (t.bank.state === "mature" || (left !== null && left <= 0)) {
       out.push(item({
-        key: "bank", label: "Bank", state: "Investment matured", tone: "warning", ready: true,
-        tornUrl: TORN_URLS.bank, tornLabel: "Open bank", scopeHref: "/money", scopeLabel: "Money",
+        key: "bank", label: "Bank", state: "Ready to collect",
+        relative: t.bank.amount !== null ? formatMoneyCompact(t.bank.amount) : null,
+        tone: "warning", ready: true,
+        tornUrl: TORN_URLS.bank, tornLabel: "Collect your bank investment",
+        scopeHref: "/money", scopeLabel: "Money",
       }));
     } else if (left !== null) {
       out.push(item({
-        key: "bank", label: "Bank", state: "Investment active", relative: formatCountdownCompact(left),
-        absolute: displayTime(t.bank.maturesAt!), tone: "neutral", ready: false,
+        key: "bank", label: "Bank", state: "Investment active",
+        relative: formatCountdownCompact(left),
+        absolute: t.bank.maturesAt !== null ? displayTime(t.bank.maturesAt) : null,
+        tone: "neutral", ready: false,
         tornUrl: TORN_URLS.bank, tornLabel: "Open bank", scopeHref: "/money", scopeLabel: "Money",
       }));
     } else {

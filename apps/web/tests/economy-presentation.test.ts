@@ -205,8 +205,9 @@ describe("bank color semantics", () => {
     // logic moved to the tested derivation module and renders for ANY
     // active investment — maturity distance no longer hides the card.)
     const liveNowLogic = read("../../web/src/lib/live-now.ts");
-    expect(liveNowLogic).toMatch(/state: "Investment active", relative: formatCountdownCompact\(left\)/);
-    expect(liveNowLogic).toContain('state: "Investment matured", tone: "warning", ready: true');
+    expect(liveNowLogic).toMatch(/state: "Investment active",[\s\S]*?relative: formatCountdownCompact\(left\)/);
+    expect(liveNowLogic).toContain('state: "Ready to collect"');
+    expect(liveNowLogic).toMatch(/tone: "warning", ready: true/);
     expect(liveNowLogic).toMatch(/t\.bank\.state === "active" \|\| t\.bank\.state === "mature"/);
   });
 });

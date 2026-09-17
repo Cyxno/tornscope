@@ -120,7 +120,11 @@ export const UserMoneySchema = loose({
     company: z.number(),
     vault: z.number(),
     cayman_bank: z.number(),
-    city_bank: loose({ amount: z.number(), profit: z.number(), duration: z.number(), interest_rate: z.number(), until: z.number(), invested_at: z.number() }).nullable(),
+    // Torn CLEARS `until` (null) the moment a city-bank investment matures
+    // while keeping `amount` at the full payout until the user withdraws.
+    // profit/invested_at are tolerated nullable defensively — the assembler
+    // already handles null forms. (Verified against live payloads 2026-09.)
+    city_bank: loose({ amount: z.number(), profit: z.number().nullable(), duration: z.number(), interest_rate: z.number(), until: z.number().nullable(), invested_at: z.number().nullable() }).nullable(),
     faction: loose({ money: z.number(), points: z.number() }).nullable(),
     daily_networth: z.number(),
   }),

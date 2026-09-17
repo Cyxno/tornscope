@@ -672,12 +672,39 @@ export function assembleBank(nowSec: number, money: TornUserMoney): BankStatus {
     };
   }
 
-  const maturesAt = normalizeTornTimestamp(city.until, nowSec);
   // Principal = payout value minus exact projected profit. Verified against
   // the money ledger: "Bank invest" transfers match amount - profit exactly.
   const principal = city.profit !== null && city.profit < city.amount ? city.amount - city.profit : null;
   const returnPct = principal !== null && principal > 0 && city.profit !== null ? (city.profit / principal) * 100 : null;
   const annualizedPct = returnPct !== null && city.duration > 0 ? (returnPct * 365) / city.duration : null;
+  const investedAt = city.invested_at !== null && city.invested_at >= 1e9 ? city.invested_at : null;
+
+  // MATURE / READY TO COLLECT — detected from the ACTUAL Torn response, not
+  // just a time comparison: Torn CLEARS `city_bank.until` (null) the moment
+  // the term completes while keeping `amount` at the full payout until the
+  // user withdraws. The money still sits in the bank, so the investment
+  // stays a visible actionable state. (Verified live 2026-09; before this
+  // branch the null timestamp failed the money schema and the whole bank
+  // section reported "unavailable" — the card silently vanished.)
+  if (city.until === null) {
+    return {
+      state: "mature",
+      amount: city.amount,
+      principal,
+      profit: city.profit,
+      returnPct: returnPct !== null ? Math.round(returnPct * 100) / 100 : null,
+      annualizedPct: annualizedPct !== null ? Math.round(annualizedPct * 10) / 10 : null,
+      durationDays: city.duration,
+      investedAt,
+      maturesAt: null,
+      remainingSeconds: 0,
+      provenance: "exact",
+      unavailableReason: null,
+      requiredAccess: null,
+    };
+  }
+
+  const maturesAt = normalizeTornTimestamp(city.until, nowSec);
   return {
     state: maturesAt <= nowSec ? "mature" : "active",
     amount: city.amount,
@@ -686,7 +713,7 @@ export function assembleBank(nowSec: number, money: TornUserMoney): BankStatus {
     returnPct: returnPct !== null ? Math.round(returnPct * 100) / 100 : null,
     annualizedPct: annualizedPct !== null ? Math.round(annualizedPct * 10) / 10 : null,
     durationDays: city.duration,
-    investedAt: city.invested_at >= 1e9 ? city.invested_at : null,
+    investedAt,
     maturesAt,
     remainingSeconds: Math.max(0, maturesAt - nowSec),
     provenance: "exact",

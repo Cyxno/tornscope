@@ -76,20 +76,20 @@ describe("bank investment card (the 1.0.3 regression)", () => {
     expect(bank!.state).toBe("Investment active");
   });
 
-  it("a matured investment (state mature) warns and is ready", () => {
-    const t = todayPayload({ state: "mature", maturesAt: 999_000, remainingSeconds: 0 });
+  it("a matured investment (state mature) shows Ready to collect with the payout amount", () => {
+    const t = todayPayload({ state: "mature", maturesAt: 999_000, remainingSeconds: 0, amount: 352_152_800 });
     const bank = bankOf(deriveLiveBoard(t, NO_OCS, NOW_MS, fakeDisplayTime));
     expect(bank).toBeTruthy();
-    expect(bank!.state).toBe("Investment matured");
+    expect(bank!.state).toBe("Ready to collect");
+    expect(bank!.relative).toBe("$352.15m"); // the payout IS the big figure
     expect(bank!.tone).toBe("warning");
     expect(bank!.ready).toBe(true);
-    expect(bank!.relative).toBeNull();
   });
 
-  it("an active investment whose clock ran out (left <= 0) is matured, never a negative countdown", () => {
+  it("an active investment whose clock ran out (left <= 0) is Ready to collect, never a negative countdown", () => {
     const t = todayPayload({ state: "active", maturesAt: 999_000, remainingSeconds: 0 });
     const bank = bankOf(deriveLiveBoard(t, NO_OCS, NOW_MS, fakeDisplayTime));
-    expect(bank!.state).toBe("Investment matured");
+    expect(bank!.state).toBe("Ready to collect");
     expect(bank!.ready).toBe(true);
   });
 
