@@ -111,10 +111,15 @@ jobs:
       API_KEY_ENCRYPTION_KEY: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
       GIT_SHA: ${{ github.sha }}
       COMPOSE_PROJECT_NAME: tornscope-smoke
+      # CI exercises the SOURCE-BUILD path (base compose + build override) —
+      # the same Dockerfiles the publish-images workflow ships to GHCR.
+      COMPOSE_FILE: docker-compose.yml:docker-compose.build.yml
     steps:
       - uses: actions/checkout@v4
       - name: Validate compose config with CI env
         run: docker compose config --quiet
+      - name: Validate prebuilt compose config (base file alone)
+        run: docker compose -f docker-compose.yml config --quiet
       - name: Build production images (api, worker, web)
         run: docker compose build
       - name: Smoke test (up → readiness → /api/ready)

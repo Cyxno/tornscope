@@ -1,0 +1,51 @@
+# TornScope SOURCE-BUILD override — developers and contributors only.
+#
+# The default install path needs no builds (docker-compose.yml pulls prebuilt
+# GHCR images). This override restores the local build definitions — the same
+# docker/ Dockerfiles the published images are built from — so everything
+# still works exactly as before prebuilt images existed:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+#
+# Export GIT_SHA when you want the running stack to report a real commit
+# (GIT_SHA=$(git rev-parse HEAD) docker compose ... up -d --build); otherwise
+# images stamp the honest fallback "dev". Runtime configuration (environment,
+# hardening, healthchecks) lives only in docker-compose.yml and is identical
+# for both paths.
+#
+# The migrate service builds the api.Dockerfile "migrator" stage under a
+# distinct local tag so the one-shot migration image never clobbers the
+# tornscope-api image tag built by the api service (same Dockerfile, different
+# target stages).
+
+services:
+  migrate:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-dev}
+      target: migrator
+    image: tornscope-migrate:local
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-dev}
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/worker.Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-dev}
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+      args:
+        API_BASE_URL: http://api:3000
+        GIT_SHA: ${GIT_SHA:-dev}

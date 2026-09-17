@@ -106,9 +106,14 @@ fi
 # ---- 6. Compose variants valid ----------------------------------------------
 section "compose"
 if POSTGRES_PASSWORD=preflight API_KEY_ENCRYPTION_KEY=$(printf 'a%.0s' {1..64}) docker compose -f docker-compose.yml config --quiet >/dev/null 2>&1; then
-  ok "docker-compose.yml valid"
+  ok "docker-compose.yml valid (prebuilt GHCR images)"
 else
   fail "docker-compose.yml invalid"
+fi
+if POSTGRES_PASSWORD=preflight API_KEY_ENCRYPTION_KEY=$(printf 'a%.0s' {1..64}) docker compose -f docker-compose.yml -f docker-compose.build.yml config --quiet >/dev/null 2>&1; then
+  ok "docker-compose.yml + build override valid (source-build path)"
+else
+  fail "docker-compose.yml + docker-compose.build.yml invalid"
 fi
 if [[ -f .env.dev ]] && docker compose --env-file .env.dev -f docker-compose.dev.yml config --quiet >/dev/null 2>&1; then
   ok "docker-compose.dev.yml valid"

@@ -56,8 +56,23 @@ proves the tree is internally coherent whatever it is).
       value, enforced by `scripts/version-check.mjs`).
 - [ ] Upgrade/upgrade-checklist docs for operators updated when behavior,
       env vars or migrations changed.
+- [ ] `.env.example` `TORNSCOPE_VERSION` updated to the release version.
 
-## 6. Deployment
+## 6. Container image publication
+
+- [ ] Push the annotated `vX.Y.Z` tag to main — the `publish-images` workflow
+      (`.github/workflows/publish-images.yml`) builds
+      `tornscope-web` / `tornscope-api` / `tornscope-worker` for
+      linux/amd64 + linux/arm64 and pushes exact `X.Y.Z` + full-SHA tags.
+- [ ] Only after ALL three images have pushed does the workflow promote the
+      floating `latest` / `X.Y` / `X` tags (a partial release never becomes
+      `latest`). Verify the run's promote job succeeded.
+- [ ] Tags are never re-pointed after publication; a broken release ships a
+      new `X.Y.(Z+1)` instead.
+- [ ] Package visibility checked after the first publish (GHCR packages start
+      private; flip to Public for public self-hosting).
+
+## 7. Deployment
 
 - [ ] Dev stack ran the exact release SHA with green gates before promotion.
 - [ ] `scripts/deploy-prod.sh` is the only production path: branch/dirty/

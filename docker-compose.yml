@@ -1,3 +1,22 @@
+# TornScope production compose — PREBUILT IMAGES (default install path).
+#
+# App services pull ready-made images from GHCR; only Docker is required, no
+# Node/pnpm toolchain. PostgreSQL and Redis intentionally stay official
+# upstream images — TornScope does not publish its own.
+#
+#   Version pinning (recommended): TORNSCOPE_VERSION=1.0.3 in .env
+#   `latest` tracks the current stable release.
+#
+# Build TornScope from SOURCE instead (developers / contributors):
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+# The override file restores the local build definitions (same Dockerfiles the
+# published images are built from); runtime configuration below is identical
+# for both paths, so this file stays the single source of runtime truth.
+#
+# The Cyxno production server does NOT use this file: scripts/deploy-prod.sh
+# deploys docker-compose.unraid.yml (local builds + hardened build-identity
+# verification) and is unaffected by this file.
+
 name: tornscope
 
 services:
@@ -32,26 +51,22 @@ services:
       timeout: 5s
       retries: 10
 
+  # One-shot migration runner. Reuses the published API image (same
+  # filesystem as the api.Dockerfile "migrator" stage it was built from), so
+  # no fourth package is needed; the entrypoint/working_dir override reproduces
+  # the migrator stage's exact command.
   migrate:
-    build:
-      context: .
-      dockerfile: docker/api.Dockerfile
-      args:
-        GIT_SHA: ${GIT_SHA:-dev}
-      target: migrator
+    image: ${TORNSCOPE_REGISTRY:-ghcr.io/cyxno}/tornscope-api:${TORNSCOPE_VERSION:-latest}
+    working_dir: /app/packages/database
+    entrypoint: ["npx", "prisma", "migrate", "deploy"]
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-tornscope}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-tornscope}?schema=public
-    command: ["npx", "prisma", "migrate", "deploy"]
     depends_on:
       postgres:
         condition: service_healthy
 
   api:
-    build:
-      context: .
-      dockerfile: docker/api.Dockerfile
-      args:
-        GIT_SHA: ${GIT_SHA:-dev}
+    image: ${TORNSCOPE_REGISTRY:-ghcr.io/cyxno}/tornscope-api:${TORNSCOPE_VERSION:-latest}
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
@@ -95,11 +110,7 @@ services:
         condition: service_healthy
 
   worker:
-    build:
-      context: .
-      dockerfile: docker/worker.Dockerfile
-      args:
-        GIT_SHA: ${GIT_SHA:-dev}
+    image: ${TORNSCOPE_REGISTRY:-ghcr.io/cyxno}/tornscope-worker:${TORNSCOPE_VERSION:-latest}
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
@@ -127,12 +138,7 @@ services:
         condition: service_healthy
 
   web:
-    build:
-      context: .
-      dockerfile: docker/web.Dockerfile
-      args:
-        API_BASE_URL: http://api:3000
-        GIT_SHA: ${GIT_SHA:-dev}
+    image: ${TORNSCOPE_REGISTRY:-ghcr.io/cyxno}/tornscope-web:${TORNSCOPE_VERSION:-latest}
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true

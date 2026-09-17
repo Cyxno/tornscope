@@ -1,0 +1,178 @@
+# Publish TornScope application images to GHCR (github.com/Cyxno?tab=packages).
+#
+# Tagging contract (docs/RELEASE-CHECKLIST.md + README "Docker images"):
+#   - tag push v1.2.3        -> per-image exact tags 1.2.3 + <full-commit-sha>,
+#                               then floating latest/1.2/1 promoted ONLY after
+#                               all three images built and pushed successfully
+#                               (a partial release never becomes `latest`).
+#   - tag push v1.2.3-rc.1   -> exact prerelease tag + SHA tag; no floating tags.
+#   - workflow_dispatch      -> SHA-tagged images only (pre-release validation
+#                               builds; never touches stable tags).
+# PostgreSQL/Redis are NOT published — those stay official upstream images.
+#
+# Build identity: GIT_SHA=<full commit sha> is baked in as at any local build,
+# so the API keeps stamping x-tornscope-build and deploy-prod.sh's hardened
+# verification keeps working for GHCR-based installs.
+
+name: Publish images
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+# Minimum required: read the code, write packages. No repo write access.
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publish-images-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  OWNER: cyxno
+
+jobs:
+  build:
+    name: Build tornscope-${{ matrix.image }}
+    # Never publish from forks — GITHUB_TOKEN would target their own namespace.
+    if: github.repository == 'Cyxno/tornscope'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: web
+            description: SvelteKit frontend for TornScope.
+          - image: api
+            description: Fastify API and database migration runtime for TornScope.
+          - image: worker
+            description: BullMQ synchronization and notification worker for TornScope.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Derive version + tags
+        id: tags
+        env:
+          IMAGE: ${{ matrix.image }}
+        run: |
+          set -euo pipefail
+          base="${REGISTRY}/${OWNER}/tornscope-${IMAGE}"
+          # Full commit SHA: matches the x-tornscope-build header exactly, so a
+          # SHA tag is provably traceable to the commit it was built from.
+          tags="${base}:${GITHUB_SHA}"
+          version=""
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            if   [[ "${GITHUB_REF_NAME}" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+              version="${BASH_REMATCH[1]}"
+            elif [[ "${GITHUB_REF_NAME}" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)- ]]; then
+              version="${BASH_REMATCH[1]}"
+            else
+              echo "::warning::Tag ${GITHUB_REF_NAME} is not a semver release tag — publishing SHA-only image"
+            fi
+          fi
+          if [[ -n "${version}" ]]; then
+            tags="${base}:${version}"$'\n'"${tags}"
+          fi
+          {
+            echo "version=${version}"
+            echo "tags<<EOF"
+            echo "${tags}"
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/${{ matrix.image }}.Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          # No attestations for now: keeps pushed tags plain multi-arch
+          # manifest lists (maximum client compatibility). Revisit later —
+          # correctness and predictable tagging come first.
+          provenance: false
+          tags: ${{ steps.tags.outputs.tags }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.title=tornscope-${{ matrix.image }}
+            org.opencontainers.image.description=${{ matrix.description }}
+            org.opencontainers.image.version=${{ steps.tags.outputs.version || github.sha }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.licenses=MIT
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+          cache-from: type=gha,scope=publish-${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=publish-${{ matrix.image }}
+
+      - name: Record digest
+        env:
+          IMAGE: ${{ matrix.image }}
+          VERSION: ${{ steps.tags.outputs.version }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          # Pin the exact artifact in the run summary (index digest — one per
+          # multi-arch image, identical across all of its tags).
+          echo "tornscope-${IMAGE} ${VERSION:-${GITHUB_SHA}} -> ${REGISTRY}/${OWNER}/tornscope-${IMAGE}@${DIGEST}" | tee -a "${GITHUB_STEP_SUMMARY}"
+
+  promote:
+    name: Promote floating tags (latest / X.Y / X)
+    needs: build
+    # Only version tags reach this job; the strict stable-semver gate and
+    # prerelease filtering happen in the step below.
+    if: ${{ github.repository == 'Cyxno/tornscope' && startsWith(github.ref_name, 'v') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Promote all three images only when the release is complete
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          # Strict stable-semver gate: prereleases (v1.2.3-rc.1) and non-semver
+          # v-tags never move latest/minor/major.
+          if ! [[ "${VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Tag ${VERSION} is not a stable semver release — no floating-tag promotion."
+            exit 0
+          fi
+          version="${VERSION#v}"
+          major="${version%%.*}"
+          minor="${version%.*}"
+          for image in web api worker; do
+            base="${REGISTRY}/${OWNER}/tornscope-${image}"
+            # Hard gate: if ANY image's exact version tag is missing, the
+            # release is incomplete — abort instead of promoting a mixed set.
+            docker buildx imagetools inspect "${base}:${version}" > /dev/null
+          done
+          for image in web api worker; do
+            base="${REGISTRY}/${OWNER}/tornscope-${image}"
+            docker buildx imagetools create \
+              -t "${base}:latest" \
+              -t "${base}:${minor}" \
+              -t "${base}:${major}" \
+              "${base}:${version}"
+          done
+          echo "==> Floating tags promoted from ${version}"
+          for image in web api worker; do
+            docker buildx imagetools inspect "${REGISTRY}/${OWNER}/tornscope-${image}:latest"
+          done

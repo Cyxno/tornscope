@@ -10,6 +10,7 @@ TornScope is a self-hostable [Torn](https://www.torn.com) analytics and history 
 | --- | --- |
 | **Version** | 1.0.x — [Public Testing](https://tornscope.cyxno.eu) |
 | **CI** | [GitHub Actions](.github/workflows/ci.yml): lint, typecheck, svelte-check, tests, build, Docker smoke |
+| **Docker images** | [![Docker images on GHCR](https://img.shields.io/badge/images-ghcr.io%2Fcyxno-2088FF)](https://github.com/Cyxno?tab=packages&repo_name=tornscope) published per release — web / api / worker |
 | **Runtime** | Docker Compose (Node ≥ 20.19, PostgreSQL, Redis) |
 | **License** | [MIT](LICENSE) |
 | **Demo** | Synthetic demo profile — explore without a real API key |
@@ -142,6 +143,31 @@ flowchart LR
 - Docker + Docker Compose (recommended), **or**
 - Node.js ≥ 20.19, PostgreSQL 14+, Redis 6+, pnpm ≥ 10
 
+## Docker images
+
+The application images are published to the GitHub Container Registry on every release — installing TornScope needs **only Docker**, no Node/pnpm toolchain:
+
+| Image | Purpose |
+| --- | --- |
+| `ghcr.io/cyxno/tornscope-web` | SvelteKit frontend |
+| `ghcr.io/cyxno/tornscope-api` | Fastify API and database migration runtime |
+| `ghcr.io/cyxno/tornscope-worker` | BullMQ synchronization and notification worker |
+
+PostgreSQL and Redis intentionally keep their official upstream images — TornScope publishes only its own three application images.
+
+**Tags** (all three images are tagged identically per release):
+
+| Tag | Meaning |
+| --- | --- |
+| `1.0.3` | Exact release — **recommended**, pin it via `TORNSCOPE_VERSION` in `.env` |
+| `1` / `1.0` | Rolling major / minor line — moves with new releases |
+| `latest` | Current stable release |
+| `<full-commit-sha>` | Built from exactly that commit — matches the API's `x-tornscope-build` header for exact reproducibility |
+
+- Multi-arch: images are built for **`linux/amd64` and `linux/arm64`** (x86 servers, ARM homelabs, Raspberry Pi-class hosts, Apple Silicon Linux VMs).
+- The floating tags (`latest`, `1`, `1.0`) only move after **all three** images of a release have published — `latest` is never a partially-released mix.
+- Published version tags are immutable in practice and never re-pointed.
+
 ## Quick Start
 
 **Linux / macOS:**
@@ -156,7 +182,8 @@ sed -i.bak "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$(openssl rand -hex 16)/" 
 # API key encryption master key (32 bytes = 64 hex chars, AES-256-GCM)
 sed -i.bak "s/^API_KEY_ENCRYPTION_KEY=.*/API_KEY_ENCRYPTION_KEY=$(openssl rand -hex 32)/" .env && rm .env.bak
 
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 ```
 
 **Windows PowerShell** (5.1 or later):
@@ -176,10 +203,21 @@ $masterKey  = -join ($keyBytes | ForEach-Object { $_.ToString("x2") })
   $_ -replace '^POSTGRES_PASSWORD=.*$', "POSTGRES_PASSWORD=$pgPassword" -replace '^API_KEY_ENCRYPTION_KEY=.*$', "API_KEY_ENCRYPTION_KEY=$masterKey"
 } | Set-Content .env -Encoding UTF8
 
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 ```
 
-Both variants generate `POSTGRES_PASSWORD` (the database password) and `API_KEY_ENCRYPTION_KEY` (the AES-256-GCM master key that protects stored API keys) and write them straight into `.env` — no copy/pasting secrets. Every other value keeps its localhost default, which works out of the box.
+Both variants generate `POSTGRES_PASSWORD` (the database password) and `API_KEY_ENCRYPTION_KEY` (the AES-256-GCM master key that protects stored API keys) and write them straight into `.env` — no copy/pasting secrets. Every other value keeps its localhost default, which works out of the box. Compose pulls the published GHCR images (`TORNSCOPE_VERSION` in `.env` selects the release; `.env.example` pins the current stable).
+
+### Build from source (alternative)
+
+Prefer compiling the images yourself — e.g. for development or an air-gapped tweak? The same Dockerfiles the published images come from build locally; Docker is still the only requirement:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+```
+
+`docker-compose.build.yml` only adds the build definitions — runtime configuration is identical either way. Export `GIT_SHA=$(git rev-parse HEAD)` before building if you want the API's `x-tornscope-build` header to report the real commit (otherwise images honestly stamp `dev`).
 
 Then open **http://localhost:5173**, follow the welcome flow and paste your Torn API key (limited permissions work; more access unlocks additional analytics). The worker starts collecting history immediately — first sync covers up to 180 days of available Torn history.
 
@@ -236,10 +274,14 @@ Full guide — forwarded host/proto, client-IP chain depth, `TRUST_PROXY`, Cloud
 
 ```bash
 git pull
-docker compose up -d --build
+# bump TORNSCOPE_VERSION in .env to the new release (or set `latest` to always track stable)
+docker compose pull
+docker compose up -d
 ```
 
-Database migrations apply automatically on startup (the `migrate` service runs before API/worker). Your PostgreSQL volume persists across rebuilds — collected history is kept. Back up before major updates; see [Backup & restore](#backup--restore).
+Database migrations apply automatically on startup (the `migrate` service runs before API/worker). Your PostgreSQL volume persists across updates — collected history is kept. Back up before major updates; see [Backup & restore](#backup--restore).
+
+Source-build users: run the same update with `-f docker-compose.yml -f docker-compose.build.yml` and `--build`.
 
 ## Backup & restore
 
