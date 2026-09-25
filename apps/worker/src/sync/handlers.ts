@@ -71,6 +71,11 @@ export interface SyncHandlerArgs {
    */
   capabilities?: KeyCapabilities | null;
   onProgress?: (recordsSoFar: number) => void;
+  /**
+   * Mark the current sub-step so a hard job deadline (see deadline.ts) can
+   * report exactly which await was still pending when it fired.
+   */
+  setPhase?: (phase: string) => void;
 }
 
 export type SyncHandlerResult = {
@@ -792,6 +797,8 @@ export const syncFactionBasic: SyncHandler = async ({ userId, torn }) => {
 export const syncFaction: SyncHandler = async (args) => {
   const ctx = getWorkerContext();
   const caps = args.capabilities ?? null;
+  const setPhase = args.setPhase ?? (() => undefined);
+  setPhase("faction:torn_fetch");
   const [basicFull, members, balance] = await Promise.all([
     args.torn.factionBasicFull(),
     // Skip sub-fetches the key cannot answer — never hammer denied endpoints.
@@ -801,6 +808,7 @@ export const syncFaction: SyncHandler = async (args) => {
   const f = basicFull.basic;
   if (typeof f.id !== "number") return { records: 0 };
 
+  setPhase("faction:db_upsert_faction");
   await upsertFaction(ctx.db, {
     id: f.id,
     name: String(f.name ?? ""),
@@ -813,12 +821,14 @@ export const syncFaction: SyncHandler = async (args) => {
     members: typeof f.members === "number" ? f.members : null,
     bestChain: typeof f.best_chain === "number" ? f.best_chain : null,
   });
+  setPhase("faction:db_snapshot");
   await insertFactionSnapshot(ctx.db, args.userId, f.id, new Date(), typeof f.members === "number" ? f.members : null, typeof f.respect === "number" ? f.respect : null, f);
 
   let memberRows = 0;
   if (members) {
     // Roster with real identity (Torn id, name, position, level, days in
     // faction, last action) — names persist for members who later leave.
+    setPhase("faction:db_member_roster");
     memberRows = await upsertFactionMemberRoster(
       ctx.db,
       args.userId,
@@ -845,6 +855,7 @@ export const syncFaction: SyncHandler = async (args) => {
       members: (balance.balance.members ?? []) as unknown as never,
       capturedAt: new Date(),
     };
+    setPhase("faction:db_balance_snapshot");
     await upsertFactionBalanceSnapshot(ctx.db, args.userId, input);
     balanceRows = 1;
   }
@@ -858,6 +869,7 @@ export const syncFaction: SyncHandler = async (args) => {
     logger.debug({ userId: args.userId }, "faction armory news skipped: key lacks armorynews access");
   } else {
     try {
+      setPhase("faction:armory_news_walk");
       armoryEvents = await walkFactionArmoryNews(args, ctx.db, f.id);
     } catch (err) {
       logger.warn({ err: (err as Error).message, userId: args.userId }, "faction armory news walk failed; continuing");

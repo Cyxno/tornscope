@@ -45,6 +45,12 @@ fi
 echo "==> Production deploy from main @ $(git rev-parse --short HEAD)"
 echo "    compose: $COMPOSE_FILE (project: tornscope)"
 
+# Postgres storage preflight: HARD ABORT before any container is built or
+# restarted unless postgres is (and stays) on the Unraid bind mount
+# /mnt/user/appdata/tornscope/postgres. A wrong compose file here used to
+# recreate postgres against an empty named volume (2026-09-25 incident).
+"$(dirname "$0")/preflight-postgres-path.sh" "$COMPOSE_FILE"
+
 export GIT_SHA GIT_SHA_SHORT
 GIT_SHA=$(git rev-parse HEAD)
 GIT_SHA_SHORT=$(git rev-parse --short HEAD)

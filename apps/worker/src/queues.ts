@@ -29,8 +29,12 @@ export function createSyncQueue(redisUrl: string): Queue<SyncJobData> {
     defaultJobOptions: {
       removeOnComplete: { count: 500 },
       removeOnFail: { count: 500 },
-      // A sync must not hang forever; Torn pagination is bounded per handler.
-      attempts: 1,
+      // A sync must not hang forever; Torn pagination is bounded per handler
+      // and the runner enforces a hard deadline (deadline.ts). One retry after
+      // a fixed backoff so a transient failure (incl. deadline) is retried
+      // while the queue keeps draining either way.
+      attempts: 2,
+      backoff: { type: "fixed", delay: 60_000 },
     },
   });
 }

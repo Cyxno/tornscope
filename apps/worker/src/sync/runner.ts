@@ -2,6 +2,7 @@ import { TornApiError, TornNetworkError } from "@tornscope/torn-api";
 import { claimResource, completeResource, progressResource, recordSyncRun, ensureSyncStates } from "@tornscope/database";
 import { CAPABILITY_RECHECK_SECONDS, deriveKeyCapabilities, hasCompleteCapabilityShape, normalizeCapabilitiesWithFallback, resourceAllowed, resourceRequirementLabel, tornKindToReason, TtlMap, type KeyCapabilities, type SyncResource } from "@tornscope/shared";
 import { SYNC_HANDLERS } from "./handlers.js";
+import { SyncDeadlineError, SYNC_JOB_DEADLINE_MS, createPhaseTracker, withDeadline } from "./deadline.js";
 import { getWorkerContext } from "../context.js";
 import { logger } from "../env.js";
 
@@ -10,6 +11,8 @@ export interface SyncOutcome {
   skipped?: boolean;
   records?: number;
   error?: string;
+  /** Hard job deadline fired: BullMQ should fail + retry the job once. */
+  deadlineExceeded?: boolean;
 }
 
 /**
@@ -112,6 +115,9 @@ export async function runResourceSync(
 ): Promise<SyncOutcome> {
   const ctx = getWorkerContext();
   const startedAt = new Date();
+  // Phase marker for the hard job deadline: on timeout we log exactly which
+  // await was still pending (Torn fetch vs a specific DB write etc.).
+  const phase = createPhaseTracker("db:find_credential");
   logger.info({ userId, resource, stage: "job_received" }, "sync job received");
 
   const credential = await ctx.db.apiCredential.findFirst({
@@ -124,6 +130,7 @@ export async function runResourceSync(
   }
 
   await ensureSyncStates(ctx.db, userId);
+  phase.phase = "db:claim_resource";
   const claim = await claimResource(ctx.db, userId, resource, startedAt);
   if (!claim.claimed || !claim.state) {
     logger.info({ userId, resource }, "sync skipped: resource busy or not claimable");
@@ -146,6 +153,7 @@ export async function runResourceSync(
 
   let apiKey: string;
   try {
+    phase.phase = "decrypt_credential";
     apiKey = await ctx.decryptCredential(credential);
   } catch (err) {
     stopRunHeartbeat();
@@ -161,6 +169,7 @@ export async function runResourceSync(
   // capability_denied (NOT failed) and re-checked only infrequently — manual
   // syncs surface a "permission required" state instead of a sync error, and
   // replacing the key re-enables the resource immediately.
+  phase.phase = "capabilities:detect";
   const caps = await resolveCapabilities(ctx, userId, credential, apiKey);
   if (!resourceAllowed(caps, resource)) {
     stopRunHeartbeat();
@@ -204,15 +213,24 @@ export async function runResourceSync(
   try {
     const { endpoints: torn, metrics } = ctx.createTorn(apiKey);
     logger.info({ userId, resource, stage: "torn_requests" }, "calling torn api");
-    const result = await handler({
-      userId,
-      apiKey,
-      torn,
-      lastTimestamp: claim.state.lastTimestamp,
-      force: opts.force === true,
-      capabilities: caps,
-      onProgress,
-    });
+    phase.phase = "handler:start";
+    const result = await withDeadline(
+      handler({
+        userId,
+        apiKey,
+        torn,
+        lastTimestamp: claim.state.lastTimestamp,
+        force: opts.force === true,
+        capabilities: caps,
+        onProgress,
+        setPhase: (p) => {
+          phase.phase = p;
+        },
+      }),
+      phase,
+      SYNC_JOB_DEADLINE_MS
+    );
+    phase.phase = "db:commit_result";
     logger.info({ userId, resource, stage: "records_written", records: result.records }, "torn responses normalized and written");
 
     // Commit whatever the handler counted beyond the last heartbeat.
@@ -270,7 +288,16 @@ export async function runResourceSync(
     return { ok: true, records: result.records };
   } catch (err) {
     stopRunHeartbeat();
-    const reason = failureReason(err);
+    if (err instanceof SyncDeadlineError) {
+      // The hard deadline fired: report exactly where the run was stuck so
+      // the next wedge is diagnosable from logs alone. The resource is
+      // marked failed and re-enqueued shortly; the queue moves on.
+      logger.error(
+        { userId, resource, stage: "job_deadline_exceeded", phase: err.phase, deadlineMs: SYNC_JOB_DEADLINE_MS, elapsedMs: err.elapsedMs },
+        "sync failed: hard job deadline exceeded"
+      );
+    }
+    const reason = err instanceof SyncDeadlineError ? "deadline_exceeded" : failureReason(err);
     // Torn rejected the request because the key's access level is too low:
     // the stored capability blob is stale relative to reality. Record the
     // resource as capability_denied (NOT failed) — previously collected
@@ -324,6 +351,6 @@ export async function runResourceSync(
 
     const level = err instanceof TornApiError && err.kind === "key_invalid" ? "error" : "warn";
     logger[level]({ userId, resource, err: message, kind: err instanceof TornApiError ? err.kind : "unknown", reason, stage: "job_failed" }, "sync failed");
-    return { ok: false, error: message };
+    return { ok: false, error: message, deadlineExceeded: err instanceof SyncDeadlineError };
   }
 }

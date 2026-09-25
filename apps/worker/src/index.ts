@@ -3,6 +3,7 @@ import { maybeRunDailyMaintenance } from "./maintenance.js";
 import { maybeTopUpDemoData } from "@tornscope/database";
 import { evaluateNotifications } from "./notifications/engine.js";
 import { runResourceSync } from "./sync/runner.js";
+import { PROCESSOR_DEADLINE_GRACE_MS, SYNC_JOB_DEADLINE_MS, SyncDeadlineError, createPhaseTracker, withDeadline } from "./sync/deadline.js";
 import { env, logger } from "./env.js";
 import { queueRedis } from "./redis.js";
 import {
@@ -45,11 +46,21 @@ async function main(): Promise<void> {
   const syncWorker = createSyncWorker(env.redisUrl, async (job) => {
     const data = job.data as SyncJobData;
     logger.info({ userId: data.userId, resource: data.resource, manual: data.manual === true, stage: "job_received" }, "sync job received");
-    const outcome = await runResourceSync(data.userId, data.resource as never, { force: data.manual === true });
+    // Last-resort hard wrap: runResourceSync already enforces a deadline on
+    // the handler, but this guard also covers the runner's own bookkeeping
+    // (e.g. failure writes to a wedged DB) so the worker slot is ALWAYS
+    // released. Rejecting here fails the job in BullMQ (attempts: 2).
+    const outcome = await withDeadline(
+      runResourceSync(data.userId, data.resource as never, { force: data.manual === true }),
+      createPhaseTracker("runResourceSync"),
+      SYNC_JOB_DEADLINE_MS + PROCESSOR_DEADLINE_GRACE_MS
+    );
     if (!outcome.ok && !outcome.skipped) {
-      // Job-level failure is already recorded in sync_state + sync_run;
-      // do not retry automatically to respect the API budget.
+      // Job-level failure is already recorded in sync_state + sync_run.
+      // A deadline hit is rethrown so BullMQ records the failure and runs
+      // its single retry; other failures are not retried (API budget).
       logger.warn({ userId: data.userId, resource: data.resource, error: outcome.error, stage: "job_failed" }, "sync job failed");
+      if (outcome.deadlineExceeded) throw new SyncDeadlineError("runResourceSync", SYNC_JOB_DEADLINE_MS);
     }
     return outcome;
   });
