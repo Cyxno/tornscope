@@ -31,6 +31,11 @@ import type {
   TravelTripDto,
   NotificationsStatusResponse,
   NotificationHistoryResponse,
+  CommandCenterResponse,
+  GoalsResponse,
+  Goal,
+  InsightsResponse,
+  SystemHealthResponse,
 } from "@tornscope/shared";
 
 /**
@@ -120,6 +125,9 @@ export const api = {
     ),
   /** DELETE never carries a body or content-type. */
   del: <T>(path: string) => request<T>(path, { method: "DELETE" }),
+  /** JSON PATCH (goal edits). */
+  patch: <T>(path: string, body: unknown) =>
+    request<T>(path, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
 };
 
 /* Typed helpers matching the shared contracts. */
@@ -233,4 +241,13 @@ export const endpoints = {
   notificationsTest: (endpoint: string) =>
     api.post<{ sent: boolean; outcome: "sent" | "expired" | "provider-rejected" | "failed" }>("/notifications/test", { endpoint }),
   notificationsVapidPublicKey: () => api.get<{ publicKey: string | null }>("/notifications/vapid-public-key"),
+
+  // ---- 2.0 intelligence ----
+  commandCenter: () => api.get<CommandCenterResponse>("/command-center"),
+  goals: (lookbackDays?: 7 | 30 | 90) => api.get<GoalsResponse>(`/goals${lookbackDays ? `?lookbackDays=${lookbackDays}` : ""}`),
+  createGoal: (input: { metric: string; target: number; note?: string | null; targetDate?: number | null }) => api.post<{ goal: Goal }>("/goals", input),
+  updateGoal: (id: string, patch: { target?: number; note?: string | null; targetDate?: number | null; status?: "active" | "archived" }) => api.patch<{ goal: Goal }>(`/goals/${id}`, patch),
+  deleteGoal: (id: string) => api.del<{ deleted: boolean }>(`/goals/${id}`),
+  insights: () => api.get<InsightsResponse>("/insights"),
+  systemHealth: () => api.get<SystemHealthResponse>("/system/health"),
 };

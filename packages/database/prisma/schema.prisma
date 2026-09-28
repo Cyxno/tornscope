@@ -99,6 +99,7 @@ model User {
   notificationDeliveries NotificationDelivery[]
   notificationEvents   NotificationEvent[]
   todayLastKnown       TodayLastKnown?
+  goals                Goal[]
 }
 
 /// The Torn player connected to a user.
@@ -1041,4 +1042,29 @@ model NotificationState {
   updatedAt      DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// Personal goals (2.0) — "reach target X on metric M (by date D)". Targets
+/// are BigInt (money-safe); the API layer converts to Number (every Torn
+/// value sits far below 2^53). Additive table: nothing existing is touched,
+/// and profile deletion cascades. `status` is active | achieved | archived;
+/// achievement is written by lazy evaluation on read and by the worker.
+model Goal {
+  id         String    @id @default(cuid())
+  userId     String
+  /// GOAL_METRIC_IDS (shared/goals): networth, liquid_wealth,
+  /// battlestats_total, strength, defense, speed, dexterity, level.
+  metric     String
+  target     BigInt
+  note       String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  targetDate DateTime?
+  status     String    @default("active")
+  achievedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([userId, metric])
 }

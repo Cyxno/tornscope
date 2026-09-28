@@ -352,7 +352,7 @@ async function main(): Promise<void> {
   // expired / test rows in Settings. The notification worker NEVER evaluates
   // demo profiles, so these rows can never produce a real Web Push. Routine
   // top-ups do NOT touch notifications at all.
-  const notifDefaults = { energy_full: false, travel_arrival: true, drug_cooldown: true, trades: true, mail: true };
+  const notifDefaults = { energy_full: false, travel_arrival: true, drug_cooldown: true, trades: true, mail: true, goal_achieved: true, goal_milestone: true, oc_ready_soon: true, significant_insight: false };
   await db.notificationPreference.create({
     data: {
       userId: user.id,
@@ -392,6 +392,8 @@ async function main(): Promise<void> {
     { type: "energy_full", dedupeKey: `energy:full:${now - 9 * 3600}`, ageSec: 9 * 3600, title: "Energy full", body: "Your energy bar is full.", status: "expired", reason: "expired", clickPath: "/today" },
     { type: "major_cash_movement", dedupeKey: "cash:money_logs:demo-large-out", ageSec: 7 * 3600, title: "Large outgoing payment", body: "A payment of $82.4m was recorded (faction).", status: "suppressed", reason: "quiet_hours", clickPath: "/money" },
     { type: "capability_lost", dedupeKey: `capability:lost:money_logs:${now - 5 * DAY}`, ageSec: 5 * DAY, title: "Torn access was removed", body: "Wallet history stopped syncing. Your existing history is retained; new data is no longer collected.", status: "delivered", clickPath: "/settings", sentTo: 1 },
+    { type: "goal_achieved", dedupeKey: "goal:achieved:demo-networth-80", ageSec: 6 * DAY, title: "Goal reached: Net worth", body: "Your Net worth goal has been reached. Mark it done or raise the bar.", status: "delivered", provenance: "derived", clickPath: "/goals", sentTo: 2 },
+    { type: "goal_milestone", dedupeKey: "goal:milestone:demo-networth-125:50", ageSec: 2 * 3600, title: "Goal 50%: Net worth", body: "You are 50% of the way to your Net worth goal.", status: "delivered", provenance: "derived", clickPath: "/goals", sentTo: 2 },
     { type: "test", dedupeKey: `test:${now - 2 * DAY}`, ageSec: 2 * DAY, title: "TornScope test", body: "Push notifications are working on this device.", status: "delivered", sentTo: 1 },
   ];
 
@@ -426,6 +428,38 @@ async function main(): Promise<void> {
         },
       });
     }
+  }
+
+  /* ------------------------------ demo goals (2.0) ----------------------- */
+  // Anchored to the generated history so progress/projections are meaningful:
+  // one achieved, one mid-flight with a milestone, one long-horizon stat goal.
+  const latestNw = await db.networthSnapshot.findFirst({
+    where: { userId: user.id },
+    orderBy: { capturedAt: "desc" },
+    select: { total: true },
+  });
+  const nwTotal = latestNw ? Number(latestNw.total) : 0;
+  const latestStats = await db.personalStatSnapshot.findFirst({
+    where: { userId: user.id },
+    orderBy: { capturedAt: "desc" },
+    select: { stats: true },
+  });
+  const statTotal = (() => {
+    const stats = (latestStats?.stats ?? {}) as { battle_stats?: { strength?: number; defense?: number; speed?: number; dexterity?: number } };
+    const bs = stats.battle_stats ?? {};
+    const values = [bs.strength, bs.defense, bs.speed, bs.dexterity].filter((v): v is number => typeof v === "number");
+    return values.length === 4 ? values.reduce((a, b) => a + b, 0) : null;
+  })();
+
+  const demoGoals: Array<{ metric: string; target: bigint; note?: string; status: string; achievedAt?: Date }> = [
+    { metric: "networth", target: BigInt(Math.max(1, Math.round(nwTotal * 0.8))), note: "Reached on the way up", status: "achieved", achievedAt: new Date((now - 6 * DAY) * 1000) },
+    { metric: "networth", target: BigInt(Math.round(nwTotal * 1.25)), note: "Next quarter-billion milestone", status: "active" },
+  ];
+  if (statTotal !== null) {
+    demoGoals.push({ metric: "battlestats_total", target: BigInt(Math.round(statTotal * 1.5)), note: "Long-run gym target", status: "active" });
+  }
+  for (const goal of demoGoals) {
+    await db.goal.create({ data: { userId: user.id, metric: goal.metric, target: goal.target, note: goal.note ?? null, status: goal.status, achievedAt: goal.achievedAt ?? null } });
   }
 
   // The watermark starts AT the seed: the first routine top-up is due after

@@ -22,8 +22,8 @@ describe("changelog data source", () => {
     for (const required of ["v0.1.0-beta.1", "v0.1.1", "v0.1.3", "v1.0.0"]) {
       expect(versions, `missing release ${required}`).toContain(required);
     }
-    // latest-first: the running maintenance release leads the history
-    expect(versions[0]).toBe("1.0.4");
+    // latest-first: the running (in-progress, not-yet-tagged) release leads
+    expect(versions[0]).toBe("2.0.0");
     expect(new Set(versions).size).toBe(versions.length);
   });
 
@@ -38,7 +38,7 @@ describe("changelog data source", () => {
 
   it("marks the running release as current and stages every release", () => {
     expect(CHANGELOG.filter((r) => r.current)).toHaveLength(1);
-    expect(CHANGELOG.find((r) => r.current)?.version).toBe("1.0.4");
+    expect(CHANGELOG.find((r) => r.current)?.version).toBe("2.0.0");
     for (const r of CHANGELOG) {
       expect(r.stage.length).toBeGreaterThan(0);
       expect(r.changes.length).toBeGreaterThan(0);

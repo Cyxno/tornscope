@@ -31,6 +31,7 @@ import { bigintToNumber, getPrismaClient, isOcPayoutRow, loadMarketPrices } from
 import { getNetworthPeriodForRange } from "./networth.js";
 import { loadAvailabilityContext, sectionAvailability } from "./availability.js";
 import { resourceConfidence } from "./confidence.js";
+import { buildEconomyIntelligence } from "./economyIntelligence.js";
 
 /** Sale categories whose proceeds are asset conversions, not earnings. */
 const SALE_CATEGORIES = new Set(["bazaar", "items", "trading", "auction"]);
@@ -466,8 +467,7 @@ export async function getEconomySummary(userId: string, rangeInput: DateRangeInp
       inventoryValueRemoved: sold.inventoryValueRemoved,
       economicResult: salesEconomicResult,
       provenance: sold.inventoryValueRemoved !== null ? "estimated" : "unavailable",
-    },
-    nonCashGains: {
+    },    nonCashGains: {
       value: nonCash,
       provenance: nonCash !== null ? "estimated" : "unavailable",
     },
@@ -514,6 +514,7 @@ export async function getEconomySummary(userId: string, rangeInput: DateRangeInp
       networth: networthConfidence,
       travel: travelConfidence,
     },
+    intelligence: await buildEconomyIntelligence(userId, range.from, range.to),
   };
 }
 

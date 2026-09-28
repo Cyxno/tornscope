@@ -154,6 +154,8 @@
   const ecoEffect = $derived(economy?.economicEffect);
   const wallet = $derived(economy?.wallet);
   const nwChange = $derived(economy?.networth.change ?? null);
+  // travel-day record is estimatedProfit (catalog resale value), not profit
+  const travelDayRecord = $derived(economy?.intelligence?.records.mostProfitableTravelDay ?? null); // estimatedProfit, not profit
 
   // SUMMARY FIRST (V0.2 hierarchy rule): the wealth result opens, wallet
   // turnover comes last — in Torn it describes transient staging (wealth
@@ -505,6 +507,70 @@
                   merged into it.
                 </p>
               </details>
+
+              {#if economy.intelligence}
+                {@const intel = economy.intelligence}
+                <Panel
+                  title="Wealth intelligence"
+                  caption="Velocity from official snapshots; the projection is a straight-line trend, never a promise"
+                >
+                  <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                    {#each intel.velocity as v (v.lookbackDays)}
+                      <div class="rounded-tile border border-border bg-surface-2 p-4">
+                        <p class="text-[11px] font-medium text-fg-faint">{v.lookbackDays}-day velocity{v.coverage === "partial" ? " (tracked span)" : ""}</p>
+                        <p class="tnum mt-1 text-lg font-semibold" class:text-fg={v.velocityPerDay !== null} class:text-fg-faint={v.velocityPerDay === null}>
+                          {v.velocityPerDay !== null ? formatSignedMoneyCompact(v.velocityPerDay) : "—"}/day
+                        </p>
+                        <p class="mt-0.5 text-[10px] text-fg-faint">
+                          {#if v.trend.confidence === "insufficient"}
+                            Not enough snapshot history
+                          {:else}
+                            Trend confidence: {v.trend.confidence}
+                          {/if}
+                        </p>
+                      </div>
+                    {/each}
+                  </div>
+                  <p class="mt-3 text-xs leading-relaxed text-fg-muted">
+                    {#if intel.projection.projectedIn30d !== null && intel.projection.current !== null}
+                      The 30-day trend points at roughly <span class="tnum font-medium text-fg">{formatMoneyCompact(intel.projection.projectedIn30d)}</span> in 30 days
+                      (from {formatMoneyCompact(intel.projection.current)}, confidence {intel.projection.confidence}). A projection, not a prediction — market moves dominate any horizon.
+                    {:else}
+                      No 30-day projection shown — the trend is {intel.projection.confidence === "insufficient" ? "not yet measurable from your history" : "too flat or noisy to project honestly"}.
+                    {/if}
+                  </p>
+                  <dl class="mt-4 grid grid-cols-2 gap-x-6 gap-y-2 border-t border-border pt-3 text-xs sm:grid-cols-3">
+                    <div>
+                      <dt class="text-fg-faint">Earned income (range)</dt>
+                      <dd class="tnum font-medium text-positive">{formatSignedMoneyCompact(intel.attribution.earnedIncome)}</dd>
+                    </div>
+                    <div>
+                      <dt class="text-fg-faint">True spending (range)</dt>
+                      <dd class="tnum font-medium text-negative">{formatSignedMoneyCompact(-intel.attribution.spending)}</dd>
+                    </div>
+                    <div>
+                      <dt class="text-fg-faint">Asset sales / purchases</dt>
+                      <dd class="tnum font-medium text-fg-muted">{formatMoneyCompact(intel.attribution.assetSales)} / {formatMoneyCompact(intel.attribution.assetPurchases)}</dd>
+                    </div>
+                    <div>
+                      <dt class="text-fg-faint">Net worth movement (range)</dt>
+                      <dd class="tnum font-medium text-fg">{intel.attribution.netWorthChange !== null ? formatSignedMoneyCompact(intel.attribution.netWorthChange) : "—"}</dd>
+                    </div>
+                    <div>
+                      <dt class="text-fg-faint" title="Net worth movement minus ledger-known flows: market repricing and non-ledger movement">Market & other (residual)</dt>
+                      <dd class="tnum font-medium text-fg-muted">{intel.attribution.unexplainedMovement !== null ? formatSignedMoneyCompact(intel.attribution.unexplainedMovement) : "—"}</dd>
+                    </div>
+                  </dl>
+                  <ul class="mt-4 flex flex-wrap gap-x-5 gap-y-1.5 border-t border-border pt-3 text-[11px] text-fg-muted">
+                    <li>Record: highest net worth <span class="tnum font-medium text-fg">{intel.records.highestNetWorth ? formatMoneyCompact(intel.records.highestNetWorth.value) : "—"}</span></li>
+                    <li>Highest wallet <span class="tnum font-medium text-fg">{intel.records.highestWalletBalance ? formatMoneyCompact(intel.records.highestWalletBalance.value) : "—"}</span></li>
+                    <li>Best income day <span class="tnum font-medium text-fg">{intel.records.bestIncomeDay ? formatMoneyCompact(intel.records.bestIncomeDay.value) : "—"}</span></li>
+                    <li>Largest expense day <span class="tnum font-medium text-fg">{intel.records.largestExpenseDay ? formatMoneyCompact(intel.records.largestExpenseDay.value) : "—"}</span></li>
+                    <li>Best wealth day <span class="tnum font-medium text-fg">{intel.records.highestDailyWealthGrowth ? formatSignedMoneyCompact(intel.records.highestDailyWealthGrowth.value) : "—"}</span></li>
+                    <li>Best travel day (estimated) <span class="tnum font-medium text-fg">{travelDayRecord ? formatMoneyCompact(travelDayRecord.value) : "—"}</span></li>
+                  </ul>
+                </Panel>
+              {/if}
 
               <Panel title="Likely contributors — recorded movements, not proven causes" caption="Official Torn category deltas first; estimated effects and the unexplained residual are labeled as such">
                 {#if recordedContributors.length === 0 && residualContributors.length === 0}

@@ -10,7 +10,7 @@ export interface NavItem {
   label: string;
   icon: IconName;
   /** System pages sit at the end of the sheet and in the footer. */
-  group: "core" | "analytics" | "activity" | "system";
+  group: "core" | "analytics" | "intelligence" | "activity" | "system";
 }
 
 export const NAV_GROUPS: Array<{ id: NavItem["group"]; label: string; items: NavItem[] }> = [
@@ -20,6 +20,14 @@ export const NAV_GROUPS: Array<{ id: NavItem["group"]; label: string; items: Nav
     items: [
       { href: "/", label: "Overview", icon: "overview", group: "core" },
       { href: "/today", label: "Today", icon: "today", group: "core" },
+    ],
+  },
+  {
+    id: "intelligence",
+    label: "Intelligence",
+    items: [
+      { href: "/goals", label: "Goals", icon: "goal", group: "intelligence" },
+      { href: "/insights", label: "Insights", icon: "insight", group: "intelligence" },
     ],
   },
   {
@@ -48,8 +56,9 @@ export const NAV_GROUPS: Array<{ id: NavItem["group"]; label: string; items: Nav
     id: "system",
     label: "System",
     items: [
-      { href: "/changelog", label: "Changelog", icon: "changelog", group: "system" },
+      { href: "/system", label: "System health", icon: "sync", group: "system" },
       { href: "/sync", label: "Sync status", icon: "sync", group: "system" },
+      { href: "/changelog", label: "Changelog", icon: "changelog", group: "system" },
       { href: "/settings", label: "Settings", icon: "settings", group: "system" },
     ],
   },

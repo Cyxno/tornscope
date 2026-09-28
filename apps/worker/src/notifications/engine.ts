@@ -24,6 +24,7 @@ import {
   evaluateEconomyProducer,
   evaluateDailySummaryProducer,
 } from "./producers.js";
+import { evaluateGoalsProducer, evaluateInsightProducer, evaluateOcProducer } from "./goals.js";
 
 /**
  * Central notification engine (runs inside the existing worker process).
@@ -581,6 +582,9 @@ async function evaluateUser(userId: string, timezone: string): Promise<void> {  
   await evaluateProgressionProducer(ctx, (state?.systemState ?? null) as Record<string, unknown> | null, updateSystemState);
   await evaluateEconomyProducer(ctx, (state?.systemState ?? null) as Record<string, unknown> | null, updateSystemState);
   await evaluateDailySummaryProducer(ctx, updateSystemState);
+  await evaluateGoalsProducer(ctx, (state?.systemState ?? null) as Record<string, unknown> | null, updateSystemState);
+  await evaluateOcProducer(ctx, (state?.systemState ?? null) as Record<string, unknown> | null, updateSystemState);
+  await evaluateInsightProducer(ctx, updateSystemState);
 }
 
 /**

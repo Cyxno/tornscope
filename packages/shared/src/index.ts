@@ -16,3 +16,7 @@ export * from "./oc.js";
 export * from "./labels.js";
 export * from "./notifications.js";
 export * from "./push-endpoint.js";
+export * from "./goals.js";
+export * from "./freshness.js";
+export * from "./insights.js";
+export * from "./command-center.js";

@@ -16,3 +16,5 @@ export type { TopUpResult, TopUpStatus } from "./demo/topup.js";
 export { generateDemoHistory } from "./demo/generator.js";
 export type { DemoContinuationState, DemoGenerationResult } from "./demo/generator.js";
 export * from "./repositories/faction.js";
+export { getGoalFacts, gatherInsightFacts, loadTripsWindow, networthRowToFields } from "./repositories/intelligence-facts.js";
+export type { NetworthSnapshotRow } from "./repositories/intelligence-facts.js";

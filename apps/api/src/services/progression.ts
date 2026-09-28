@@ -10,13 +10,16 @@ import {
 import {
   battlestatProgression,
   buildBattlestatSeries,
+  buildEnergyCappedHours,
   buildEnergyLedger,
+  buildTrainingIntelligence,
   detectHappyJumps,
   detectStatMilestones,
   detectTrainingSessions,
   efficiencyBaseline,
   extractStatCounters,
   sessionMedians,
+  shapeEnergyInputs,
   trainingFrequency,
   XANAX_ENERGY_ESTIMATE,
   type BattlestatPoint,
@@ -64,16 +67,8 @@ const cap = (raw: string | undefined, fallback: number): number => {
 const EVIDENCE_MAX_ROWS = cap(process.env.PROGRESSION_EVIDENCE_MAX_ROWS, 20_000);
 const LEVELS_MAX_ROWS = cap(process.env.PROGRESSION_LEVELS_MAX_ROWS, 2_000);
 const BASELINE_WINDOW_SECONDS = 30 * 86_400;
-const ATTACK_COMPETITION_SECONDS = 900;
-
 /** Extract the exact refilled energy from a raw points-refill log payload. */
 function refillEnergyFromMetadata(metadata: unknown): number | null {
-  const amount = (metadata as { data?: { energy_increased?: unknown } } | null)?.data?.energy_increased;
-  return typeof amount === "number" && Number.isFinite(amount) && amount > 0 ? amount : null;
-}
-
-/** Extract the exact energy delta from an item-use consumption payload. */
-function energyFromConsumptionMetadata(metadata: unknown): number | null {
   const amount = (metadata as { data?: { energy_increased?: unknown } } | null)?.data?.energy_increased;
   return typeof amount === "number" && Number.isFinite(amount) && amount > 0 ? amount : null;
 }
@@ -355,6 +350,17 @@ export async function getProgression(userId: string, rangeInput: DateRangeInput)
       jumps,
       confidence: logsConfidence,
     },
+    // Training Intelligence 2.0: fixed trailing windows anchored at the viewed
+    // period end (`to`) — same inferred sessions, one inference path.
+    trainingIntelligence: buildTrainingIntelligence({
+      now: to,
+      sessions: allSessions,
+      energyCappedHours: buildEnergyCappedHours(
+        barsRows.map((r) => ({ capturedAt: sec(r.capturedAt), energyCurrent: r.energyCurrent, energyMaximum: r.energyMaximum })),
+        to - 37 * 86_400,
+        to
+      ),
+    }),
     profile: {
       level: levelRows.length > 0 ? levelRows[levelRows.length - 1]!.level : null,
       levelHistory: levelRows.map((r) => ({ t: sec(r.capturedAt), level: r.level })),
@@ -532,36 +538,4 @@ interface CombatRow {
   occurredAt: Date;
 }
 
-/** Map raw refill/drug/consumption/combat rows into canonical ledger inputs. */
-function shapeEnergyInputs(
-  refillRows: RefillRow[],
-  drugRows: DrugRow[],
-  consumptionRows: ConsumptionRow[],
-  combatRows: CombatRow[]
-): { gains: EnergyGainEvent[]; competing: CompetingWindow[] } {
-  const gains: EnergyGainEvent[] = [];
-  for (const r of refillRows) {
-    const amount = refillEnergyFromMetadata(r.metadata);
-    if (amount !== null) gains.push({ t: sec(r.occurredAt), amount, category: "refill", provenance: "exact" });
-  }
-  for (const r of drugRows) {
-    if (r.drugName === "Xanax" && r.outcome === "success") {
-      // Documented game convention: normal Xanax logs record NO energy
-      // field. The canonical amount is applied per use, provenance
-      // "estimated"; cap interactions surface via reconciliation overshoot.
-      gains.push({ t: sec(r.occurredAt), amount: XANAX_ENERGY_ESTIMATE, category: "xanax", provenance: "estimated" });
-    }
-  }
-  for (const r of consumptionRows) {
-    if (r.category === "energy") {
-      const amount = energyFromConsumptionMetadata(r.metadata);
-      if (amount !== null) gains.push({ t: sec(r.occurredAt), amount, category: "energy_drink", provenance: "exact" });
-    }
-  }
-  const competing: CompetingWindow[] = combatRows.map((r) => ({
-    from: sec(r.occurredAt) - ATTACK_COMPETITION_SECONDS,
-    to: sec(r.occurredAt) + ATTACK_COMPETITION_SECONDS,
-    kind: "attack" as const,
-  }));
-  return { gains, competing };
-}
+

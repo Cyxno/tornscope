@@ -2,6 +2,7 @@ import { z } from "zod";
 import { MONEY_CATEGORIES, MONEY_DIRECTIONS, SYNC_RESOURCES } from "./torn.js";
 import type { Provenance } from "./provenance.js";
 import { SYNC_OPERATIONAL_STATES, SYNC_OPERATION_REASONS } from "./sync-health.js";
+import { DataFreshnessEntrySchema } from "./freshness.js";
 
 /* -------------------------------------------------------------------------- */
 /* Date range                                                                 */
@@ -785,6 +786,54 @@ export const EconomySummaryResponseSchema = z.object({
     consumption: DataConfidenceMetaSchema,
     networth: DataConfidenceMetaSchema,
     travel: DataConfidenceMetaSchema,
+  }),
+  /** 2.0 economy intelligence — wealth velocity, trend projection, attribution and personal records (all derived from stored data). */
+  intelligence: z.object({
+    velocity: z.array(
+      z.object({
+        lookbackDays: z.number(),
+        change: z.number().nullable(),
+        velocityPerDay: z.number().nullable(),
+        coverage: z.enum(["full", "partial", "none"]),
+        trend: z.object({
+          velocityPerDay: z.number().nullable(),
+          slopePerDay: z.number().nullable(),
+          fitR2: z.number().nullable(),
+          confidence: z.enum(["high", "medium", "low", "insufficient"]),
+          window: z.object({ from: z.number().nullable(), to: z.number().nullable(), points: z.number(), spanDays: z.number().nullable() }),
+        }),
+      })
+    ),
+    projection: z.object({
+      current: z.number().nullable(),
+      projectedIn30d: z.number().nullable(),
+      velocityPerDay: z.number().nullable(),
+      confidence: z.enum(["high", "medium", "low", "insufficient"]),
+      lookbackDays: z.number(),
+      horizonDays: z.number(),
+      provenance: z.literal("derived"),
+    }),
+    attribution: z.object({
+      from: z.number(),
+      to: z.number(),
+      earnedIncome: z.number(),
+      spending: z.number(),
+      assetSales: z.number(),
+      assetPurchases: z.number(),
+      netWorthChange: z.number().nullable(),
+      unexplainedMovement: z.number().nullable(),
+      netWorthCoverage: z.enum(["full", "partial", "none"]),
+      unknownShare: z.number(),
+      provenance: z.literal("derived"),
+    }),
+    records: z.object({
+      highestNetWorth: z.object({ value: z.number(), at: z.number(), provenance: z.enum(["exact", "estimated"]) }).nullable(),
+      highestWalletBalance: z.object({ value: z.number(), at: z.number(), provenance: z.enum(["exact", "estimated"]) }).nullable(),
+      bestIncomeDay: z.object({ value: z.number(), at: z.number(), provenance: z.enum(["exact", "estimated"]) }).nullable(),
+      largestExpenseDay: z.object({ value: z.number(), at: z.number(), provenance: z.enum(["exact", "estimated"]) }).nullable(),
+      highestDailyWealthGrowth: z.object({ value: z.number(), at: z.number(), provenance: z.enum(["exact", "estimated"]) }).nullable(),
+      mostProfitableTravelDay: z.object({ value: z.number(), at: z.number(), provenance: z.enum(["exact", "estimated"]) }).nullable(),
+    }),
   }),
 });
 export type EconomySummaryResponse = z.infer<typeof EconomySummaryResponseSchema>;
@@ -1757,6 +1806,8 @@ export const SyncHealthResponseSchema = z.object({
   setupPhase: z.enum(["no_key", "queued", "syncing", "partial", "caught_up", "failed"]),
   /** Requested history window (worker config) coverage is judged against. */
   requestedHistoryDays: z.number(),
+  /** 2.0 user-facing per-domain data freshness (worst-of-resources derivation). */
+  freshness: z.array(DataFreshnessEntrySchema),
   resources: z.array(
     z.object({
       resource: SyncResourceSchema,
@@ -1990,6 +2041,23 @@ export type StatMilestoneDto = z.infer<typeof StatMilestoneSchema>;
  * exists only from BarsSnapshot collection start; battlestat history comes
  * from hourly personalstat snapshots (battle_stats).
  */
+/* -------------------------------------------------------------------------- */
+/* Training Intelligence 2.0 (progression extension)                           */
+/* -------------------------------------------------------------------------- */
+
+const TrainingPeriodStatsSchema = z.object({
+  from: z.number(),
+  to: z.number(),
+  label: z.string(),
+  sessions: z.number(),
+  energyTrained: z.number().nullable(),
+  statGain: z.number().nullable(),
+  gainPerEnergyMedian: z.number().nullable(),
+  cappedHours: z.number(),
+});
+
+const TrainingRecordSchema = z.object({ value: z.number(), at: z.number(), sampleSize: z.number() });
+
 export const ProgressionResponseSchema = z.object({
   range: z.object({ from: z.number(), to: z.number() }),
   generatedAt: z.number(),
@@ -2116,6 +2184,34 @@ export const ProgressionResponseSchema = z.object({
     jumps: z.array(HappyJumpSchema),
     confidence: DataConfidenceMetaSchema,
   }),
+  /** 2.0 Training Intelligence — trailing 7d/7d/30d windows, records and the (correlational) time-of-day observation. */
+  trainingIntelligence: z.object({
+    current: TrainingPeriodStatsSchema,
+    previous: TrainingPeriodStatsSchema,
+    baseline30d: TrainingPeriodStatsSchema,
+    records: z.object({
+      bestGainPerEnergyDay: TrainingRecordSchema.nullable(),
+      bestStatGainDay: TrainingRecordSchema.nullable(),
+      bestWeek: TrainingRecordSchema.nullable(),
+    }),
+    timeOfDay: z
+      .object({
+        buckets: z.array(
+          z.object({
+            hourStart: z.number(),
+            label: z.string(),
+            sessions: z.number(),
+            gainPerEnergyMedian: z.number().nullable(),
+          })
+        ),
+        best: z.object({ label: z.string(), sessions: z.number(), gainPerEnergyMedian: z.number(), upliftPct: z.number() }).nullable(),
+        overallMedian: z.number().nullable(),
+        sampleSize: z.number(),
+        note: z.string(),
+      })
+      .nullable(),
+    provenance: z.literal("inferred"),
+  }),
   profile: z.object({
     level: z.number().nullable(),
     levelHistory: z.array(z.object({ t: z.number(), level: z.number() })),
@@ -2235,3 +2331,32 @@ export const StocksResponseSchema = z.object({
 export type StockRowDto = z.infer<typeof StockRowDtoSchema>;
 export type StocksResponse = z.infer<typeof StocksResponseSchema>;
 export type StockSummaryDto = z.infer<typeof StockSummaryDtoSchema>;
+
+/* -------------------------------------------------------------------------- */
+/* System Health (2.0)                                                         */
+/* -------------------------------------------------------------------------- */
+
+export const SystemHealthResponseSchema = z.object({
+  generatedAt: z.number(),
+  services: z.object({
+    api: z.object({ status: z.literal("ok"), version: z.string(), gitSha: z.string(), environment: z.string() }),
+    database: z.object({ status: z.string() }),
+    redis: z.object({ status: z.string() }),
+    worker: z.object({ status: z.string(), heartbeatAgeSeconds: z.number().nullable() }),
+    tornApi: z.object({ status: z.enum(["ok", "degraded", "unknown"]), lastSuccessAt: z.number().nullable(), note: z.string() }),
+  }),
+  sync: z.object({
+    running: z.boolean(),
+    failingResources: z.array(z.object({ resource: z.string(), state: z.string(), lastErrorKind: z.string().nullable() })),
+    lastSuccessAt: z.number().nullable(),
+    queue: z.object({
+      waiting: z.number(),
+      active: z.number(),
+      delayed: z.number(),
+      failed: z.number(),
+      oldestOutstandingAt: z.number().nullable(),
+    }),
+  }),
+  freshness: z.array(DataFreshnessEntrySchema),
+});
+export type SystemHealthResponse = z.infer<typeof SystemHealthResponseSchema>;

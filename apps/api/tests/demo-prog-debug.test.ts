@@ -2,13 +2,23 @@ import { describe, expect, it, afterAll } from "vitest";
 import { getPrismaClient } from "@tornscope/database";
 import { getProgression } from "../src/services/progression.js";
 
+/**
+ * Debug/inspection suite for demo progression — requires a real database
+ * with the demo seed present, so it gates on TEST_DATABASE_URL exactly like
+ * every other DB-backed suite (hermetic local runs skip it instead of red).
+ */
+const dbUrl = process.env.TEST_DATABASE_URL ?? "";
+const suite = dbUrl ? describe : describe.skip;
+
 const db = getPrismaClient();
 const DAY = 86400;
 const nowSec = Math.floor(Date.now() / 1000);
 
-afterAll(async () => { await db.$disconnect(); });
+afterAll(async () => {
+  if (dbUrl) await db.$disconnect();
+});
 
-describe("dbg", () => {
+suite("dbg", () => {
   it("progression on demo", async () => {
     const demoUser = await db.user.findUnique({ where: { email: "demo@tornscope.local" }, select: { id: true } });
     const s = await getProgression(demoUser!.id, { preset: "custom", from: nowSec - 3 * DAY, to: nowSec });

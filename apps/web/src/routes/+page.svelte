@@ -1,9 +1,10 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
-  import type { DashboardResponse, TodayResponse, DailySummaryResponse } from "@tornscope/shared";
+  import type { DashboardResponse, TodayResponse, DailySummaryResponse, CommandCenterResponse } from "@tornscope/shared";
   import { formatMoneyCompact, formatNumberCompact, formatSignedNumberCompact, formatKpiValue, periodLabel, formatSignedMoneyCompact } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
   import LiveNow from "$lib/components/LiveNow.svelte";
+  import CommandCenter from "$lib/components/CommandCenter.svelte";
   import { dateRange, me, prefs, overviewSectionOrder, setDashboardMode, DASHBOARD_MODES } from "$lib/state.svelte";
   import { clientPermissionMessage } from "$lib/capabilities";
   import { confidenceTitle } from "$lib/confidence";
@@ -27,6 +28,7 @@
   let today = $state<TodayResponse | null>(null);
   let todaySummary = $state<DailySummaryResponse | null>(null);
   let myOcs = $state<Array<{ name: string; tier: number | null; status: string; readyAt: number | null; myParticipation: boolean }> | null>(null);
+  let commandCenter = $state<CommandCenterResponse | null>(null);
   let loading = $state(true);
   let error = $state<string | null>(null);
   let reloadToken = $state(0);
@@ -41,6 +43,12 @@
     void endpoints
       .today()
       .then((res) => (today = res))
+      .catch(() => undefined);
+    // The Command Center feed fills in independently — a slow or failed
+    // attention feed must never hold the dashboard hostage.
+    void endpoints
+      .commandCenter()
+      .then((res) => (commandCenter = res))
       .catch(() => undefined);
     try {
       const [dash, summaryRes, ocsRes] = await Promise.all([
@@ -197,6 +205,13 @@
         </div>
       </div>
     </header>
+
+    <!-- ── Command Center: the prioritized attention feed, always above the
+         focus-ordered body. Non-blocking: renders only once its response
+         has landed (never shown as a false "all clear" while loading). ── -->
+    {#if commandCenter}
+      <CommandCenter items={commandCenter.items} />
+    {/if}
 
     <!-- ── 2 · Focus-ordered body: every section always renders; the focus
          area only changes prominence (order). ── -->

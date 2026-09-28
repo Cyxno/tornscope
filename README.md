@@ -28,12 +28,15 @@ TornScope treats **historical data as a first-class concern**. A background work
 
 Both are append-only, deduplicated, and stored in PostgreSQL from your very first successful sync. Analytics then run against that growing history — which is why starting collection early matters.
 
+And since 2.0, that history works for you: **TornScope 1.0 records your Torn history — TornScope 2.0 turns that history into intelligence.**
+
 ## Why TornScope?
 
 - **History, not a mirror.** Every figure is computed from stored history, not from whatever the API happens to return today.
 - **Honest numbers.** Every figure carries a confidence label (exact / derived / estimated / inferred) and unavailable data renders as "—" — never as a fake zero.
 - **Wealth-first financial model.** Cash moving into items, stocks or the bank is *not* a loss. TornScope separates real income and costs from asset conversions and wallet movement.
-- **Actionable live state.** The Overview's "Right now" board shows bars, travel, OC, education, bank and cooldowns with countdowns and direct actions into Torn.
+- **Actionable live state.** The Overview's "Right now" board shows bars, travel, OC, education, bank and cooldowns with countdowns and direct actions into Torn — and the Command Center feed above it prioritizes what actually needs attention right now.
+- **Intelligence with honesty.** Personal goals project a finish date from your own trend (withheld when the data doesn't support it), insights compare measured periods instead of guessing, and every figure keeps its confidence label.
 - **Self-hosted.** Your database, your keys, your data.
 
 ## Screenshots
@@ -56,6 +59,12 @@ All screenshots use TornScope's synthetic demo profile — no real account data.
 
 ### Overview
 Wealth-first dashboard: official net worth with extended wealth, historical chart, Today's story as a signed ledger, and the **Right now** board — live Energy/Nerve/Happy bars with full-time countdowns, travel state and landing time, organized crime, education, bank investment (stays visible until you collect), cooldowns — each card a direct action into Torn, with TornScope analytics one click behind.
+
+### Intelligence (2.0)
+**Command Center** — a prioritized attention feed: energy capped, cooldowns ready, bank matured, travel landing, OC almost ready, goals at a milestone, the strongest insight, data-health warnings. Deterministic rules, one entry per fact, per-priority caps.
+**Goals & projections** — targets for net worth, liquid wealth, battle stats and level, with an honest ETA from your 7/30/90-day trend (confidence shown; no ETA when history is short, flat or noisy).
+**Insights** — a curated, fully deterministic engine: income/spending shifts vs your baseline, travel profit swings, rehab highs, xanax usage changes, training efficiency shifts, personal records. Every insight names its comparison, evidence window and sample size.
+**Training & wealth intelligence** — 7d vs 7d vs 30-day training comparisons with personal bests; wealth velocity, a 30-day trend projection, wealth attribution (conversions are never losses) and all-time financial records.
 
 ### Today
 The live current-state view: bars with regen and full-at times, cooldown countdowns, travel state, city-bank investment maturity, education progress, hospital/jail notices, and a merged upcoming-events timeline. State changes are handled server-side so the same payload renders identically on every page.
@@ -100,7 +109,7 @@ A dedicated synthetic demo profile with 180+ days of populated history, kept str
 
 | Area | Highlights |
 | --- | --- |
-| Overview | Net worth, extended wealth, Right now action board |
+| Overview | Net worth, extended wealth, Right now action board, Command Center feed |
 | Today | Live bars, cooldowns, travel, upcoming events |
 | Economy | Cash, assets, true income/cost, reconciliation |
 | Progression | Stats, training sessions, energy ledger, happy jumps |
@@ -110,7 +119,8 @@ A dedicated synthetic demo profile with 180+ days of populated history, kept str
 | Drugs | Usage, spend, overdoses, rehab history |
 | Combat & Crimes | Attack and crime history from your logs |
 | Timeline | Unified chronological ledger |
-| Notifications | Web Push (incl. iOS PWA), quiet hours, devices, ledger |
+| Intelligence | Goals & projections, insights, training & wealth intelligence, system health |
+| Notifications | Web Push (incl. iOS PWA), quiet hours, devices, ledger, goal/OC/insight rules |
 | Demo | Synthetic populated account, no real data |
 
 ## How it works
@@ -159,7 +169,7 @@ PostgreSQL and Redis intentionally keep their official upstream images — TornS
 
 | Tag | Meaning |
 | --- | --- |
-| `1.0.3` | Exact release — **recommended**, pin it via `TORNSCOPE_VERSION` in `.env` |
+| `2.0.0` | Exact release — **recommended**, pin it via `TORNSCOPE_VERSION` in `.env` |
 | `1` / `1.0` | Rolling major / minor line — moves with new releases |
 | `latest` | Current stable release |
 | `<full-commit-sha>` | Built from exactly that commit — matches the API's `x-tornscope-build` header for exact reproducibility |

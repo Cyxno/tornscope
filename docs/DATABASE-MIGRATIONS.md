@@ -109,6 +109,16 @@ production `_prisma_migrations` table). The complete v0.2 delta is:
 | `20260911200000_user_role_default_user` | SAFE DEFAULT CHANGE | `User.role` default flips `owner` → `user` (fail-safe: a future `user.create` without an explicit role can no longer silently mint an owner). All runtime paths already pass explicit roles; existing rows are untouched. See docs/HOSTED-SECURITY.md. |
 | `20260913180000_today_last_known` | SAFE EXPAND | New `TodayLastKnown` table (one cached live-status payload per profile) so `GET /api/today` can serve cold page loads immediately (stale-while-revalidate) instead of blocking on the serialized upstream Torn refresh. New standalone table only: no existing table, column, or row is touched; profile deletion cascades to the cached payload via FK `ON DELETE CASCADE`. |
 
+| `20260928180000_goals` | SAFE EXPAND | New `Goal` table for TornScope 2.0 personal goals (metric/target/note/targetDate/status/achievedAt, BigInt target). New standalone table only: no existing table, column, or row is touched; profile deletion cascades via FK `ON DELETE CASCADE`. Goal analytics read EXISTING snapshot tables (`NetworthSnapshot`, `PersonalStatSnapshot`, `UserSnapshot`) — the table stores only user intent, never derived data. |
+
+## 2.0 migration delta (1.0.4 production → 2.0.0)
+
+One migration: `20260928180000_goals` (SAFE EXPAND, classified in the v0.2
+inventory above). There are **no destructive, rename, type-rewrite or
+NOT NULL-tightening operations** in the 2.0 delta. The migration is trivially
+backward-compatible — the 1.0.x application never reads `Goal` — so rolling
+back the app image after deploying the migration needs no data migration.
+
 There are **no destructive, rename, type-rewrite or NOT NULL-tightening
 operations** in the v0.2 delta. `packages/database/tests/migration-safety.test.ts`
 enforces that classification automatically for every future migration.

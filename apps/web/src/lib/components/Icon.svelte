@@ -33,10 +33,14 @@
     | "spark"
     | "progression"
     | "stocks"
-    | "merits";
+    | "merits"
+    | "goal"
+    | "insight";
 
   const paths: Record<IconName, string> = {
     overview: "M3 3h7v9H3zM14 3h7v5h-7zM14 12h7v9h-7zM3 16h7v5H3z",
+    goal: "M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0-18 0M12 12m-5 0a5 5 0 1 0 10 0a5 5 0 1 0-10 0M12 12m-1 0a1 1 0 1 0 2 0a1 1 0 1 0-2 0",
+    insight: "M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.7.6 1 1.5 1 2.5h6c0-1 .3-1.9 1-2.5A6 6 0 0 0 12 3z",
     today: "M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8",
     economy: "M3 3v18h18M7 15l4-4 3 3 5-6",
     progression: "M3 20h18M5 16l4-5 3 3 6-8",

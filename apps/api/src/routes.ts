@@ -35,6 +35,11 @@ import { getDailySummary } from "./services/dailySummary.js";
 import { getMe, getApiKeyStatus, saveApiKey, validateApiKey, linkProfile, deleteApiKey, setDemoView, deleteProfile, signOutOtherSessions } from "./services/me.js";
 import { deleteEmptyProfile } from "@tornscope/database";
 import { getSyncStatus, getSyncHealth, requestManualSync, retryFailedSyncs, retrySyncNow, restartBackfill } from "./services/syncStatus.js";
+import { listGoals, createGoal, updateGoal, deleteGoal } from "./services/goals.js";
+import { getInsights } from "./services/insights.js";
+import { getCommandCenter } from "./services/commandCenter.js";
+import { getSystemHealth } from "./services/systemHealth.js";
+import { GoalCreateInputSchema, GoalUpdateInputSchema } from "@tornscope/shared";
 import { getApiContext } from "./context.js";
 import { checkReadiness } from "./services/readiness.js";
 import { getPrismaClient } from "@tornscope/database";
@@ -362,6 +367,61 @@ export function registerRoutes(app: FastifyInstance): void {
     const user = currentUser(req);
     return getSyncHealth(user.id);
   });
+
+  /* ------------------------------- 2.0: intelligence --------------------- */
+
+  // Command Center: one prioritized attention feed composed from cached
+  // today state, active goals, insights, stored OC state and freshness.
+  app.get("/api/command-center", async (req) => {
+    return getCommandCenter(currentUser(req));
+  });
+
+  // Personal goals: list (with current values + projections), create,
+  // update, delete. Mutations are rate-limited modestly (goal writes are
+  // rare) and always scoped to the session profile.
+  app.get("/api/goals", async (req) => {
+    const query = z.object({ lookbackDays: z.coerce.number().int().refine((v) => [7, 30, 90].includes(v)).optional() }).safeParse(req.query);
+    if (!query.success) throw errors.validation(query.error.flatten());
+    return listGoals(currentUser(req).id, { lookbackDays: query.data.lookbackDays });
+  });
+
+  app.post("/api/goals", async (req) => {
+    const limit = checkRateLimit("goal-write", currentUser(req).id, 30, 10 * 60_000);
+    if (!limit.ok) throw errors.rateLimited("Too many goal changes — try again later.", limit.retryAfterSeconds);
+    const body = GoalCreateInputSchema.safeParse(req.body);
+    if (!body.success) throw errors.validation(body.error.flatten());
+    return createGoal(currentUser(req).id, body.data);
+  });
+
+  app.patch("/api/goals/:id", async (req) => {
+    const limit = checkRateLimit("goal-write", currentUser(req).id, 30, 10 * 60_000);
+    if (!limit.ok) throw errors.rateLimited("Too many goal changes — try again later.", limit.retryAfterSeconds);
+    const params = z.object({ id: z.string().min(1).max(64) }).safeParse(req.params);
+    if (!params.success) throw errors.validation(params.error.flatten());
+    const body = GoalUpdateInputSchema.safeParse(req.body);
+    if (!body.success) throw errors.validation(body.error.flatten());
+    return updateGoal(currentUser(req).id, params.data.id, body.data);
+  });
+
+  app.delete("/api/goals/:id", async (req) => {
+    const limit = checkRateLimit("goal-write", currentUser(req).id, 30, 10 * 60_000);
+    if (!limit.ok) throw errors.rateLimited("Too many goal changes — try again later.", limit.retryAfterSeconds);
+    const params = z.object({ id: z.string().min(1).max(64) }).safeParse(req.params);
+    if (!params.success) throw errors.validation(params.error.flatten());
+    return deleteGoal(currentUser(req).id, params.data.id);
+  });
+
+  // Deterministic personal insights (curated rule set over stored history).
+  app.get("/api/insights", async (req) => {
+    return getInsights(currentUser(req).id);
+  });
+
+  // System health: services, queue state and per-domain data freshness.
+  // Read-only, no secrets; safe to poll at page cadence.
+  app.get("/api/system/health", async (req) => {
+    return getSystemHealth(currentUser(req));
+  });
+
 
   app.post("/api/sync/run", async (req) => {
     const runLimit = checkRateLimit("sync-action", currentUser(req).id, 20, 10 * 60_000);

@@ -471,6 +471,59 @@
           </p>
         {/if}
 
+        {#if progression.trainingIntelligence}
+          {@const ti = progression.trainingIntelligence}
+          <Panel
+            title="Training intelligence"
+            caption="Trailing windows anchored at the end of the selected range — same inferred sessions, compared side by side"
+          >
+            <div class="overflow-x-auto">
+              <table class="tsv-table">
+                <thead>
+                  <tr>
+                    <th>Window</th>
+                    <th class="text-right">Sessions</th>
+                    <th class="text-right">Energy (inferred)</th>
+                    <th class="text-right">Stat gain</th>
+                    <th class="text-right">Gain / E (median)</th>
+                    <th class="text-right">Hours at cap</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each [ti.current, ti.previous, ti.baseline30d] as period (period.label)}
+                    <tr>
+                      <td>{period.label}</td>
+                      <td class="text-right tnum">{period.sessions}</td>
+                      <td class="text-right tnum">{period.energyTrained !== null ? `~${formatNumberCompact(period.energyTrained)}` : "—"}</td>
+                      <td class="text-right tnum">{period.statGain !== null ? formatNumberCompact(period.statGain) : "—"}</td>
+                      <td class="text-right tnum">{period.gainPerEnergyMedian !== null ? period.gainPerEnergyMedian.toFixed(1) : "—"}</td>
+                      <td class="text-right tnum">{period.cappedHours > 0 ? `${Math.round(period.cappedHours)}h` : "—"}</td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+            <div class="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-xs text-fg-muted">
+              {#if ti.records.bestGainPerEnergyDay}
+                <span>Best gain/E day: <span class="tnum font-medium text-fg">{ti.records.bestGainPerEnergyDay.value.toFixed(1)}</span></span>
+              {/if}
+              {#if ti.records.bestStatGainDay}
+                <span>Best gain day: <span class="tnum font-medium text-fg">{formatNumberCompact(ti.records.bestStatGainDay.value)}</span></span>
+              {/if}
+              {#if ti.records.bestWeek}
+                <span>Best week: <span class="tnum font-medium text-fg">{formatNumberCompact(ti.records.bestWeek.value)}</span></span>
+              {/if}
+            </div>
+            {#if ti.timeOfDay?.best}
+              <p class="mt-3 rounded-tile border border-border bg-surface-2 px-4 py-2.5 text-xs leading-relaxed text-fg-muted">
+                Sessions between <span class="font-medium text-fg">{ti.timeOfDay.best.label}</span> showed
+                <span class="tnum font-medium text-fg">+{ti.timeOfDay.best.upliftPct.toFixed(0)}%</span> observed gain/E versus your 30-day median
+                (over {ti.timeOfDay.best.sessions} sessions). Observational only — it does not imply the time of day caused the difference.
+              </p>
+            {/if}
+          </Panel>
+        {/if}
+
         {#if progression.training.normalVsJump.normalSamples >= 2 || progression.training.normalVsJump.jumpSamples >= 2}
           <Panel title="Normal training vs happy jumps" caption="Personal medians only — compared when there are enough reliable sessions">
             <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">

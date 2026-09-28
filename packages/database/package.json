@@ -1,6 +1,6 @@
 {
   "name": "@tornscope/database",
-  "version": "1.0.4",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@prisma/client": "^6.16.2",
+    "@tornscope/analytics": "workspace:*",
     "@tornscope/shared": "workspace:*",
     "@tornscope/torn-api": "workspace:*",
     "zod": "^4.1.11"

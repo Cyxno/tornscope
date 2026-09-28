@@ -69,7 +69,7 @@ export interface NotificationTypeMeta {
   /** How the underlying fact is known — shown in delivery history. */
   provenance: "exact" | "derived" | "estimated" | "inferred";
   /** Inline configuration fields this type supports (see TypeConfig). */
-  config: Array<"nearFullThreshold" | "cashThreshold" | "networthThreshold" | "summaryTimeMin">;
+  config: Array<"nearFullThreshold" | "cashThreshold" | "networthThreshold" | "summaryTimeMin" | "ocSoonMinutes">;
 }
 
 /**
@@ -113,6 +113,12 @@ export const NOTIFICATION_TYPES: NotificationTypeMeta[] = [
     description: "OC starts and faction payouts.",
     urgency: "time_sensitive", quietHours: "defer", maxDeferralAgeSeconds: 12 * 3600,
     requires: "canReadFactionBasic", clickPath: "/faction", provenance: "exact", config: [],
+  },
+  {
+    id: "oc_ready_soon", label: "OC almost ready", group: "timers", defaultEnabled: true,
+    description: "One of your organized crimes becomes ready within your chosen window.",
+    urgency: "normal", quietHours: "defer", maxDeferralAgeSeconds: 24 * 3600,
+    requires: "canReadFactionBasic", clickPath: "/faction", provenance: "derived", config: ["ocSoonMinutes"],
   },
   /* ---- Travel & timers (live-state transitions — exact) ------------------- */
   {
@@ -196,6 +202,18 @@ export const NOTIFICATION_TYPES: NotificationTypeMeta[] = [
     requires: "canReadUserBasic", clickPath: "/progression", provenance: "exact", config: [],
   },
   {
+    id: "goal_achieved", label: "Goals achieved", group: "account", defaultEnabled: true,
+    description: "One of your TornScope goals reached its target. Once per goal, ever.",
+    urgency: "normal", quietHours: "defer", maxDeferralAgeSeconds: 24 * 3600,
+    requires: null, clickPath: "/goals", provenance: "derived", config: [],
+  },
+  {
+    id: "goal_milestone", label: "Goal milestones", group: "account", defaultEnabled: true,
+    description: "A goal crossed 50% / 75% / 90% of its target. Once per milestone, ever.",
+    urgency: "low", quietHours: "defer", maxDeferralAgeSeconds: 48 * 3600,
+    requires: null, clickPath: "/goals", provenance: "derived", config: [],
+  },
+  {
     id: "bank_matured", label: "Bank maturity", group: "account", defaultEnabled: true,
     description: "A city-bank investment reached its maturity date.",
     urgency: "normal", quietHours: "defer", maxDeferralAgeSeconds: 24 * 3600,
@@ -213,6 +231,12 @@ export const NOTIFICATION_TYPES: NotificationTypeMeta[] = [
     description: "An official net-worth snapshot differed from the previous one by more than your threshold. Not a profit figure.",
     urgency: "normal", quietHours: "defer", maxDeferralAgeSeconds: 12 * 3600,
     requires: "canReadUserNetworth", clickPath: "/money", provenance: "derived", config: ["networthThreshold"],
+  },
+  {
+    id: "significant_insight", label: "Notable insights", group: "economy", defaultEnabled: false,
+    description: "One high-confidence insight per day at most — only findings that clear TornScope's significance gates.",
+    urgency: "low", quietHours: "defer", maxDeferralAgeSeconds: 48 * 3600,
+    requires: null, clickPath: "/insights", provenance: "derived", config: [],
   },
   /* ---- System --------------------------------------------------------------- */
   {
@@ -300,6 +324,8 @@ export const TYPE_CONFIG_DEFAULTS = {
   networthThreshold: 100_000_000,
   /** daily_summary_ready local delivery time (minutes since midnight). */
   summaryTimeMin: 8 * 60,
+  /** oc_ready_soon window (minutes before an OC becomes ready). */
+  ocSoonMinutes: 12 * 60,
 } as const;
 
 export const TypeConfigSchema = z.object({
@@ -307,6 +333,7 @@ export const TypeConfigSchema = z.object({
   cashThreshold: z.number().min(0).max(10_000_000_000).optional(),
   networthThreshold: z.number().min(0).max(1_000_000_000_000).optional(),
   summaryTimeMin: z.number().int().min(0).max(1439).optional(),
+  ocSoonMinutes: z.number().int().min(15).max(7 * 24 * 60).optional(),
 });
 export type TypeConfig = z.infer<typeof TypeConfigSchema>;
 /** All fields present — what producers receive (defaults filled in). */

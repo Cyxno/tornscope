@@ -69,7 +69,7 @@ cleanup() {
     return 0
   fi
   echo "==> Tearing down rehearsal containers"
-  docker rm -f "$REHEARSAL_API" "$REHEARSAL_REDIS" "$REHEARSAL_PG" >/dev/null 2>&1 || true
+  docker rm -f -v "$REHEARSAL_API" "$REHEARSAL_REDIS" "$REHEARSAL_PG" >/dev/null 2>&1 || true
   docker network rm "$REHEARSAL_NET" >/dev/null 2>&1 || true
   CLEANED=1
 }
@@ -77,7 +77,7 @@ trap cleanup EXIT
 
 # ---- Start the throwaway DB ----------------------------------------------
 echo "==> Starting throwaway postgres:16 (localhost-only port ${REHEARSAL_PORT})"
-docker rm -f "$REHEARSAL_PG" >/dev/null 2>&1 || true
+docker rm -f -v "$REHEARSAL_PG" >/dev/null 2>&1 || true
 docker run -d --name "$REHEARSAL_PG" \
   -e POSTGRES_USER="$DB_USER" -e POSTGRES_PASSWORD="$DB_PASS" -e POSTGRES_DB="$DB_NAME" \
   -p "127.0.0.1:${REHEARSAL_PORT}:5432" postgres:16-alpine >/dev/null \
@@ -89,6 +89,14 @@ for _ in $(seq 1 30); do
 done
 docker exec "$REHEARSAL_PG" pg_isready -U "$DB_USER" -d "$DB_NAME" >/dev/null \
   || die "rehearsal postgres never became ready"
+
+# Init races: postgres briefly runs a socket-only temp server during initdb
+# and shuts it down before the real server starts. Wait for the REAL server:
+# readiness must hold on two checks 2s apart, otherwise pg_restore can land
+# exactly in the "database system is shutting down" window.
+sleep 2
+docker exec "$REHEARSAL_PG" pg_isready -U "$DB_USER" -d "$DB_NAME" >/dev/null \
+  || die "rehearsal postgres not stable after init"
 
 # ---- Restore production copy --------------------------------------------
 echo "==> Restoring the production copy (this can take a while)"

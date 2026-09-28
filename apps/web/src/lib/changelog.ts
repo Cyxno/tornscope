@@ -34,9 +34,25 @@ export const CHANGELOG_KINDS: ChangelogKind[] = ["Added", "Improved", "Fixed", "
 
 export const CHANGELOG: ChangelogRelease[] = [
   {
-    version: "1.0.4",
+    version: "2.0.0",
     stage: "Public Testing",
     current: true,
+    summary: "From recording your history to acting on it: a Command Center that prioritizes what needs attention, personal goals with honest trend projections, a deterministic insights engine, training & wealth intelligence, smarter notification rules and a real data-freshness view.",
+    changes: [
+      { kind: "Added", text: "Command Center — the Overview now opens with a prioritized attention feed built from deterministic rules: energy capped (possible regen loss), cooldowns ready, bank matured, travel landing, OC almost ready, education finishing, hospital/jail, goals at a milestone, top insights and data-health warnings. At most one entry per fact, explicit activation thresholds and per-priority caps — information hierarchy instead of notification spam." },
+      { kind: "Added", text: "Goals — set personal targets (net worth, liquid wealth, total or individual battle stats, level) with an optional target date. Every goal shows live progress and a PROJECTION of when you'll get there, computed from your own history over a 7/30/90-day lookback with an explicit confidence. When history is short, flat or noisy the ETA is withheld — never guessed." },
+      { kind: "Added", text: "Insights — a curated, fully deterministic insight engine over your stored history: income/spending shifts vs your 30-day baseline, travel profit swings, rehab spend highs, xanax usage changes, training efficiency shifts, personal records and net worth milestones. Every insight names its comparison, evidence window and sample size; nothing below the significance gates is shown." },
+      { kind: "Added", text: "Training intelligence (Progression) — last 7 days vs previous 7 days vs your 30-day baseline: sessions, energy trained, stat gain, gain-per-energy and hours spent capped, plus personal bests (best gain/E day, best gain day, best week) and — only with enough sessions — an explicitly observational time-of-day comparison." },
+      { kind: "Added", text: "Wealth intelligence (Economy) — 7/30/90-day wealth velocity from official snapshots, a 30-day trend projection with confidence, wealth attribution for the selected range (earned income vs true spending vs asset conversions vs the market residual — conversions never count as income or loss) and all-time personal financial records." },
+      { kind: "Added", text: "Smart notifications — goal achievements and milestone crossings (50/75/90%), 'OC almost ready' with a configurable window, and at most one significant insight per day (opt-in). Everything reuses the existing quiet-hours, dedupe and delivery-ledger machinery." },
+      { kind: "Added", text: "System health — a new page separating 'no data because there is nothing' from 'no data because syncing broke': service status (API, PostgreSQL, Redis, worker, Torn API), queue state, and per-domain data freshness (fresh / delayed / stale / failed / unavailable) derived from real sync bookkeeping." },
+      { kind: "Improved", text: "Navigation gains an Intelligence group (Goals, Insights) and System health sits beside Sync status. Demo mode includes goals and the full insights pipeline, so every 2.0 feature is explorable without an API key." },
+      { kind: "Technical", text: "One additive database migration (a Goal table storing user intent only — all analytics keep reading the existing snapshot tables), zero new Torn API calls (2.0 is computed from data already stored), one shared fact-gatherer feeding both the API and the notification worker, and pure analytics modules with per-figure provenance throughout." },
+    ],
+  },
+  {
+    version: "1.0.4",
+    stage: "Public Testing",
     summary: "Fixed over-capped (stacked) energy being displayed as full — the real value is now shown everywhere, with an honest over-cap note.",
     changes: [
       { kind: "Fixed", text: "Overview / Today — Energy above its natural cap is no longer clamped to \"150 / 150\". Stacked energy — e.g. 400/150 after a Xanax — now shows the real numbers (\"400 / 150\") with a calm \"Stacked · +250 over cap\" note instead of a misleading \"Full\". No full-at countdown is invented while over cap (Torn supplies none: regeneration really is stopped until you drop below the cap), and the normal energy accent is kept — a stack is intentional, not an error. Your natural cap (100 or 150) is always the denominator, never hardcoded." },

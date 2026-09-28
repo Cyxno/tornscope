@@ -858,3 +858,98 @@ export function trainingFrequency(sessions: readonly TrainingSession[], now: num
     avgEnergyPerTrainingDay: dayKeys.size > 0 ? energies.reduce((s, e) => s + e, 0) / dayKeys.size : null,
   };
 }
+
+/* -------------------------------------------------------------------------- */
+/* Energy-at-cap daily series (2.0 shared derivation)                          */
+/* -------------------------------------------------------------------------- */
+
+export interface CappedBarsRowLike {
+  capturedAt: number;
+  energyCurrent: number;
+  energyMaximum: number;
+}
+
+/**
+ * Hours per UTC day the energy bar was observed pinned at its maximum.
+ * Each 5-minute snapshot at cap contributes its full 5-minute slice (the
+ * same lower-bound convention as the energy ledger's cappedSeconds) — this
+ * is a lower bound, never an over-estimate. Days with rows but no capped
+ * observations still appear (0h) so callers can average honestly.
+ */
+export function buildEnergyCappedHours(rows: ReadonlyArray<CappedBarsRowLike>, from: number, to: number): Array<{ t: number; hours: number }> {
+  const SNAP = 300; // seconds represented by one snapshot slice
+  const byDay = new Map<number, number>();
+  for (const row of rows) {
+    if (row.capturedAt < from || row.capturedAt > to) continue;
+    const day = startOfDayUtc(row.capturedAt);
+    const current = byDay.get(day) ?? 0;
+    if (row.energyMaximum > 0 && row.energyCurrent >= row.energyMaximum) {
+      byDay.set(day, current + SNAP / 3600);
+    } else {
+      byDay.set(day, current);
+    }
+  }
+  return [...byDay.entries()].sort((a, b) => a[0] - b[0]).map(([t, hours]) => ({ t, hours }));
+}
+
+function startOfDayUtc(ts: number): number {
+  const d = new Date(ts * 1000);
+  return Math.floor(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) / 1000);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Evidence shaping (2.0: promoted from the progression service so the API,    */
+/* the database fact-gatherer and tests share ONE canonical mapping)           */
+/* -------------------------------------------------------------------------- */
+
+/** How far around an outgoing attack energy use is considered competing. */
+export const ATTACK_COMPETITION_SECONDS = 900;
+
+/** Prisma-shaped evidence rows (Date or pre-converted unix seconds). */
+export interface RefillEvidenceRow { occurredAt: Date | number; metadata: unknown }
+export interface DrugEvidenceRow { occurredAt: Date | number; drugName: string | null; outcome: string }
+export interface ConsumptionEvidenceRow { occurredAt: Date | number; category: string; metadata: unknown }
+export interface CombatEvidenceRow { occurredAt: Date | number }
+
+function evidenceSec(d: Date | number): number {
+  return typeof d === "number" ? d : Math.floor(d.getTime() / 1000);
+}
+
+function refillEnergyFromMetadata(metadata: unknown): number | null {
+  const amount = (metadata as { data?: { energy_increased?: unknown } } | null)?.data?.energy_increased;
+  return typeof amount === "number" && Number.isFinite(amount) && amount > 0 ? amount : null;
+}
+
+/** Map raw refill/drug/consumption/combat rows into canonical ledger inputs. */
+export function shapeEnergyInputs(
+  refillRows: ReadonlyArray<RefillEvidenceRow>,
+  drugRows: ReadonlyArray<DrugEvidenceRow>,
+  consumptionRows: ReadonlyArray<ConsumptionEvidenceRow>,
+  combatRows: ReadonlyArray<CombatEvidenceRow>
+): { gains: EnergyGainEvent[]; competing: CompetingWindow[] } {
+  const gains: EnergyGainEvent[] = [];
+  for (const r of refillRows) {
+    const amount = refillEnergyFromMetadata(r.metadata);
+    if (amount !== null) gains.push({ t: evidenceSec(r.occurredAt), amount, category: "refill", provenance: "exact" });
+  }
+  for (const r of drugRows) {
+    if (r.drugName === "Xanax" && r.outcome === "success") {
+      // Documented game convention: normal Xanax logs record NO energy
+      // field. The canonical amount is applied per use, provenance
+      // "estimated"; cap interactions surface via reconciliation overshoot.
+      gains.push({ t: evidenceSec(r.occurredAt), amount: XANAX_ENERGY_ESTIMATE, category: "xanax", provenance: "estimated" });
+    }
+  }
+  for (const r of consumptionRows) {
+    if (r.category === "energy") {
+      const amount = refillEnergyFromMetadata(r.metadata);
+      if (amount !== null) gains.push({ t: evidenceSec(r.occurredAt), amount, category: "energy_drink", provenance: "exact" });
+    }
+  }
+  const competing: CompetingWindow[] = combatRows.map((r) => ({
+    from: evidenceSec(r.occurredAt) - ATTACK_COMPETITION_SECONDS,
+    to: evidenceSec(r.occurredAt) + ATTACK_COMPETITION_SECONDS,
+    kind: "attack" as const,
+  }));
+  return { gains, competing };
+}

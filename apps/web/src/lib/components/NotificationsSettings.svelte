@@ -488,6 +488,20 @@
                           />
                         </label>
                       {/if}
+                      {#if t.config.includes("ocSoonMinutes")}
+                        <label class="flex items-center gap-1 text-xs text-fg-faint">
+                          Within
+                          <select
+                            class="rounded-lg border border-border bg-bg-raise px-2 py-0.5 text-xs text-fg"
+                            value={status.preferences.typeConfig.ocSoonMinutes}
+                            onchange={(e) => void setConfig("ocSoonMinutes", Number((e.currentTarget as HTMLSelectElement).value) || 720)}
+                          >
+                            {#each [60, 180, 360, 720, 1440, 2880] as minutes (minutes)}
+                              <option value={minutes}>{minutes < 60 ? `${minutes} min` : `${minutes / 60}h`}</option>
+                            {/each}
+                          </select>
+                        </label>
+                      {/if}
                     </span>
                   {/if}
                 </div>

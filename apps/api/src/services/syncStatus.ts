@@ -1,5 +1,5 @@
 import { getSyncStates, getSyncCategoryStates, getPrismaClient, type SyncStateRow } from "@tornscope/database";
-import { deriveSetupPhase, normalizeCapabilitiesWithFallback, resourceAllowed, resourceRequirementLabel, SYNC_JOB_NAME, buildSyncJobId, SYNC_RESOURCES, deriveSyncOperationalState, deriveResourceIncidents, summarizeSyncMetrics, type SyncIncident, type SyncOperationalMeta, type SyncResource, type SyncRunFact, type SyncRunMetrics } from "@tornscope/shared";
+import { deriveSetupPhase, normalizeCapabilitiesWithFallback, resourceAllowed, resourceRequirementLabel, SYNC_JOB_NAME, buildSyncJobId, SYNC_RESOURCES, deriveSyncOperationalState, deriveResourceIncidents, summarizeSyncMetrics, buildDataFreshness, type SyncIncident, type SyncOperationalMeta, type SyncResource, type SyncRunFact, type SyncRunMetrics } from "@tornscope/shared";
 import { AppError } from "../errors.js";
 import { getApiContext } from "../context.js";
 import { resourceConfidence } from "./confidence.js";
@@ -137,6 +137,20 @@ async function buildSyncHealth(userId: string) {
         lastAttemptAt: s.lastAttemptAt ? Math.floor(s.lastAttemptAt.getTime() / 1000) : null,
       })),
     }),
+    /** User-facing per-domain data freshness (2.0) — derived from the same facts. */
+    freshness: buildDataFreshness(
+      states.map((s) => ({
+        resource: s.resource,
+        status: s.status,
+        lastAttemptAt: s.lastAttemptAt ? Math.floor(s.lastAttemptAt.getTime() / 1000) : null,
+        lastSuccessAt: s.lastSuccessAt ? Math.floor(s.lastSuccessAt.getTime() / 1000) : null,
+        nextRunAt: s.nextRunAt ? Math.floor(s.nextRunAt.getTime() / 1000) : null,
+        frequencySeconds: s.frequencySeconds,
+        errorCount: s.errorCount,
+        lastErrorKind: s.lastErrorKind,
+      })),
+      nowSec
+    ),
     resources: states.map((s) => ({
       resource: s.resource,
       status: s.status,
