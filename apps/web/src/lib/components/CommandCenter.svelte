@@ -61,7 +61,9 @@
               <span class="text-[13.5px] font-semibold text-fg">{entry.title}</span>
               <span class="sr-only"> — {entry.tone.label}</span>
               {#if entry.deadlineSeconds !== null}
-                <span class="tnum ml-auto text-[13px] font-semibold {entry.tone.text}">
+                <!-- mr-5 keeps the countdown clear of the corner arrow that
+                     absolutely-positioned link rows draw at right-2.5. -->
+                <span class="tnum ml-auto text-[13px] font-semibold {entry.tone.text} {entry.analyticsUrl ? 'mr-5' : ''}">
                   in&nbsp;<Countdown seconds={entry.deadlineSeconds} style="compact" />
                 </span>
               {/if}

@@ -79,7 +79,7 @@ export async function getSystemHealth(user: SessionUser): Promise<SystemHealthRe
   const identity = resolveBuildIdentity({ version: env.build.version, gitSha: process.env.GIT_SHA ?? "dev", environment: env.build.environment });
 
   return {
-    generatedAt: Date.now(),
+    generatedAt: Math.floor(Date.now() / 1000),
     services: {
       api: { status: "ok", version: identity.version, gitSha: identity.gitSha, environment: identity.environment },
       database: { status: readiness.checks.database },

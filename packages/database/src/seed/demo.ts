@@ -165,6 +165,16 @@ async function main(): Promise<void> {
     // excluded from wallet flows (scenario metadata), so the bridge never
     // reports a phantom gap.
     { userId: user.id, occurredAt: sig(15, 0), category: "faction", direction: "income", amount: 1_200_000n, source: "demo", sourceRef: "demo:sig:ocpayout", description: "Faction payout money balance receive", subcategory: "Faction payout money balance receive", metadata: { demo: true, data: { scenario: "Break the Bank" } } },
+    /* -------------------- insight window (2.0) ---------------------------- */
+    // Two deterministic days that let the insights engine show its curated
+    // rules without inventing anything: a clear casino windfall three days
+    // ago (true income — fires "best income day" and lifts the 7-day income
+    // vs the 30-day baseline) and a rehab spike two days ago (true expense
+    // — fires "rehab spend at a high"). Same preset-rows mechanism as the
+    // signature day, so the networth walk stays coherent.
+    { userId: user.id, occurredAt: new Date((sigStart - 2 * DAY + 20 * 3600 + 15 * 60) * 1000), category: "casino", direction: "income", amount: 6_000_000n, source: "demo", sourceRef: "demo:sig:casinowindfall", description: "Casino money receive" },
+    { userId: user.id, occurredAt: new Date((sigStart - DAY + 9 * 3600 + 30 * 60) * 1000), category: "rehab", direction: "expense", amount: -4_000_000n, source: "demo", sourceRef: "demo:sig:rehabspike1", description: "Drug rehabilitation paid" },
+    { userId: user.id, occurredAt: new Date((sigStart - DAY + 19 * 3600 + 45 * 60) * 1000), category: "rehab", direction: "expense", amount: -4_000_000n, source: "demo", sourceRef: "demo:sig:rehabspike2", description: "Drug rehabilitation paid" },
   ];
 
   /* -------------------- shared history generation ------------------------ */
@@ -231,6 +241,16 @@ async function main(): Promise<void> {
 
   await db.rehabEvent.create({
     data: { userId: user.id, occurredAt: sig(14, 10), rehabPercent: 60, cost: 250_000n, sessions: 2, addictionPointsRemoved: 95, source: "demo", sourceRef: "demo:sig:rehab" },
+  });
+
+  // Insight-window rehab spike: two visits the day before the signature day,
+  // mirroring the injected rehab money rows (same instants, same costs).
+  await db.rehabEvent.createMany({
+    data: [
+      { userId: user.id, occurredAt: new Date((sigStart - DAY + 9 * 3600 + 30 * 60) * 1000), rehabPercent: 25, cost: 4_000_000n, sessions: 3, addictionPointsRemoved: 120, source: "demo", sourceRef: "demo:sig:rehabspike1" },
+      { userId: user.id, occurredAt: new Date((sigStart - DAY + 19 * 3600 + 45 * 60) * 1000), rehabPercent: 18, cost: 4_000_000n, sessions: 2, addictionPointsRemoved: 90, source: "demo", sourceRef: "demo:sig:rehabspike2" },
+    ],
+    skipDuplicates: true,
   });
 
   // A completed abroad trip with purchases (catalog-estimated profit inputs).
