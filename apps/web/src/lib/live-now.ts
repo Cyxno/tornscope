@@ -65,10 +65,13 @@ function deriveBars(today: TodayResponse, serverNowMs: number, displayTime: (tsS
     { kind: "energy" as const, label: "Energy", url: TORN_URLS.gym, action: "Open the gym" },
     { kind: "nerve" as const, label: "Nerve", url: TORN_URLS.crimes, action: "Open crimes" },
     { kind: "happy" as const, label: "Happy", url: TORN_URLS.items, action: "Open items" },
+    // Cockpit overview (2.x): Life joins the dominant live-status block —
+    // "timer only when relevant" is barFullDisplay's job (Full / Full in Xm).
+    { kind: "life" as const, label: "Life", url: TORN_URLS.items, action: "Open items" },
   ];
   const out: LiveItem[] = [];
   for (const { kind, label, url, action } of kinds) {
-    const bar = kind === "energy" ? today.bars.energy : kind === "nerve" ? today.bars.nerve : today.bars.happy;
+    const bar = today.bars[kind];
     const d = barFullDisplay(bar, serverNowMs);
     if (!bar || !d) continue;
     if (d.overCap) {

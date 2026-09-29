@@ -34,9 +34,29 @@ export const CHANGELOG_KINDS: ChangelogKind[] = ["Added", "Improved", "Fixed", "
 
 export const CHANGELOG: ChangelogRelease[] = [
   {
-    version: "2.0.2",
+    version: "2.0.3",
     stage: "Public Testing",
     current: true,
+    summary:
+      "Dashboard-first Overview: the homepage now opens with a live cockpit — dominant Energy/Nerve/Happy/Life bars, compact cooldown tiles, current states only, capped Needs-attention and goal mini-cards — with charts and trend data moved below.",
+    changes: [
+      {
+        kind: "Improved",
+        text: "Overview — dashboard-first redesign. The first screen is now your live status: four dominant bar rows (Energy, Nerve, Happy, Life) with big current/max numerals and compact timers (over-cap stacking shown honestly), compact cooldown tiles where READY is instantly recognizable, and a current-states block that only renders what is actually active (travel, education, OC, bank, hospital, jail). Needs-attention is capped to the few items that matter now, and up to three goal mini-cards ride along with their projection ranges.",
+      },
+      {
+        kind: "Improved",
+        text: "Overview — the net-worth chart, today's story, recent activity and beyond-the-wallet rows move into a dedicated analytics zone below the cockpit; the financial snapshot keeps the hero figures without the chart. On wide screens the cockpit is a real multi-column layout (live block beside attention and goals); on mobile it reads as a compact status app. State and attention are never duplicated: the live block shows state, Needs-attention shows only actions.",
+      },
+      {
+        kind: "Technical",
+        text: "No new backend surface: the redesign reuses the existing today/command-center/goals/dashboard endpoints and the tested live-now derivation (now including the Life bar). Public contracts unchanged.",
+      },
+    ],
+  },
+  {
+    version: "2.0.2",
+    stage: "Public Testing",
     summary:
       "Honest labeling pass on the battle-stat projection: it is an EMPIRICAL projection (calibrated on your observed stat growth), not a mechanistic simulator — confidence is now capped so a perfect historical fit can never read as a certain forecast, and the assumptions are stated verbatim.",
     changes: [

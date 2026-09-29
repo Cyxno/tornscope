@@ -1,10 +1,11 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
-  import type { DashboardResponse, TodayResponse, DailySummaryResponse, CommandCenterResponse } from "@tornscope/shared";
+  import type { DashboardResponse, TodayResponse, DailySummaryResponse, CommandCenterResponse, GoalsResponse } from "@tornscope/shared";
   import { formatMoneyCompact, formatNumberCompact, formatSignedNumberCompact, formatKpiValue, periodLabel, formatSignedMoneyCompact } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
   import LiveNow from "$lib/components/LiveNow.svelte";
   import CommandCenter from "$lib/components/CommandCenter.svelte";
+  import GoalsMini from "$lib/components/GoalsMini.svelte";
   import { dateRange, me, prefs, overviewSectionOrder, setDashboardMode, DASHBOARD_MODES } from "$lib/state.svelte";
   import { clientPermissionMessage } from "$lib/capabilities";
   import { confidenceTitle } from "$lib/confidence";
@@ -18,10 +19,17 @@
   import * as td from "$lib/time-display.svelte.js";
 
   /**
-   * Overview — "the record". Composition, not a card grid:
-   * masthead (greeting + data health) → live-state sentence → net-worth hero
-   * with the chart integrated into the open canvas → today's story as a
-   * signed ledger → recent activity ledger → quiet beyond-money rows.
+   * Overview — "my live Torn control panel" (dashboard-first redesign, 2.x).
+   *
+   * Zone A · COCKPIT (top, one grid): the dominant LIVE STATUS bars +
+   * cooldown tiles + active states (LiveNow), with Needs Attention (capped
+   * at 3) and Goals mini beside them on wide screens. Everything here is
+   * NOW: state, timers, actionable attention.
+   * Zone B · FINANCIAL SNAPSHOT: net worth + the compact money strip —
+   * figures, no chart.
+   * Zone C · ANALYTICS: the net-worth trend chart, today's story, recent
+   * activity and the beyond-money rows — data over urgency, lower on the
+   * page. Focus ordering (prefs.focus) reorders prominence WITHIN this zone.
    */
 
   let data = $state<DashboardResponse | null>(null);
@@ -29,6 +37,7 @@
   let todaySummary = $state<DailySummaryResponse | null>(null);
   let myOcs = $state<Array<{ name: string; tier: number | null; status: string; readyAt: number | null; myParticipation: boolean }> | null>(null);
   let commandCenter = $state<CommandCenterResponse | null>(null);
+  let goals = $state<GoalsResponse | null>(null);
   let loading = $state(true);
   let error = $state<string | null>(null);
   let reloadToken = $state(0);
@@ -49,6 +58,11 @@
     void endpoints
       .commandCenter()
       .then((res) => (commandCenter = res))
+      .catch(() => undefined);
+    // Goals mini likewise: a local DB read, never blocking the dashboard.
+    void endpoints
+      .goals()
+      .then((res) => (goals = res))
       .catch(() => undefined);
     try {
       const [dash, summaryRes, ocsRes] = await Promise.all([
@@ -131,7 +145,7 @@
   const drivers = $derived(todaySummary?.netWorth.drivers ?? []);
 
   /* Wealth story (V1.0 financial semantics): the one hedged plain-language
-     narrative under the hero — only when classified asset purchases
+     narrative under the trend chart — only when classified asset purchases
      defensibly dominate the wallet outflow. Explains the acceptance case:
      wealth +$5m while the wallet moved −$8.6m must never read as a loss. */
   const wealthStory = $derived(
@@ -158,23 +172,24 @@
 
 <svelte:head><title>Overview · TornScope</title></svelte:head>
 
-<div class="space-y-10">
+<div class="space-y-8">
   {#if loading && !data}
     <StateMessage state="loading" />
   {:else if error}
     <StateMessage state="error" title="Could not load Overview" hint={error} action={{ label: "Retry", run: () => (reloadToken += 1) }} />
   {:else if data}
-    <!-- Focus areas reorder section prominence (personalization, not
-         permissions): every section stays; "everything" is the default. -->
+    <!-- Focus areas reorder ANALYTICS prominence (personalization): the
+         cockpit above is always live-first; this order shapes the lower
+         data zone only. -->
     {@const order = overviewSectionOrder(prefs.focus)}
-    <!-- ── 1 · Masthead: greeting + range, data health quiet at the right ── -->
-    <header class="flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
+    <!-- ── Masthead: greeting + range, data health quiet at the right ── -->
+    <header class="flex flex-wrap items-end justify-between gap-x-8 gap-y-3">
       <div class="min-w-0">
         <p class="section-label">Overview</p>
-        <h1 class="font-display mt-2 text-[32px] font-medium leading-[1.1] text-fg sm:text-[38px]">
+        <h1 class="font-display mt-1.5 text-[28px] font-medium leading-[1.1] text-fg sm:text-[34px]">
           {greeting}{today?.player.name ? `, ${today.player.name}` : ""}.
         </h1>
-        <p class="mt-1.5 flex flex-wrap items-center gap-x-2 text-[13px] text-fg-muted">
+        <p class="mt-1 flex flex-wrap items-center gap-x-2 text-[12.5px] text-fg-muted">
           {#if statusLine}
             <span>{statusLine}</span>
             <span class="text-border-strong" aria-hidden="true">·</span>
@@ -206,40 +221,31 @@
       </div>
     </header>
 
-    <!-- ── Command Center: the prioritized attention feed, always above the
-         focus-ordered body. Non-blocking: renders only once its response
-         has landed (never shown as a false "all clear" while loading). ── -->
-    {#if commandCenter}
-      <CommandCenter items={commandCenter.items} />
-    {/if}
-
-    <!-- ── 2 · Focus-ordered body: every section always renders; the focus
-         area only changes prominence (order). ── -->
-    <div class="flex flex-col gap-10">
-    <!-- ── Live now: one sentence, ticks not boxes ── -->
-    <div style="order: {order.live};">
-      <LiveNow today={today} ocs={myOcs} onOpenToday={() => void goto("/today")} />
+    <!-- ══ ZONE A · COCKPIT — live state, timers, attention, goals ══ -->
+    <div class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
+      <div class="min-w-0">
+        <LiveNow today={today} ocs={myOcs} onOpenToday={() => void goto("/today")} />
+      </div>
+      <div class="min-w-0 space-y-4">
+        {#if commandCenter}
+          <CommandCenter items={commandCenter.items} maxItems={3} />
+        {/if}
+        <GoalsMini goals={goals} />
+      </div>
     </div>
 
-    <!-- ── Net-worth hero: numeral + integrated chart on open canvas ── -->
-    <section class="section-rule" aria-label="Net worth" style="order: {order.networth};">
+    <!-- ══ ZONE B · FINANCIAL SNAPSHOT — figures, no chart ══ -->
+    <section class="section-rule" aria-label="Financial snapshot">
       <div class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
         <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
           <span class="section-label">Net worth</span>
           <span class="text-[10px] font-medium uppercase tracking-[0.12em] text-fg-faint">exact · official Torn figure</span>
           <ConfidenceBadge meta={data.confidence?.networth} tooltip={confidenceTitle(data.confidence?.networth, data.lastSyncAt !== null ? `last sync ${formatRelative(data.lastSyncAt)}` : undefined)} />
         </div>
-        {#if data.extendedWealth.value !== null}
-          <p class="text-xs text-fg-faint" title="Official Torn net worth plus wealth Torn does not count in that figure.">
-            Extended wealth <span class="tnum font-medium text-fg-muted">{formatMoneyCompact(data.extendedWealth.value)}</span>
-            {#if data.extendedWealth.factionBalance !== null}
-              · incl. {formatMoneyCompact(data.extendedWealth.factionBalance)} faction balance
-            {/if}
-          </p>
-        {/if}
+        <a href="/money" class="text-link shrink-0 text-xs font-medium">View economy →</a>
       </div>
 
-      <div class="mt-4 flex flex-wrap items-baseline gap-x-4 gap-y-2">
+      <div class="mt-3 flex flex-wrap items-baseline gap-x-5 gap-y-2">
         {#if nw}
           <p class="hero-num tnum text-fg">
             <span class="mr-1 text-[0.55em] font-medium text-fg-muted">{nw.symbol}</span>{nw.magnitude}
@@ -265,50 +271,31 @@
               <span class="tnum text-fg-muted">{data.networthChangePct >= 0 ? "+" : ""}{data.networthChangePct.toFixed(2)}%</span>
             {/if}
             <span class="text-fg-faint" title="Snapshot delta from official Torn net worth: includes item/stock/property price moves, cash and asset movement. Not a profit figure.">
-              · snapshots {data.financial.netWorthMeasuredFrom !== null ? td.displayDate(data.financial.netWorthMeasuredFrom) : "—"} → {data.financial.netWorthMeasuredTo !== null ? td.displayDate(data.financial.netWorthMeasuredTo) : "now"}{data.networthCoverage === "partial" ? " · partial coverage" : ""}
+              · {data.financial.netWorthMeasuredFrom !== null ? td.displayDate(data.financial.netWorthMeasuredFrom) : "—"} → {data.financial.netWorthMeasuredTo !== null ? td.displayDate(data.financial.netWorthMeasuredTo) : "now"}{data.networthCoverage === "partial" ? " · partial coverage" : ""}
             </span>
           {/if}
         </p>
-      </div>
-
-      <!-- The trend IS the hero: full-width, no panel chrome -->
-      <div class="mt-4">
-        {#if networthBlocked}
-          <StateMessage state="permission" compact title={networthBlocked.title} hint={networthBlocked.hint} />
-        {:else if !networthOption}
-          <div class="flex h-40 items-center justify-center text-[13px] text-fg-faint">
-            Snapshots appear as the worker runs — no net-worth history in this range yet.
-          </div>
-        {:else}
-          <Chart option={networthOption} height={280} />
+        {#if data.extendedWealth.value !== null}
+          <p class="text-xs text-fg-faint" title="Official Torn net worth plus wealth Torn does not count in that figure.">
+            Extended <span class="tnum font-medium text-fg-muted">{formatMoneyCompact(data.extendedWealth.value)}</span>
+          </p>
         {/if}
       </div>
 
-      {#if wealthStory?.headline}
-        <p class="mt-4 text-[13px] leading-relaxed text-fg-muted" title="Derived from classified money events (earned vs asset conversion) — hedged on purpose; the exact split lives in the Economy reconciliation.">
-          {wealthStory.headline}
-        </p>
-      {/if}
-
-      <!-- Open hairline strip. Financial hierarchy (V1.0 semantics):
-           WEALTH (hero above) → ECONOMIC result → CONVERSION → LIQUIDITY.
-           Red/green are reserved for economic meaning; asset movement is
-           neutral transport. Full wallet accounting lives in Economy. -->
-      <dl class="mt-6 grid grid-cols-2 gap-y-5 md:grid-cols-4 md:divide-x md:divide-border">
+      <!-- Open hairline strip. Financial hierarchy: WEALTH (hero above) →
+           training/liquidity or economic lenses. Red/green are reserved for
+           economic meaning; full wallet accounting lives in Economy. -->
+      <dl class="mt-5 grid grid-cols-2 gap-y-4 md:grid-cols-4 md:divide-x md:divide-border">
         {#if prefs.mode === "simple"}
-          <!-- Dashboard cells (V1.0 hierarchy pass): training outcome joins
-               liquidity; the accounting perspectives belong to Economy,
-               not the Overview dashboard. -->
           <div class="md:pr-6">
             <dt class="text-[11px] font-medium text-fg-faint" title="Battlestats gained today from hourly Torn snapshots — not a profit figure">Battlestats today</dt>
-            <dd class="tnum mt-1 text-[22px] font-semibold {(todaySummary?.progression?.battlestatGain.value ?? 0) >= 0 ? 'text-positive' : 'text-negative'}">
+            <dd class="tnum mt-1 text-[20px] font-semibold {(todaySummary?.progression?.battlestatGain.value ?? 0) >= 0 ? 'text-positive' : 'text-negative'}">
               {todaySummary?.progression?.battlestatGain.value != null ? formatSignedNumberCompact(todaySummary.progression.battlestatGain.value) : '—'}
             </dd>
-            <dd class="mt-0.5 text-[11px] text-fg-faint">from hourly snapshots</dd>
           </div>
           <div class="md:px-6" title="Inferred training sessions from bar history — Xanax uses are exact from your drug log">
             <dt class="text-[11px] font-medium text-fg-faint">Training today</dt>
-            <dd class="tnum mt-1 text-[22px] font-semibold text-fg">
+            <dd class="tnum mt-1 text-[20px] font-semibold text-fg">
               {todaySummary?.progression ? `${todaySummary.progression.sessions} session${todaySummary.progression.sessions === 1 ? '' : 's'}` : '—'}
             </dd>
             <dd class="mt-0.5 text-[11px] text-fg-faint">
@@ -319,40 +306,63 @@
             <dt class="flex items-center gap-2 text-[11px] font-medium text-fg-faint">
               Cash on hand <ConfidenceBadge meta={data.confidence?.networth} />
             </dt>
-            <dd class="tnum mt-1 text-[22px] font-semibold text-fg">{formatKpiValue(data.cash)}</dd>
-            <dd class="mt-0.5 text-[11px] text-fg-faint" title="Liquid cash. In Torn, holding little cash is intentional and healthy — wallet cash is exposed to mugging, so most wealth lives in banks, stocks and items.">liquidity — low cash is normal, not a warning</dd>
+            <dd class="tnum mt-1 text-[20px] font-semibold text-fg">{formatKpiValue(data.cash)}</dd>
+            <dd class="mt-0.5 text-[11px] text-fg-faint" title="Liquid cash. In Torn, holding little cash is intentional and healthy — wallet cash is exposed to mugging, so most wealth lives in banks, stocks and items.">liquidity — low cash is normal</dd>
           </div>
         {:else}
           <div class="md:pr-6">
             <dt class="text-[11px] font-medium text-fg-faint" title="Earned or received-for-good money — raises economic value directly. Asset sales are NOT income (they are conversion).">{period} true income</dt>
-            <dd class="tnum mt-1 text-[22px] font-semibold text-positive">{formatMoneyCompact(data.financial.trueIncome)}</dd>
-            <dd class="mt-0.5 text-[11px] text-fg-faint">wallet inflow {formatKpiValue(data.financial.cashInflow)} incl. asset sales — movement, not income</dd>
+            <dd class="tnum mt-1 text-[20px] font-semibold text-positive">{formatMoneyCompact(data.financial.trueIncome)}</dd>
           </div>
           <div class="md:px-6">
             <dt class="text-[11px] font-medium text-fg-faint" title="Value consumed or lost for good. Asset purchases are NOT costs — the value is still owned in another form.">{period} true costs</dt>
-            <dd class="tnum mt-1 text-[22px] font-semibold text-negative">{formatMoneyCompact(data.financial.trueExpense)}</dd>
-            <dd class="mt-0.5 text-[11px] text-fg-faint">wallet outflow {formatKpiValue(data.financial.cashOutflow)} incl. asset purchases — movement, not loss</dd>
+            <dd class="tnum mt-1 text-[20px] font-semibold text-negative">{formatMoneyCompact(data.financial.trueExpense)}</dd>
           </div>
           <div class="md:px-6">
-            <dt class="text-[11px] font-medium text-fg-faint" title="Cash spent acquiring assets you still own, and cash received selling them — a change of form in both directions, not profit or loss.">{period} asset movement</dt>
-            <dd class="tnum mt-1 text-[22px] font-semibold text-fg">
+            <dt class="text-[11px] font-medium text-fg-faint" title="Cash spent acquiring assets you still own, and cash received selling them — a change of form in both directions; neutral, not P&amp;L.">{period} asset movement</dt>
+            <dd class="tnum mt-1 text-[20px] font-semibold text-fg">
               {formatMoneyCompact(data.financial.assetPurchases)} in · {formatMoneyCompact(data.financial.assetSales)} back
             </dd>
-            <dd class="mt-0.5 text-[11px] text-fg-faint">movement between forms — neutral, not P&amp;L</dd>
           </div>
           <div class="md:pl-6">
             <dt class="flex items-center gap-2 text-[11px] font-medium text-fg-faint">
               Cash on hand <ConfidenceBadge meta={data.confidence?.networth} />
             </dt>
-            <dd class="tnum mt-1 text-[22px] font-semibold text-fg">{formatKpiValue(data.cash)}</dd>
-            <dd class="mt-0.5 text-[11px] text-fg-faint" title="Liquid cash. In Torn, holding little cash is intentional and healthy — wallet cash is exposed to mugging, so most wealth lives in banks, stocks and items.">liquidity — low cash is normal, not a warning</dd>
+            <dd class="tnum mt-1 text-[20px] font-semibold text-fg">{formatKpiValue(data.cash)}</dd>
+            <dd class="mt-0.5 text-[11px] text-fg-faint" title="Liquid cash. In Torn, holding little cash is intentional and healthy — wallet cash is exposed to mugging, so most wealth lives in banks, stocks and items.">liquidity — low cash is normal</dd>
           </div>
         {/if}
       </dl>
+    </section>
+
+    <!-- ══ ZONE C · ANALYTICS — trends and history, below the cockpit ══ -->
+    <div class="flex flex-col gap-8">
+    <!-- ── Net-worth trend: the chart + the hedged narrative ── -->
+    <section class="section-rule" aria-label="Net worth trend" style="order: {order.networth};">
+      <div class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
+        <h2 class="section-label">Net worth trend</h2>
+        <a href="/money" class="text-link shrink-0 text-xs font-medium">Full economy →</a>
+      </div>
+
+      <div class="mt-3">
+        {#if networthBlocked}
+          <StateMessage state="permission" compact title={networthBlocked.title} hint={networthBlocked.hint} />
+        {:else if !networthOption}
+          <div class="flex h-40 items-center justify-center text-[13px] text-fg-faint">
+            Snapshots appear as the worker runs — no net-worth history in this range yet.
+          </div>
+        {:else}
+          <Chart option={networthOption} height={260} />
+        {/if}
+      </div>
+
+      {#if wealthStory?.headline}
+        <p class="mt-3 text-[13px] leading-relaxed text-fg-muted" title="Derived from classified money events (earned vs asset conversion) — hedged on purpose; the exact split lives in the Economy reconciliation.">
+          {wealthStory.headline}
+        </p>
+      {/if}
       {#if prefs.mode !== "simple" && data.wallet.coverage !== "unavailable"}
-        <!-- Liquidity transport, demoted to a quiet contextual line: the
-             net cash figure is movement arithmetic, never a P&L row. -->
-        <p class="mt-4 text-[11px] text-fg-faint" title="Net cash movement is wallet arithmetic (cash in minus cash out). In Torn most of it is money changing form — not profit or loss.">
+        <p class="mt-2 text-[11px] text-fg-faint" title="Net cash movement is wallet arithmetic (cash in minus cash out). In Torn most of it is money changing form — not profit or loss.">
           Net cash movement {formatSignedMoneyCompact(data.wallet.walletInflow - data.wallet.walletOutflow)} — transport, not profit/loss{data.wallet.unreconciled !== null ? ` · reconciliation ${formatSignedMoneyCompact(data.wallet.unreconciled)}` : ""}
         </p>
       {/if}
@@ -466,7 +476,7 @@
       {/if}
     </section>
 
-    <!-- ── 5 · Recent activity ledger ── -->
+    <!-- ── Recent activity ledger ── -->
     <section class="section-rule" aria-label="Recent activity" style="order: {order.activity};">
       <div class="flex items-baseline justify-between gap-3">
         <h2 class="section-label">Recent activity</h2>

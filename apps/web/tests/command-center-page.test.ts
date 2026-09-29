@@ -31,20 +31,26 @@ describe("Command Center — Overview integration", () => {
     expect(ccCall).toBeLessThan(promiseAll);
   });
 
-  it("renders above the Right now board", () => {
-    const cc = overview.indexOf("<CommandCenter");
+  it("renders inside the cockpit zone, after the live-status block (mobile order: state first, then attention)", () => {
+    const cc = overview.indexOf("<CommandCenter items=");
     const live = overview.indexOf("<LiveNow");
     expect(cc).toBeGreaterThan(-1);
     expect(live).toBeGreaterThan(-1);
-    expect(cc).toBeLessThan(live);
+    expect(live).toBeLessThan(cc);
+  });
+
+  it("the Overview caps the feed to the few items that matter NOW", () => {
+    expect(overview).toContain("maxItems={3}");
   });
 });
 
 describe("Command Center — component contract", () => {
-  it("the feed is a semantic list", () => {
+  it("the feed is a semantic list labelled Needs attention", () => {
     expect(component).toContain('role="list"');
     expect(component).toContain('role="listitem"');
-    expect(component).toContain('aria-label="Command Center"');
+    expect(component).toContain('aria-label="Needs attention"');
+    expect(component).toContain(">Needs attention</p>");
+    expect(component).toContain("item{feed.length === 1");
   });
 
   it("a whole-row stretched anchor carries the analytics destination (visible focus, no nested links)", () => {
@@ -61,8 +67,8 @@ describe("Command Center — component contract", () => {
     expect(component).toContain("<Countdown");
   });
 
-  it("an empty feed renders a calm all-clear line", () => {
-    expect(component).toContain("All clear");
+  it("an empty feed renders a calm one-liner (no big empty section)", () => {
+    expect(component).toContain("Nothing needs attention — all clear.");
   });
 
   it("no raw client fetch — data flows only through $lib/api", () => {

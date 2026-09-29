@@ -17,7 +17,7 @@
    * alone. A future deadline ticks as a compact countdown.
    */
 
-  let { items }: { items: ActionItem[] } = $props();
+  let { items, maxItems = Number.POSITIVE_INFINITY }: { items: ActionItem[]; maxItems?: number } = $props();
 
   let nowSec = $state(Math.floor(Date.now() / 1000));
   let timer: ReturnType<typeof setInterval> | undefined;
@@ -29,15 +29,20 @@
     return () => clearInterval(timer);
   });
 
-  const feed = $derived(deriveCommandCenter(items, nowSec));
+  /** Overview shows only the few items that matter NOW (2–4); the full
+   *  prioritized logic stays in command-center-view (tested there). */
+  const feed = $derived(deriveCommandCenter(items, nowSec).slice(0, maxItems));
 </script>
 
-<section aria-label="Command Center">
-  <p class="section-label">Command Center</p>
+<section aria-label="Needs attention">
+  <div class="flex items-baseline justify-between gap-3">
+    <p class="section-label">Needs attention</p>
+    {#if feed.length > 0}<span class="tnum text-[11px] font-medium text-fg-faint">{feed.length} item{feed.length === 1 ? "" : "s"}</span>{/if}
+  </div>
   {#if feed.length === 0}
-    <p class="mt-2 text-[13px] text-fg-faint">All clear — nothing needs your attention.</p>
+    <p class="mt-1.5 text-[12.5px] text-fg-faint">Nothing needs attention — all clear.</p>
   {:else}
-    <ul role="list" class="mt-2.5 grid grid-cols-1 gap-1.5">
+    <ul role="list" class="mt-1.5 grid grid-cols-1 gap-1.5">
       {#each feed as entry (entry.key)}
         <li
           role="listitem"

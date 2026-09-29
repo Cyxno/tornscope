@@ -15,7 +15,6 @@ const read = (rel: string): string => readFileSync(fileURLToPath(new URL(rel, im
 
 const simple = read("../../web/src/lib/components/EconomySimple.svelte");
 const money = read("../../web/src/routes/money/+page.svelte");
-const liveNow = read("../../web/src/lib/components/LiveNow.svelte");
 const overview = read("../../web/src/routes/+page.svelte");
 
 describe("economy simple view", () => {
@@ -84,7 +83,7 @@ describe("overview hierarchy", () => {
   it("Simple strip is a dashboard: training outcome + liquidity, no accounting heroes", () => {
     // V1.0 hierarchy pass: accounting perspectives live in Economy; the
     // financial-semantics pass demoted cash-on-hand to liquidity context.
-    const stripStart = overview.indexOf('<dl class="mt-6 grid');
+    const stripStart = overview.indexOf('<dl class="mt-5 grid');
     const stripEnd = overview.indexOf("</dl>", stripStart);
     const strip = overview.slice(stripStart, stripEnd);
     const simpleSlice = strip.slice(strip.indexOf('prefs.mode === "simple"'), strip.indexOf('{:else}'));
@@ -98,7 +97,7 @@ describe("overview hierarchy", () => {
   });
 
   it("Advanced strip is wealth-first: economic result colored, conversion neutral, wallet demoted", () => {
-    const stripStart = overview.indexOf('<dl class="mt-6 grid');
+    const stripStart = overview.indexOf('<dl class="mt-5 grid');
     const stripEnd = overview.indexOf("</dl>", stripStart);
     const strip = overview.slice(stripStart, stripEnd);
     const advancedSlice = strip.slice(strip.indexOf("{:else}"), stripEnd);
@@ -109,7 +108,7 @@ describe("overview hierarchy", () => {
     expect(advancedSlice).toContain("text-negative");
     // CONVERSION: asset movement is one neutral cell.
     expect(advancedSlice).toContain("asset movement");
-    expect(advancedSlice).toContain("neutral, not P&amp;L");
+    expect(advancedSlice).toContain("neutral, not P&amp;L"); // kept in the dt title
     // LIQUIDITY: cash on hand last, framed as liquidity; the old colored
     // wallet trio is gone entirely.
     const cashIdx = advancedSlice.indexOf("Cash on hand");
@@ -140,13 +139,15 @@ describe("overview hierarchy", () => {
     expect(simple).toContain("Known income minus true costs — moving money between assets does not count.");
   });
 
-  it("focus ordering applies to every Overview section without hiding any", () => {
+  it("focus ordering applies to every ANALYTICS section without hiding any (live is fixed in the cockpit)", () => {
     expect(overview).toContain("overviewSectionOrder(prefs.focus)");
-    expect(overview).toContain('aria-label="Net worth" style="order: {order.networth};"');
+    expect(overview).toContain('aria-label="Net worth trend" style="order: {order.networth};"');
     expect(overview).toContain("aria-label=\"Today's story\" style=\"order: {order.today};\"");
     expect(overview).toContain('aria-label="Recent activity" style="order: {order.activity};"');
     expect(overview).toContain('aria-label="Beyond money" style="order: {order.beyond};"');
-    expect(overview).toContain('style="order: {order.live};"');
+    // The cockpit top zone is fixed: live state is always first.
+    expect(overview).toContain('aria-label="Financial snapshot"');
+    expect(overview).not.toContain('style="order: {order.live};"');
   });
 });
 
@@ -190,7 +191,7 @@ describe('release-candidate QA regressions', () => {
   it('the Overview board carries a Happy bar — energy/nerve/happy at a glance (1.0.3 action-board rewrite)', () => {
     const liveNowLogic = read("../../web/src/lib/live-now.ts");
     expect(liveNowLogic).toContain('kind: "happy"');
-    expect(liveNowLogic).toContain("today.bars.happy");
+    expect(liveNowLogic).toContain("today.bars[kind]"); // generalized lookup incl. life
   });
 
   it('the Today updated label is suppressed while the payload is stale (no contradictory "updated just now")', () => {
