@@ -34,9 +34,29 @@ export const CHANGELOG_KINDS: ChangelogKind[] = ["Added", "Improved", "Fixed", "
 
 export const CHANGELOG: ChangelogRelease[] = [
   {
-    version: "2.0.0",
+    version: "2.0.1",
     stage: "Public Testing",
     current: true,
+    summary:
+      "Semantic correctness for the intelligence layer: battle-stat projections now respect Torn's stat scaling (calibrated compounding with honest ETA ranges), level goals no longer claim an ETA, and display-coherence repairs.",
+    changes: [
+      {
+        kind: "Fixed",
+        text: 'Goals — battle-stat projections no longer extrapolate a frozen gain-per-day. Torn\u2019s gym gains scale with the current stat, so the model is calibrated on your observed RELATIVE growth and simulated forward (gains rising as the stat rises), producing an honest range ("~2\u20133 months") unless the calibration is strong and the horizon short. Level goals show no ETA at all — that mechanic is not reliably modelable, and very distant wealth ETAs degrade in confidence. See docs/SEMANTIC-AUDIT-2.0.md.',
+      },
+      {
+        kind: "Fixed",
+        text: 'Goals — the projection line is internally coherent: step-shaped stat histories no longer co-display "0/day observed growth" next to a live ETA, and a calibration window that ends at-or-below its start withholds the ETA outright.',
+      },
+      {
+        kind: "Fixed",
+        text: "System health — the last-sync age no longer renders an impossible duration (timestamp unit mismatch).",
+      },
+    ],
+  },
+  {
+    version: "2.0.0",
+    stage: "Public Testing",
     summary: "From recording your history to acting on it: a Command Center that prioritizes what needs attention, personal goals with honest trend projections, a deterministic insights engine, training & wealth intelligence, smarter notification rules and a real data-freshness view.",
     changes: [
       { kind: "Added", text: "Command Center — the Overview now opens with a prioritized attention feed built from deterministic rules: energy capped (possible regen loss), cooldowns ready, bank matured, travel landing, OC almost ready, education finishing, hospital/jail, goals at a milestone, top insights and data-health warnings. At most one entry per fact, explicit activation thresholds and per-priority caps — information hierarchy instead of notification spam." },
