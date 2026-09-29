@@ -210,7 +210,7 @@ export interface Projection {
   /** Actual window used: first/last point inside it (unix seconds). */
   window: { from: number | null; to: number | null; points: number };
   provenance: "derived";
-  /** Which Torn-aware model produced this projection (added post-audit). */
+  /** Which extrapolation model produced this projection. */
   model: ProjectionModel;
   /**
    * ETA uncertainty window in days [fastest, slowest] — null when no ETA or

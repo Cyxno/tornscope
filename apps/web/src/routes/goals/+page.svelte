@@ -394,6 +394,7 @@
                            DESCRIPTIVE recent growth, and the assumptions live in
                            a tooltip — no frozen gain/day presented as a promise. -->
                       <span class="font-medium text-fg">Projected: {formatEtaRange(view.projection.etaRangeDays) ?? td.displayDate(view.projection.etaAt)}</span>
+                      <span class="text-fg-faint">from your observed stat growth</span>
                       {#if view.projection.observedChangePerDay !== null}
                         <span class="tnum text-fg-muted"> · recent growth {formatVelocity(view.projection.observedChangePerDay, unit)} (observed)</span>
                       {/if}

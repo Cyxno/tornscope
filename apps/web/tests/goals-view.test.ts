@@ -19,6 +19,7 @@ import {
   unixToTargetDate,
   isStatProjection,
   formatEtaRange,
+  STAT_PROJECTION_ASSUMPTIONS,
 } from "../src/lib/goals-view";
 import type { Goal, GoalView, GoalsResponse } from "@tornscope/shared";
 
@@ -243,5 +244,14 @@ describe("stat projection presentation (semantic audit)", () => {
 
   it("maps the withheld-model reason to explicit copy", () => {
     expect(insufficientReasonLabel("mechanics_not_modelled")).toContain("can't model");
+  });
+
+  it("states the empirical assumptions without claiming modeled modifiers", () => {
+    // Calibrated ON observed conditions — never "accounts for modifiers":
+    expect(STAT_PROJECTION_ASSUMPTIONS).toContain("observed stat growth");
+    expect(STAT_PROJECTION_ASSUMPTIONS).toContain("relative stat growth");
+    expect(STAT_PROJECTION_ASSUMPTIONS).toContain("does not simulate");
+    expect(STAT_PROJECTION_ASSUMPTIONS).toMatch(/books|faction bonuses/);
+    expect(STAT_PROJECTION_ASSUMPTIONS).not.toMatch(/accounts for all modifiers|models current modifiers/i);
   });
 });

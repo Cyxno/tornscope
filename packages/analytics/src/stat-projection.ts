@@ -2,43 +2,46 @@ import type { Projection, ProjectionConfidence, ProjectionInsufficientReason, Pr
 import { PROJECTION_POLICY, type ProjectionPoint } from "./projection.js";
 
 /**
- * Torn-aware battle-stat goal projection (semantic audit 2.0).
+ * EMPIRICAL COMPOUNDING — battle-stat goal projection (semantic audit 2.0;
+ * reclassified in 2.0.2). This is an EMPIRICAL PROJECTION, not a mechanistic
+ * Torn gym simulator: it extrapolates the player's OBSERVED relative growth
+ * pattern, honestly labeled as such everywhere user-facing copy exists.
  *
- * WHY NOT LINEAR: in Torn, gym gain per train scales with the CURRENT stat
- * (plus happiness, gym, faction/education/company modifiers). A player at 1M
- * strength and a player at 100M strength get completely different absolute
- * gains from the same routine. Therefore
+ * WHY NOT LINEAR: absolute gain per day is the wrong shape for a stat goal —
+ * gains move with the current stat and the training environment, so a target
+ * that is a multiple of the current stat cannot be honestly divided by a
+ * frozen gain/day figure.
  *
- *     remaining_stat / observed_gain_per_day        // WRONG for stats
- *
- * understates the time to a target that is many multiples of the current
- * stat, and overstates it for nearby targets. Correct math on stored data is
- * not enough — the model must match the mechanic.
- *
- * MODEL (calibrated, no invented constants): under a stable training routine
- * the modifiers are approximately constant over the horizon, so the
- * STAT-SCALING component dominates and observed growth is approximately
- * RELATIVE (gain/day ≈ r × current stat). The model therefore:
+ * MODEL (empirical, no invented constants): recent history gives a daily
+ * RELATIVE growth rate, and the model assumes that rate roughly persists
+ * (`recent_conditions_assumed` — the load-bearing assumption, stated in the
+ * UI). It:
  *
  *   1. CALIBRATES the daily relative rate r on the player's OWN history —
- *      a least-squares fit of ln(stat) over the lookback window. This single
- *      number implicitly carries the player's real happiness, faction perks,
- *      education, company perks, gym and energy/day: everything they actually
- *      achieve, not a reconstructed modifier stack.
- *   2. SIMULATES forward iteratively: stat(t+1) = stat(t) × e^r — the gain
- *      each day is computed AT THE GROWN STAT, so per-train gains rise as
- *      the stat rises (as Torn's stat scaling implies) instead of staying
- *      frozen at today's absolute value.
+ *      a least-squares fit of ln(stat) over the lookback window. This is
+ *      CALIBRATED ON OBSERVED CONDITIONS: happiness, gym, faction upgrades,
+ *      education, company specials, temporary books/perks, energy/day and
+ *      training behaviour are all inside the number as recently experienced.
+ *      They are NOT modeled separately and NOT claimed as modeled.
+ *   2. SIMULATES forward iteratively: stat(t+1) = stat(t) × e^r — gains are
+ *      computed at the grown stat, so the projection includes the observed
+ *      scaling behavior instead of freezing today's absolute gain.
  *   3. QUANTIFIES uncertainty as the slope's standard error (r ± se),
- *      propagated to an ETA range [fastest, slowest].
- *   4. DEGRADES confidence with horizon distance, sample size and fit
- *      quality — and withholds the ETA entirely below the gates.
+ *      propagated to an ETA range [fastest, slowest] with a regime-change
+ *      floor (−8%/+15%): the calibration cannot speak for future regime
+ *      changes (book wearing off, Steadfast/faction/education/company
+ *      changes, happiness or training-frequency shifts, gym unlocks).
+ *   4. CAPS confidence: projection confidence = min(statistical fit
+ *      confidence, horizon confidence, MODEL_CONFIDENCE_CAP = "medium").
+ *      A perfect historical fit proves the FIT was clean, never that the
+ *      future obeys it — for an empirical model, "high" is unreachable.
  *
  * NOT MODELLED (and therefore never claimed): future gym unlocks, gym-dot
- * progression, and modifier changes. TornScope stores no gym membership /
- * dots / XP data that would make those predictions reliable — the model
- * states "current conditions" and nothing more. No official-formula
- * simulator is faked on top of parameters TornScope does not reliably have.
+ * progression, and any of the modifier changes above. Temporary boost
+ * regimes (books, extreme happy-jump periods) are not auto-detected — the
+ * confidence cap and range carry that uncertainty instead. No official
+ * gym-formula simulator is faked on top of parameters TornScope does not
+ * reliably have.
  */
 
 const DAY = 86_400;
@@ -76,7 +79,22 @@ export const STAT_PROJECTION_POLICY = {
    *  modifier changes are not modelled — the fit cannot speak for them). */
   RANGE_FLOOR_FRACTION: 0.08,
   RANGE_CEIL_FRACTION: 0.15,
+  /**
+   * MODEL confidence cap for this EMPIRICAL projection. Recent conditions
+   * are assumed to persist (recent_conditions_assumed) while future gym
+   * unlocks and modifier changes are unknown — so even a statistically
+   * perfect calibration never states "high" confidence or a single exact
+   * date for a stat goal.
+   */
+  CONFIDENCE_CAP: "medium",
 } as const;
+
+const CONFIDENCE_RANK: Record<ProjectionConfidence, number> = { high: 0, medium: 1, low: 2, insufficient: 3 };
+
+/** The WORST (most conservative) of the given confidence levels. */
+export function minConfidence(...values: ProjectionConfidence[]): ProjectionConfidence {
+  return values.reduce((a, b) => (CONFIDENCE_RANK[b] > CONFIDENCE_RANK[a] ? b : a));
+}
 
 /** Result of a forward growth simulation (also the audit/proof surface). */
 export interface StatGrowthSimulation {
@@ -265,19 +283,24 @@ export function projectStatGoal(
   const daysSlow = rSlow > 0 ? remaining / rSlow : horizon;
 
   // Confidence: fit quality + sample + span + horizon distance.
-  let confidence: ProjectionConfidence;
+  // Confidence = min(statistical fit, horizon, MODEL cap). fitR2 measures
+  // how clean the historical log-fit was — NOT how trustworthy the future
+  // is. For an empirical model that assumes recent_conditions_assumed, a
+  // perfect fit never justifies "high".
+  let fitConfidence: ProjectionConfidence;
   if (
     fit.r2 >= STAT_PROJECTION_POLICY.HIGH_R2 &&
     ordered.length >= STAT_PROJECTION_POLICY.HIGH_MIN_POINTS &&
     spanDays >= lookbackDays * STAT_PROJECTION_POLICY.HIGH_MIN_SPAN_FRACTION &&
     centralDays <= STAT_PROJECTION_POLICY.HIGH_MAX_ETA_DAYS
   ) {
-    confidence = "high";
+    fitConfidence = "high";
   } else if (centralDays > STAT_PROJECTION_POLICY.LOW_MIN_ETA_DAYS || ordered.length < STAT_PROJECTION_POLICY.MIN_POINTS + 2) {
-    confidence = "low";
+    fitConfidence = "low";
   } else {
-    confidence = "medium";
+    fitConfidence = "medium";
   }
+  const confidence = minConfidence(fitConfidence, STAT_PROJECTION_POLICY.CONFIDENCE_CAP);
 
   // Range is the honest presentation at medium/low confidence; a single
   // date is only stated when the calibration was strong AND the horizon short.

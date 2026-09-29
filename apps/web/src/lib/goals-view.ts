@@ -59,7 +59,7 @@ export function formatEtaRange(rangeDays: { minDays: number; maxDays: number } |
 
 /** Tooltip content: the assumptions behind a stat projection (compact). */
 export const STAT_PROJECTION_ASSUMPTIONS =
-  "Based on your recent training history, your observed training efficiency, Torn's stat scaling and your current training conditions. Future gym unlocks and modifier changes are not modelled — the range reflects that.";
+  "Projected from your observed stat growth. Uses your recent relative stat growth rather than assuming a fixed gain per day. It reflects your recent training conditions, but does not simulate future gym unlocks or changes in happiness, perks, books, faction bonuses or training frequency.";
 
 
 /** Human copy for a withheld ETA; unknown future codes get a humanized fallback. */

@@ -15,11 +15,72 @@ the game.
 
 ---
 
+## Intelligence taxonomy (2.0.2)
+
+TornScope intelligence comes in exactly three levels, and every surface says
+which one it is:
+
+1. **DESCRIPTIVE** — what actually happened (records, observations,
+   comparisons). All insights, all charts, all "recent growth" figures.
+2. **EMPIRICAL PROJECTION** — a historical pattern is extended forward with
+   guarded assumptions and explicit uncertainty. **Battle-stat goals are
+   HERE.** This is not a shortcoming to hide: it is the honest statement of
+   what TornScope knows.
+3. **MECHANISTIC PROJECTION** — the game mechanics themselves are modeled
+   from reliable parameters. **TornScope ships none of these today**, and
+   none may be implied by copy or confidence.
+
+Model naming: the battle-stat model is the **empirical compounding** model.
+Its public contract value stays `relative_compounding` (renaming a shipped
+API value buys nothing), but every description now says empirical:
+calibrated on observed conditions — never "accounts for all modifiers" or
+"models current modifiers".
+
+### recent_conditions_assumed
+
+The load-bearing assumption: recent conditions roughly persist. That fails
+when a temporary gym-gain book wears off, faction Steadfast changes, the
+company or education changes, happiness or training strategy shifts
+materially, energy/day changes structurally, or a better gym unlocks.
+TornScope does not detect these events (no new Torn calls, no new sync
+resources in this patch); instead the uncertainty is carried structurally:
+
+- projection confidence for stat goals = min(statistical fit confidence,
+  horizon confidence, MODEL confidence cap = "medium") — a statistically
+  perfect fit NEVER becomes a high-confidence forecast;
+- the ETA is always a RANGE at medium/low confidence (regime-change floor
+  −8%/+15%);
+- the UI states the basis and the limits verbatim ("uses your recent
+  relative stat growth… does not simulate future gym unlocks or changes in
+  happiness, perks, books, faction bonuses or training frequency").
+
+### Temporary regimes — investigated, deliberately not auto-detected
+
+Read-only check: TornScope stores consumption events (incl. happy-jump
+evidence) and session inference with "likely/possible" strength, so boost
+periods are sometimes VISIBLE — but as inference-grade signals, not reliable
+facts, and book usage is not synced at all. Per patch policy (no new Torn
+endpoints): temporary regimes are therefore NOT auto-detected; the
+documented limitation above is the mitigation.
+
+### Total battle stats — decision
+
+One exponential fit over the TOTAL series is kept, explicitly labeled as a
+BEHAVIORAL projection: the goal target IS a total, and the projection says
+"this observed total pattern continues under current conditions" — it makes
+no per-stat mechanic claim. When a player trains a single stat, the total's
+growth is that stat's growth plus three static components; the empirical
+label (not "Torn scaling model") is what keeps this honest. Least complex
+semantically-correct option; distribution-stability suppression (option C)
+is unnecessary for a behavioral claim.
+
+---
+
 ## Projection inventory
 
 | Metric | Previous model | Torn-correct? | New model | Confidence method |
 |---|---|---|---|---|
-| battle stats (total + strength/defense/speed/dexterity) | Linear: `remaining / median gain-per-day` | **NO** — gain/train scales with the current stat; linear freezes today's absolute gain | `relative_compounding` (stat-projection.ts): least-squares fit of ln(stat) over the lookback → daily relative rate r; iterative forward simulation `stat(t+1)=stat(t)·e^r`; uncertainty r±SE → ETA range | log-fit R² + point count + span + horizon distance; regime-change floor −8%/+15% on ranges; ETA withheld below gates |
+| battle stats (total + strength/defense/speed/dexterity) | Linear: `remaining / median gain-per-day` | **NO** — gain/train scales with the current stat; linear freezes today's absolute gain | **EMPIRICAL PROJECTION** `relative_compounding` (stat-projection.ts): least-squares fit of ln(stat) over the lookback → daily relative rate r; iterative forward simulation `stat(t+1)=stat(t)·e^r`; uncertainty r±SE → ETA range. Empirical, NOT mechanistic — recent_conditions_assumed | fit quality + horizon, CAPPED at medium by the model (perfect fit ≠ trustworthy forecast); regime-change floor −8%/+15%; ETA withheld below gates |
 | level | Same linear model | **NO** — level pacing depends on an XP curve and activity patterns TornScope does not store | **No projection** (`mechanics_not_modelled`): observed history stays visible, forecast withheld | n/a — deliberately none |
 | net worth | Robust linear (median daily delta + least-squares cross-check, R²/sign gates) | Acceptable: the stored value IS the tracked quantity; volatility gates suppress one-off-driven trends; conversions are already excluded from "growth" semantics by the money model | Unchanged linear + **new horizon degradation**: ETA > 1 year downgrades high→medium confidence | Existing R²/method-agreement gates + horizon degrade at 365d |
 | liquid wealth | Same linear model | Acceptable with the same caveat; asset conversions DO move liquid wealth by construction — that is what the metric is, and the fit gates reject conversion-driven sawtooth as noise | Unchanged + horizon degradation | As net worth |
@@ -112,8 +173,19 @@ New semantic regression suite `packages/analytics/tests/stat-projection.test.ts`
 - CASE E: insufficient history → no ETA, ever.
 - CASE F: distant goal → confidence degraded, honest RANGE returned
   (brackets central estimate, regime-change floor enforced).
-Plus: single-date only at high confidence on a near horizon; withhold on
-receding series/beyond horizon; determinism; schema tests pin the new
-`model`/`etaRangeDays`/`observedChangePerDay` contract and the
+Plus: withhold on receding series/beyond horizon; determinism; schema tests
+pin the `model`/`etaRangeDays`/`observedChangePerDay` contract and the
 `mechanics_not_modelled` reason; UI contract tests pin range rendering,
 "(observed)" labeling and the assumptions tooltip.
+
+2.0.2 additions (confidence semantics):
+- CASE G — regime change (slow → fast halves): the recent regime MAY be
+  extrapolated, but confidence is never high and the range is present.
+- CASE H — boost-shaped window with a statistically perfect fit (R²>0.9):
+  medium confidence with range — a perfect fit is not extreme certainty.
+- CASE I — total battle stats with single-stat training: stays an honest
+  behavioral projection (no mechanistic claim).
+- CASE J — long horizon with a perfect fit: LOW confidence with range, never
+  a high-confidence exact date.
+- policy pin: STAT_PROJECTION_POLICY.CONFIDENCE_CAP === "medium";
+  minConfidence picks the most conservative level.

@@ -34,9 +34,29 @@ export const CHANGELOG_KINDS: ChangelogKind[] = ["Added", "Improved", "Fixed", "
 
 export const CHANGELOG: ChangelogRelease[] = [
   {
-    version: "2.0.1",
+    version: "2.0.2",
     stage: "Public Testing",
     current: true,
+    summary:
+      "Honest labeling pass on the battle-stat projection: it is an EMPIRICAL projection (calibrated on your observed stat growth), not a mechanistic simulator — confidence is now capped so a perfect historical fit can never read as a certain forecast, and the assumptions are stated verbatim.",
+    changes: [
+      {
+        kind: "Improved",
+        text: 'Goals — battle-stat projections are reclassified and labeled as what they are: an empirical compounding model, "Projected … from your observed stat growth", calibrated on observed conditions. It does not simulate future gym unlocks or changes in happiness, perks, books, faction bonuses or training frequency, and the copy now says exactly that.',
+      },
+      {
+        kind: "Improved",
+        text: 'Goals — confidence semantics: projection confidence is now the minimum of statistical fit quality, horizon distance and a model cap of "medium". A statistically perfect calibration over 30/90 days can no longer produce a high-confidence exact date for a stat goal — a range with a regime-change floor is always shown, because the model assumes recent conditions persist.',
+      },
+      {
+        kind: "Technical",
+        text: "Semantic audit documentation gains a three-level taxonomy (DESCRIPTIVE / EMPIRICAL PROJECTION / MECHANISTIC PROJECTION) with battle-stat goals explicitly classified as empirical, plus the investigated-and-documented limits around temporary regimes (books, boost periods) and single-stat training under total battle-stat goals. Public contract values are unchanged.",
+      },
+    ],
+  },
+  {
+    version: "2.0.1",
+    stage: "Public Testing",
     summary:
       "Semantic correctness for the intelligence layer: battle-stat projections now respect Torn's stat scaling (calibrated compounding with honest ETA ranges), level goals no longer claim an ETA, and display-coherence repairs.",
     changes: [

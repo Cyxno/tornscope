@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { projectStatGoal, simulateStatGrowth, STAT_PROJECTION_POLICY, type StatGrowthSimulation } from "../src/stat-projection.js";
+import { minConfidence, projectStatGoal, simulateStatGrowth, STAT_PROJECTION_POLICY, type StatGrowthSimulation } from "../src/stat-projection.js";
 
 const DAY = 86_400;
 const NOW = 1_750_000_000;
@@ -116,17 +116,88 @@ describe("projectStatGoal — Torn stat-scaling semantics", () => {
     expect(p.etaRangeDays!.maxDays - p.etaRangeDays!.minDays).toBeGreaterThan(30);
   });
 
-  it("high confidence states a single date (no range) on a clean, near horizon", () => {
-    // +1%/day toward 2× the current stat → ln(2)/0.01 ≈ 69 days, clean fit.
+  it("a clean near-horizon calibration caps at MEDIUM with a tight range — never a single date", () => {
+    // +1%/day toward 2× the current stat → ln(2)/0.01 ≈ 69 days, R²≈1 fit.
+    // Statistical fit confidence would be "high"; the empirical model cap
+    // (recent_conditions_assumed) holds the projection at medium.
     const series = compoundingSeries(1_000_000, 0.01, 40);
     const last = series[series.length - 1]!.value;
     const p = projectStatGoal(series, last * 2, NOW, 30);
     expect(p.insufficientReason).toBeNull();
-    expect(p.confidence).toBe("high");
-    expect(p.etaRangeDays).toBeNull();
+    expect(p.confidence).toBe("medium");
+    expect(p.etaRangeDays).not.toBeNull();
     const etaDays = (p.etaAt! - NOW) / DAY;
     expect(etaDays).toBeGreaterThan(55);
     expect(etaDays).toBeLessThan(85);
+    expect(p.etaRangeDays!.minDays).toBeLessThan(etaDays);
+    expect(p.etaRangeDays!.maxDays).toBeGreaterThan(etaDays);
+  });
+
+  it("CASE G — regime change: recent regime is used, but never stated with more certainty than the assumption carries", () => {
+    // First half: ~0.1%/day. Second half: ~1%/day. The calibration window is
+    // the recent 30 days, so the projection extrapolates the RECENT regime —
+    // allowed, but the confidence/copy contract (medium cap + range +
+    // assumptions text) must make the basis explicit.
+    const points: { t: number; value: number }[] = [];
+    let stat = 1_000_000;
+    for (let i = 0; i <= 60; i++) {
+      points.push({ t: NOW - (60 - i) * DAY + 43_200, value: stat });
+      stat *= Math.exp(i < 30 ? 0.001 : 0.01);
+    }
+    const last = points[points.length - 1]!.value;
+    const p = projectStatGoal(points, last * 2, NOW, 30);
+    expect(p.insufficientReason).toBeNull();
+    // Extrapolating the recent regime is allowed...
+    expect(p.etaAt).not.toBeNull();
+    // ...but it may never read as a high-confidence exact forecast.
+    expect(p.confidence).not.toBe("high");
+    expect(p.etaRangeDays).not.toBeNull();
+  });
+
+  it("CASE H — boost-shaped window: a statistically perfect fit never yields extreme certainty on a long horizon", () => {
+    // Perfect exponential at +3%/day (e.g. a temporary book regime), 100×
+    // target → ~154 days. R²≈1, but the model cap + horizon keep it at
+    // medium with a range; never high, never a single date.
+    const series = compoundingSeries(1_000_000, 0.03, 40);
+    const last = series[series.length - 1]!.value;
+    const p = projectStatGoal(series, last * 100, NOW, 30);
+    expect(p.insufficientReason).toBeNull();
+    expect(p.fitR2).toBeGreaterThan(0.9); // statistically perfect fit
+    expect(p.confidence).toBe("medium");
+    expect(p.etaRangeDays).not.toBeNull();
+    expect(p.etaAt).not.toBeNull();
+  });
+
+  it("CASE I — total battle stats with one-stat training stays an honest behavioral projection", () => {
+    // Only Strength grows (+0.8%/day); the other three components are flat.
+    // The TOTAL series still compounds — the projection claims to extend the
+    // OBSERVED total pattern (behavioral), never per-stat mechanics.
+    const points: { t: number; value: number }[] = [];
+    let strength = 900_000;
+    for (let i = 0; i <= 40; i++) {
+      points.push({ t: NOW - (40 - i) * DAY + 43_200, value: strength + 3 * 33_000 });
+      strength *= Math.exp(0.008);
+    }
+    const last = points[points.length - 1]!.value;
+    const p = projectStatGoal(points, last * 1.5, NOW, 30);
+    expect(p.model).toBe("relative_compounding");
+    expect(p.insufficientReason).toBeNull();
+    expect(p.confidence).not.toBe("high");
+    // The claim is the observed total pattern, which continues while the
+    // training mix stays the same — covered by the assumptions contract:
+    expect(p.etaRangeDays).not.toBeNull();
+    void STAT_PROJECTION_POLICY;
+  });
+
+  it("CASE J — long horizon with a perfect fit never states a high-confidence exact date", () => {
+    // Perfect exponential at +0.5%/day, target 50× → ~783 days (years away).
+    const series = compoundingSeries(1_000_000, 0.005, 40);
+    const last = series[series.length - 1]!.value;
+    const p = projectStatGoal(series, last * 50, NOW, 30);
+    expect(p.insufficientReason).toBeNull();
+    expect(p.fitR2).toBeGreaterThan(0.9);
+    expect(p.confidence).toBe("low"); // horizon > LOW_MIN_ETA_DAYS
+    expect(p.etaRangeDays).not.toBeNull();
   });
 
   it("withholds beyond the sanity horizon and on receding series", () => {
@@ -154,6 +225,16 @@ describe("projectStatGoal — Torn stat-scaling semantics", () => {
     expect(STAT_PROJECTION_POLICY.MIN_SPAN_DAYS).toBe(5);
     expect(STAT_PROJECTION_POLICY.HORIZON_DEGRADE_DAYS).toBe(365);
     expect(STAT_PROJECTION_POLICY.HORIZON_MAX_DAYS).toBe(5 * 365);
+    // The empirical model never claims high confidence — this cap is the
+    // contract behind "a perfect fit is not a trustworthy forecast".
+    expect(STAT_PROJECTION_POLICY.CONFIDENCE_CAP).toBe("medium");
+  });
+
+  it("minConfidence picks the most conservative level", () => {
+    expect(minConfidence("high", "medium")).toBe("medium");
+    expect(minConfidence("medium", "medium")).toBe("medium");
+    expect(minConfidence("medium", "low")).toBe("low");
+    expect(minConfidence("high", "high")).toBe("high");
   });
 
   it("is deterministic", () => {
