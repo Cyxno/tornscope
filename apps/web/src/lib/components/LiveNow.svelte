@@ -15,8 +15,10 @@
    *   2. COOLDOWNS — compact tiles (Drug/Booster/Medical): READY is
    *      immediately recognizable, otherwise a large countdown. Tiles only
    *      render when the payload carries that cooldown.
-   *   3. ACTIVE STATES — only CURRENT states (travel/abroad/education/OC/
-   *      bank/hospital/jail); nothing renders when nothing is active.
+   *   3. ACTIVE STATES — only CURRENT states. Travel is CANONICAL and
+   *      always renders exactly once (flying/returning/landed/abroad/
+   *      stale/unavailable as priority rows; a compact Home row closes the
+   *      block) — hidden is never a travel state.
    *
    * All derivation stays in $lib/live-now (unit-tested): over-cap energy,
    * bank-maturity semantics, cooldown readiness. Interaction model is the
@@ -128,12 +130,15 @@
     {/if}
 
     <!-- ── 3 · ACTIVE STATES — only what is CURRENT (travel/education/OC/
-            bank/hospital/jail); the block disappears when nothing is. ── -->
+            bank/hospital/jail). Travel is a CANONICAL state and always
+            renders: priority rows (flying/returning/landed/abroad) sit at
+            the top with an accent marker; the compact Home row closes the
+            block — hidden is never a travel state. ── -->
     {#if activeStates.length > 0}
       <div class="mt-3 overflow-hidden rounded-tile border border-border bg-surface">
         <ul class="divide-y divide-border/60" role="list" aria-label="Active states">
           {#each activeStates as item (item.key)}
-            <li class="group relative px-4 py-2.5 transition-colors hover:bg-accent/5">
+            <li class="group relative px-4 py-2.5 transition-colors hover:bg-accent/5 {item.priority ? 'border-l-2 border-l-accent bg-accent/[0.04]' : ''}">
               <a
                 href={externalHref(item.tornUrl)}
                 class="absolute inset-0 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent"
@@ -142,12 +147,12 @@
               ></a>
               <div class="flex items-baseline justify-between gap-3">
                 <span class="flex min-w-0 items-baseline gap-2">
-                  <span class="text-[11px] font-semibold uppercase tracking-[0.12em] text-fg-muted">{item.label}</span>
-                  {#if item.state}<span class="min-w-0 truncate text-[13px] text-fg">{item.state}</span>{/if}
+                  <span class="text-[11px] font-semibold uppercase tracking-[0.12em] {item.priority ? 'text-accent' : 'text-fg-muted'}">{item.label}</span>
+                  {#if item.state}<span class="min-w-0 truncate text-[13px] {item.priority ? 'font-medium' : ''} text-fg">{item.state}</span>{/if}
                 </span>
                 <span class="flex shrink-0 items-baseline gap-2">
                   {#if item.relative}
-                    <span class="tnum text-[15px] font-semibold {item.ready ? 'text-positive' : item.tone === 'negative' ? 'text-negative' : item.tone === 'warning' ? 'text-warning' : 'text-fg'}">{item.relative}</span>
+                    <span class="tnum text-[15px] font-semibold {item.ready ? 'text-positive' : item.priority ? 'text-accent' : item.tone === 'negative' ? 'text-negative' : item.tone === 'warning' ? 'text-warning' : 'text-fg'}">{item.relative}</span>
                   {/if}
                   {#if item.scopeHref}
                     <a

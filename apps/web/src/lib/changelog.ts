@@ -34,9 +34,21 @@ export const CHANGELOG_KINDS: ChangelogKind[] = ["Added", "Improved", "Fixed", "
 
 export const CHANGELOG: ChangelogRelease[] = [
   {
-    version: "2.0.3",
+    version: "2.0.4",
     stage: "Public Testing",
     current: true,
+    summary:
+      "Live-status correctness: Travel is a canonical state on the Overview — it always renders exactly one explicit status (Home / Flying / Returning / Landed / Abroad / Stale / Unavailable), with flights at the top of the cockpit. Hidden is never a travel state.",
+    changes: [
+      {
+        kind: "Fixed",
+        text: "Overview — travel can no longer disappear from the live block. Just landed used to leave NO travel row at all (the traveling card expired while abroad did not apply), making state ambiguous. Travel now always renders exactly one explicit status: Home, Flying to <destination>, Returning from <destination>, Landed, Abroad · <destination>, Travel data stale (with age) or Travel status unavailable. Flights, returns, landed and abroad sit at the top of the active-states block with an accent marker and keep their safe Torn travel link; Home closes the block compactly. Stale or unavailable data never claims Home.",
+      },
+    ],
+  },
+  {
+    version: "2.0.3",
+    stage: "Public Testing",
     summary:
       "Dashboard-first Overview: the homepage now opens with a live cockpit — dominant Energy/Nerve/Happy/Life bars, compact cooldown tiles, current states only, capped Needs-attention and goal mini-cards — with charts and trend data moved below.",
     changes: [

@@ -40,6 +40,9 @@ export interface LiveItem {
   /** Secondary TornScope analytics route, rendered as its own link. */
   scopeHref: string | null;
   scopeLabel: string | null;
+  /** High visual priority (flight in progress / abroad / landed): renders
+   *  at the TOP of the active-states block with an accent marker. */
+  priority?: boolean;
 }
 
 export interface LiveBoard {
@@ -58,6 +61,106 @@ export function deriveLiveBoard(
   if (!today) return { bars: [], timers: [] };
   const nowSec = Math.floor(serverNowMs / 1000);
   return { bars: deriveBars(today, serverNowMs, displayTime), timers: deriveTimers(today, ocs, nowSec, serverNowMs, displayTime) };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Travel — a CANONICAL live state (2.x hotfix)                                */
+/* -------------------------------------------------------------------------- */
+
+export type TravelStateKind = "home" | "flying" | "returning" | "landed" | "abroad" | "unavailable" | "stale";
+
+export interface TravelStatusView {
+  kind: TravelStateKind;
+  /** Row headline: "Home", "Flying to Japan", "Abroad — Japan", "Landed",
+   *  "Travel data stale", "Travel status unavailable". */
+  state: string | null;
+  relative: string | null;
+  absolute: string | null;
+  tone: LiveItem["tone"];
+  ready: boolean;
+  /** Flight/abroad/landed render at the TOP of active states, accent-marked. */
+  priority: boolean;
+}
+
+/**
+ * Data older than this cannot honestly claim "Home" — it shows as stale
+ * (with its age) instead. The Today payload is normally seconds old; this
+ * gate only trips when the persisted last-known copy is served and a fresh
+ * upstream fetch has been failing for a while.
+ */
+export const TRAVEL_STALE_AFTER_SECONDS = 30 * 60;
+
+/**
+ * The ONE travel derivation. Every Overview render shows exactly ONE travel
+ * row — hidden is never a travel state:
+ *   home | flying | returning | landed | abroad | unavailable | stale.
+ */
+export function deriveTravelStatus(
+  today: TodayResponse,
+  nowSec: number,
+  serverNowMs: number,
+  displayTime: (tsSec: number) => string
+): TravelStatusView {
+  const t = today.travel;
+
+  // Stale data may not claim "Home". Age is shown when it can be computed.
+  const fetchedSec = Math.floor(today.fetchedAt / 1000);
+  const ageSec = Math.max(0, Math.floor(serverNowMs / 1000) - fetchedSec);
+  if (today.stale === true || ageSec > TRAVEL_STALE_AFTER_SECONDS) {
+    return {
+      kind: "stale",
+      state: today.stale === true ? "Travel data stale" : `Travel data stale · ${formatCountdownCompact(ageSec)} old`,
+      relative: null,
+      absolute: null,
+      tone: "warning",
+      ready: false,
+      priority: false,
+    };
+  }
+
+  if (t.state === "unavailable") {
+    return {
+      kind: "unavailable",
+      state: t.requiredAccess ? `Travel status unavailable — ${t.requiredAccess}` : "Travel status unavailable",
+      relative: null,
+      absolute: null,
+      tone: "neutral",
+      ready: false,
+      priority: false,
+    };
+  }
+
+  if (t.state === "traveling") {
+    const landed = t.landsAt !== null && t.landsAt <= nowSec;
+    if (landed) {
+      // Transition gap: Torn still reports "traveling" but the flight is over.
+      return { kind: "landed", state: "Landed", relative: null, absolute: null, tone: "positive", ready: true, priority: true };
+    }
+    const returning = t.direction === "returning";
+    return {
+      kind: returning ? "returning" : "flying",
+      state: returning ? (t.country ? `Returning from ${t.country}` : "Returning to Torn") : `Flying to ${t.country ?? "abroad"}`,
+      relative: t.landsAt !== null ? formatCountdownCompact(t.landsAt - nowSec) : null,
+      absolute: t.landsAt !== null ? displayTime(t.landsAt) : null,
+      tone: "accent",
+      ready: false,
+      priority: true,
+    };
+  }
+
+  if (t.state === "abroad") {
+    return {
+      kind: "abroad",
+      state: t.country ? `Abroad · ${t.country}` : "Abroad",
+      relative: null,
+      absolute: null,
+      tone: "accent",
+      ready: true,
+      priority: true,
+    };
+  }
+
+  return { kind: "home", state: "Home", relative: null, absolute: null, tone: "neutral", ready: false, priority: false };
 }
 
 function deriveBars(today: TodayResponse, serverNowMs: number, displayTime: (tsSec: number) => string): LiveItem[] {
@@ -123,6 +226,27 @@ function deriveTimers(
   const out: LiveItem[] = [];
   const t = today;
 
+  // TRAVEL — canonical live state, ALWAYS rendered exactly once. Flights,
+  // returns, landed and abroad are high-priority rows at the TOP; the
+  // compact Home row closes the block (hidden ≠ healthy).
+  const travel = deriveTravelStatus(today, nowSec, serverNowMs, displayTime);
+  if (travel.kind !== "home") {
+    out.push(item({
+      key: "travel",
+      label: "Travel",
+      state: travel.state,
+      relative: travel.relative,
+      absolute: travel.absolute,
+      tone: travel.tone,
+      ready: travel.ready,
+      priority: travel.priority,
+      tornUrl: TORN_URLS.travel,
+      tornLabel: "Open travel",
+      scopeHref: "/travel",
+      scopeLabel: "Travel history",
+    }));
+  }
+
   // Organized crime — faction crimes tab is the action.
   if (ocs) {
     const mine = ocs.filter((o) => o.myParticipation && (o.status === "Recruiting" || o.status === "Planning"));
@@ -154,36 +278,6 @@ function deriveTimers(
         scopeLabel: "Faction",
       }));
     }
-  }
-
-  // Travel — the headline state while flying or abroad.
-  if (t.travel.state === "traveling" && t.travel.landsAt !== null && t.travel.landsAt > nowSec) {
-    const returning = t.travel.direction === "returning";
-    out.push(item({
-      key: "travel",
-      label: "Travel",
-      state: returning ? "Returning to Torn" : `Flying to ${t.travel.country ?? "abroad"}`,
-      relative: formatCountdownCompact(t.travel.landsAt - nowSec),
-      absolute: displayTime(t.travel.landsAt),
-      tone: "accent",
-      ready: false,
-      tornUrl: TORN_URLS.travel,
-      tornLabel: "Open travel",
-      scopeHref: "/travel",
-      scopeLabel: "Travel history",
-    }));
-  } else if (t.travel.state === "abroad" && t.travel.country) {
-    out.push(item({
-      key: "abroad",
-      label: "Travel",
-      state: `Abroad — ${t.travel.country}`,
-      tone: "accent",
-      ready: true,
-      tornUrl: TORN_URLS.travel,
-      tornLabel: "Open travel",
-      scopeHref: "/travel",
-      scopeLabel: "Travel history",
-    }));
   }
 
   if (t.education.state === "active" && t.education.completesAt !== null && t.education.completesAt > nowSec) {
@@ -274,6 +368,26 @@ function deriveTimers(
       tornLabel: `Open items for the ${label.toLowerCase()} cooldown`,
     }));
   }
+
+  // Home — compact and explicit: the user always knows where they stand.
+  // Exactly ONE travel row per render: non-home states already pushed
+  // theirs at the top; only HOME closes the block here.
+  if (travel.kind === "home") {
+    out.push(item({
+      key: "travel",
+      label: "Travel",
+      state: travel.state,
+      relative: travel.relative,
+      absolute: travel.absolute,
+      tone: travel.tone,
+      ready: travel.ready,
+      priority: travel.priority,
+      tornUrl: TORN_URLS.travel,
+      tornLabel: "Open travel",
+      scopeHref: "/travel",
+      scopeLabel: "Travel history",
+    }));
+  }
   return out;
 }
 
@@ -281,7 +395,7 @@ function deriveTimers(
 function item(v: {
   key: string; label: string; state?: string | null; relative?: string | null; absolute?: string | null;
   pct?: number; tone: LiveItem["tone"]; ready: boolean; tornUrl: string; tornLabel: string;
-  scopeHref?: string | null; scopeLabel?: string | null;
+  scopeHref?: string | null; scopeLabel?: string | null; priority?: boolean;
 }): LiveItem {
-  return { state: null, relative: null, absolute: null, scopeHref: null, scopeLabel: null, ...v };
+  return { state: null, relative: null, absolute: null, scopeHref: null, scopeLabel: null, priority: false, ...v };
 }

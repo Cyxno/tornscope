@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deriveLiveBoard } from "../src/lib/live-now";
+import { deriveLiveBoard, deriveTravelStatus, TRAVEL_STALE_AFTER_SECONDS } from "../src/lib/live-now";
 import type { TodayResponse } from "@tornscope/shared";
 
 /**
@@ -142,10 +142,12 @@ describe("whole-card action shape (uniformity)", () => {
     );
     const ocs = [{ name: "Stage Fright", tier: 8, status: "Planning", readyAt: 1_000_000 + 6 * HOUR, myParticipation: true }];
     const keys = deriveLiveBoard(t, ocs, NOW_MS, fakeDisplayTime).timers.map((i) => i.key);
-    expect(keys.indexOf("oc")).toBeLessThan(keys.indexOf("travel"));
-    expect(keys.indexOf("travel")).toBeLessThan(keys.indexOf("education"));
+    // Travel is a canonical state with TOP priority during a flight.
+    expect(keys.indexOf("travel")).toBeLessThan(keys.indexOf("oc"));
+    expect(keys.indexOf("oc")).toBeLessThan(keys.indexOf("education"));
     expect(keys.indexOf("education")).toBeLessThan(keys.indexOf("bank"));
     expect(keys.indexOf("bank")).toBeLessThan(keys.indexOf("hospital"));
+    expect(keys.filter((k) => k === "travel")).toHaveLength(1); // EXACTLY one travel row — no duplicates
     expect(keys.indexOf("cd-drug")).toBe(keys.length - 3);
   });
 
@@ -154,7 +156,8 @@ describe("whole-card action shape (uniformity)", () => {
       travel: { state: "traveling", country: "Japan", direction: "returning", method: "Plane", departedAt: 999_000, landsAt: 1_000_000 + 2 * HOUR, remainingSeconds: 2 * HOUR, durationSeconds: 6 * HOUR, provenance: "exact", unavailableReason: null, requiredAccess: null },
     });
     const travel = deriveLiveBoard(t, NO_OCS, NOW_MS, fakeDisplayTime).timers.find((i) => i.key === "travel")!;
-    expect(travel.state).toBe("Returning to Torn");
+    expect(travel.state).toBe("Returning from Japan");
+    expect(travel.priority).toBe(true);
     expect(travel.relative).toBe("2h 00m");
     expect(travel.absolute).toBe(fakeDisplayTime(1_000_000 + 2 * HOUR));
     expect(travel.scopeHref).toBe("/travel");
@@ -219,3 +222,107 @@ describe("over-cap stacked energy card (1.0.4 regression)", () => {
     expect(card.relative).toBe("1h 00m");
   });
 });
+
+describe("travel canonical state (2.x hotfix — hidden is never a travel state)", () => {
+  const travelOf = (payload: TodayResponse) => deriveLiveBoard(payload, NO_OCS, NOW_MS, fakeDisplayTime).timers.find((i) => i.key === "travel")!;
+
+  it("HOME is rendered explicitly as a compact row — never vanished", () => {
+    const travel = travelOf(todayPayload());
+    expect(travel.state).toBe("Home");
+    expect(travel.priority).toBe(false);
+    expect(travel.tornUrl).toContain("torn.com");
+  });
+
+  it("FLYING is high priority with destination, countdown and landing time", () => {
+    const t = todayPayload({}, {
+      travel: { state: "traveling", country: "Japan", direction: "outbound", method: "Plane", departedAt: 999_000, landsAt: 1_000_000 + 4 * HOUR, remainingSeconds: 4 * HOUR, durationSeconds: 6 * HOUR, provenance: "exact", unavailableReason: null, requiredAccess: null },
+    });
+    const view = deriveTravelStatus(t, 1_000_000, NOW_MS, fakeDisplayTime);
+    expect(view.kind).toBe("flying");
+    expect(view.priority).toBe(true);
+    expect(view.state).toBe("Flying to Japan");
+    expect(view.relative).toBe("4h 00m");
+    const row = travelOf(t);
+    expect(row.priority).toBe(true);
+    expect(keysOf(t)[0]).toBe("travel"); // above every other active state
+  });
+
+  it("RETURNING names the origin country", () => {
+    const t = todayPayload({}, {
+      travel: { state: "traveling", country: "Japan", direction: "returning", method: "Plane", departedAt: 999_000, landsAt: 1_000_000 + 2 * HOUR, remainingSeconds: 2 * HOUR, durationSeconds: 6 * HOUR, provenance: "exact", unavailableReason: null, requiredAccess: null },
+    });
+    const view = deriveTravelStatus(t, 1_000_000, NOW_MS, fakeDisplayTime);
+    expect(view.kind).toBe("returning");
+    expect(view.state).toBe("Returning from Japan");
+    expect(view.priority).toBe(true);
+  });
+
+  it("LANDED: a flight whose clock ran out still shows Landed during the transition gap", () => {
+    const t = todayPayload({}, {
+      travel: { state: "traveling", country: "Japan", direction: "outbound", method: "Plane", departedAt: 999_000, landsAt: 1_000_000 - 300, remainingSeconds: 0, durationSeconds: 6 * HOUR, provenance: "exact", unavailableReason: null, requiredAccess: null },
+    });
+    const view = deriveTravelStatus(t, 1_000_000, NOW_MS, fakeDisplayTime);
+    expect(view.kind).toBe("landed");
+    expect(view.state).toBe("Landed");
+    expect(view.ready).toBe(true);
+    expect(view.priority).toBe(true);
+  });
+
+  it("ABROAD stays explicitly visible with the destination", () => {
+    const t = todayPayload({}, {
+      travel: { state: "abroad", country: "Argentina", direction: null, method: null, departedAt: 999_000, landsAt: null, remainingSeconds: null, durationSeconds: null, provenance: "exact", unavailableReason: null, requiredAccess: null },
+    });
+    const view = deriveTravelStatus(t, 1_000_000, NOW_MS, fakeDisplayTime);
+    expect(view.kind).toBe("abroad");
+    expect(view.state).toBe("Abroad · Argentina");
+    expect(view.ready).toBe(true);
+    expect(travelOf(t).state).toBe("Abroad · Argentina");
+  });
+
+  it("STALE data never claims Home — the row says so with the age", () => {
+    const t = todayPayload({}, { stale: true });
+    const view = deriveTravelStatus(t, 1_000_000, NOW_MS, fakeDisplayTime);
+    expect(view.kind).toBe("stale");
+    expect(view.state).toContain("Travel data stale");
+    expect(travelOf(t).state).toBe("Travel data stale");
+  });
+
+  it("an old fetchedAt (beyond the stale window) also reads stale, with age", () => {
+    const oldFetch = { ...todayPayload(), fetchedAt: (1_000_000 - TRAVEL_STALE_AFTER_SECONDS - 600) * 1000 };
+    const view = deriveTravelStatus(oldFetch, 1_000_000, NOW_MS, fakeDisplayTime);
+    expect(view.kind).toBe("stale");
+    expect(view.state).toMatch(/Travel data stale · .+ old/);
+  });
+
+  it("UNAVAILABLE states the outage instead of pretending Home", () => {
+    const t = todayPayload({}, {
+      travel: { state: "unavailable", country: null, direction: null, method: null, departedAt: null, landsAt: null, remainingSeconds: null, durationSeconds: null, provenance: "exact", unavailableReason: "access_denied", requiredAccess: "travel" },
+    });
+    const view = deriveTravelStatus(t, 1_000_000, NOW_MS, fakeDisplayTime);
+    expect(view.kind).toBe("unavailable");
+    expect(view.state).toContain("Travel status unavailable");
+  });
+
+  it("absence of a travel row is invalid for EVERY payload — the row always exists", () => {
+    const variants: TodayResponse[] = [
+      todayPayload(),
+      todayPayload({}, { travel: { state: "traveling", country: "Japan", direction: "outbound", method: "Plane", departedAt: 999_000, landsAt: 1_000_000 + HOUR, remainingSeconds: HOUR, durationSeconds: 6 * HOUR, provenance: "exact", unavailableReason: null, requiredAccess: null } }),
+      todayPayload({}, { travel: { state: "abroad", country: "Mexico", direction: null, method: null, departedAt: null, landsAt: null, remainingSeconds: null, durationSeconds: null, provenance: "exact", unavailableReason: null, requiredAccess: null } }),
+      todayPayload({}, { stale: true }),
+      todayPayload({}, { travel: { state: "unavailable", country: null, direction: null, method: null, departedAt: null, landsAt: null, remainingSeconds: null, durationSeconds: null, provenance: "exact", unavailableReason: null, requiredAccess: null } }),
+    ];
+    for (const t of variants) {
+      const travel = travelOf(t);
+      expect(travel, `travel row missing for travel.state=${t.travel.state}${t.stale ? " (stale)" : ""}`).toBeDefined();
+      expect(travel.label).toBe("Travel");
+    }
+  });
+
+  it("the stale window keeps its documented value", () => {
+    expect(TRAVEL_STALE_AFTER_SECONDS).toBe(30 * 60);
+  });
+});
+
+function keysOf(payload: TodayResponse): string[] {
+  return deriveLiveBoard(payload, NO_OCS, NOW_MS, fakeDisplayTime).timers.map((i) => i.key);
+}
