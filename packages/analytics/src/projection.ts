@@ -40,6 +40,11 @@ export const PROJECTION_POLICY = {
   MAX_METHOD_DIVERGENCE: 0.5,
   /** Projected ETA further than this many days is withheld. */
   HORIZON_DAYS: 5 * 365,
+  /**
+   * Past this ETA distance a single exact date loses credibility —
+   * confidence degrades one step (semantic audit 2.0).
+   */
+  HORIZON_DEGRADE_DAYS: 365,
   /** Velocity is exactly 0 (or negative for an increasing target) → no trend. */
 } as const;
 
@@ -111,6 +116,9 @@ export function projectTowardTarget(
     insufficientReason: reason,
     window,
     provenance: "derived",
+    model: "median_delta_linear",
+    etaRangeDays: null,
+    observedChangePerDay: velocity,
   });
 
   const windowStart = now - lookbackDays * DAY;
@@ -195,6 +203,14 @@ export function projectTowardTarget(
     return insufficient("beyond_horizon", confidence, window, velocity, fit);
   }
 
+  // Horizon degradation (semantic-audit 2.0): the further away a single date
+  // lies, the less credible one exact day is. Degrade confidence one step
+  // (never below the "medium" needed to state an ETA at all) past one year.
+  const etaDays = etaSeconds / DAY;
+  if (etaDays > PROJECTION_POLICY.HORIZON_DEGRADE_DAYS && confidence === "high") {
+    confidence = "medium";
+  }
+
   return {
     etaAt: Math.round(now + etaSeconds),
     velocityPerDay: velocity,
@@ -205,6 +221,9 @@ export function projectTowardTarget(
     insufficientReason: null,
     window,
     provenance: "derived",
+    model: "median_delta_linear",
+    etaRangeDays: null,
+    observedChangePerDay: velocity,
   };
 }
 
@@ -282,4 +301,39 @@ export function observedTrend(points: ReadonlyArray<ProjectionPoint>, now: numbe
     return { velocityPerDay: velocity, slopePerDay: slope, fitR2: r2, confidence: "high", window };
   }
   return { velocityPerDay: velocity, slopePerDay: slope, fitR2: r2, confidence: "medium", window };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Shared descriptive helper                                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Median per-day delta over ALREADY windowed, ASCENDING points — the
+ * descriptive "recent growth" figure. Exported so the stat-goal model can
+ * report observed change WITHOUT using it as its extrapolation input.
+ */
+export function medianDailyDelta(orderedPoints: ReadonlyArray<ProjectionPoint>): number | null {
+  if (orderedPoints.length < 2) return null;
+  const dailyDeltas: number[] = [];
+  const firstDay = Math.ceil(orderedPoints[0]!.t / DAY) * DAY;
+  const lastDay = Math.floor(orderedPoints[orderedPoints.length - 1]!.t / DAY) * DAY;
+  const valueAt = (ts: number): number => {
+    let lo = 0;
+    let hi = orderedPoints.length - 1;
+    if (ts <= orderedPoints[0]!.t) return orderedPoints[0]!.value;
+    if (ts >= orderedPoints[hi]!.t) return orderedPoints[hi]!.value;
+    while (hi - lo > 1) {
+      const mid = (lo + hi) >> 1;
+      if (orderedPoints[mid]!.t <= ts) lo = mid;
+      else hi = mid;
+    }
+    const a = orderedPoints[lo]!;
+    const b = orderedPoints[hi]!;
+    const frac = b.t === a.t ? 0 : (ts - a.t) / (b.t - a.t);
+    return a.value + (b.value - a.value) * frac;
+  };
+  for (let day = firstDay + DAY; day <= lastDay; day += DAY) {
+    dailyDeltas.push(valueAt(day) - valueAt(day - DAY));
+  }
+  return median(dailyDeltas);
 }

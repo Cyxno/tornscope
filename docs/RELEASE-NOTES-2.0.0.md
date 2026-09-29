@@ -104,6 +104,20 @@ nothing, or because syncing broke?"**
   from the sync bookkeeping, never guessed. Stocks/merits are marked *live*
   (fetched on demand), honestly distinct from synced history.
 
+### Semantic correctness: projections that respect the game
+
+After release review, the battle-stat projection was rebuilt. Torn's gym
+gains scale with your CURRENT stat — a frozen historical gain/day is the
+wrong mechanic for a target several times your level. Stat goals now project
+via a model **calibrated on your own observed relative growth** (which
+implicitly carries your happiness, faction/education/company perks and
+training habits) and **simulated forward iteratively**, so the modeled gains
+rise as the stat rises. The result is an honest **range** ("~4–6 months")
+unless the calibration is strong and the horizon short, with the assumptions
+in a tooltip. **Level goals no longer show an ETA at all** (the mechanic
+isn't reliably modelable), and wealth ETAs beyond a year degrade in
+confidence. Details: `docs/SEMANTIC-AUDIT-2.0.md`.
+
 ---
 
 ## Technical notes

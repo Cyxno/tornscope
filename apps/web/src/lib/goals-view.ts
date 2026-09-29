@@ -24,7 +24,43 @@ export const INSUFFICIENT_REASON_COPY: Record<ProjectionInsufficientReason, stri
   too_volatile: "Too volatile to project",
   beyond_horizon: "Beyond the 5-year horizon",
   target_reached: "Target reached",
+  mechanics_not_modelled: "No projection — TornScope can't model this mechanic reliably",
 };
+
+/* -------------------------------------------------------------------------- */
+/* Stat-projection presentation (semantic audit 2.0)                           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Battle-stat projections use the relative-compounding model: the ETA is a
+ * RANGE unless confidence is high, and the honest companion figure is the
+ * DESCRIPTIVE recent growth — never a frozen gain/day as a promise.
+ */
+export function isStatProjection(model: string | null | undefined): boolean {
+  return model === "relative_compounding";
+}
+
+/** "~4–6 months" style range; falls back to days/weeks for short horizons. */
+export function formatEtaRange(rangeDays: { minDays: number; maxDays: number } | null | undefined): string | null {
+  if (!rangeDays || rangeDays.minDays > rangeDays.maxDays) return null;
+  const fmt = (days: number): string => {
+    if (days < 14) return `~${Math.max(1, Math.round(days))} days`;
+    if (days < 60) return `~${Math.max(1, Math.round(days / 7))} weeks`;
+    const months = days / 30.44;
+    if (months < 24) return `~${Math.round(months)} months`;
+    return `~${(months / 12).toFixed(1).replace(/\.0$/, "")} years`;
+  };
+  const lo = fmt(rangeDays.minDays);
+  const hi = fmt(rangeDays.maxDays);
+  // Same unit and both rounded to the same value → single label.
+  if (lo === hi) return lo;
+  return `${lo}–${hi}`;
+}
+
+/** Tooltip content: the assumptions behind a stat projection (compact). */
+export const STAT_PROJECTION_ASSUMPTIONS =
+  "Based on your recent training history, your observed training efficiency, Torn's stat scaling and your current training conditions. Future gym unlocks and modifier changes are not modelled — the range reflects that.";
+
 
 /** Human copy for a withheld ETA; unknown future codes get a humanized fallback. */
 export function insufficientReasonLabel(reason: string | null | undefined): string {

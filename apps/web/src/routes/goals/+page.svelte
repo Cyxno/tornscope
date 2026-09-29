@@ -20,6 +20,9 @@
     targetError,
     unitForMetric,
     unixToTargetDate,
+    isStatProjection,
+    formatEtaRange,
+    STAT_PROJECTION_ASSUMPTIONS,
   } from "$lib/goals-view";
   import PageHeader from "$lib/components/PageHeader.svelte";
   import Panel from "$lib/components/Panel.svelte";
@@ -385,7 +388,21 @@
                   {/if}
 
                   <p class="mt-3 text-[13px]">
-                    {#if view.projection.etaAt !== null}
+                    {#if view.projection.etaAt !== null && isStatProjection(view.projection.model)}
+                      <!-- Stat goals (semantic audit): the ETA is a RANGE unless
+                           confidence is high, the companion figure is the
+                           DESCRIPTIVE recent growth, and the assumptions live in
+                           a tooltip — no frozen gain/day presented as a promise. -->
+                      <span class="font-medium text-fg">Projected: {formatEtaRange(view.projection.etaRangeDays) ?? td.displayDate(view.projection.etaAt)}</span>
+                      {#if view.projection.observedChangePerDay !== null}
+                        <span class="tnum text-fg-muted"> · recent growth {formatVelocity(view.projection.observedChangePerDay, unit)} (observed)</span>
+                      {/if}
+                      <span class={`chip ml-2 ${chip.class} !px-1.5 !text-[9px] !font-semibold !uppercase !tracking-wide`} title={chip.title}>{chip.label}</span>
+                      <details class="mt-1.5 text-xs text-fg-faint">
+                        <summary class="cursor-pointer select-none hover:text-fg-muted">Based on</summary>
+                        <span>{STAT_PROJECTION_ASSUMPTIONS}</span>
+                      </details>
+                    {:else if view.projection.etaAt !== null}
                       <span class="font-medium text-fg">Projected: {td.displayDate(view.projection.etaAt)}</span>
                       {#if velocity}
                         <span class="tnum text-fg-muted"> · {velocity}</span>
@@ -393,6 +410,9 @@
                       <span class={`chip ml-2 ${chip.class} !px-1.5 !text-[9px] !font-semibold !uppercase !tracking-wide`} title={chip.title}>{chip.label}</span>
                     {:else}
                       <span class="text-fg-muted">{insufficientReasonLabel(view.projection.insufficientReason)}</span>
+                      {#if isStatProjection(view.projection.model) && view.projection.observedChangePerDay !== null}
+                        <span class="tnum text-fg-faint"> · recent growth {formatVelocity(view.projection.observedChangePerDay, unit)} (observed)</span>
+                      {/if}
                     {/if}
                   </p>
                 {/if}

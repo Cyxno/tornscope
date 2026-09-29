@@ -91,6 +91,26 @@ describe("goal cards are honest and accessible", () => {
 });
 
 describe("lookback selector is a segmented control", () => {
+  it("stat goals show an ETA RANGE, observed growth and the assumptions — no false precision", () => {
+    const src = page();
+    // The compounding model renders via formatEtaRange (a range), never a raw date:
+    expect(src).toContain("isStatProjection(view.projection.model)");
+    expect(src).toContain("formatEtaRange(view.projection.etaRangeDays)");
+    // Observed growth is labeled descriptive:
+    expect(src).toContain("(observed)");
+    // Assumptions are available but not permanently on screen:
+    expect(src).toContain("STAT_PROJECTION_ASSUMPTIONS");
+    expect(src).toContain("<details");
+  });
+
+  it("the stat-projection presentation helpers enforce honest units", () => {
+    const viewSrc = read("lib/goals-view.ts");
+    expect(viewSrc).toContain("export function isStatProjection");
+    expect(viewSrc).toContain("export function formatEtaRange");
+    // Weeks/months/years units — day-precise dates are never emitted for ranges.
+    expect(viewSrc).toContain("~");
+  });
+
   it("groups 7/30/90 behind an accessible group with pressed state", () => {
     const src = page();
     expect(src).toContain('role="group"');

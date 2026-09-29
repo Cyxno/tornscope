@@ -17,6 +17,8 @@ import {
   targetError,
   unitForMetric,
   unixToTargetDate,
+  isStatProjection,
+  formatEtaRange,
 } from "../src/lib/goals-view";
 import type { Goal, GoalView, GoalsResponse } from "@tornscope/shared";
 
@@ -52,6 +54,9 @@ function view(over: Partial<GoalView> = {}): GoalView {
       insufficientReason: null,
       window: { from: 0, to: 1, points: 30 },
       provenance: "derived",
+      model: "median_delta_linear",
+      etaRangeDays: null,
+      observedChangePerDay: 120_450,
     },
     dataAvailable: true,
     ...over,
@@ -214,5 +219,29 @@ describe("as-of age line", () => {
 
   it("no snapshot timestamp means no as-of claim", () => {
     expect(asOfLabel(null, () => "never")).toBe("");
+  });
+});
+
+describe("stat projection presentation (semantic audit)", () => {
+  it("recognizes the compounding stat model only", () => {
+    expect(isStatProjection("relative_compounding")).toBe(true);
+    expect(isStatProjection("median_delta_linear")).toBe(false);
+    expect(isStatProjection("none")).toBe(false);
+    expect(isStatProjection(null)).toBe(false);
+  });
+
+  it("formats ETA ranges in honest human units, never a precise date", () => {
+    expect(formatEtaRange({ minDays: 100, maxDays: 140 })).toBe("~3 months–~5 months");
+    expect(formatEtaRange({ minDays: 108, maxDays: 150 })).toBe("~4 months–~5 months");
+    expect(formatEtaRange({ minDays: 3, maxDays: 9 })).toBe("~3 days–~9 days");
+    expect(formatEtaRange({ minDays: 20, maxDays: 45 })).toBe("~3 weeks–~6 weeks");
+    expect(formatEtaRange({ minDays: 1200, maxDays: 1600 })).toBe("~3.3 years–~4.4 years");
+    expect(formatEtaRange(null)).toBeNull();
+    // Degenerate input never formats.
+    expect(formatEtaRange({ minDays: 50, maxDays: 40 })).toBeNull();
+  });
+
+  it("maps the withheld-model reason to explicit copy", () => {
+    expect(insufficientReasonLabel("mechanics_not_modelled")).toContain("can't model");
   });
 });

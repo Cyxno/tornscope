@@ -165,11 +165,30 @@ export const PROJECTION_INSUFFICIENT_REASONS = [
   "beyond_horizon",
   /** Current value already meets the target. */
   "target_reached",
+  /**
+   * The metric's underlying Torn mechanics are not modelled reliably enough
+   * to extrapolate at all (LEVEL: TornScope stores no XP/gain mechanics that
+   * would justify a forecast). Show the observed history, never a forecast.
+   */
+  "mechanics_not_modelled",
 ] as const;
 
 export type ProjectionInsufficientReason = (typeof PROJECTION_INSUFFICIENT_REASONS)[number];
 
 export type ProjectionConfidence = "high" | "medium" | "low" | "insufficient";
+
+/**
+ * Which extrapolation model produced the projection — the model must FIT the
+ * Torn mechanics of the metric, not merely the stored data shape:
+ * - median_delta_linear: robust linear trend (appropriate for wealth where
+ *   the stored value IS the quantity being tracked);
+ * - relative_compounding: stat-scaling-aware model for battle stats, where
+ *   per-train gain scales with the current stat — calibrated on the player's
+ *   observed relative growth and simulated iteratively forward;
+ * - none: no forecast (withheld or not modelled).
+ */
+export const PROJECTION_MODELS = ["median_delta_linear", "relative_compounding", "none"] as const;
+export type ProjectionModel = (typeof PROJECTION_MODELS)[number];
 
 /**
  * Deterministic trend projection of a series toward a target.
@@ -191,6 +210,21 @@ export interface Projection {
   /** Actual window used: first/last point inside it (unix seconds). */
   window: { from: number | null; to: number | null; points: number };
   provenance: "derived";
+  /** Which Torn-aware model produced this projection (added post-audit). */
+  model: ProjectionModel;
+  /**
+   * ETA uncertainty window in days [fastest, slowest] — null when no ETA or
+   * when the confidence is high enough to state a single date. UI renders a
+   * range ("~4–6 months") instead of a precise date whenever present.
+   */
+  etaRangeDays: { minDays: number; maxDays: number } | null;
+  /**
+   * DESCRIPTIVE observed change per day over the lookback — for stat goals
+   * this is what "Recent growth" may show. Never an input to the ETA when
+   * model is relative_compounding (the compounding rate is calibrated on
+   * relative growth instead).
+   */
+  observedChangePerDay: number | null;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -240,6 +274,9 @@ export const ProjectionSchema = z.object({
   insufficientReason: z.enum(PROJECTION_INSUFFICIENT_REASONS).nullable(),
   window: z.object({ from: z.number().nullable(), to: z.number().nullable(), points: z.number() }),
   provenance: z.literal("derived"),
+  model: z.enum(PROJECTION_MODELS),
+  etaRangeDays: z.object({ minDays: z.number(), maxDays: z.number() }).nullable(),
+  observedChangePerDay: z.number().nullable(),
 });
 
 export const GoalSchema = z.object({

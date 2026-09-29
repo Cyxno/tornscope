@@ -8,7 +8,8 @@ import {
   type ProjectionLookbackDays,
 } from "@tornscope/shared";
 import type { NetworthSnapshotFields } from "./networth.js";
-import { projectTowardTarget, type ProjectionPoint } from "./projection.js";
+import { medianDailyDelta, projectTowardTarget, type ProjectionPoint } from "./projection.js";
+import { projectStatGoal } from "./stat-projection.js";
 
 /**
  * Goal analytics (2.0): read a goal's current value from data TornScope
@@ -86,29 +87,61 @@ function goalSeries(metric: GoalMetricId, facts: GoalFacts): ProjectionPoint[] {
 /** Minimal stored-goal shape (Prisma row with BigInt already converted). */
 export type GoalLike = Pick<Goal, "id" | "metric" | "target" | "note" | "createdAt" | "targetDate" | "status" | "achievedAt">;
 
+/** A frozen "already reached" projection (achieved goals keep this view). */
+function reachedProjection(lookbackDays: ProjectionLookbackDays): Projection {
+  return {
+    etaAt: null,
+    velocityPerDay: null,
+    slopePerDay: null,
+    fitR2: null,
+    lookbackDays,
+    confidence: "high",
+    insufficientReason: "target_reached",
+    window: { from: null, to: null, points: 0 },
+    provenance: "derived",
+    model: "none",
+    etaRangeDays: null,
+    observedChangePerDay: null,
+  };
+}
+
 /**
  * Compose the full single-goal view: current value, progress 0..1 and the
  * trend projection over the requested lookback. An already-achieved goal
  * stays frozen: its projection reports target_reached even if the latest
  * snapshot has since dipped below the target.
+ *
+ * SEMANTIC ROUTING (2.0 audit — "correct math is not enough"): the model
+ * must match the Torn mechanic behind the metric, not just the data shape.
+ *
+ * - battle stats (total + individual) → relative_compounding: per-train gym
+ *   gain scales with the CURRENT stat, so gain/day grows while the stat
+ *   grows. Linear remaining/target-divided-by-observed-gain would be a
+ *   wrong-mechanic extrapolation. The compounding model calibrates the
+ *   player's observed RELATIVE rate and iterates forward (see
+ *   stat-projection.ts; calibrated on real history, current conditions
+ *   only — gym unlocks are not modelled because TornScope cannot
+ *   reliably predict them).
+ * - level → NO projection at all. Torn level pacing depends on an XP curve
+ *   and activity patterns TornScope does not store; a linear fit of a
+ *   step-shaped level history would manufacture an ETA. Observed history
+ *   stays visible; the forecast is withheld (mechanics_not_modelled).
+ * - net worth / liquid wealth → robust linear (median daily delta with fit
+ *   gates): the stored value IS the tracked quantity; the existing
+ *   volatility gates, minimum-history gates and horizon degradation carry
+ *   the honesty burden here.
  */
 export function buildGoalView(goal: GoalLike, facts: GoalFacts, now: number, lookbackDays: ProjectionLookbackDays = DEFAULT_PROJECTION_LOOKBACK): GoalView {
   const current = goalCurrentValue(goal.metric, facts);
   const series = goalSeries(goal.metric, facts);
   const projection: Projection =
     goal.status === "achieved"
-      ? {
-          etaAt: null,
-          velocityPerDay: null,
-          slopePerDay: null,
-          fitR2: null,
-          lookbackDays,
-          confidence: "high",
-          insufficientReason: "target_reached",
-          window: { from: null, to: null, points: 0 },
-          provenance: "derived",
-        }
-      : projectTowardTarget(series, goal.target, now, lookbackDays, current?.value ?? null);
+      ? reachedProjection(lookbackDays)
+      : goal.metric === "level"
+        ? insufficientLevelProjection(lookbackDays, series, now)
+        : isBattlestatMetric(goal.metric)
+          ? projectStatGoal(series, goal.target, now, lookbackDays)
+          : projectTowardTarget(series, goal.target, now, lookbackDays, current?.value ?? null);
   const progress = current !== null && goal.target > 0 ? Math.max(0, Math.min(1, current.value / goal.target)) : null;
   return {
     goal: {
@@ -126,6 +159,33 @@ export function buildGoalView(goal: GoalLike, facts: GoalFacts, now: number, loo
     progress,
     projection,
     dataAvailable: current !== null,
+  };
+}
+
+const BATTLESTAT_GOAL_METRICS: ReadonlySet<GoalMetricId> = new Set(["battlestats_total", "strength", "defense", "speed", "dexterity"]);
+
+function isBattlestatMetric(metric: GoalMetricId): boolean {
+  return BATTLESTAT_GOAL_METRICS.has(metric);
+}
+
+/** Level: observed history only — never a manufactured ETA. */
+function insufficientLevelProjection(lookbackDays: ProjectionLookbackDays, series: ProjectionPoint[], now: number): Projection {
+  const windowStart = now - lookbackDays * 86_400;
+  const inWindow = series.filter((p) => p.t >= windowStart && p.t <= now);
+  const observed = medianDailyDelta([...inWindow].sort((a, b) => a.t - b.t));
+  return {
+    etaAt: null,
+    velocityPerDay: null,
+    slopePerDay: null,
+    fitR2: null,
+    lookbackDays,
+    confidence: "insufficient",
+    insufficientReason: "mechanics_not_modelled",
+    window: { from: inWindow[0]?.t ?? null, to: inWindow[inWindow.length - 1]?.t ?? null, points: inWindow.length },
+    provenance: "derived",
+    model: "none",
+    etaRangeDays: null,
+    observedChangePerDay: observed,
   };
 }
 

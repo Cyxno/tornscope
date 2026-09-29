@@ -62,6 +62,9 @@ describe("response schemas", () => {
         insufficientReason: null,
         window: { from: 1_740_000_000, to: 1_750_000_000, points: 30 },
         provenance: "derived",
+        model: "relative_compounding",
+        etaRangeDays: null,
+        observedChangePerDay: 10_000_000,
       },
       dataAvailable: true,
     };
@@ -70,9 +73,25 @@ describe("response schemas", () => {
   });
 
   it("accepts withheld projections (null eta + reason) and rejects unknown reasons", () => {
-    const base = { velocityPerDay: null, slopePerDay: null, fitR2: null, lookbackDays: 30, confidence: "insufficient", window: { from: null, to: null, points: 0 }, provenance: "derived" };
+    const base = { velocityPerDay: null, slopePerDay: null, fitR2: null, lookbackDays: 30, confidence: "insufficient", window: { from: null, to: null, points: 0 }, provenance: "derived", model: "none", etaRangeDays: null, observedChangePerDay: null };
     expect(ProjectionSchema.safeParse({ ...base, etaAt: null, insufficientReason: "insufficient_history" }).success).toBe(true);
     expect(ProjectionSchema.safeParse({ ...base, etaAt: null, insufficientReason: "made_up_reason" }).success).toBe(false);
+    expect(ProjectionSchema.safeParse({ ...base, etaAt: null, insufficientReason: "mechanics_not_modelled" }).success).toBe(true);
+    expect(ProjectionSchema.safeParse({ ...base, model: "made_up_model" }).success).toBe(false);
+    // A medium-confidence stat projection must carry an ETA range (no false
+    // precision) while high confidence may state a single date.
+    expect(
+      ProjectionSchema.safeParse({
+        ...base,
+        confidence: "medium",
+        etaAt: 1_800_000_000,
+        insufficientReason: null,
+        model: "relative_compounding",
+        etaRangeDays: { minDays: 100, maxDays: 140 },
+        observedChangePerDay: 5_000,
+      }).success
+    ).toBe(true);
+    expect(ProjectionSchema.safeParse({ ...base, model: "relative_compounding", etaAt: null, insufficientReason: "target_reached" }).success).toBe(true);
   });
 
   it("rejects out-of-registry goal status", () => {
