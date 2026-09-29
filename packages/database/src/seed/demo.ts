@@ -473,7 +473,7 @@ async function main(): Promise<void> {
 
   const demoGoals: Array<{ metric: string; target: bigint; note?: string; status: string; achievedAt?: Date }> = [
     { metric: "networth", target: BigInt(Math.max(1, Math.round(nwTotal * 0.8))), note: "Reached on the way up", status: "achieved", achievedAt: new Date((now - 6 * DAY) * 1000) },
-    { metric: "networth", target: BigInt(Math.round(nwTotal * 1.25)), note: "Next quarter-billion milestone", status: "active" },
+    { metric: "networth", target: BigInt(Math.round(nwTotal * 3)), note: "Long-haul wealth target", status: "active" },
   ];
   if (statTotal !== null) {
     demoGoals.push({ metric: "battlestats_total", target: BigInt(Math.round(statTotal * 1.5)), note: "Long-run gym target", status: "active" });

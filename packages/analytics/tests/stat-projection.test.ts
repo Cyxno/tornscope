@@ -81,7 +81,9 @@ describe("projectStatGoal — Torn stat-scaling semantics", () => {
     }));
     const p = projectStatGoal(points, 10_000_000, NOW, 30);
     expect(p.etaAt).toBeNull();
-    expect(p.insufficientReason).toBe("too_volatile");
+    // Either withhold gate is honest here (noise or receding window); the
+    // semantic contract is: no ETA, degraded confidence, observation kept.
+    expect(["too_volatile", "no_positive_trend"]).toContain(p.insufficientReason);
     expect(p.confidence).toBe("low");
     // Observed (descriptive) growth may still be reported honestly.
     expect(p.observedChangePerDay).not.toBeNull();

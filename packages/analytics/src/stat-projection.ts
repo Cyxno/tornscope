@@ -1,5 +1,5 @@
 import type { Projection, ProjectionConfidence, ProjectionInsufficientReason, ProjectionLookbackDays } from "@tornscope/shared";
-import { medianDailyDelta, PROJECTION_POLICY, type ProjectionPoint } from "./projection.js";
+import { PROJECTION_POLICY, type ProjectionPoint } from "./projection.js";
 
 /**
  * Torn-aware battle-stat goal projection (semantic audit 2.0).
@@ -102,6 +102,10 @@ export function simulateStatGrowth(current: number, r: number, days: number): St
     values.push(next);
   }
   return { values, dailyGains };
+}
+
+function spanOf(ordered: ReadonlyArray<ProjectionPoint>): number {
+  return Math.max(1, (ordered[ordered.length - 1]!.t - ordered[0]!.t) / 86_400);
 }
 
 /** OLS on (day, ln(value)) → daily log-growth rate, its standard error, R². */
@@ -209,7 +213,10 @@ export function projectStatGoal(
     points: inWindow.length,
   };
   const ordered = [...inWindow].sort((a, b) => a.t - b.t);
-  const observed = medianDailyDelta(ordered);
+  // DESCRIPTIVE observed change: endpoint-based per-day. (The median daily
+  // delta reads ~0 on Torn's step-shaped stat series — flat days between
+  // gains — which would co-display as "0/day" next to a live ETA.)
+  const observed = inWindow.length >= 2 ? (ordered[ordered.length - 1]!.value - ordered[0]!.value) / Math.max(1, spanOf(ordered)) : null;
 
   if (ordered.length === 0) return insufficient("insufficient_history", "insufficient", lookbackDays, window, observed);
   const current = ordered[ordered.length - 1]!.value;
@@ -222,6 +229,15 @@ export function projectStatGoal(
     return insufficient("insufficient_history", "insufficient", lookbackDays, window, observed);
   }
   if (target / current < STAT_PROJECTION_POLICY.MIN_TARGET_RATIO) {
+    return insufficient("no_positive_trend", "low", lookbackDays, window, observed);
+  }
+  // Consistency gate: the calibration anchor must actually END above its
+  // start. Stat series are step-shaped (flat between gains), so the OLS
+  // slope can read positive from jumps while the window itself went
+  // nowhere — extrapolating that would contradict the co-displayed
+  // observed growth.
+  const first = ordered[0]!.value;
+  if (current <= first) {
     return insufficient("no_positive_trend", "low", lookbackDays, window, observed);
   }
 
