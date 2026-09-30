@@ -6,6 +6,7 @@
   import LiveNow from "$lib/components/LiveNow.svelte";
   import CommandCenter from "$lib/components/CommandCenter.svelte";
   import GoalsMini from "$lib/components/GoalsMini.svelte";
+  import HeadsUp from "$lib/components/HeadsUp.svelte";
   import { dateRange, me, prefs, overviewSectionOrder, setDashboardMode, DASHBOARD_MODES } from "$lib/state.svelte";
   import { clientPermissionMessage } from "$lib/capabilities";
   import { confidenceTitle } from "$lib/confidence";
@@ -38,6 +39,7 @@
   let myOcs = $state<Array<{ name: string; tier: number | null; status: string; readyAt: number | null; myParticipation: boolean }> | null>(null);
   let commandCenter = $state<CommandCenterResponse | null>(null);
   let goals = $state<GoalsResponse | null>(null);
+  let travelDurations = $state<Record<string, number> | null>(null);
   let loading = $state(true);
   let error = $state<string | null>(null);
   let reloadToken = $state(0);
@@ -63,6 +65,11 @@
     void endpoints
       .goals()
       .then((res) => (goals = res))
+      .catch(() => undefined);
+    // Travel/OC conflict input: median flight durations from own history.
+    void endpoints
+      .travelSummary({ preset: "90d" })
+      .then((res) => (travelDurations = res.travelDurations))
       .catch(() => undefined);
     try {
       const [dash, summaryRes, ocsRes] = await Promise.all([
@@ -222,6 +229,9 @@
     </header>
 
     <!-- ══ ZONE A · COCKPIT — live state, timers, attention, goals ══ -->
+    {#if today}
+      <HeadsUp today={today} ocs={myOcs} travelDurations={travelDurations} thresholds={me.data?.headsUp} />
+    {/if}
     <div class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
       <div class="min-w-0">
         <LiveNow today={today} ocs={myOcs} onOpenToday={() => void goto("/today")} />

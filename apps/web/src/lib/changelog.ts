@@ -34,9 +34,37 @@ export const CHANGELOG_KINDS: ChangelogKind[] = ["Added", "Improved", "Fixed", "
 
 export const CHANGELOG: ChangelogRelease[] = [
   {
-    version: "2.0.4",
+    version: "2.0.5",
     stage: "Public Testing",
     current: true,
+    summary:
+      "Cockpit heads-up update: Active States sort by urgency, configurable pre-alert cues for landing/cooldowns/OC/bank, and a travel-vs-OC timing conflict warning — conservative, deduped, personally configurable.",
+    changes: [
+      {
+        kind: "Added",
+        text: "Overview — configurable heads-up alerts: a compact banner warns before (and exactly at) travel landings, cooldown readiness, organized-crime readiness and bank maturity. Thresholds per timer type (e.g. travel T-2 min, OC T-5 min, bank T-10 min) live in Settings → Notifications; every cue has a deterministic one-shot key so rerenders and restarts never duplicate one.",
+      },
+      {
+        kind: "Added",
+        text: "Overview — travel/OC timing conflict warning: while you are actually flying, the cockpit compares your round trip (own recorded flight durations + buffers) against the OC ready time and tells you when you may not be back in time. Only for real flights, never for guessed intent; unknown destination duration means no warning.",
+      },
+      {
+        kind: "Improved",
+        text: "Overview — Active States now sort by urgency: hard states and in-progress flights first, actionable-now next, then anything finishing within the hour, with same-urgency items ordered by time remaining. Travel stays the top state while away; a compact Home row makes the travel state explicit even when you are simply home.",
+      },
+      {
+        kind: "Improved",
+        text: "Overview/Today roles are now explicit: Overview answers \u201cwhat is happening now?\u201d, Today answers \u201cwhat happened today?\u201d — the cockpit link now reads \u201cToday's activity\u201d instead of implying a bigger live view.",
+      },
+      {
+        kind: "Fixed",
+        text: "Stale timer data can no longer trigger actionable heads-ups: a stale payload suppresses every cue and the conflict warning. One-shot dedupe covers threshold cues across rerenders; the optional local sound is explicit opt-in, fires once per new cue and never autoplays before page interaction.",
+      },
+    ],
+  },
+  {
+    version: "2.0.4",
+    stage: "Public Testing",
     summary:
       "Live-status correctness: Travel is a canonical state on the Overview — it always renders exactly one explicit status (Home / Flying / Returning / Landed / Abroad / Stale / Unavailable), with flights at the top of the cockpit. Hidden is never a travel state.",
     changes: [

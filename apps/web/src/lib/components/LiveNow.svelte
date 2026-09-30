@@ -2,8 +2,9 @@
   import type { TodayResponse } from "@tornscope/shared";
   import { TORN_URLS, TORN_LINK_ATTRS, safeTornUrl } from "@tornscope/shared";
   import { deriveLiveBoard, type LiveItem, type LiveBoard } from "$lib/live-now";
+import Icon from "./Icon.svelte";
   import { displayTime } from "$lib/time-display.svelte.js";
-  import { onMount } from "svelte";
+  import { dashboardNow, setDashboardClockOffset } from "$lib/dashboard-clock.svelte";
 
   /**
    * "Right now" — the LIVE cockpit block of the Overview (dashboard-first
@@ -33,22 +34,10 @@
     onOpenToday: () => void;
   } = $props();
 
-  let nowMs = $state(Date.now());
-  let offsetMs = $state(0);
-  let timer: ReturnType<typeof setInterval> | undefined;
-
-  const serverNowMs = $derived(nowMs + offsetMs);
-
   $effect(() => {
-    if (today) offsetMs = today.fetchedAt - Date.now();
+    if (today) setDashboardClockOffset(today.fetchedAt - Date.now());
   });
-
-  onMount(() => {
-    timer = setInterval(() => {
-      if (document.visibilityState === "visible") nowMs = Date.now();
-    }, 1000);
-    return () => clearInterval(timer);
-  });
+  const serverNowMs = $derived(dashboardNow());
 
   const board: LiveBoard = $derived(deriveLiveBoard(today, ocs, serverNowMs, displayTime));
   const cooldownTiles = $derived(board.timers.filter((t) => t.key.startsWith("cd-")));
@@ -63,6 +52,18 @@
   function externalHref(url: string): string {
     return safeTornUrl(url) ?? TORN_URLS.items;
   }
+
+  /** Existing icon set only — semantically clear states, no decoration. */
+  function iconFor(item: LiveItem): "travel" | "faction" | "wallet" | "progression" | "alert" | "clock" {
+    if (item.key === "travel" || item.key === "abroad") return "travel";
+    if (item.key === "oc") return "faction";
+    if (item.key === "bank") return "wallet";
+    if (item.key === "education") return "progression";
+    if (item.key === "hospital" || item.key === "jail") return "alert";
+    return "clock";
+  }
+
+
 </script>
 
 {#if board.bars.length > 0 || board.timers.length > 0}
@@ -147,12 +148,13 @@
               ></a>
               <div class="flex items-baseline justify-between gap-3">
                 <span class="flex min-w-0 items-baseline gap-2">
+                  <span class="shrink-0 text-fg-faint" aria-hidden="true"><Icon name={iconFor(item)} size={12} /></span>
                   <span class="text-[11px] font-semibold uppercase tracking-[0.12em] {item.priority ? 'text-accent' : 'text-fg-muted'}">{item.label}</span>
                   {#if item.state}<span class="min-w-0 truncate text-[13px] {item.priority ? 'font-medium' : ''} text-fg">{item.state}</span>{/if}
                 </span>
                 <span class="flex shrink-0 items-baseline gap-2">
                   {#if item.relative}
-                    <span class="tnum text-[15px] font-semibold {item.ready ? 'text-positive' : item.priority ? 'text-accent' : item.tone === 'negative' ? 'text-negative' : item.tone === 'warning' ? 'text-warning' : 'text-fg'}">{item.relative}</span>
+                    <span class="tnum text-[16px] font-semibold {item.ready ? 'text-positive' : item.priority ? 'text-accent' : item.tone === 'negative' ? 'text-negative' : item.tone === 'warning' ? 'text-warning' : 'text-fg'}">{item.relative}</span>
                   {/if}
                   {#if item.scopeHref}
                     <a
@@ -170,7 +172,7 @@
 
     <p class="mt-2 text-right">
       <button class="text-xs font-medium text-accent transition-opacity hover:opacity-80" onclick={onOpenToday}>
-        Full live status →
+        Today's activity →
       </button>
     </p>
   </section>

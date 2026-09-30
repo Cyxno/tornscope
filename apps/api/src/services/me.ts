@@ -17,6 +17,7 @@ import {
   buildSyncJobId,
   SYNC_JOB_NAME,
   DEMO_USER_EMAIL,
+  normalizeTypeConfig,
   type CapabilityChange,
   type KeyCapabilities,
   type SyncResource,
@@ -68,13 +69,17 @@ async function clearDemoViewFlag(db: ReturnType<typeof getPrismaClient>, userId:
 /** GET /api/me */
 export async function getMe(user: { id: string; displayName: string; timezone: string; isDemo: boolean; role?: string }): Promise<MeResponse> {
   const db = getPrismaClient();
-  const [account, credential, syncStates, demoUser, activeSessions] = await Promise.all([
+  const [account, credential, syncStates, demoUser, activeSessions, notifPrefs] = await Promise.all([
     db.tornAccount.findUnique({ where: { userId: user.id } }),
     db.apiCredential.findUnique({ where: { userId: user.id } }),
     db.syncState.findMany({ where: { userId: user.id } }),
     db.user.findUnique({ where: { email: DEMO_USER_EMAIL }, select: { id: true } }),
     db.userSession.count({ where: { userId: user.id, revokedAt: null } }),
+    db.notificationPreference.findUnique({ where: { userId: user.id }, select: { typeConfig: true } }),
   ]);
+  // Heads-up thresholds (2.0.5): profile-level, defaults filled in by the
+  // shared normalizer so the cockpit never reads a partial config.
+  const typeConfig = normalizeTypeConfig(notifPrefs?.typeConfig);
 
   const factionId = account?.factionId ?? null;
   const factionName = factionId
@@ -113,6 +118,14 @@ export async function getMe(user: { id: string; displayName: string; timezone: s
     hasApiKey: Boolean(credential && !credential.revokedAt),
     needsOnboarding: !account,
     demoAvailable: Boolean(demoUser),
+    headsUp: {
+      travelPreMin: typeConfig.travelPreMin,
+      drugPreMin: typeConfig.drugPreMin,
+      boosterPreMin: typeConfig.boosterPreMin,
+      medicalPreMin: typeConfig.medicalPreMin,
+      ocPreMin: typeConfig.ocPreMin,
+      bankPreMin: typeConfig.bankPreMin,
+    },
     syncHealth: {
       lastSuccessAt: lastSuccess > 0 ? Math.floor(lastSuccess / 1000) : null,
       running,

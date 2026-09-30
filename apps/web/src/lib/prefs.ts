@@ -89,3 +89,22 @@ export function parseRouteRanges(raw: string | null): Record<string, DateRangePr
 export function isRememberablePreset(preset: DateRangePreset): boolean {
   return REMEMBERABLE.includes(preset);
 }
+
+/* -------------------------------------------------------------------------- */
+/* Heads-up device preferences (2.0.5) — per-BROWSER, on purpose               */
+/* -------------------------------------------------------------------------- */
+
+export const HEADSUP_PREF_KEYS = {
+  cue: "tornscope.headsup.cue.v1",
+  sound: "tornscope.headsup.sound.v1",
+} as const;
+
+/** Dashboard cue enabled (default on). Push is a separate, profile-level setting. */
+export function parseHeadsupCue(raw: string | null): boolean {
+  return raw === null ? true : raw === "1";
+}
+
+/** Local sound enabled (default OFF — explicit opt-in, never autoplay). */
+export function parseHeadsupSound(raw: string | null): boolean {
+  return raw === "1";
+}

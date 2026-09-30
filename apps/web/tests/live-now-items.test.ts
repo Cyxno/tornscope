@@ -142,11 +142,12 @@ describe("whole-card action shape (uniformity)", () => {
     );
     const ocs = [{ name: "Stage Fright", tier: 8, status: "Planning", readyAt: 1_000_000 + 6 * HOUR, myParticipation: true }];
     const keys = deriveLiveBoard(t, ocs, NOW_MS, fakeDisplayTime).timers.map((i) => i.key);
-    // Travel is a canonical state with TOP priority during a flight.
-    expect(keys.indexOf("travel")).toBeLessThan(keys.indexOf("oc"));
-    expect(keys.indexOf("oc")).toBeLessThan(keys.indexOf("education"));
-    expect(keys.indexOf("education")).toBeLessThan(keys.indexOf("bank"));
-    expect(keys.indexOf("bank")).toBeLessThan(keys.indexOf("hospital"));
+    // Urgency sort (2.0.5): travel (tier 1, priority) → hospital (tier 1)
+    // → tier 4 by time remaining ASC (education 5h < oc 6h < bank 3d).
+    expect(keys.indexOf("travel")).toBeLessThan(keys.indexOf("hospital"));
+    expect(keys.indexOf("hospital")).toBeLessThan(keys.indexOf("education"));
+    expect(keys.indexOf("education")).toBeLessThan(keys.indexOf("oc"));
+    expect(keys.indexOf("oc")).toBeLessThan(keys.indexOf("bank"));
     expect(keys.filter((k) => k === "travel")).toHaveLength(1); // EXACTLY one travel row — no duplicates
     expect(keys.indexOf("cd-drug")).toBe(keys.length - 3);
   });

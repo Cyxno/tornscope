@@ -2,7 +2,8 @@
   import { onMount } from "svelte";
   import { env as publicEnv } from "$env/dynamic/public";
   import type { NotificationsStatusResponse, NotificationHistoryResponse } from "@tornscope/shared";
-  import { CAPABILITY_LABELS, DELIVERY_REASON_LABELS, DELIVERY_STATUSES, NOTIFICATION_GROUPS, NOTIFICATION_TYPES, type DeliveryReason, type DeliveryStatus } from "@tornscope/shared";
+  import { CAPABILITY_LABELS, DELIVERY_REASON_LABELS, DELIVERY_STATUSES, HEADSUP_PRE_OPTIONS, NOTIFICATION_GROUPS, NOTIFICATION_TYPES, type DeliveryReason, type DeliveryStatus } from "@tornscope/shared";
+  import { HEADSUP_PREF_KEYS, parseHeadsupCue, parseHeadsupSound } from "$lib/prefs";
   import { endpoints, ApiClientError } from "$lib/api";
   import { me } from "$lib/state.svelte";
   import { formatRelative } from "$lib/reltime";
@@ -20,6 +21,29 @@
    */
 
   let status = $state<NotificationsStatusResponse | null>(null);
+
+  /** Heads-up threshold rows — typed options, profile-level (typeConfig). */
+  const HEADSUP_ROWS: Array<{ key: string; label: string; options: readonly number[]; default: number }> = [
+    { key: "travelPreMin", label: "Travel landing", options: HEADSUP_PRE_OPTIONS.travel, default: 2 },
+    { key: "drugPreMin", label: "Drug cooldown", options: HEADSUP_PRE_OPTIONS.drug, default: 2 },
+    { key: "boosterPreMin", label: "Booster cooldown", options: HEADSUP_PRE_OPTIONS.booster, default: 0 },
+    { key: "medicalPreMin", label: "Medical cooldown", options: HEADSUP_PRE_OPTIONS.medical, default: 0 },
+    { key: "ocPreMin", label: "Organized crime", options: HEADSUP_PRE_OPTIONS.oc, default: 5 },
+    { key: "bankPreMin", label: "Bank maturity", options: HEADSUP_PRE_OPTIONS.bank, default: 10 },
+  ];
+
+  let headsupCue = $state(parseHeadsupCue(typeof localStorage !== "undefined" ? localStorage.getItem(HEADSUP_PREF_KEYS.cue) : null));
+  let headsupSound = $state(parseHeadsupSound(typeof localStorage !== "undefined" ? localStorage.getItem(HEADSUP_PREF_KEYS.sound) : null));
+
+  function setHeadsupCue(on: boolean): void {
+    headsupCue = on;
+    try { localStorage.setItem(HEADSUP_PREF_KEYS.cue, on ? "1" : "0"); } catch { /* per-session */ }
+  }
+
+  function setHeadsupSound(on: boolean): void {
+    headsupSound = on;
+    try { localStorage.setItem(HEADSUP_PREF_KEYS.sound, on ? "1" : "0"); } catch { /* per-session */ }
+  }
   let history = $state<NotificationHistoryResponse | null>(null);
   type PushEnv = PushCapability;
   let support = $state<PushEnv>({ kind: "unsupported" });
@@ -416,6 +440,53 @@
             class="h-4 w-4 accent-teal-400"
           />
         </label>
+      </div>
+
+      <!-- Heads-up thresholds (2.0.5): profile-level (typeConfig) — used by the
+           Overview cockpit AND push pre-alerts. Typed options only; 0 = off. -->
+      <div class="mt-4 border-t border-border pt-3">
+        <p class="text-[11px] font-semibold uppercase tracking-[0.12em] text-fg-muted">Heads-up thresholds</p>
+        <p class="text-xs text-fg-faint">How shortly before each event the cockpit warns you. Push pre-alerts (travel) use the same threshold. 0 = only at the event.</p>
+        <div class="mt-2 grid gap-x-6 gap-y-2 text-[13px] lg:grid-cols-2">
+          {#each HEADSUP_ROWS as row (row.key)}
+            <div class="flex items-center justify-between gap-3 py-0.5">
+              <span class="text-fg-muted">{row.label}</span>
+              <label class="flex items-center gap-1 text-xs text-fg-faint">
+                Warn
+                <select
+                  class="rounded-lg border border-border bg-bg-raise px-2 py-0.5 text-xs text-fg"
+                  aria-label="{row.label} heads-up threshold"
+                  value={status.preferences.typeConfig[row.key] ?? row.default}
+                  onchange={(e) => void setConfig(row.key, Number((e.currentTarget as HTMLSelectElement).value))}
+                >
+                  {#each row.options as opt (opt)}
+                    <option value={opt}>{opt === 0 ? "At event" : `T-${opt} min`}</option>
+                  {/each}
+                </select>
+              </label>
+            </div>
+          {/each}
+          <div class="flex items-center justify-between gap-3 py-0.5">
+            <span class="text-fg-muted">Education</span>
+            <span class="text-xs text-fg-faint">visual only — sorts higher inside an hour</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Device cues (per browser): dashboard banner + sound. -->
+      <div class="mt-4 border-t border-border pt-3">
+        <p class="text-[11px] font-semibold uppercase tracking-[0.12em] text-fg-muted">This device</p>
+        <p class="text-xs text-fg-faint">Browser-local: how the cockpit gets your attention here. Sound only plays after you have interacted with the page.</p>
+        <div class="mt-2 space-y-1.5 text-[13px]">
+          <label class="flex items-center justify-between gap-3">
+            <span class="text-fg-muted">Heads-up banners on Overview</span>
+            <input type="checkbox" checked={headsupCue} onchange={(e) => setHeadsupCue((e.currentTarget as HTMLInputElement).checked)} class="h-4 w-4 accent-teal-400" />
+          </label>
+          <label class="flex items-center justify-between gap-3">
+            <span class="text-fg-muted">Heads-up sound <span class="text-[10px] uppercase text-fg-faint">opt-in · one short ping</span></span>
+            <input type="checkbox" checked={headsupSound} onchange={(e) => setHeadsupSound((e.currentTarget as HTMLInputElement).checked)} class="h-4 w-4 accent-teal-400" />
+          </label>
+        </div>
       </div>
 
       <!-- Grouped type toggles -->

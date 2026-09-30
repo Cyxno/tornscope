@@ -6,7 +6,7 @@ import {
   type Paginated,
   type Provenance,
 } from "@tornscope/shared";
-import { calculateTravelProfit, calculateTripEconomics, buildDailyTravelProfit } from "@tornscope/analytics";
+import { calculateTravelProfit, calculateTripEconomics, buildDailyTravelProfit, travelDurationMedians } from "@tornscope/analytics";
 import { bigintToNumber, getPrismaClient, loadMarketPrices } from "@tornscope/database";
 import { liveAvailability, loadAvailabilityContext, sectionAvailability } from "./availability.js";
 
@@ -82,6 +82,11 @@ export async function getTravelSummary(userId: string, rangeInput: DateRangeInpu
       estimatedValue: c.estimatedValue,
     })),
     unattachedPurchases: unattached,
+    // 2.0.5 travel/OC conflict input: median flight duration per destination
+    // over completed trips in the REQUESTED RANGE (exact own-history data).
+    // Callers wanting wide conflict coverage pass a long preset (e.g. 90d);
+    // destinations without history in range are absent = duration unknown.
+    travelDurations: travelDurationMedians(trips),
   };
 }
 

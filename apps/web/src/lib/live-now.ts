@@ -43,6 +43,11 @@ export interface LiveItem {
   /** High visual priority (flight in progress / abroad / landed): renders
    *  at the TOP of the active-states block with an accent marker. */
   priority?: boolean;
+  /** Urgency tier for the cockpit ordering: 1 hard state/location, 2
+   *  actionable now, 3 finishing soon (<1h), 4 later. */
+  urgencyTier: number;
+  /** Numeric remaining seconds for time-ASC tie-breaking. */
+  remainingSeconds: number | null;
 }
 
 export interface LiveBoard {
@@ -60,7 +65,19 @@ export function deriveLiveBoard(
 ): LiveBoard {
   if (!today) return { bars: [], timers: [] };
   const nowSec = Math.floor(serverNowMs / 1000);
-  return { bars: deriveBars(today, serverNowMs, displayTime), timers: deriveTimers(today, ocs, nowSec, serverNowMs, displayTime) };
+  const timers = deriveTimers(today, ocs, nowSec, serverNowMs, displayTime);
+  // Cockpit ordering (2.0.5): cooldown tiles keep their fixed strip order;
+  // every OTHER state sorts by urgency tier, then time remaining ASC; the
+  // canonical Home row is ALWAYS last.
+  const home = timers.find((i) => i.key === "travel" && i.state === "Home");
+  const tiles = timers.filter((i) => i.key.startsWith("cd-"));
+  const rest = timers.filter((i) => i !== home && !i.key.startsWith("cd-"));
+  rest.sort((a, b) => {
+    if (a.priority !== b.priority) return a.priority ? -1 : 1;
+    if (a.urgencyTier !== b.urgencyTier) return a.urgencyTier - b.urgencyTier;
+    return (a.remainingSeconds ?? Number.MAX_SAFE_INTEGER) - (b.remainingSeconds ?? Number.MAX_SAFE_INTEGER);
+  });
+  return { bars: deriveBars(today, serverNowMs, displayTime), timers: [...rest, ...tiles, ...(home ? [home] : [])] };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -240,6 +257,8 @@ function deriveTimers(
       tone: travel.tone,
       ready: travel.ready,
       priority: travel.priority,
+      urgencyTier: 1,
+      remainingSeconds: travel.kind === "flying" || travel.kind === "returning" ? (t.travel.landsAt !== null ? t.travel.landsAt - nowSec : null) : null,
       tornUrl: TORN_URLS.travel,
       tornLabel: "Open travel",
       scopeHref: "/travel",
@@ -264,6 +283,7 @@ function deriveTimers(
           ready = true;
         }
       }
+      const ocRemaining = oc.readyAt !== null ? oc.readyAt - nowSec : null;
       out.push(item({
         key: "oc",
         label: `OC · ${oc.name}${oc.tier !== null ? ` · T${oc.tier}` : ""}`,
@@ -272,6 +292,8 @@ function deriveTimers(
         absolute,
         tone: ready ? "positive" : "accent",
         ready,
+        urgencyTier: ready ? 2 : ocRemaining !== null && ocRemaining <= 3600 ? 3 : 4,
+        remainingSeconds: ocRemaining,
         tornUrl: TORN_URLS.organizedCrime,
         tornLabel: "Open organized crime",
         scopeHref: "/faction",
@@ -281,14 +303,17 @@ function deriveTimers(
   }
 
   if (t.education.state === "active" && t.education.completesAt !== null && t.education.completesAt > nowSec) {
+    const eduRemaining = t.education.completesAt - nowSec;
     out.push(item({
       key: "education",
       label: "Education",
       state: "Course in progress",
-      relative: formatCountdownCompact(t.education.completesAt - nowSec),
+      relative: formatCountdownCompact(eduRemaining),
       absolute: displayTime(t.education.completesAt),
       tone: "neutral",
       ready: false,
+      urgencyTier: eduRemaining <= 3600 ? 3 : 4,
+      remainingSeconds: eduRemaining,
       tornUrl: TORN_URLS.education,
       tornLabel: "Open education",
     }));
@@ -306,7 +331,7 @@ function deriveTimers(
       out.push(item({
         key: "bank", label: "Bank", state: "Ready to collect",
         relative: t.bank.amount !== null ? formatMoneyCompact(t.bank.amount) : null,
-        tone: "warning", ready: true,
+        tone: "warning", ready: true, urgencyTier: 2, remainingSeconds: 0,
         tornUrl: TORN_URLS.bank, tornLabel: "Collect your bank investment",
         scopeHref: "/money", scopeLabel: "Money",
       }));
@@ -316,11 +341,13 @@ function deriveTimers(
         relative: formatCountdownCompact(left),
         absolute: t.bank.maturesAt !== null ? displayTime(t.bank.maturesAt) : null,
         tone: "neutral", ready: false,
+        urgencyTier: left <= 3600 ? 3 : 4, remainingSeconds: left,
         tornUrl: TORN_URLS.bank, tornLabel: "Open bank", scopeHref: "/money", scopeLabel: "Money",
       }));
     } else {
       out.push(item({
         key: "bank", label: "Bank", state: "Investment active", tone: "neutral", ready: false,
+        urgencyTier: 4,
         tornUrl: TORN_URLS.bank, tornLabel: "Open bank", scopeHref: "/money", scopeLabel: "Money",
       }));
     }
@@ -338,6 +365,8 @@ function deriveTimers(
       absolute: left !== null && left > 0 && notice.releasedAt !== null ? displayTime(notice.releasedAt) : null,
       tone: notice.kind === "hospital" ? "negative" : "warning",
       ready: false,
+      urgencyTier: 1,
+      remainingSeconds: left,
       tornUrl: notice.kind === "hospital" ? TORN_URLS.hospital : TORN_URLS.jail,
       tornLabel: notice.kind === "hospital" ? "Open hospital" : "Open jail",
       scopeHref: "/today",
@@ -364,6 +393,8 @@ function deriveTimers(
       absolute: endsAt !== null ? displayTime(endsAt) : null,
       tone: display.active ? "neutral" : "positive",
       ready: !display.active,
+      urgencyTier: display.active ? 2 : 2,
+      remainingSeconds: endsAt !== null ? endsAt - nowSec : null,
       tornUrl: TORN_URLS.items,
       tornLabel: `Open items for the ${label.toLowerCase()} cooldown`,
     }));
@@ -396,6 +427,7 @@ function item(v: {
   key: string; label: string; state?: string | null; relative?: string | null; absolute?: string | null;
   pct?: number; tone: LiveItem["tone"]; ready: boolean; tornUrl: string; tornLabel: string;
   scopeHref?: string | null; scopeLabel?: string | null; priority?: boolean;
+  urgencyTier?: number; remainingSeconds?: number | null;
 }): LiveItem {
-  return { state: null, relative: null, absolute: null, scopeHref: null, scopeLabel: null, priority: false, ...v };
+  return { state: null, relative: null, absolute: null, scopeHref: null, scopeLabel: null, priority: false, urgencyTier: 4, remainingSeconds: null, ...v };
 }

@@ -104,8 +104,12 @@ describe("LiveNow cockpit — cooldown tiles and active states", () => {
     expect(liveNow).not.toContain("Nothing active");
   });
 
-  it("one shared tick — a single interval drives bars, tiles and states", () => {
-    expect((liveNow.match(/setInterval\(/g) ?? []).length).toBe(1);
+  it("one shared tick — the whole cockpit reads the single dashboard clock", () => {
+    expect(liveNow).toContain('from "$lib/dashboard-clock.svelte"');
+    expect(liveNow).not.toMatch(/setInterval\(/);
+    const cmd = read("../src/lib/components/CommandCenter.svelte");
+    expect(cmd).toContain('from "$lib/dashboard-clock.svelte"');
+    expect(cmd).not.toMatch(/setInterval\(/);
   });
 
   it("the Overview page mounts the cockpit with the shared payloads", () => {

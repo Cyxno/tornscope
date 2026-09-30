@@ -1,5 +1,5 @@
 import type { DateRangePreset } from "@tornscope/shared";
-import { DATE_PRESETS, PREF_KEYS, isRememberablePreset, parseDashboardMode, parseDefaultRange, parseFocus, parseRouteRanges } from "./prefs.js";
+import { DATE_PRESETS, PREF_KEYS, isRememberablePreset, parseDashboardMode, parseDefaultRange, parseFocus, parseRouteRanges, HEADSUP_PREF_KEYS, parseHeadsupCue, parseHeadsupSound } from "./prefs.js";
 import { FOCUS_AREAS } from "./focus.js";
 
 /**
@@ -140,7 +140,48 @@ function storedFocus(): FocusArea {
   }
 }
 
-export const prefs = $state<{ mode: DashboardMode; focus: FocusArea }>({ mode: storedMode(), focus: storedFocus() });
+function storedHeadsupCue(): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    return parseHeadsupCue(window.localStorage.getItem(HEADSUP_PREF_KEYS.cue));
+  } catch {
+    return true;
+  }
+}
+
+function storedHeadsupSound(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return parseHeadsupSound(window.localStorage.getItem(HEADSUP_PREF_KEYS.sound));
+  } catch {
+    return false;
+  }
+}
+
+export const prefs = $state<{ mode: DashboardMode; focus: FocusArea; headsupCue: boolean; headsupSound: boolean }>({
+  mode: storedMode(),
+  focus: storedFocus(),
+  headsupCue: storedHeadsupCue(),
+  headsupSound: storedHeadsupSound(),
+});
+
+export function setHeadsupCue(on: boolean): void {
+  prefs.headsupCue = on;
+  try {
+    window.localStorage.setItem(HEADSUP_PREF_KEYS.cue, on ? "1" : "0");
+  } catch {
+    // Per-session fallback as above.
+  }
+}
+
+export function setHeadsupSound(on: boolean): void {
+  prefs.headsupSound = on;
+  try {
+    window.localStorage.setItem(HEADSUP_PREF_KEYS.sound, on ? "1" : "0");
+  } catch {
+    // Per-session fallback as above.
+  }
+}
 
 export function setDashboardMode(mode: DashboardMode): void {
   prefs.mode = mode;

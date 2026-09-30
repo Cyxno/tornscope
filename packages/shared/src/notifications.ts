@@ -69,7 +69,7 @@ export interface NotificationTypeMeta {
   /** How the underlying fact is known — shown in delivery history. */
   provenance: "exact" | "derived" | "estimated" | "inferred";
   /** Inline configuration fields this type supports (see TypeConfig). */
-  config: Array<"nearFullThreshold" | "cashThreshold" | "networthThreshold" | "summaryTimeMin" | "ocSoonMinutes">;
+  config: Array<"nearFullThreshold" | "cashThreshold" | "networthThreshold" | "summaryTimeMin" | "ocSoonMinutes" | "travelPreMin">;
 }
 
 /**
@@ -126,6 +126,12 @@ export const NOTIFICATION_TYPES: NotificationTypeMeta[] = [
     description: "Your trip landed and you can act. Fires once per trip.",
     urgency: "time_sensitive", quietHours: "defer", maxDeferralAgeSeconds: 6 * 3600,
     requires: "canReadUserTravel", clickPath: "/travel", provenance: "exact", config: [],
+  },
+  {
+    id: "travel_landing_soon", label: "Travel landing soon", group: "timers", defaultEnabled: false,
+    description: "A heads-up push shortly before your flight lands (threshold configurable in Heads-up thresholds below).",
+    urgency: "time_sensitive", quietHours: "defer", maxDeferralAgeSeconds: 1 * 3600,
+    requires: "canReadUserTravel", clickPath: "/today", provenance: "exact", config: ["travelPreMin"],
   },
   {
     id: "hospital_release", label: "Hospital release", group: "timers", defaultEnabled: true,
@@ -326,7 +332,29 @@ export const TYPE_CONFIG_DEFAULTS = {
   summaryTimeMin: 8 * 60,
   /** oc_ready_soon window (minutes before an OC becomes ready). */
   ocSoonMinutes: 12 * 60,
+  /** Heads-up pre-alert thresholds — conservative defaults (2.0.5). */
+  travelPreMin: 2,
+  drugPreMin: 2,
+  boosterPreMin: 0,
+  medicalPreMin: 0,
+  ocPreMin: 5,
+  bankPreMin: 10,
 } as const;
+
+/** Allowed heads-up pre-alert thresholds (minutes before the event) — a
+ *  typed set, never free-text seconds. 0 = pre-alert off (at-event only). */
+export const HEADSUP_PRE_OPTIONS = {
+  travel: [0, 1, 2, 5],
+  drug: [0, 1, 2, 5],
+  booster: [0, 1, 2, 5],
+  medical: [0, 1, 2, 5],
+  oc: [0, 2, 5, 10],
+  bank: [0, 5, 10, 30],
+} as const;
+
+function preMinSchema(options: readonly number[]) {
+  return z.union(options.map((v) => z.literal(v)) as [z.ZodLiteral<number>, z.ZodLiteral<number>, ...z.ZodLiteral<number>[]]).optional();
+}
 
 export const TypeConfigSchema = z.object({
   nearFullThreshold: z.number().int().min(1).max(1000).optional(),
@@ -334,6 +362,13 @@ export const TypeConfigSchema = z.object({
   networthThreshold: z.number().min(0).max(1_000_000_000_000).optional(),
   summaryTimeMin: z.number().int().min(0).max(1439).optional(),
   ocSoonMinutes: z.number().int().min(15).max(7 * 24 * 60).optional(),
+  /** Heads-up pre-alert thresholds (minutes before the event). */
+  travelPreMin: preMinSchema(HEADSUP_PRE_OPTIONS.travel),
+  drugPreMin: preMinSchema(HEADSUP_PRE_OPTIONS.drug),
+  boosterPreMin: preMinSchema(HEADSUP_PRE_OPTIONS.booster),
+  medicalPreMin: preMinSchema(HEADSUP_PRE_OPTIONS.medical),
+  ocPreMin: preMinSchema(HEADSUP_PRE_OPTIONS.oc),
+  bankPreMin: preMinSchema(HEADSUP_PRE_OPTIONS.bank),
 });
 export type TypeConfig = z.infer<typeof TypeConfigSchema>;
 /** All fields present — what producers receive (defaults filled in). */
@@ -770,6 +805,41 @@ export function diffTimerTransitions(
     }
   }
   return { events, nextEligibleAt };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Travel landing pre-alert (2.0.5 heads-up)                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * One-shot pre-alert for an in-progress flight: fires once `now` has crossed
+ * `landsAt - preMinutes` (and the flight has not already landed). The
+ * deterministic event key (`travelLandsAt:pre:<landsAt>:<preMinutes>`) makes
+ * the push idempotent across worker restarts and re-evaluations — the
+ * existing NotificationEvent unique constraint dedupes it. `preMinutes = 0`
+ * disables the pre-alert (the existing at-landing transition still fires).
+ */
+export function travelLandingPreAlert(
+  current: LiveTimerState,
+  nowSec: number,
+  preMinutes: number
+): TimerTransitionEvent | null {
+  const landsAt = current.travelLandsAt ?? null;
+  if (preMinutes <= 0 || landsAt === null || landsAt <= nowSec) return null;
+  const fireAt = landsAt - preMinutes * 60;
+  if (nowSec < fireAt) return null;
+  const meta = notificationType("travel_landing_soon");
+  return {
+    type: "travel_landing_soon",
+    urgency: meta?.urgency ?? "time_sensitive",
+    title: "Landing soon",
+    body:
+      preMinutes >= 1
+        ? `Your flight lands in about ${preMinutes} minute${preMinutes === 1 ? "" : "s"}.`
+        : "Your flight is about to land.",
+    eventKey: `travelLandsAt:pre:${landsAt}:${preMinutes}`,
+    clickPath: meta?.clickPath ?? "/today",
+  };
 }
 
 /* -------------------------------------------------------------------------- */

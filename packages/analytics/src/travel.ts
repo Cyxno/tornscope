@@ -354,3 +354,34 @@ export function assembleTrips(events: readonly TravelEventLike[], items: readonl
 
   return trips;
 }
+
+/* -------------------------------------------------------------------------- */
+/* Travel duration medians (2.0.5 travel/OC conflict input)                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Median flight duration per destination over COMPLETED trips with a known
+ * duration (exact recorded data — TornScope's own history, no catalog
+ * guesswork). Torn flight durations are stable per destination, so the
+ * median of a player's own trips is a reliable estimator for the conflict
+ * check. Destinations without history are ABSENT — callers must treat that
+ * as "duration unknown" and never invent a number.
+ */
+export function travelDurationMedians(trips: readonly TravelTripLike[]): Record<string, number> {
+  const byDestination = new Map<string, number[]>();
+  for (const trip of trips) {
+    const duration = tripDurationSeconds(trip);
+    if (duration === null || duration <= 0) continue;
+    const list = byDestination.get(trip.destination) ?? [];
+    list.push(duration);
+    byDestination.set(trip.destination, list);
+  }
+  const out: Record<string, number> = {};
+  for (const [destination, durations] of byDestination) {
+    if (durations.length === 0) continue;
+    const sorted = [...durations].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    out[destination] = sorted.length % 2 === 1 ? sorted[mid]! : (sorted[mid]! + sorted[mid - 1]!) / 2;
+  }
+  return out;
+}

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { dashboardNow } from "$lib/dashboard-clock.svelte";
   import type { ActionItem } from "@tornscope/shared";
   import { deriveCommandCenter } from "$lib/command-center-view";
   import Countdown from "./Countdown.svelte";
@@ -19,19 +19,11 @@
 
   let { items, maxItems = Number.POSITIVE_INFINITY }: { items: ActionItem[]; maxItems?: number } = $props();
 
-  let nowSec = $state(Math.floor(Date.now() / 1000));
-  let timer: ReturnType<typeof setInterval> | undefined;
 
-  onMount(() => {
-    timer = setInterval(() => {
-      if (document.visibilityState === "visible") nowSec = Math.floor(Date.now() / 1000);
-    }, 1000);
-    return () => clearInterval(timer);
-  });
 
   /** Overview shows only the few items that matter NOW (2–4); the full
    *  prioritized logic stays in command-center-view (tested there). */
-  const feed = $derived(deriveCommandCenter(items, nowSec).slice(0, maxItems));
+  const feed = $derived(deriveCommandCenter(items, Math.floor(dashboardNow())).slice(0, maxItems));
 </script>
 
 <section aria-label="Needs attention">

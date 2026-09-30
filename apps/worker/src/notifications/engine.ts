@@ -11,6 +11,7 @@ import {
   normalizeTypeToggles,
   normalizeTypeConfig,
   providerRejectionReason,
+  travelLandingPreAlert,
   type LiveTimerState,
   type QuietHoursSettings,
   type ResolvedTypeConfig,
@@ -542,21 +543,33 @@ async function evaluateUser(userId: string, timezone: string): Promise<void> {  
       const previous = (state.previousState ?? null) as LiveTimerState | null;
       const nowSec = Math.floor(Date.now() / 1000);
       const { events, nextEligibleAt } = diffTimerTransitions(previous, current, nowSec, TIMER_GRACE_SECONDS);
-      for (const event of events) {
+      // 2.0.5 heads-up: one-shot TRAVEL LANDING pre-alert at the user's
+      // threshold (travelPreMin; 0 = off). The deterministic key makes it
+      // idempotent across restarts/re-evaluations (ingest dedupe).
+      const preAlert = travelLandingPreAlert(current, nowSec, ctx.config.travelPreMin);
+      if (preAlert !== null) {
         await ingest(userId, {
-          type: event.type,
-          dedupeKey: event.eventKey,
+          type: preAlert.type,
+          dedupeKey: preAlert.eventKey,
           occurredAt: nowSec,
-          title: event.title,
-          body: event.body,
-          clickPath: event.clickPath,
+          title: preAlert.title,
+          body: preAlert.body,
+          clickPath: preAlert.clickPath,
         }, ctx);
       }
+      // Wake no later than the configured pre-alert moment (end − threshold),
+      // so the heads-up push can actually fire BEFORE the event.
+      const preWake = ctx.config.travelPreMin > 0 && current.travelLandsAt != null
+        ? current.travelLandsAt - ctx.config.travelPreMin * 60
+        : null;
+      const wakeAt = [nextEligibleAt, preWake !== null && preWake > nowSec ? preWake : null]
+        .filter((v): v is number => v !== null)
+        .reduce<number | null>((acc, v) => (acc === null || v < acc ? v : acc), null);
       await db.notificationState.update({
         where: { userId },
         data: {
           previousState: current as never,
-          nextEligibleAt: nextEligibleAt !== null ? new Date(nextEligibleAt * 1000) : new Date(Date.now() + IDLE_RECHECK_SECONDS * 1000),
+          nextEligibleAt: wakeAt !== null ? new Date(wakeAt * 1000) : new Date(Date.now() + IDLE_RECHECK_SECONDS * 1000),
         },
       });
     } else {

@@ -219,7 +219,7 @@
        this row only carries the live context quietly. -->
   <header class="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
     <p class="flex min-w-0 flex-wrap items-center gap-x-2 text-[13px] text-fg-muted">
-      <span class="section-label mr-1">Live now</span>
+      <span class="section-label mr-1">Today</span>
       <span class="font-medium text-fg">{greeting}{data ? (data.player.name ? `, ${data.player.name}` : "") : ""}.</span>
       {#if statusLine}<span>{statusLine}</span>{/if}
     </p>

@@ -316,6 +316,16 @@ export const MeResponseSchema = z.object({
   /** IANA timezone used for rendering human-readable times (default UTC). */
   timezone: z.string(),
   isDemo: z.boolean(),
+  /** 2.0.5 heads-up pre-alert thresholds (minutes; profile-level, from
+   *  NotificationPreference.typeConfig with defaults filled in). */
+  headsUp: z.object({
+    travelPreMin: z.number(),
+    drugPreMin: z.number(),
+    boosterPreMin: z.number(),
+    medicalPreMin: z.number(),
+    ocPreMin: z.number(),
+    bankPreMin: z.number(),
+  }),
   /** Detected key capabilities (null while no key is connected). */
   capabilities: KeyCapabilitiesSchema.nullable(),
   /** Torn's own access description for the stored key (e.g. "Full Access"). */
@@ -1706,6 +1716,13 @@ export const TravelSummaryResponseSchema = z.object({
     spend: z.number(),
     itemsBought: z.number(),
   }),
+  /**
+   * 2.0.5 travel/OC conflict input: median FLIGHT duration per destination
+   * (seconds) over the player's own completed trips — exact recorded data,
+   * stable per-destination game mechanic. Destinations without history are
+   * absent: callers treat that as "duration unknown" and never invent one.
+   */
+  travelDurations: z.record(z.string(), z.number()),
 });
 export type TravelSummaryResponse = z.infer<typeof TravelSummaryResponseSchema>;
 
