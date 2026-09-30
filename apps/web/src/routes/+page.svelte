@@ -71,6 +71,7 @@
       .travelSummary({ preset: "90d" })
       .then((res) => (travelDurations = res.travelDurations))
       .catch(() => undefined);
+    scheduleTravelRefresh();
     try {
       const [dash, summaryRes, ocsRes] = await Promise.all([
         endpoints.dashboard({ preset: dateRange.preset, from: dateRange.from, to: dateRange.to }),
@@ -92,6 +93,41 @@
     void dateRange.from;
     void reloadToken;
     void load();
+  });
+
+  // ── Landing fast-path (2.0.6): context-aware travel refresh. ──
+  // While a flight is in progress and approaching (or just past) its landing,
+  // /api/today is re-requested so the cockpit confirms Flying → Landed/
+  // Abroad/Home within seconds of the boundary instead of waiting for the
+  // next manual load. Cadence: 30s inside T-5m → 15s inside T-1m and during
+  // the post-landing confirmation grace; no polling at any other time. Each
+  // refetch is one rate-limited live fetch (30s server TTL/single-flight).
+  let travelRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+  function scheduleTravelRefresh(): void {
+    clearTimeout(travelRefreshTimer);
+    const t = today?.travel;
+    if (!today || !t) return;
+    const nowSec = Math.floor(Date.now() / 1000);
+    const landsAt = t.state === "traveling" ? t.landsAt : null;
+    if (landsAt === null) return; // home/abroad: normal cadence
+    const remaining = landsAt - nowSec;
+    let delayMs: number | null = null;
+    if (remaining > 5 * 60) return; // ruim voor landing: normale cadence
+    if (remaining > 60) delayMs = 30_000; // T-5m → T-1m
+    else delayMs = 15_000; // laatste minuut + post-landing bevestiging
+    travelRefreshTimer = setTimeout(() => {
+      void endpoints
+        .today()
+        .then((res) => {
+          today = res;
+          scheduleTravelRefresh();
+        })
+        .catch(() => scheduleTravelRefresh());
+    }, delayMs);
+  }
+  $effect(() => {
+    scheduleTravelRefresh();
+    return () => clearTimeout(travelRefreshTimer);
   });
 
   const period = $derived(periodLabel(dateRange.preset));

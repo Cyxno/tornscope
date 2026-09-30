@@ -403,16 +403,25 @@ async function fetchToday(userId: string): Promise<TodayResponse> {
   const travelValue = isSectionFailure(travel) ? null : travel;
   const travelFailure = isSectionFailure(travel) ? travel : null;
   let openTrip: { destination: string; departedAt: Date } | null = null;
+  let travelSyncedAtSec: number | null = null;
   try {
-    openTrip = await ctx.db.travelEvent.findFirst({
-      where: { userId, returnedAt: null },
-      orderBy: { departedAt: "desc" },
-      select: { destination: true, departedAt: true },
-    });
+    const [openTripRow, travelSyncRow] = await Promise.all([
+      ctx.db.travelEvent.findFirst({
+        where: { userId, returnedAt: null },
+        orderBy: { departedAt: "desc" },
+        select: { destination: true, departedAt: true },
+      }),
+      // Travel-specific freshness (2.0.6): the worker's last successful
+      // travel sync — independent of the whole-payload fetchedAt.
+      ctx.db.syncState.findUnique({ where: { userId_resource: { userId, resource: "travel" } }, select: { lastSuccessAt: true } }),
+    ]);
+    openTrip = openTripRow;
+    travelSyncedAtSec = travelSyncRow?.lastSuccessAt ? Math.floor(travelSyncRow.lastSuccessAt.getTime() / 1000) : null;
   } catch {
     // History is optional context; live state still works without it.
   }
   const travelStatus = assembleTravel(nowSec, profile, travelValue, travelFailure, openTrip);
+  travelStatus.syncedAt = travelSyncedAtSec;
   if (travelFailure) note(travelFailure, "travel", "User Travel");
 
   const bankStatus: BankStatus = isSectionFailure(money) ? bankUnavailable(money) : assembleBank(nowSec, money);

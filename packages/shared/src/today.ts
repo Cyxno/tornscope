@@ -180,6 +180,14 @@ export const TravelStatusSchema = z.object({
   provenance: ProvenanceSchema,
   unavailableReason: z.string().nullable().default(null),
   requiredAccess: z.string().nullable().default(null),
+  /**
+   * 2.0.6 travel-specific freshness: when the travel RESOURCE was last
+   * successfully synced (SyncState travel lastSuccessAt, unix seconds) —
+   * independent of the whole-payload fetchedAt, so an unrelated section's
+   * staleness can never mark travel stale. Null when unknown (older
+   * payloads, demo).
+   */
+  syncedAt: z.number().nullable().optional(),
 });
 export type TravelStatus = z.infer<typeof TravelStatusSchema>;
 

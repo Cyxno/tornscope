@@ -34,9 +34,37 @@ export const CHANGELOG_KINDS: ChangelogKind[] = ["Added", "Improved", "Fixed", "
 
 export const CHANGELOG: ChangelogRelease[] = [
   {
-    version: "2.0.5",
+    version: "2.0.6",
     stage: "Public Testing",
     current: true,
+    summary:
+      "Travel freshness hotfix: the cockpit's travel state is now resource-specific — an unrelated section's stale payload can no longer show \u201cTravel data stale\u201d, landings confirm within seconds of the boundary, and the gap reads as an honest \u201cLanding…\u201d transition.",
+    changes: [
+      {
+        kind: "Fixed",
+        text: "Overview — travel freshness is now resource-specific. A global payload staleness flag (one failed upstream refresh of ANY section) no longer shows \u201cTravel data stale\u201d: travel is fresh when the served payload is live or when the travel resource itself was recently synced. Money can be stale while travel is fresh.",
+      },
+      {
+        kind: "Fixed",
+        text: "Overview — landing transitions no longer disappear behind a stale claim. When the recorded landing time passes without fresh confirmation, the row reads \u201cLanding…\u201d for a short grace window (an honest transition — never stale, never an unconfirmed Home); a confirmation fetch around the boundary flips it to Abroad or Home within seconds.",
+      },
+      {
+        kind: "Improved",
+        text: "Cockpit — context-aware travel refresh: while a flight is inside its last five minutes (and briefly after the boundary) the live status refreshes automatically at 30s/15s cadence; at any other time the normal cadence applies. One bounded confirmation burst per landing — no new polling loops.",
+      },
+      {
+        kind: "Fixed",
+        text: "Heads-up — travel cues (landing T-2m, at-landing) are suppressed only when TRAVEL itself is stale; unrelated section staleness no longer hides the landing warning. The travel/OC conflict warning follows the same travel-specific freshness.",
+      },
+      {
+        kind: "Technical",
+        text: "The Today payload's travel section now carries the travel resource's own last successful sync time (worker bookkeeping, zero extra Torn calls), and the scheduler runs a landing fast-path: while a flight is inside its landing window the travel sync is pulled due every tick so the stored state confirms immediately after landing.",
+      },
+    ],
+  },
+  {
+    version: "2.0.5",
+    stage: "Public Testing",
     summary:
       "Cockpit heads-up update: Active States sort by urgency, configurable pre-alert cues for landing/cooldowns/OC/bank, and a travel-vs-OC timing conflict warning — conservative, deduped, personally configurable.",
     changes: [

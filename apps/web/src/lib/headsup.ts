@@ -78,10 +78,26 @@ function isPayloadStale(today: TodayResponse, nowSec: number): boolean {
   return today.stale === true || Math.max(0, nowSec - fetchedSec) > HEADSUP_STALE_AFTER_SECONDS;
 }
 
+/**
+ * TRAVEL-SPECIFIC freshness (2.0.6): travel is fresh when the served payload
+ * is live, OR the travel resource itself was worker-synced recently
+ * (travel.syncedAt rides along in the payload). An unrelated section's
+ * staleness (money/faction/education) can never suppress travel cues.
+ */
+function isTravelStale(today: TodayResponse, nowSec: number): boolean {
+  const fetchedSec = Math.floor(today.fetchedAt / 1000);
+  const payloadFresh = today.stale !== true;
+  const syncedSec = today.travel.syncedAt ?? null;
+  const confirmedSec = Math.max(payloadFresh ? fetchedSec : 0, syncedSec ?? 0);
+  if (confirmedSec === 0) return true;
+  return Math.max(0, nowSec - confirmedSec) > HEADSUP_STALE_AFTER_SECONDS;
+}
+
 /** Build the upcoming-action list from the live payload + participating OCs. */
 export function deriveUpcomingActions(today: TodayResponse | null, ocs: Ocs | null, nowSec: number): UpcomingAction[] {
   if (!today) return [];
   const stale = isPayloadStale(today, nowSec);
+  const travelStale = isTravelStale(today, nowSec);
   const out: UpcomingAction[] = [];
 
   // Travel landing (only while a flight is actually in progress).
@@ -95,7 +111,7 @@ export function deriveUpcomingActions(today: TodayResponse | null, ocs: Ocs | nu
         state: today.travel.country ?? (today.travel.direction === "returning" ? "Returning" : "In transit"),
         dueAt: today.travel.landsAt,
         remainingSeconds: remaining,
-        stale,
+        stale: travelStale,
         actionUrl: "/today",
         eventKeyBase: `travel:${today.travel.landsAt}`,
         urgencyTier: 1,

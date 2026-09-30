@@ -52,6 +52,24 @@ export async function enqueueDueSyncs(syncQueue: Queue<SyncJobData>): Promise<vo
         : null;
 
       const states = await getSyncStates(db, userId);
+
+      // Landing fast-path (2.0.6): while a flight is in progress (or its
+      // landing has just passed unconfirmed), the travel resource is due
+      // EVERY tick so the cockpit confirms Flying → Landed/Abroad/Home
+      // within seconds of the boundary instead of at the normal cadence.
+      // Source: the persisted TodayLastKnown payload — zero Torn calls.
+      // Rate impact: one extra /user/travel sync per tick per flying user
+      // (≈1/min for ≤ the landing window + a short confirmation grace).
+      let travelLandingDue = false;
+      if (states.some((st) => st.resource === "travel")) {
+        const lastKnown = await db.todayLastKnown.findUnique({ where: { userId }, select: { payload: true } });
+        const travel = (lastKnown?.payload as { travel?: { state?: string; landsAt?: number | null } } | null)?.travel;
+        if (travel?.state === "traveling" && typeof travel.landsAt === "number") {
+          const since = now - travel.landsAt;
+          if (travel.landsAt > now - 10 * 60_000 && since > -15 * 60_000) travelLandingDue = true;
+        }
+      }
+
       for (const state of states) {
         // One failed resource must not skip all later resources for this
         // user, so every resource is guarded individually.
@@ -106,7 +124,8 @@ export async function enqueueDueSyncs(syncQueue: Queue<SyncJobData>): Promise<vo
           }
 
           const dueAt = state.nextRunAt?.getTime() ?? 0;
-          if (state.status !== "running" && dueAt > now) continue;
+          const landingFastPath = travelLandingDue && state.resource === "travel" && state.status !== "running" && state.status !== "capability_denied";
+          if (state.status !== "running" && dueAt > now && !landingFastPath) continue;
 
           // Capability gate BEFORE enqueueing: a resource the stored key can
           // never answer is not claimed/decrypted/processed — the tick just

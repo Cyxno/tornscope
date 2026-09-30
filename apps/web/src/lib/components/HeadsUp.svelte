@@ -94,7 +94,7 @@
       ocReadyAt: earliestOc?.readyAt ?? null,
       ocLabel: earliestOc ? `OC · ${earliestOc.name}` : null,
       destinationDurationSeconds: destination !== null && travelDurations ? travelDurations[destination] ?? null : null,
-      stale: upcoming.some((u) => u.stale),
+      stale: upcoming.find((u) => u.type === "travel_landing")?.stale ?? false,
     });
   });
 

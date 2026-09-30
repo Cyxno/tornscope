@@ -258,15 +258,22 @@ describe("travel canonical state (2.x hotfix — hidden is never a travel state)
     expect(view.priority).toBe(true);
   });
 
-  it("LANDED: a flight whose clock ran out still shows Landed during the transition gap", () => {
+  it("LANDED: a flight whose clock ran out still shows the Landing transition while unconfirmed", () => {
+    // The served copy PREDATES the landing (fetchedAt < landsAt, flagged
+    // stale) — exactly the unconfirmed-gap case.
     const t = todayPayload({}, {
-      travel: { state: "traveling", country: "Japan", direction: "outbound", method: "Plane", departedAt: 999_000, landsAt: 1_000_000 - 300, remainingSeconds: 0, durationSeconds: 6 * HOUR, provenance: "exact", unavailableReason: null, requiredAccess: null },
+      stale: true,
+      fetchedAt: (1_000_000 - 600) * 1000, // copy predates the landing
+      travel: { state: "traveling", country: "Japan", direction: "outbound", method: "Plane", departedAt: 999_000, landsAt: 1_000_000 - 300, remainingSeconds: 0, durationSeconds: 6 * HOUR, provenance: "exact", unavailableReason: null, requiredAccess: null, syncedAt: 1_000_000 - 600 },
     });
     const view = deriveTravelStatus(t, 1_000_000, NOW_MS, fakeDisplayTime);
-    expect(view.kind).toBe("landed");
-    expect(view.state).toBe("Landed");
-    expect(view.ready).toBe(true);
+    // 2.0.6: the gap is the honest TRANSITION state — awaiting confirmation,
+    // never a stale claim and never an unconfirmed Home.
+    expect(view.kind).toBe("landing");
+    expect(view.state).toBe("Landing…");
+    expect(view.ready).toBe(false);
     expect(view.priority).toBe(true);
+    expect(view.stale).toBe(false);
   });
 
   it("ABROAD stays explicitly visible with the destination", () => {

@@ -81,36 +81,60 @@ export function deriveLiveBoard(
 }
 
 /* -------------------------------------------------------------------------- */
-/* Travel — a CANONICAL live state (2.x hotfix)                                */
+/* Travel — a CANONICAL live state with RESOURCE-SPECIFIC freshness (2.0.6)    */
 /* -------------------------------------------------------------------------- */
 
-export type TravelStateKind = "home" | "flying" | "returning" | "landed" | "abroad" | "unavailable" | "stale";
+export type TravelStateKind = "home" | "flying" | "returning" | "landing" | "abroad" | "unavailable" | "stale";
 
 export interface TravelStatusView {
   kind: TravelStateKind;
-  /** Row headline: "Home", "Flying to Japan", "Abroad — Japan", "Landed",
-   *  "Travel data stale", "Travel status unavailable". */
+  /** Row headline: "Home", "Flying to Japan", "Returning from Japan",
+   *  "Landing…", "Abroad · Japan", "Travel data stale · 42m old",
+   *  "Travel status unavailable". */
   state: string | null;
   relative: string | null;
   absolute: string | null;
   tone: LiveItem["tone"];
   ready: boolean;
-  /** Flight/abroad/landed render at the TOP of active states, accent-marked. */
+  /** Flight/abroad/landing render at the TOP of active states, accent-marked. */
   priority: boolean;
+  /** Travel-SPECIFIC staleness (never inherits the whole-payload flag). */
+  stale: boolean;
 }
 
 /**
- * Data older than this cannot honestly claim "Home" — it shows as stale
- * (with its age) instead. The Today payload is normally seconds old; this
- * gate only trips when the persisted last-known copy is served and a fresh
- * upstream fetch has been failing for a while.
+ * Payload data older than this cannot honestly claim "Home" on its own —
+ * unless the travel RESOURCE itself was confirmed more recently (worker
+ * sync), which the payload carries as `travel.syncedAt`.
  */
 export const TRAVEL_STALE_AFTER_SECONDS = 30 * 60;
 
 /**
+ * When the recorded landing time has passed but no fresh confirmation has
+ * arrived yet, the row reads "Landing…" (transition) for at most this long —
+ * beyond it the honest answer is "Travel data stale".
+ */
+export const LANDING_CONFIRM_GRACE_SECONDS = 5 * 60;
+
+/**
  * The ONE travel derivation. Every Overview render shows exactly ONE travel
  * row — hidden is never a travel state:
- *   home | flying | returning | landed | abroad | unavailable | stale.
+ *   home | flying | returning | landing | abroad | unavailable | stale.
+ *
+ * FRESHNESS IS RESOURCE-SPECIFIC (2.0.6): the whole-payload `stale` flag
+ * (one failed upstream refresh) does NOT mark travel stale. Travel is fresh
+ * when either the served payload is live, or the travel RESOURCE itself was
+ * worker-synced more recently (`travel.syncedAt`). A future `landsAt` is a
+ * fact confirmed by Torn ahead of time and stays valid on a somewhat older
+ * payload — flying never degrades to stale merely because the payload is a
+ * few minutes old.
+ *
+ * Boundary semantics (freshness A–D from the audit):
+ * - FRESH: payload live, or travel synced recently.
+ * - TRANSITIONING ("landing"): recorded landing time passed and the state is
+ *   not yet confirmed — shown as "Landing…" for at most the grace window.
+ * - STALE: no travel confirmation within the window.
+ * - UNAVAILABLE: the section itself reported an outage/permission gap.
  */
 export function deriveTravelStatus(
   today: TodayResponse,
@@ -120,20 +144,14 @@ export function deriveTravelStatus(
 ): TravelStatusView {
   const t = today.travel;
 
-  // Stale data may not claim "Home". Age is shown when it can be computed.
+  // ---- Travel-specific freshness (never the global payload flag) ----------
   const fetchedSec = Math.floor(today.fetchedAt / 1000);
-  const ageSec = Math.max(0, Math.floor(serverNowMs / 1000) - fetchedSec);
-  if (today.stale === true || ageSec > TRAVEL_STALE_AFTER_SECONDS) {
-    return {
-      kind: "stale",
-      state: today.stale === true ? "Travel data stale" : `Travel data stale · ${formatCountdownCompact(ageSec)} old`,
-      relative: null,
-      absolute: null,
-      tone: "warning",
-      ready: false,
-      priority: false,
-    };
-  }
+  const payloadFresh = today.stale !== true;
+  const syncedSec = t.syncedAt ?? null;
+  const confirmedSec = Math.max(payloadFresh ? fetchedSec : 0, syncedSec ?? 0);
+  const confirmedAgeSec = confirmedSec > 0 ? Math.max(0, nowSec - confirmedSec) : null;
+  const travelStale = confirmedSec === 0 || (confirmedAgeSec !== null && confirmedAgeSec > TRAVEL_STALE_AFTER_SECONDS);
+  const staleCopy = `Travel data stale${confirmedAgeSec !== null ? ` · ${formatCountdownCompact(confirmedAgeSec)} old` : ""}`;
 
   if (t.state === "unavailable") {
     return {
@@ -144,24 +162,74 @@ export function deriveTravelStatus(
       tone: "neutral",
       ready: false,
       priority: false,
+      stale: true,
     };
   }
 
   if (t.state === "traveling") {
-    const landed = t.landsAt !== null && t.landsAt <= nowSec;
-    if (landed) {
-      // Transition gap: Torn still reports "traveling" but the flight is over.
-      return { kind: "landed", state: "Landed", relative: null, absolute: null, tone: "positive", ready: true, priority: true };
+    const landsAt = t.landsAt;
+
+    // A future landing time is a fact Torn confirmed when the flight started:
+    // the countdown stays valid even on a somewhat older payload.
+    if (landsAt !== null && landsAt > nowSec) {
+      const returning = t.direction === "returning";
+      return {
+        kind: returning ? "returning" : "flying",
+        state: returning ? (t.country ? `Returning from ${t.country}` : "Returning to Torn") : `Flying to ${t.country ?? "abroad"}`,
+        relative: formatCountdownCompact(landsAt - nowSec),
+        absolute: displayTime(landsAt),
+        tone: "accent",
+        ready: false,
+        priority: true,
+        stale: false,
+      };
     }
-    const returning = t.direction === "returning";
+
+    // Landing boundary crossed. Was the crossing CONFIRMED by a fetch/sync
+    // that happened after it? Then a fresh Torn still saying "traveling"
+    // means the flight state is what it is — trust the fresh read (flying).
+    const confirmedAfterLanding = confirmedSec >= (landsAt ?? 0) && landsAt !== null;
+    if (confirmedAfterLanding && payloadFresh) {
+      const returning = t.direction === "returning";
+      return {
+        kind: returning ? "returning" : "flying",
+        state: returning ? (t.country ? `Returning from ${t.country}` : "Returning to Torn") : `Flying to ${t.country ?? "abroad"}`,
+        relative: t.landsAt !== null ? formatCountdownCompact(Math.max(0, t.landsAt - nowSec)) : null,
+        absolute: t.landsAt !== null ? displayTime(t.landsAt) : null,
+        tone: "accent",
+        ready: false,
+        priority: true,
+        stale: false,
+      };
+    }
+
+    // Unconfirmed crossing: within the grace window this reads as the honest
+    // TRANSITION state — the timer ran out and TornScope is confirming now.
+    const sinceLanding = nowSec - (landsAt ?? nowSec);
+    if (sinceLanding <= LANDING_CONFIRM_GRACE_SECONDS) {
+      return {
+        kind: "landing",
+        state: "Landing…",
+        relative: null,
+        absolute: t.landsAt !== null ? displayTime(t.landsAt) : null,
+        tone: "accent",
+        ready: false,
+        priority: true,
+        stale: false,
+      };
+    }
+
+    // Beyond the grace window without confirmation: honestly stale (with age
+    // since the landing, the moment the user actually cares about).
     return {
-      kind: returning ? "returning" : "flying",
-      state: returning ? (t.country ? `Returning from ${t.country}` : "Returning to Torn") : `Flying to ${t.country ?? "abroad"}`,
-      relative: t.landsAt !== null ? formatCountdownCompact(t.landsAt - nowSec) : null,
-      absolute: t.landsAt !== null ? displayTime(t.landsAt) : null,
-      tone: "accent",
+      kind: "stale",
+      state: `Travel data stale · ${formatCountdownCompact(sinceLanding)} since landing`,
+      relative: null,
+      absolute: null,
+      tone: "warning",
       ready: false,
-      priority: true,
+      priority: false,
+      stale: true,
     };
   }
 
@@ -174,10 +242,33 @@ export function deriveTravelStatus(
       tone: "accent",
       ready: true,
       priority: true,
+      stale: travelStale,
     };
   }
 
-  return { kind: "home", state: "Home", relative: null, absolute: null, tone: "neutral", ready: false, priority: false };
+  // Home: a stable confirmed state — claimed when the data supports it.
+  if (travelStale) {
+    return {
+      kind: "stale",
+      state: staleCopy,
+      relative: null,
+      absolute: null,
+      tone: "warning",
+      ready: false,
+      priority: false,
+      stale: true,
+    };
+  }
+  return {
+    kind: "home",
+    state: "Home",
+    relative: null,
+    absolute: null,
+    tone: "neutral",
+    ready: false,
+    priority: false,
+    stale: false,
+  };
 }
 
 function deriveBars(today: TodayResponse, serverNowMs: number, displayTime: (tsSec: number) => string): LiveItem[] {
