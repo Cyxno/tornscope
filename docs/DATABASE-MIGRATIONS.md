@@ -182,3 +182,14 @@ Top-up properties:
   by normal appdata backups. There is no permanent dev stack; if a temporary
   environment is created for migration testing, its data directory is
   disposable and must be destroyed with the rest of that environment.
+
+## 2.1 migration delta (2.0.7 production → 2.1.0)
+
+One migration: `20261001196000_timeline_log_type_index` (SAFE EXPAND, index-only):
+
+| Migration | Classification | Notes |
+|---|---|---|
+| `20261001196000_timeline_log_type_index` | SAFE EXPAND (index-only) | Adds composite index `TimelineEvent(userId, type, occurredAt)` backing the 2.1.0 Log Explorer and the deep-analytics evidence queries (filter + date range over the raw log archive). Pure `CREATE INDEX` — no table, column or row is touched; safe to build on production size. Every deep-analytics read path was measured on production data before release (page queries ≤0.25 ms at 30D/1Y/ALL; evidence queries ≤8 ms at 1Y). |
+
+There are **no destructive, rename, type-rewrite or NOT NULL-tightening
+operations** in the 2.1 delta.

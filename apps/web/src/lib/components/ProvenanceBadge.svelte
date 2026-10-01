@@ -1,15 +1,17 @@
 <script lang="ts">
-  let { level }: { level: "exact" | "derived" | "estimated" } = $props();
+  let { level }: { level: "exact" | "derived" | "estimated" | "inferred" } = $props();
 
   const dot: Record<string, string> = {
     exact: "bg-fg-faint",
     derived: "bg-accent",
     estimated: "bg-warning",
+    inferred: "bg-info",
   };
   const titles: Record<string, string> = {
     exact: "Exact value provided by the Torn API",
     derived: "Derived from exact Torn data",
     estimated: "Estimated value — not an exact Torn figure",
+    inferred: "Bounded inference from observed evidence — not directly recorded by Torn",
   };
 </script>
 

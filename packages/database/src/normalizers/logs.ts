@@ -304,13 +304,63 @@ function fallbackDirection(text: string): "income" | "expense" | "unknown" {
   return "unknown";
 }
 
+export interface MoneyLogSignature {
+  /** Signed cash movement (positive into the wallet); null when the log
+   *  carries no amount or is definitively not a cash movement. */
+  amount: number | null;
+  /** True when the movement stays inside the player's own pools. */
+  transfer: boolean;
+  /** Ledger direction semantics of the movement ("unknown" stays unknown). */
+  direction: "income" | "expense" | "neutral" | "unknown";
+}
+
+/**
+ * Canonical signed-cash reading of one raw log — the ONE implementation the
+ * MoneyEvent pipeline and the 2.1.0 Log Explorer share, so an amount shown
+ * in the explorer can never contradict the money ledger.
+ */
+export function signMoneyLog(categoryTitle: string, logTitle: string, data: LogRecord, params: LogRecord): MoneyLogSignature {
+  const amount = pickNumber(data, [...MONEY_AMOUNT_KEYS]) ?? pickNumber(params, [...MONEY_AMOUNT_KEYS]);
+  if (amount === null || amount === 0) return { amount: null, transfer: false, direction: "unknown" };
+  const magnitude = Math.abs(amount);
+  const text = `${logTitle} ${categoryTitle}`;
+  const plan = moneyPlanFor(categoryTitle, logTitle);
+
+  if (plan?.skip) return { amount: null, transfer: false, direction: "unknown" };
+
+  if (plan) {
+    if (plan.transfer) {
+      const incoming = /withdrew|withdraw|withdrawing|receive|received|payout/i.test(text);
+      return { amount: incoming ? magnitude : -magnitude, transfer: true, direction: "neutral" };
+    }
+    return { amount: plan.direction === "expense" ? -magnitude : magnitude, transfer: false, direction: plan.direction };
+  }
+  const isTransfer =
+    TRANSFER_WORDS.test(text) &&
+    ["city_bank", "cayman_bank", "faction"].includes(classifyMoneyCategory(text));
+  if (isTransfer) {
+    const incoming = /withdrew|withdraw|withdrawing|receive|received/i.test(text);
+    return { amount: incoming ? magnitude : -magnitude, transfer: true, direction: "neutral" };
+  }
+  const direction = fallbackDirection(text);
+  return { amount: direction === "expense" ? -magnitude : magnitude, transfer: false, direction };
+}
+
+/** Exact energy delta (±) carried by a raw log payload, when any. */
+export function energyDeltaFromLog(data: LogRecord): number | null {
+  const gained = pickNumber(data, ["energy_increased"]);
+  if (gained !== null && gained > 0) return gained;
+  const lost = pickNumber(data, ["energy_decreased", "energy_used"]);
+  if (lost !== null && lost > 0) return -lost;
+  return null;
+}
+
 /**
  * Normalize a single Torn log entry into typed event writes.
  * Every entry always produces a timeline event; category-specific tables are
  * filled only when their shape is recognized.
  */
-export function normalizeLogEntry(log: TornUserLog, ctx: NormalizeContext): NormalizedLogWrites {
-  const writes: NormalizedLogWrites = {
+export function normalizeLogEntry(log: TornUserLog, ctx: NormalizeContext): NormalizedLogWrites {  const writes: NormalizedLogWrites = {
     drugEvents: [],
     consumptionEvents: [],
     crimeEvents: [],
@@ -602,38 +652,22 @@ export function normalizeLogEntry(log: TornUserLog, ctx: NormalizeContext): Norm
     }
 
     case "money": {
-      const amount = pickNumber(data, [...MONEY_AMOUNT_KEYS]) ?? pickNumber(params, [...MONEY_AMOUNT_KEYS]);
-      if (amount === null || amount === 0) break;
-      const magnitude = BigInt(Math.round(Math.abs(amount)));
+      const signature = signMoneyLog(categoryTitle, logTitle, data, params);
+      const signedAmount = signature.amount;
+      if (signedAmount === null) break;
+      const signed = BigInt(Math.round(signedAmount));
       const text = `${logTitle} ${categoryTitle}`;
       const plan = moneyPlanFor(categoryTitle, logTitle);
-
-      if (plan?.skip) break; // definitively not a cash movement
-
       let direction: MoneyDirection;
-      let signed: bigint;
-      if (plan) {
-        if (plan.transfer) {
-          // Own-pool movement (bank investments, withdrawals, faction vault):
-          // keep a signed ledger row but never count it as income/expense.
-          direction = "neutral";
-          signed = /withdrew|withdraw|withdrawing|receive|received|payout/i.test(text) ? magnitude : -magnitude;
-        } else {
-          direction = plan.direction;
-          signed = plan.direction === "expense" ? -magnitude : magnitude;
-        }
+      if (signature.transfer) {
+        // Own-pool movement (bank investments, withdrawals, faction vault):
+        // keep a signed ledger row but never count it as income/expense.
+        direction = "neutral";
+      } else if (plan) {
+        direction = plan.direction;
       } else {
         // Fallback classification for old-style titles; unknown stays unknown.
-        const isTransfer =
-          TRANSFER_WORDS.test(text) &&
-          ["city_bank", "cayman_bank", "faction"].includes(classifyMoneyCategory(text));
-        if (isTransfer) {
-          direction = "neutral";
-          signed = /withdrew|withdraw|withdrawing|receive|received/i.test(text) ? magnitude : -magnitude;
-        } else {
-          direction = fallbackDirection(text);
-          signed = direction === "expense" ? -magnitude : direction === "income" ? magnitude : magnitude;
-        }
+        direction = fallbackDirection(text);
       }
 
       writes.moneyEvents.push({

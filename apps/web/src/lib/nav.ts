@@ -37,6 +37,7 @@ export const NAV_GROUPS: Array<{ id: NavItem["group"]; label: string; items: Nav
       { href: "/money", label: "Economy", icon: "economy", group: "analytics" },
       { href: "/stocks", label: "Stocks", icon: "stocks", group: "analytics" },
       { href: "/progression", label: "Progression", icon: "progression", group: "analytics" },
+      { href: "/energy", label: "Energy", icon: "progression", group: "analytics" },
       { href: "/merits", label: "Merits", icon: "merits", group: "analytics" },
       { href: "/drugs", label: "Drugs", icon: "drugs", group: "analytics" },
       { href: "/travel", label: "Travel", icon: "travel", group: "analytics" },
@@ -50,6 +51,7 @@ export const NAV_GROUPS: Array<{ id: NavItem["group"]; label: string; items: Nav
       { href: "/combat", label: "Combat", icon: "combat", group: "activity" },
       { href: "/faction", label: "Faction", icon: "faction", group: "activity" },
       { href: "/timeline", label: "Timeline", icon: "timeline", group: "activity" },
+      { href: "/logs", label: "Logs", icon: "logs", group: "activity" },
     ],
   },
   {

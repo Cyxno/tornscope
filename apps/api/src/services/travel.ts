@@ -6,7 +6,7 @@ import {
   type Paginated,
   type Provenance,
 } from "@tornscope/shared";
-import { calculateTravelProfit, calculateTripEconomics, buildDailyTravelProfit, travelDurationMedians } from "@tornscope/analytics";
+import { calculateTravelProfit, calculateTripEconomics, buildDailyTravelProfit, travelDurationMedians, buildTravelOverview } from "@tornscope/analytics";
 import { bigintToNumber, getPrismaClient, loadMarketPrices } from "@tornscope/database";
 import { liveAvailability, loadAvailabilityContext, sectionAvailability } from "./availability.js";
 
@@ -87,6 +87,7 @@ export async function getTravelSummary(userId: string, rangeInput: DateRangeInpu
     // Callers wanting wide conflict coverage pass a long preset (e.g. 90d);
     // destinations without history in range are absent = duration unknown.
     travelDurations: travelDurationMedians(trips),
+    overview: buildOverview(trips, range),
   };
 }
 
@@ -299,4 +300,41 @@ function findTopItems(trips: LoadedTrip[]): Array<{ item: string; category: stri
       estimatedProfit: v.profitKnown ? v.profit : null,
       spendShare: totalSpend > 0 ? v.spend / totalSpend : 0,
     }));
+}
+
+/**
+ * 2.1.0 historical overview: trip volume, flight time and destination
+ * economics over the requested range (exact durations/complete pairs only;
+ * profit = canonical estimated-resale semantics).
+ */
+function buildOverview(trips: LoadedTrip[], range: { from: number; to: number }) {
+  const overview = buildTravelOverview(
+    trips.map((t) => ({
+      destination: t.destination,
+      departedAt: t.departedAt,
+      returnedAt: t.returnedAt,
+      durationSeconds: t.durationSeconds,
+      items: t.items.map((i) => ({
+        id: i.id,
+        category: i.category,
+        itemId: i.itemId,
+        itemName: i.itemName,
+        quantity: i.quantity,
+        unitCost: i.unitCost,
+        totalCost: i.totalCost,
+        estimatedUnitValue: i.estimatedUnitValue,
+      })),
+    })),
+    range.from,
+    range.to
+  );
+  return {
+    trips: overview.trips,
+    flightTimeSeconds: overview.flightTimeSeconds,
+    averageFlightSeconds: overview.averageFlightSeconds,
+    destinationsVisited: overview.destinationsVisited,
+    tripsPerDay: overview.tripsPerDay.value,
+    byDestination: overview.byDestination,
+    daily: overview.daily,
+  };
 }

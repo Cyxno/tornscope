@@ -24,6 +24,8 @@ import { getTravelHistory, getTravelSummary } from "./services/travel.js";
 import { getNetworth } from "./services/networth.js";
 import { getEconomySummary } from "./services/economy.js";
 import { getProgression } from "./services/progression.js";
+import { getEnergySummary } from "./services/energy.js";
+import { getLogs, getLogsMeta, exportLogs } from "./services/logs.js";
 import { getCrimesSummary, getCrimesTimeline, getCombatSummary, getCombatTimeline } from "./services/crimesCombat.js";
 import { getFactionOverview, getFactionRankedWars, getFactionMembers, getFactionChains, getFactionOcs, getFactionLedger } from "./services/faction.js";
 import { getTimeline } from "./services/timeline.js";
@@ -195,6 +197,81 @@ export function registerRoutes(app: FastifyInstance): void {
     const user = currentUser(req);
     const range = parseRange(req.query as Record<string, unknown>);
     return getProgression(user.id, range);
+  });
+
+  // Deep Energy Analytics (2.1.0): sources / uses / losses accounting over
+  // locally ingested history — never a page-triggered Torn fetch.
+  app.get("/api/energy/summary", async (req) => {
+    const user = currentUser(req);
+    const range = parseRange(req.query as Record<string, unknown>);
+    return getEnergySummary(user.id, range);
+  });
+
+  // Log Explorer (2.1.0): filterable audit view over the raw log archive.
+  app.get("/api/logs", async (req) => {
+    const user = currentUser(req);
+    const range = parseRange(req.query as Record<string, unknown>);
+    const pagination = parsePagination(req.query as Record<string, unknown>);
+    const q = req.query as { category?: string; type?: string; search?: string; outcome?: string; minAmount?: string; maxAmount?: string };
+    for (const [key, value] of Object.entries({ category: q.category, type: q.type, search: q.search })) {
+      if ((value ?? "").length > 100) throw errors.validation(`${key} must be ≤100 characters`);
+    }
+    const parseAmount = (raw: string | undefined): number | null | undefined => {
+      if (raw === undefined || raw === "") return undefined;
+      const n = Number(raw);
+      if (!Number.isFinite(n)) throw errors.validation("amount filters must be numeric");
+      return n;
+    };
+    return getLogs(user.id, range, {
+      category: q.category,
+      type: q.type,
+      search: q.search,
+      outcome: q.outcome === "gain" || q.outcome === "loss" ? q.outcome : undefined,
+      minAmount: parseAmount(q.minAmount),
+      maxAmount: parseAmount(q.maxAmount),
+      limit: pagination.limit,
+      cursor: pagination.cursor,
+    });
+  });
+
+  // Filter options derived from the user's own archive (bounded).
+  app.get("/api/logs/meta", async (req) => {
+    const user = currentUser(req);
+    const range = parseRange(req.query as Record<string, unknown>);
+    return getLogsMeta(user.id, range);
+  });
+
+  // Streaming CSV/JSON export of the FILTERED archive — server-side, capped,
+  // session-scoped and free of API keys/secrets. GET is deliberate: exports
+  // are read-only downloads (auth is the session cookie; same-origin guard
+  // still applies via the preHandler hook).
+  app.get("/api/logs/export", async (req, reply) => {
+    const user = currentUser(req);
+    const limit = checkRateLimit("log-export", user.id, 10, 10 * 60_000);
+    if (!limit.ok) throw errors.rateLimited("Too many exports — try again later.", limit.retryAfterSeconds);
+    const range = parseRange(req.query as Record<string, unknown>);
+    const q = req.query as { format?: string; category?: string; type?: string; search?: string; outcome?: string; minAmount?: string; maxAmount?: string };
+    const format = q.format === "csv" || q.format === "json" ? q.format : null;
+    if (!format) throw errors.validation("format must be csv or json");
+    for (const [key, value] of Object.entries({ category: q.category, type: q.type, search: q.search })) {
+      if ((value ?? "").length > 100) throw errors.validation(`${key} must be ≤100 characters`);
+    }
+    const parseAmount = (raw: string | undefined): number | null | undefined => {
+      if (raw === undefined || raw === "") return undefined;
+      const n = Number(raw);
+      if (!Number.isFinite(n)) throw errors.validation("amount filters must be numeric");
+      return n;
+    };
+    const exportRange = { ...range, from: range.from, to: range.to };
+    return exportLogs(reply, user.id, exportRange, {
+      format,
+      category: q.category,
+      type: q.type,
+      search: q.search,
+      outcome: q.outcome === "gain" || q.outcome === "loss" ? q.outcome : undefined,
+      minAmount: parseAmount(q.minAmount),
+      maxAmount: parseAmount(q.maxAmount),
+    });
   });
 
   app.get("/api/money/events", async (req) => {

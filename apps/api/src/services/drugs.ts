@@ -3,7 +3,13 @@ import {
   type DateRangeInput,
   type DrugsSummaryResponse,
 } from "@tornscope/shared";
-import { calculateDrugStats, calculateRehabStats } from "@tornscope/analytics";
+import {
+  buildDrugStreak,
+  buildDrugStreaksByDrug,
+  calculateDrugStats,
+  calculateRehabDeepStats,
+  calculateRehabStats,
+} from "@tornscope/analytics";
 import { bigintToNumber, getPrismaClient, loadMarketPrices } from "@tornscope/database";
 import { liveAvailability, loadAvailabilityContext, sectionAvailability } from "./availability.js";
 import { buildXanaxLedger, resolveXanaxItem } from "./xanaxLedger.js";
@@ -14,7 +20,7 @@ export async function getDrugsSummary(userId: string, rangeInput: DateRangeInput
   const range = resolveDateRange(rangeInput);
   const availCtx = await loadAvailabilityContext(userId);
 
-  const [drugRows, rehabRows, marketPrices, xanaxItem, earliestDrug] = await Promise.all([
+  const [drugRows, rehabRows, marketPrices, xanaxItem, earliestDrug, streakRows, rehabApRows] = await Promise.all([
     db.drugEvent.findMany({
       where: { userId, occurredAt: { gte: new Date(range.from * 1000), lte: new Date(range.to * 1000) } },
       orderBy: { occurredAt: "asc" },
@@ -23,11 +29,24 @@ export async function getDrugsSummary(userId: string, rangeInput: DateRangeInput
     db.rehabEvent.findMany({
       where: { userId, occurredAt: { gte: new Date(range.from * 1000), lte: new Date(range.to * 1000) } },
       orderBy: { occurredAt: "desc" },
-      select: { occurredAt: true, rehabPercent: true, cost: true, sessions: true },
+      select: { occurredAt: true, rehabPercent: true, cost: true, sessions: true, addictionPointsRemoved: true },
     }),
     loadMarketPrices(db),
     resolveXanaxItem(db),
     db.drugEvent.findFirst({ where: { userId }, orderBy: { occurredAt: "asc" }, select: { occurredAt: true } }),
+    // Streaks span the full recorded history up to the range end — clipping
+    // them to the range start would fabricate resets at arbitrary boundaries.
+    db.drugEvent.findMany({
+      where: { userId, occurredAt: { lte: new Date(range.to * 1000) } },
+      orderBy: { occurredAt: "asc" },
+      select: { occurredAt: true, drugName: true, outcome: true },
+    }),
+    // AP / cost-per-AP metrics span ALL rehab visits up to the range end.
+    db.rehabEvent.findMany({
+      where: { userId, occurredAt: { lte: new Date(range.to * 1000) } },
+      orderBy: { occurredAt: "asc" },
+      select: { occurredAt: true, cost: true, addictionPointsRemoved: true },
+    }),
   ]);
 
   const xanaxItemId = xanaxItem?.itemId ?? null;
@@ -76,6 +95,15 @@ export async function getDrugsSummary(userId: string, rangeInput: DateRangeInput
     openingInventory: xanaxPrice !== null ? xanaxPrice * funding.openingInventoryUnknown : null,
   };
 
+  // ---- Streaks (2.1.0): full history up to the range end -------------------
+  const streakEvents = streakRows.map((r) => ({
+    occurredAt: Math.floor(r.occurredAt.getTime() / 1000),
+    drugName: r.drugName,
+    outcome: r.outcome as string,
+  }));
+  const overallStreak = buildDrugStreak(streakEvents);
+  const streaksByDrug = buildDrugStreaksByDrug(streakEvents);
+
   // ---- Rehab ---------------------------------------------------------------
   const rehabEvents = rehabRows.map((r) => ({
     occurredAt: Math.floor(r.occurredAt.getTime() / 1000),
@@ -84,6 +112,16 @@ export async function getDrugsSummary(userId: string, rangeInput: DateRangeInput
     sessions: r.sessions,
   }));
   const rehab = calculateRehabStats(rehabEvents, range.from, range.to);
+  // AP/cost-per-AP and the next-cost estimate span ALL costed rehab visits
+  // up to the range end (not just in-range visits).
+  const rehabDeep = calculateRehabDeepStats(
+    rehabApRows.map((r) => ({
+      occurredAt: Math.floor(r.occurredAt.getTime() / 1000),
+      cost: bigintToNumber(r.cost),
+      rehabPercent: null,
+      addictionPointsRemoved: r.addictionPointsRemoved,
+    }))
+  );
 
   return {
     range: { from: range.from, to: range.to },
@@ -101,6 +139,15 @@ export async function getDrugsSummary(userId: string, rangeInput: DateRangeInput
       xanaxPerDay: xanaxPerDay !== null ? Math.round(xanaxPerDay * 10) / 10 : null,
       coveredDays: drugEvents.length > 0 ? coveredDays : null,
       coverage,
+      streaks: {
+        current: overallStreak.current,
+        currentSince: overallStreak.currentSince,
+        longest: overallStreak.longest,
+        longestFrom: overallStreak.longestFrom,
+        longestTo: overallStreak.longestTo,
+        lastUseAt: overallStreak.lastUseAt,
+        lastOverdoseAt: overallStreak.lastOverdoseAt,
+      },
     },
     xanaxFunding: {
       used: xanaxUses.length,
@@ -133,13 +180,20 @@ export async function getDrugsSummary(userId: string, rangeInput: DateRangeInput
       unknownFunded: funding.confirmedOther + funding.openingInventoryUnknown + funding.unknown,
       armoryHistory,
     },
-    byDrug: stats.byDrug.map((row) => ({
-      drug: row.drug,
-      uses: row.uses,
-      overdoses: row.overdoses,
-      estimatedCost: row.estimatedCost,
-      shareOfTotal: row.shareOfTotal,
-    })),
+    byDrug: stats.byDrug.map((row) => {
+      const streak = streaksByDrug.get(row.drug);
+      return {
+        drug: row.drug,
+        uses: row.uses,
+        overdoses: row.overdoses,
+        estimatedCost: row.estimatedCost,
+        shareOfTotal: row.shareOfTotal,
+        lastUseAt: streak?.lastUseAt ?? null,
+        lastOverdoseAt: streak?.lastOverdoseAt ?? null,
+        currentStreak: streak?.current ?? 0,
+        longestStreak: streak?.longest ?? 0,
+      };
+    }),
     dailySeries: stats.dailySeries,
     rehab: {
       totalSpend: { value: rehab.totalSpend, provenance: rehab.provenance },
@@ -157,6 +211,17 @@ export async function getDrugsSummary(userId: string, rangeInput: DateRangeInput
         rehabPercent: h.rehabPercent,
         cost: h.cost,
       })),
+      addictionPointsRemoved: rehabDeep.addictionPointsRemoved,
+      addictionPointsKnownVisits: rehabDeep.addictionPointsKnownVisits,
+      costPerAddictionPoint: {
+        value: rehabDeep.costPerAddictionPoint !== null ? Math.round(rehabDeep.costPerAddictionPoint) : null,
+        provenance: "derived" as const,
+      },
+      estimatedNextCost: {
+        value: rehabDeep.estimatedNextCost !== null ? Math.round(rehabDeep.estimatedNextCost) : null,
+        provenance: "estimated" as const,
+      },
+      earliestAt: rehabDeep.earliestAt,
     },
   };
 }

@@ -1,6 +1,6 @@
 {
   "name": "tornscope",
-  "version": "2.0.7",
+  "version": "2.1.0",
   "private": true,
   "packageManager": "pnpm@10.34.5",
   "description": "TornScope - self-hostable Torn.com analytics and history portal",
@@ -31,12 +31,14 @@
     "lint": "eslint .",
     "torn:audit": "pnpm --filter @tornscope/database run audit",
     "torn:renormalize": "pnpm --filter @tornscope/database renormalize",
+    "backfill": "tsx scripts/analytics-backfill.ts",
     "verify": "pnpm lint && pnpm typecheck && pnpm --filter @tornscope/web exec svelte-check --tsconfig ./tsconfig.json && pnpm test && pnpm build && docker compose config --quiet",
     "check:web": "pnpm --filter @tornscope/web exec svelte-check --tsconfig ./tsconfig.json"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^24.5.2",
+    "bullmq": "^5.34.6",
     "concurrently": "^9.2.1",
     "eslint": "^9.36.0",
     "prisma": "^6.16.2",

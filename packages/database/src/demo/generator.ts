@@ -1,4 +1,5 @@
 import { getPrismaClient } from "../client.js";
+import type { Prisma } from "../generated/client/client.js";
 import {
   COMBAT_OPPONENTS,
   DAY,
@@ -552,6 +553,63 @@ export async function generateDemoHistory(db: ReturnType<typeof getPrismaClient>
     userId, occurredAt: new Date(e.at * 1000), itemId: 470, itemName: "Erotic DVD", category: "happy_jump", quantity: 1,
     valuationMethod: "unknown", provenance: "unknown", source: "demo", sourceRef: `${REF_PREFIX}:edvd:${e.at}`,
   })), (b) => db.consumptionEvent.createMany({ data: b, skipDuplicates: true }));
+
+  // 2.1.0 deep-analytics evidence: gym train logs (exact energy_used), Xanax
+  // OD log rows (exact energy_decreased) and a light archive mix (hunting,
+  // bank, casino) so the Energy page and the Log Explorer render with the
+  // same payload shapes Torn writes. Deterministic via the same rngFor seed.
+  const deepRng = rngFor("deep-logs", from, to);
+  const STAT_KEYS = ["strength", "defense", "speed", "dexterity"] as const;
+  type LogRow = Prisma.TimelineEventCreateManyInput;
+  const gymRows: LogRow[] = [];
+  for (const burst of bursts) {
+    const share = [0.4, 0.25, 0.2, 0.15];
+    const total = burst.jump ? 250 : 140;
+    STAT_KEYS.forEach((stat, i) => {
+      const at = burst.from + i * 4 * 60;
+      const used = Math.round(total * share[i]!);
+      gymRows.push({
+        userId, occurredAt: new Date(at * 1000), type: "log", category: "Gym", title: `Gym train ${stat}`,
+        description: null, amount: null, source: "demo", sourceRef: `${REF_PREFIX}:gym:${burst.from}:${stat}`,
+        metadata: { id: at, timestamp: at, details: { id: 0, title: `Gym train ${stat}`, category: "Gym" }, data: { gym: 24, trains: Math.round(used / 10), happy_used: Math.round(used * 0.5), energy_used: used } },
+      });
+    });
+  }
+  counts.gymLogs = await chunk(db, gymRows, (b) => db.timelineEvent.createMany({ data: b, skipDuplicates: true }));
+
+  const odLogs = plannedDrugs
+    .filter((d) => d.overdose && d.drug.name === "Xanax")
+    .map((d) => ({
+      userId, occurredAt: new Date(d.occurredAt * 1000), type: "log", category: "Drugs", title: "Item use xanax overdose",
+      description: null, amount: null, source: "demo", sourceRef: `${d.ref}:odlog`,
+      metadata: { id: d.occurredAt, timestamp: d.occurredAt, details: { id: 0, title: "Item use xanax overdose", category: "Drugs" }, data: { item: 206, faction: 0, happy_decreased: 5000, nerve_decreased: 5, energy_decreased: 150, hospital_time_increased: 300000 } },
+    }));
+  await chunk(db, odLogs, (b) => db.timelineEvent.createMany({ data: b, skipDuplicates: true }));
+
+  const archiveRows: LogRow[] = [];
+  for (let day = utcDayNumber(barsFromAligned); day <= lastDay; day++) {
+    const dayStart = day * DAY;
+    if (deepRng.chance(0.5)) {
+      const at = dayStart + 12 * HOUR + deepRng.between(0, 3600);
+      const cost = 500;
+      const income = deepRng.between(500, 15000);
+      archiveRows.push({
+        userId, occurredAt: new Date(at * 1000), type: "log", category: "Hunting", title: "Hunting",
+        description: null, amount: null, source: "demo", sourceRef: `${REF_PREFIX}:hunt:${day}`,
+        metadata: { id: at, timestamp: at, details: { id: 0, title: "Hunting", category: "Hunting" }, data: { cost, income, session_type: "a beginners hunting session", hunting_skill: "56.781", hunting_skill_gain: "and gained 0.0865 hunting skill" } },
+      });
+    }
+    if (deepRng.chance(0.4)) {
+      const at = dayStart + 20 * HOUR + deepRng.between(0, 3600);
+      const money = deepRng.between(5000, 60000);
+      archiveRows.push({
+        userId, occurredAt: new Date(at * 1000), type: "log", category: "Bank", title: "Bank withdraw",
+        description: null, amount: null, source: "demo", sourceRef: `${REF_PREFIX}:banklog:${day}`,
+        metadata: { id: at, timestamp: at, details: { id: 0, title: "Bank withdraw", category: "Bank" }, data: { money } },
+      });
+    }
+  }
+  await chunk(db, archiveRows, (b) => db.timelineEvent.createMany({ data: b, skipDuplicates: true }));
 
   /* ------------------------- personal stat snapshots --------------------- */
   const statRows = [];

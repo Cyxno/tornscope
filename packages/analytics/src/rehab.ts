@@ -102,3 +102,59 @@ export function calculateRehabStats(events: readonly RehabEventLike[], from: num
     averageCostPerSession: avgCostPerSession !== null ? Math.round(avgCostPerSession) : null,
   };
 }
+
+/* -------------------------------------------------------------------------- */
+/* Rehab deep metrics (2.1.0)                                                  */
+/* -------------------------------------------------------------------------- */
+
+export interface RehabDeepStats {
+  /** Sum of explicit addiction-points removals (exact where the payload
+   *  carried them); null when NO visit carried a value. */
+  addictionPointsRemoved: number | null;
+  /** Visits whose payload carried an explicit AP value. */
+  addictionPointsKnownVisits: number;
+  /** Total spend ÷ total removed AP — only when every cost-bearing visit
+   *  also carried an AP value (partial data would bias the ratio). */
+  costPerAddictionPoint: number | null;
+  /** Median cost of the most recent visits (estimated next visit). */
+  estimatedNextCost: number | null;
+  estimatedNextCostBasis: number;
+  earliestAt: number | null;
+}
+
+const NEXT_COST_SAMPLE = 10;
+
+export function calculateRehabDeepStats(events: readonly RehabEventLike[]): RehabDeepStats {
+  const ordered = [...events].sort((a, b) => a.occurredAt - b.occurredAt);
+  const withAp = ordered.filter((e) => typeof e.addictionPointsRemoved === "number" && (e.addictionPointsRemoved ?? 0) > 0);
+  const apTotal = withAp.reduce((s, e) => s + (e.addictionPointsRemoved ?? 0), 0);
+  // Every cost-bearing visit must carry an explicit AP value: rehab visits
+  // always remove AP, so a missing value in ANY costed visit would bias a
+  // partial ratio — refuse it instead of dividing a biased fraction.
+  const withCost = ordered.filter((e) => typeof e.cost === "number" && (e.cost ?? 0) > 0);
+  const apComplete = withCost.length > 0 && withCost.every((e) => typeof e.addictionPointsRemoved === "number" && (e.addictionPointsRemoved ?? 0) > 0);
+  const costSum = withCost.reduce((s, e) => s + (e.cost ?? 0), 0);
+  const apOfCosted = withCost.reduce((s, e) => s + (e.addictionPointsRemoved ?? 0), 0);
+  // "Next visit" estimate: median cost of the most recent cost-bearing
+  // visits (rehab pricing scales with addiction level — the median of
+  // recent history is an estimate, never a quote).
+  const recentCosts = [...ordered]
+    .reverse()
+    .filter((e) => typeof e.cost === "number" && (e.cost ?? 0) > 0)
+    .slice(0, NEXT_COST_SAMPLE)
+    .map((e) => e.cost as number);
+  return {
+    addictionPointsRemoved: withAp.length > 0 ? apTotal : null,
+    addictionPointsKnownVisits: withAp.length,
+    costPerAddictionPoint: apComplete && apOfCosted > 0 ? costSum / apOfCosted : null,
+    estimatedNextCost: recentCosts.length > 0 ? medianOf(recentCosts) : null,
+    estimatedNextCostBasis: recentCosts.length,
+    earliestAt: ordered.length > 0 ? ordered[0]!.occurredAt : null,
+  };
+}
+
+function medianOf(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
+}

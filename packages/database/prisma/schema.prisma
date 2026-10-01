@@ -649,6 +649,7 @@ model TimelineEvent {
   @@unique([userId, source, sourceRef])
   @@index([userId, occurredAt])
   @@index([userId, type])
+  @@index([userId, type, occurredAt])
 }
 
 /* -------------------------------------------------------------------------- */

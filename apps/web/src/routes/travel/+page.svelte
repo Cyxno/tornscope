@@ -20,6 +20,8 @@
   let error = $state<string | null>(null);
   let reloadToken = $state(0);
   let expanded = $state<Set<string>>(new Set());
+  /** Daily chart lens (2.1.0): one strong chart, three honest views. */
+  let chartMetric = $state<"profit" | "trips" | "flightTime">("profit");
 
   function toggle(id: string) {
     const next = new Set(expanded);
@@ -81,15 +83,58 @@
   });
 
   const dayOption = $derived.by(() => {
-    if (!summary || summary.profitSeries.length === 0) return null;
+    if (!summary?.overview) {
+      // Pre-2.1.0 payload fallback: profit series only.
+      if (!summary || summary.profitSeries.length === 0) return null;
+      return {
+        ...MOTION,
+        tooltip: axisTimeTooltip(summary.profitSeries.map((p) => p.t), moneyTooltipValue()),
+        grid: GRID,
+        xAxis: timeAxis(summary.profitSeries.map((p) => dayLabel(p.t)), { boundaryGap: true }),
+        yAxis: moneyValueAxis(),
+        series: [{ name: "Estimated profit", type: "bar", data: summary.profitSeries.map((p) => p.profit), barMaxWidth: 12, itemStyle: { color: C.accentStrong, borderRadius: 3 } }],
+      };
+    }
+    const daily = summary.overview.daily;
+    if (daily.length === 0) return null;
+    if (chartMetric === "profit") {
+      return {
+        ...MOTION,
+        tooltip: axisTimeTooltip(daily.map((p) => p.t), moneyTooltipValue()),
+        grid: GRID,
+        xAxis: timeAxis(daily.map((p) => dayLabel(p.t)), { boundaryGap: true }),
+        yAxis: moneyValueAxis(),
+        series: [{ name: "Estimated profit", type: "bar", data: daily.map((p) => p.profit ?? 0), barMaxWidth: 12, itemStyle: { color: C.accentStrong, borderRadius: 3 } }],
+      };
+    }
+    if (chartMetric === "trips") {
+      return {
+        ...MOTION,
+        tooltip: axisTimeTooltip(daily.map((p) => p.t)),
+        grid: GRID,
+        xAxis: timeAxis(daily.map((p) => dayLabel(p.t)), { boundaryGap: true }),
+        yAxis: { ...valueAxis(), minInterval: 1 },
+        series: [{ name: "Departures", type: "bar", data: daily.map((p) => p.trips), barMaxWidth: 12, itemStyle: { color: C.accent, borderRadius: 3 } }],
+      };
+    }
     return {
       ...MOTION,
-      tooltip: axisTimeTooltip(summary.profitSeries.map((p) => p.t), moneyTooltipValue()),
+      tooltip: axisTimeTooltip(daily.map((p) => p.t), (v) => formatDuration(Number(v))),
       grid: GRID,
-      xAxis: timeAxis(summary.profitSeries.map((p) => dayLabel(p.t)), { boundaryGap: true }),
-      yAxis: moneyValueAxis(),
-      series: [{ name: "Estimated profit", type: "bar", data: summary.profitSeries.map((p) => p.profit), barMaxWidth: 12, itemStyle: { color: C.accentStrong, borderRadius: 3 } }],
+      xAxis: timeAxis(daily.map((p) => dayLabel(p.t)), { boundaryGap: true }),
+      yAxis: valueAxis(),
+      series: [{ name: "Flight time", type: "bar", data: daily.map((p) => p.flightTimeSeconds), barMaxWidth: 12, itemStyle: { color: C.violet, borderRadius: 3 } }],
     };
+  });
+
+  /** Descriptive historical intelligence (never a "fly now" recommendation). */
+  const intelligence = $derived.by(() => {
+    const overview = summary?.overview;
+    if (!overview || overview.byDestination.length === 0) return null;
+    const profitable = overview.byDestination.filter((d) => d.averageProfitPerTrip !== null);
+    const best = profitable.length > 0 ? [...profitable].sort((a, b) => (b.averageProfitPerTrip ?? 0) - (a.averageProfitPerTrip ?? 0))[0]! : null;
+    const mostFrequent = [...overview.byDestination].sort((a, b) => b.trips - a.trips)[0] ?? null;
+    return { best, mostFrequent };
   });
 
   /** Trip haul mini-table shared by the desktop expansion row and the
@@ -162,14 +207,24 @@
         <p class="hero-num tnum mt-3 {summary.estimatedProfit.value === null ? 'text-fg-faint' : summary.estimatedProfit.value >= 0 ? 'text-positive' : 'text-negative'}">
           {formatKpiValue(summary.estimatedProfit, formatSignedMoneyCompact)}
         </p>
-        <dl class="mt-6 grid grid-cols-2 gap-y-5 md:grid-cols-3 md:divide-x md:divide-border">
+        <dl class="mt-6 grid grid-cols-2 gap-y-5 md:grid-cols-5 md:divide-x md:divide-border">
           <div class="md:pr-6">
             <dt class="text-[11px] font-medium text-fg-faint">Trips</dt>
             <dd class="tnum mt-1 text-[22px] font-semibold text-fg">{summary.trips}</dd>
+            <dd class="tnum text-[11px] text-fg-faint">{summary.overview?.tripsPerDay != null ? `${summary.overview.tripsPerDay.toFixed(1)}/day` : ""}{summary.overview?.destinationsVisited ? ` · ${summary.overview.destinationsVisited} destinations` : ""}</dd>
+          </div>
+          <div class="md:px-6">
+            <dt class="text-[11px] font-medium text-fg-faint" title="Sum of recorded flight durations of completed trips — exact own-history data">Flight time</dt>
+            <dd class="tnum mt-1 text-[22px] font-semibold text-fg">{summary.overview ? formatDuration(summary.overview.flightTimeSeconds) : "—"}</dd>
+            <dd class="tnum text-[11px] text-fg-faint">{summary.overview?.averageFlightSeconds != null ? `avg ${formatDuration(summary.overview.averageFlightSeconds)}` : ""}</dd>
           </div>
           <div class="md:px-6">
             <dt class="text-[11px] font-medium text-fg-faint">Profit / hour <span class="text-warning">est.</span></dt>
             <dd class="tnum mt-1 text-[22px] font-semibold text-fg">{formatKpiValue(summary.profitPerHour, formatSignedMoneyCompact)}</dd>
+          </div>
+          <div class="md:px-6">
+            <dt class="text-[11px] font-medium text-fg-faint">Profit / trip <span class="text-warning">est.</span></dt>
+            <dd class="tnum mt-1 text-[22px] font-semibold text-fg">{formatKpiValue(summary.averageTripProfit, formatSignedMoneyCompact)}</dd>
           </div>
           <div class="md:pl-6">
             <dt class="text-[11px] font-medium text-fg-faint">Top item <span class="text-warning">est.</span></dt>
@@ -188,7 +243,7 @@
       <section class="section-rule" aria-label="Destinations">
         <div class="flex items-baseline justify-between gap-3">
           <h2 class="section-label">Destinations — ranked by estimated profit</h2>
-          <span class="text-[11px] text-fg-faint">bar length = |profit|</span>
+          <span class="hidden text-[11px] text-fg-faint sm:inline">bar length = |profit|</span>
         </div>
         {#if destRows.length === 0}
           <p class="mt-4 text-[13px] text-fg-faint">No destinations in this range yet.</p>
@@ -290,7 +345,22 @@
           </Panel>
         </div>
         <div class="min-w-0 lg:col-span-3">
-          <Panel title="Profit by departure day" caption="Days you flew out, ranked by what came back" flush>
+          <Panel title="Activity by departure day" caption="One lens at a time — profit, volume or time in the air" flush>
+            {#if summary.overview}
+              <div class="flex gap-1.5 px-6 pt-4" role="tablist" aria-label="Daily chart lens">
+                {#each [["profit", "Profit"], ["trips", "Trips"], ["flightTime", "Flight time"]] as [key, label] (key)}
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={chartMetric === key}
+                    class="chip cursor-pointer !py-1 text-xs {chartMetric === key ? 'chip-accent' : 'text-fg-muted hover:text-fg'}"
+                    onclick={() => (chartMetric = key as typeof chartMetric)}
+                  >
+                    {label}
+                  </button>
+                {/each}
+              </div>
+            {/if}
             {#if !dayOption}
               <StateMessage state="empty" compact title="No departures in this range" />
             {:else}
@@ -299,6 +369,68 @@
           </Panel>
         </div>
       </section>
+
+      <!-- Destination breakdown (2.1.0): compact table with flight-time economics -->
+      {#if summary.overview && summary.overview.byDestination.length > 0}
+        <Panel
+          title="Destination breakdown"
+          caption="Flight time from completed trips only — profit stays estimated"
+          class="h-full"
+        >
+          <div class="overflow-x-auto">
+            <table class="tsv-table">
+              <thead>
+                <tr>
+                  <th>Destination</th>
+                  <th class="text-right">Trips</th>
+                  <th class="text-right">Flight time</th>
+                  <th class="text-right">Avg flight</th>
+                  <th class="text-right">Items</th>
+                  <th class="text-right">Spend</th>
+                  <th class="text-right">Profit/trip <span class="text-warning">est.</span></th>
+                  <th class="text-right">Profit/hour <span class="text-warning">est.</span></th>
+                  <th class="hidden md:table-cell text-right">Last visit</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each summary.overview.byDestination as dest (dest.destination)}
+                  <tr>
+                    <td class="font-medium text-fg">{dest.destination}</td>
+                    <td class="tnum text-right text-fg-muted">{dest.trips}</td>
+                    <td class="tnum text-right text-fg-muted">{dest.flightTimeSeconds > 0 ? formatDuration(dest.flightTimeSeconds) : "—"}</td>
+                    <td class="tnum text-right text-fg-muted">{dest.averageFlightSeconds !== null ? formatDuration(dest.averageFlightSeconds) : "—"}</td>
+                    <td class="tnum text-right text-fg-muted">{dest.itemsBought}</td>
+                    <td class="tnum text-right text-fg-muted">{dest.spend > 0 ? formatMoneyCompact(dest.spend) : "—"}</td>
+                    <td class="tnum text-right font-medium {dest.averageProfitPerTrip === null ? 'text-fg-faint' : dest.averageProfitPerTrip >= 0 ? 'text-positive' : 'text-negative'}">
+                      {dest.averageProfitPerTrip !== null ? formatSignedMoneyCompact(dest.averageProfitPerTrip) : "—"}
+                    </td>
+                    <td class="tnum text-right {dest.averageProfitPerHour === null ? 'text-fg-faint' : dest.averageProfitPerHour >= 0 ? 'text-positive' : 'text-negative'}">
+                      {dest.averageProfitPerHour !== null ? formatSignedMoneyCompact(dest.averageProfitPerHour) : "—"}
+                    </td>
+                    <td class="hidden md:table-cell tnum text-right text-fg-faint">{td.displayDate(dest.lastVisitAt)}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+          {#if intelligence}
+            <div class="mt-4 border-t border-border pt-3 text-xs text-fg-muted">
+              <p class="section-label mb-1.5">Best historical (descriptive)</p>
+              <p>
+                {#if intelligence.best}
+                  <span class="font-medium text-fg">{intelligence.best.destination}</span> averaged
+                  <span class="tnum font-medium {intelligence.best.averageProfitPerTrip !== null && intelligence.best.averageProfitPerTrip >= 0 ? 'text-positive' : 'text-negative'}">{formatSignedMoneyCompact(intelligence.best.averageProfitPerTrip ?? 0)}</span>
+                  per trip over {intelligence.best.trips} trip{intelligence.best.trips === 1 ? "" : "s"}.
+                {/if}
+                {#if intelligence.mostFrequent && intelligence.mostFrequent.destination !== intelligence.best?.destination}
+                  Most visited: <span class="font-medium text-fg">{intelligence.mostFrequent.destination}</span> ({intelligence.mostFrequent.trips} trips).
+                {/if}
+                Historical averages describe the past — they are not a recommendation for your next flight.
+              </p>
+            </div>
+          {/if}
+        </Panel>
+      {/if}
 
       <!-- Trip log: table on md+, cards on phones -->
       <Panel title="Trip log" caption="Select a row to unfold the haul" flush>

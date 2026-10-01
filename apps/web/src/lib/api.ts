@@ -36,6 +36,9 @@ import type {
   Goal,
   InsightsResponse,
   SystemHealthResponse,
+  EnergySummaryResponse,
+  LogsResponse,
+  LogsMetaResponse,
 } from "@tornscope/shared";
 
 /**
@@ -250,4 +253,39 @@ export const endpoints = {
   deleteGoal: (id: string) => api.del<{ deleted: boolean }>(`/goals/${id}`),
   insights: () => api.get<InsightsResponse>("/insights"),
   systemHealth: () => api.get<SystemHealthResponse>("/system/health"),
+};
+
+/* ---- 2.1.0 deep analytics ---- */
+
+export interface LogsQuery {
+  category?: string;
+  type?: string;
+  search?: string;
+  outcome?: "gain" | "loss";
+  minAmount?: string;
+  maxAmount?: string;
+}
+
+function logsQueryParams(range: QueryRange, opts: LogsQuery, extra: Record<string, string> = {}): string {
+  const params = new URLSearchParams({ preset: range.preset });
+  if (range.from) params.set("from", String(range.from));
+  if (range.to) params.set("to", String(range.to));
+  if (opts.category) params.set("category", opts.category);
+  if (opts.type) params.set("type", opts.type);
+  if (opts.search) params.set("search", opts.search);
+  if (opts.outcome) params.set("outcome", opts.outcome);
+  if (opts.minAmount) params.set("minAmount", opts.minAmount);
+  if (opts.maxAmount) params.set("maxAmount", opts.maxAmount);
+  for (const [k, v] of Object.entries(extra)) params.set(k, v);
+  return params.toString();
+}
+
+export const deepAnalytics = {
+  energySummary: (range: QueryRange) => api.get<EnergySummaryResponse>(`/energy/summary?${rangeQuery(range)}`),
+  logs: (range: QueryRange, opts: LogsQuery, limit = 50, cursor?: string): Promise<LogsResponse> =>
+    api.get(`/logs?${logsQueryParams(range, opts, { limit: String(limit), ...(cursor ? { cursor } : {}) })}`),
+  logsMeta: (range: QueryRange) => api.get<LogsMetaResponse>(`/logs/meta?${rangeQuery(range)}`),
+  /** Direct download through the same-origin /api proxy (session cookie auth). */
+  logsExportUrl: (range: QueryRange, opts: LogsQuery, format: "csv" | "json"): string =>
+    `/api/logs/export?${logsQueryParams(range, opts, { format })}`,
 };

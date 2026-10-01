@@ -8,7 +8,7 @@ TornScope is a self-hostable [Torn](https://www.torn.com) analytics and history 
 
 | | |
 | --- | --- |
-| **Version** | 1.0.x — [Public Testing](https://tornscope.cyxno.eu) |
+| **Version** | 2.1.0 — [Public Testing](https://tornscope.cyxno.eu) |
 | **CI** | [GitHub Actions](.github/workflows/ci.yml): lint, typecheck, svelte-check, tests, build, Docker smoke |
 | **Docker images** | [![Docker images on GHCR](https://img.shields.io/badge/images-ghcr.io%2Fcyxno-2088FF)](https://github.com/Cyxno?tab=packages&repo_name=tornscope) published per release — web / api / worker |
 | **Runtime** | Docker Compose (Node ≥ 20.19, PostgreSQL, Redis) |
@@ -82,16 +82,22 @@ Positions valued at current market prices, benefit blocks (reached/next), missin
 The full merit ledger: exact ranks, unspent points, category concentration, maxed/partial/untouched states, per-merit descriptions from Torn's catalog, search and filters.
 
 ### Drugs & Rehab
-Daily drug use (good/bad), per-drug breakdown, estimated spend from market prices, overdose rate, and rehab history and spend.
+Daily drug use (good/bad), per-drug breakdown with good-streak accounting (current + longest), estimated spend from market prices, overdose rate, and rehab history with addiction-points removed, cost-per-point and an estimated next visit.
 
 ### Travel
-Trips assembled from logs, estimated profit per trip/hour/destination (clearly labeled estimates), plushie/flower/other splits, and the current travel state.
+Trips assembled from logs, estimated profit per trip/hour/destination (clearly labeled estimates), flight-time totals and destination breakdown, a profit/trips/flight-time activity chart, and the current travel state.
 
 ### Combat & Crimes
 Attack history (outgoing/incoming, win/loss semantics from your perspective) and crime analytics from your logs.
 
 ### Timeline
 A unified chronological feed of logs and events with amounts, filterable and paginated.
+
+### Energy Analytics (2.1)
+A full accounting of your energy: natural regen, refills (with points spent), Xanax, energy drinks and gym (exact from Torn's own logs) versus gym/attack spend and exact overdose losses — with an explicit coverage statement so partial data never pretends to balance.
+
+### Log Explorer (2.1)
+Your complete stored Torn log archive — filter by category, type, search, money outcome and amount range; expandable payload digests; keyset pagination; and server-streamed **CSV/JSON export** of the filtered set.
 
 ### Notifications
 Web Push with a canonical notification-type registry, **iOS/iPadOS home-screen PWA support**, multiple devices per profile, test push, quiet hours that defer instead of dropping, per-profile dedupe, and a delivery ledger that explains every suppressed, expired or failed alert. Dead subscriptions are cleaned up automatically.
@@ -115,8 +121,10 @@ A dedicated synthetic demo profile with 180+ days of populated history, kept str
 | Progression | Stats, training sessions, energy ledger, happy jumps |
 | Stocks | Portfolio, benefit blocks, yield and payback |
 | Merits | Full merit ledger, ranks, unspent points |
-| Travel | Trip history and destination economics |
-| Drugs | Usage, spend, overdoses, rehab history |
+| Travel | Trip history, flight time and destination economics |
+| Energy (2.1) | Full energy accounting: sources, uses, losses, coverage |
+| Log Explorer (2.1) | Filterable raw-log archive with CSV/JSON export |
+| Drugs | Usage, spend, overdoses, streaks, rehab history with AP economics |
 | Combat & Crimes | Attack and crime history from your logs |
 | Timeline | Unified chronological ledger |
 | Intelligence | Goals & projections, insights, training & wealth intelligence, system health |
@@ -169,7 +177,7 @@ PostgreSQL and Redis intentionally keep their official upstream images — TornS
 
 | Tag | Meaning |
 | --- | --- |
-| `2.0.7` | Exact release — **recommended**, pin it via `TORNSCOPE_VERSION` in `.env` |
+| `2.1.0` | Exact release — **recommended**, pin it via `TORNSCOPE_VERSION` in `.env` |
 | `2.0.6` | Previous release |
 | `1` / `1.0` | Rolling major / minor line — moves with new releases |
 | `latest` | Current stable release |

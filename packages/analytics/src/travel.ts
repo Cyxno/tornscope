@@ -63,6 +63,7 @@ export interface TravelProfitSummary {
 }
 
 const HOUR = 3600;
+const DAY = 86_400;
 
 export function calculateProfitPerHour(profit: number, durationSeconds: number | null | undefined): number | null {
   if (durationSeconds === null || durationSeconds === undefined || durationSeconds <= 0) return null;
@@ -370,7 +371,7 @@ export function assembleTrips(events: readonly TravelEventLike[], items: readonl
 export function travelDurationMedians(trips: readonly TravelTripLike[]): Record<string, number> {
   const byDestination = new Map<string, number[]>();
   for (const trip of trips) {
-    const duration = tripDurationSeconds(trip);
+    const duration = tripDurationSeconds({ ...trip, id: "" });
     if (duration === null || duration <= 0) continue;
     const list = byDestination.get(trip.destination) ?? [];
     list.push(duration);
@@ -384,4 +385,173 @@ export function travelDurationMedians(trips: readonly TravelTripLike[]): Record<
     out[destination] = sorted.length % 2 === 1 ? sorted[mid]! : (sorted[mid]! + sorted[mid - 1]!) / 2;
   }
   return out;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Travel deep overview (2.1.0)                                                */
+/* -------------------------------------------------------------------------- */
+
+export interface TravelOverviewTrip {
+  destination: string;
+  departedAt: number;
+  returnedAt: number | null;
+  durationSeconds: number | null;
+  items: TravelItemLike[];
+}
+
+export interface TravelDestinationRow {
+  destination: string;
+  trips: number;
+  flightTimeSeconds: number;
+  averageFlightSeconds: number | null;
+  itemsBought: number;
+  spend: number;
+  estimatedRevenue: number | null;
+  estimatedProfit: number | null;
+  averageProfitPerTrip: number | null;
+  averageProfitPerHour: number | null;
+  lastVisitAt: number;
+}
+
+export interface TravelOverview {
+  trips: number;
+  /** Sum of completed-trip flight time (exact recorded durations). */
+  flightTimeSeconds: number;
+  averageFlightSeconds: number | null;
+  destinationsVisited: number;
+  tripsPerDay: { value: number | null; coveredDays: number };
+  byDestination: TravelDestinationRow[];
+  daily: Array<{ t: number; trips: number; flightTimeSeconds: number; profit: number | null }>;
+}
+
+/**
+ * Historical travel overview: trip volume, flight time and destination
+ * economics. Flight time comes only from recorded durations/complete
+ * depart-return pairs (exact); open trips contribute to trip counts but
+ * never to flight time. Profit reuses the canonical estimated-resale
+ * semantics of calculateTravelProfit.
+ */
+export function buildTravelOverview(trips: readonly TravelOverviewTrip[], from: number, to: number): TravelOverview {
+  const inRange = trips.filter((t) => t.departedAt >= from && t.departedAt <= to);
+
+  const destMap = new Map<string, {
+    trips: number;
+    flightTimeSeconds: number;
+    timedTrips: number;
+    itemsBought: number;
+    spend: number;
+    revenue: number | null;
+    revenueKnown: boolean;
+    timedRevenue: number | null;
+    timedRevenueKnown: boolean;
+    timedSpend: number;
+    lastVisitAt: number;
+  }>();
+  let flightTimeSeconds = 0;
+  let timedTrips = 0;
+
+  const dailyMap = new Map<number, { trips: number; flightTimeSeconds: number; profit: number }>();
+
+  for (const trip of inRange) {
+    const duration = tripDurationSeconds({ ...trip, id: "" });
+    const timed = duration !== null;
+    if (timed) {
+      flightTimeSeconds += duration;
+      timedTrips += 1;
+    }
+
+    const dest =
+      destMap.get(trip.destination) ??
+      destMap.set(trip.destination, {
+        trips: 0,
+        flightTimeSeconds: 0,
+        timedTrips: 0,
+        itemsBought: 0,
+        spend: 0,
+        revenue: null,
+        revenueKnown: true,
+        timedRevenue: null,
+        timedRevenueKnown: true,
+        timedSpend: 0,
+        lastVisitAt: trip.departedAt,
+      }).get(trip.destination)!;
+
+    dest.trips += 1;
+    if (trip.departedAt > dest.lastVisitAt) dest.lastVisitAt = trip.departedAt;
+    if (timed) {
+      dest.flightTimeSeconds += duration;
+      dest.timedTrips += 1;
+    }
+
+    let tripRevenue = 0;
+    let tripRevenueKnown = trip.items.length > 0;
+    let tripSpend = 0;
+    for (const item of trip.items) {
+      const value = itemEstimatedValue(item);
+      dest.itemsBought += item.quantity;
+      dest.spend += item.totalCost;
+      tripSpend += item.totalCost;
+      if (value !== null) {
+        tripRevenue += value;
+      } else {
+        tripRevenueKnown = false;
+      }
+    }
+    if (tripRevenueKnown) {
+      dest.revenue = (dest.revenue ?? 0) + tripRevenue;
+    } else {
+      dest.revenueKnown = false;
+    }
+    if (timed) {
+      dest.timedSpend += tripSpend;
+      if (tripRevenueKnown) dest.timedRevenue = (dest.timedRevenue ?? 0) + tripRevenue;
+      else dest.timedRevenueKnown = false;
+    }
+
+    // Daily profit uses the ONE canonical semantics (buildDailyTravelProfit):
+    // known values net of spend; unknown-value items contribute -spend so a
+    // day with unsaleable hauls still shows honest negative bars instead of
+    // an empty plot.
+    const day = Math.floor(trip.departedAt / DAY) * DAY;
+    const dayEntry = dailyMap.get(day) ?? { trips: 0, flightTimeSeconds: 0, profit: 0 };
+    dayEntry.trips += 1;
+    if (timed) dayEntry.flightTimeSeconds += duration;
+    dayEntry.profit += tripRevenueKnown ? tripRevenue - tripSpend : -tripSpend;
+    dailyMap.set(day, dayEntry);
+  }
+
+  const byDestination: TravelDestinationRow[] = [...destMap.entries()]
+    .map(([destination, d]) => {
+      const profit = d.revenueKnown && d.revenue !== null ? d.revenue - d.spend : null;
+      const timedProfit = d.timedRevenueKnown && d.timedRevenue !== null ? d.timedRevenue - d.timedSpend : null;
+      return {
+        destination,
+        trips: d.trips,
+        flightTimeSeconds: d.flightTimeSeconds,
+        averageFlightSeconds: d.timedTrips > 0 ? d.flightTimeSeconds / d.timedTrips : null,
+        itemsBought: d.itemsBought,
+        spend: d.spend,
+        estimatedRevenue: d.revenueKnown ? d.revenue : null,
+        estimatedProfit: profit,
+        averageProfitPerTrip: profit !== null && d.trips > 0 ? profit / d.trips : null,
+        averageProfitPerHour: timedProfit !== null && d.flightTimeSeconds > 0 ? (timedProfit / d.flightTimeSeconds) * HOUR : null,
+        lastVisitAt: d.lastVisitAt,
+      };
+    })
+    .sort((a, b) => b.trips - a.trips || b.lastVisitAt - a.lastVisitAt);
+
+  const coveredDays = Math.max(1, Math.ceil((to - from) / DAY));
+  const daily = [...dailyMap.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([t, v]) => ({ t, ...v }));
+
+  return {
+    trips: inRange.length,
+    flightTimeSeconds,
+    averageFlightSeconds: timedTrips > 0 ? flightTimeSeconds / timedTrips : null,
+    destinationsVisited: destMap.size,
+    tripsPerDay: { value: inRange.length > 0 ? inRange.length / coveredDays : null, coveredDays },
+    byDestination,
+    daily,
+  };
 }

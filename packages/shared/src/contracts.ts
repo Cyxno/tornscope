@@ -1520,6 +1520,21 @@ export const DrugsSummaryResponseSchema = z.object({
     /** Days actually covered by drug data inside the range (partial coverage < range length). */
     coveredDays: z.number().nullable(),
     coverage: z.enum(["full", "partial", "unavailable"]),
+    /**
+     * 2.1.0: good-streak accounting over the SELECTED range's events
+     * (current run since the last in-range overdose + longest run).
+     */
+    streaks: z
+      .object({
+        current: z.number(),
+        currentSince: z.number().nullable(),
+        longest: z.number(),
+        longestFrom: z.number().nullable(),
+        longestTo: z.number().nullable(),
+        lastUseAt: z.number().nullable(),
+        lastOverdoseAt: z.number().nullable(),
+      })
+      .optional(),
   }),
   /**
    * Xanax funding, provenance-aware (stock-flow ledger):
@@ -1590,6 +1605,11 @@ export const DrugsSummaryResponseSchema = z.object({
       overdoses: z.number(),
       estimatedCost: z.number().nullable(),
       shareOfTotal: z.number(),
+      /** 2.1.0: per-drug good-streak accounting (absent on older payloads). */
+      lastUseAt: z.number().nullable().optional(),
+      lastOverdoseAt: z.number().nullable().optional(),
+      currentStreak: z.number().optional(),
+      longestStreak: z.number().optional(),
     })
   ),
   dailySeries: z.array(z.object({ t: z.number(), good: z.number(), bad: z.number() })),
@@ -1631,6 +1651,12 @@ export const DrugsSummaryResponseSchema = z.object({
         cost: z.number().nullable(),
       })
     ),
+    /** 2.1.0 rehab deep metrics (absent on older payloads). */
+    addictionPointsRemoved: z.number().nullable().optional(),
+    addictionPointsKnownVisits: z.number().optional(),
+    costPerAddictionPoint: KpiValueSchema.optional(),
+    estimatedNextCost: KpiValueSchema.optional(),
+    earliestAt: z.number().nullable().optional(),
   }),
 });
 export type DrugsSummaryResponse = z.infer<typeof DrugsSummaryResponseSchema>;
@@ -1723,6 +1749,43 @@ export const TravelSummaryResponseSchema = z.object({
    * absent: callers treat that as "duration unknown" and never invent one.
    */
   travelDurations: z.record(z.string(), z.number()),
+  /**
+   * 2.1.0 historical travel overview (absent on older payloads): trip
+   * volume, flight time and per-destination economics. Flight time counts
+   * only recorded durations / complete depart-return pairs.
+   */
+  overview: z
+    .object({
+      trips: z.number(),
+      flightTimeSeconds: z.number(),
+      averageFlightSeconds: z.number().nullable(),
+      destinationsVisited: z.number(),
+      tripsPerDay: z.number().nullable(),
+      byDestination: z.array(
+        z.object({
+          destination: z.string(),
+          trips: z.number(),
+          flightTimeSeconds: z.number(),
+          averageFlightSeconds: z.number().nullable(),
+          itemsBought: z.number(),
+          spend: z.number(),
+          estimatedRevenue: z.number().nullable(),
+          estimatedProfit: z.number().nullable(),
+          averageProfitPerTrip: z.number().nullable(),
+          averageProfitPerHour: z.number().nullable(),
+          lastVisitAt: z.number(),
+        })
+      ),
+      daily: z.array(
+        z.object({
+          t: z.number(),
+          trips: z.number(),
+          flightTimeSeconds: z.number(),
+          profit: z.number().nullable(),
+        })
+      ),
+    })
+    .optional(),
 });
 export type TravelSummaryResponse = z.infer<typeof TravelSummaryResponseSchema>;
 
@@ -2377,3 +2440,104 @@ export const SystemHealthResponseSchema = z.object({
   freshness: z.array(DataFreshnessEntrySchema),
 });
 export type SystemHealthResponse = z.infer<typeof SystemHealthResponseSchema>;
+
+/* -------------------------------------------------------------------------- */
+/* 2.1.0 — Deep Analytics                                                      */
+/* -------------------------------------------------------------------------- */
+
+/** Value provenance incl. bounded inference (same ladder as insights). */
+export const EnergyProvenanceSchema = z.enum(["exact", "derived", "estimated", "inferred"]);
+export type EnergyProvenance = z.infer<typeof EnergyProvenanceSchema>;
+
+const EnergyBreakdownRowSchema = z.object({
+  category: z.string(),
+  label: z.string(),
+  amount: z.number(),
+  events: z.number(),
+  provenance: EnergyProvenanceSchema,
+  share: z.number().nullable(),
+  /** Exact points cost (refill rows only). */
+  pointsUsed: z.number().nullable().optional(),
+});
+
+export const EnergySummaryResponseSchema = z.object({
+  range: z.object({ from: z.number(), to: z.number() }),
+  generatedAt: z.number(),
+  availability: z
+    .object({
+      bars: FeatureAvailabilitySchema,
+      logs: FeatureAvailabilitySchema,
+    })
+    .optional(),
+  balance: z.object({
+    generated: z.object({ value: z.number().nullable(), provenance: EnergyProvenanceSchema }),
+    gainedExternally: z.object({ value: z.number(), provenance: EnergyProvenanceSchema }),
+    spent: z.object({ value: z.number().nullable(), provenance: EnergyProvenanceSchema }),
+    lost: z.object({ value: z.number(), provenance: EnergyProvenanceSchema }),
+    net: z.object({ value: z.number().nullable(), provenance: EnergyProvenanceSchema }),
+  }),
+  sources: z.array(EnergyBreakdownRowSchema),
+  uses: z.array(EnergyBreakdownRowSchema),
+  losses: z.array(EnergyBreakdownRowSchema),
+  daily: z.array(z.object({ t: z.number(), gained: z.number(), spent: z.number(), lost: z.number() })),
+  chartInterval: z.enum(["day", "week", "month"]),
+  coverage: z.object({
+    accountedShare: z.number().nullable(),
+    coveredFrom: z.number().nullable(),
+    coveredTo: z.number().nullable(),
+    truncated: z.boolean(),
+    quality: z.enum(["full", "partial", "unavailable"]),
+  }),
+  intelligence: z.object({
+    averageEnergyPerDay: z.object({ value: z.number().nullable(), provenance: EnergyProvenanceSchema }),
+    gymShareOfSpent: z.number().nullable(),
+    attackShareOfSpent: z.number().nullable(),
+    xanaxPerDay: z.object({ value: z.number().nullable(), provenance: EnergyProvenanceSchema }),
+    refillCount: z.number(),
+    refillEnergy: z.number(),
+    refillPointsSpent: z.number().nullable(),
+    potentialRegenWhileCapped: z.object({ value: z.number().nullable(), provenance: EnergyProvenanceSchema }),
+    cappedHoursObserved: z.number(),
+  }),
+});
+export type EnergySummaryResponse = z.infer<typeof EnergySummaryResponseSchema>;
+
+export const LogEventDtoSchema = z.object({
+  id: z.string(),
+  occurredAt: z.number(),
+  category: z.string().nullable(),
+  title: z.string(),
+  /** Human summary (description or formatted payload digest). */
+  summary: z.string().nullable(),
+  /** Generic numeric value when the payload carries one. */
+  value: z.number().nullable(),
+  /** Money delta when the payload carries one (exact from the log). */
+  money: z.number().nullable(),
+  /** Energy delta (±) when the payload carries one (exact from the log). */
+  energy: z.number().nullable(),
+  /** Small structured digest of the raw payload for the details view. */
+  details: z.array(z.object({ key: z.string(), value: z.string() })),
+  provenance: EnergyProvenanceSchema,
+});
+export type LogEventDto = z.infer<typeof LogEventDtoSchema>;
+
+export const LogsResponseSchema = z.object({
+  range: z.object({ from: z.number(), to: z.number() }),
+  items: z.array(LogEventDtoSchema),
+  nextCursor: z.string().nullable(),
+  /** Total rows matching the filters within the range (bounded count). */
+  total: z.number().nullable().optional(),
+});
+export type LogsResponse = z.infer<typeof LogsResponseSchema>;
+
+/** Filter options derived from the user's OWN stored archive. */
+export const LogsMetaResponseSchema = z.object({
+  categories: z.array(z.object({ category: z.string(), count: z.number() })),
+  titles: z.array(z.object({ title: z.string(), count: z.number() })),
+  totalLogs: z.number(),
+  oldestAt: z.number().nullable(),
+});
+export type LogsMetaResponse = z.infer<typeof LogsMetaResponseSchema>;
+
+export const LogExportFormatSchema = z.enum(["csv", "json"]);
+export type LogExportFormat = z.infer<typeof LogExportFormatSchema>;

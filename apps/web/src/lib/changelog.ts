@@ -34,9 +34,50 @@ export const CHANGELOG_KINDS: ChangelogKind[] = ["Added", "Improved", "Fixed", "
 
 export const CHANGELOG: ChangelogRelease[] = [
   {
-    version: "2.0.7",
+    version: "2.1.0",
+    date: "2026-10-01",
     stage: "Public Testing",
     current: true,
+    summary:
+      "Deep Analytics: torn.report-level historical depth in TornScope's own design language — a full energy accounting (sources, uses, losses with honest provenance), drug/rehab streaks and deep rehab economics, travel flight-time economics, and a filterable Log Explorer with streaming CSV/JSON export. Everything reads from locally ingested history: opening a page never triggers a Torn fetch, and the production topology stays one stack.",
+    changes: [
+      {
+        kind: "Added",
+        text: "Energy Analytics (/energy) — where energy came from and where it went: natural regen (derived), points refills (exact, incl. points spent), Xanax (documented +250 estimate), energy drinks (exact), gym (exact from Torn's gym-train logs), bounded attack/revive inference and exact overdose losses. Stacked daily/weekly/monthly chart, an explicit coverage statement, and derived intelligence (energy/day, Xanax/day, regen lost at cap).",
+      },
+      {
+        kind: "Added",
+        text: "Log Explorer (/logs) — filterable audit view over the complete raw log archive: category, type, search, money outcome and amount-range filters, keyset pagination, expandable payload digests, and streaming CSV/JSON export (server-side, capped at 50,000 rows, session-scoped and free of any key material).",
+      },
+      {
+        kind: "Added",
+        text: "Drugs & Rehab 2.0 — good-streak accounting (current + longest, per substance and overall), last use / last overdose per substance, OD rate in the stat strip, rehab addiction-points removed, cost-per-addiction-point (only on complete data) and an estimated next-visit cost.",
+      },
+      {
+        kind: "Added",
+        text: "Travel Analytics 2.0 — flight-time totals and averages, trips/day, destinations visited, a three-lens activity chart (Profit / Trips / Flight time), a destination-breakdown table (flight time, avg flight, items, spend, profit/trip, profit/hour, last visit) and descriptive best-historical intelligence.",
+      },
+      {
+        kind: "Added",
+        text: "Backfill CLI (pnpm backfill status|start [--deep]) — operator control of the historical walk on the existing worker pipeline: resumable, dedupe-safe, rate-limit aware; depth bounded by Torn's own log retention. See docs/ANALYTICS.md.",
+      },
+      {
+        kind: "Improved",
+        text: "Provenance visibility — the value ladder gained an explicit inferred level (bounded bar-decline inference) next to exact/derived/estimated, rendered with \u201c~\u201d and an explanation; balances are withheld (\u201cuncovered\u201d) instead of guessed when bar history does not cover the range.",
+      },
+      {
+        kind: "Improved",
+        text: "Analytics performance — one additive index (TimelineEvent userId+type+occurredAt) backs the log explorer; page queries measure \u22640.25 ms at 30D/1Y/ALL on production data. All aggregation is server-side with keyset pagination.",
+      },
+      {
+        kind: "Technical",
+        text: "One additive migration (CREATE INDEX only); the analytics engine lives in shared pure modules (@tornscope/analytics) covered by new unit and DB-backed integration tests including export isolation and rate-limit semantics.",
+      },
+    ],
+  },
+  {
+    version: "2.0.7",
+    stage: "Public Testing",
     summary:
       "Cached Cockpit update: the Overview opens from the browser's own snapshot and projects timers locally — a rate-limited upstream or an F5 storm can no longer blank the cockpit or glitch the countdowns. Server data is a checkpoint; the browser timer is the live projection.",
     changes: [

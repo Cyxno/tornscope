@@ -180,7 +180,7 @@
       </p>
     {/if}
     <!-- Quiet stat strip: open hairline columns, no box -->
-    <dl class="grid grid-cols-2 gap-y-5 md:grid-cols-5 md:divide-x md:divide-border">
+    <dl class="grid grid-cols-2 gap-y-5 md:grid-cols-6 md:divide-x md:divide-border">
       <div class="md:pr-5">
         <dt class="text-[11px] font-medium text-fg-faint">Total uses</dt>
         <dd class="tnum mt-1 text-[22px] font-semibold text-accent">{histBlocked ? "—" : data.overall.totalUses}</dd>
@@ -193,15 +193,21 @@
       <div class="md:px-5">
         <dt class="text-[11px] font-medium text-fg-faint">Overdoses</dt>
         <dd class="tnum mt-1 text-[22px] font-semibold {data.overall.overdoses > 0 ? 'text-negative' : 'text-fg'}">{histBlocked ? "—" : data.overall.overdoses}</dd>
+        <dd class="mt-0.5 text-[11px] text-fg-faint">{histBlocked && data.overall.totalUses > 0 ? `${Math.round(data.overall.overdoseRate * 100)}% OD rate` : ""}</dd>
       </div>
       <div class="md:px-5">
+        <dt class="text-[11px] font-medium text-fg-faint" title="Consecutive successful uses since your last overdose (full recorded history up to the range end)">Good streak</dt>
+        <dd class="tnum mt-1 text-[22px] font-semibold text-positive">{histBlocked ? "—" : data.overall.streaks ? data.overall.streaks.current : "—"}</dd>
+        <dd class="mt-0.5 text-[11px] text-fg-faint">{data.overall.streaks && data.overall.streaks.lastOverdoseAt !== null ? `last OD ${formatRelative(data.overall.streaks.lastOverdoseAt)}` : data.overall.streaks?.lastUseAt !== null && data.overall.streaks ? "no overdose on record" : ""}</dd>
+      </div>
+      <div class="md:px-5">
+        <dt class="text-[11px] font-medium text-fg-faint">Longest streak</dt>
+        <dd class="tnum mt-1 text-[22px] font-semibold text-fg">{histBlocked ? "—" : data.overall.streaks ? data.overall.streaks.longest : "—"}</dd>
+      </div>
+      <div class="md:pl-5">
         <dt class="text-[11px] font-medium text-fg-faint" title={xanaxValueTooltip}>Est. Xanax consumption</dt>
         <dd class="tnum mt-1 text-[22px] font-semibold text-fg">{histBlocked ? "—" : data.xanaxFunding.values.consumption !== null ? formatMoneyCompact(data.xanaxFunding.values.consumption) : "—"}</dd>
         <dd class="mt-0.5 text-[11px] text-warning">estimated</dd>
-      </div>
-      <div class="md:pl-5">
-        <dt class="text-[11px] font-medium text-fg-faint" title="Current catalog market price per Xanax — an estimated consumption value, not your purchase cost.">Avg Xanax value / use</dt>
-        <dd class="tnum mt-1 text-[22px] font-semibold text-fg">{histBlocked ? "—" : data.xanaxFunding.values.unitPrice !== null ? formatMoneyCompact(data.xanaxFunding.values.unitPrice) : "—"}</dd>
       </div>
     </dl>
 
@@ -332,6 +338,25 @@
             never inferred from log counts or money.
           </p>
         {/if}
+        {#if (data.rehab.addictionPointsRemoved ?? 0) > 0}
+          <dl class="mt-4 grid grid-cols-3 gap-4 border-t border-border pt-3">
+            <div>
+              <p class="text-[11px] font-medium text-fg-faint" title="Sum of the explicit addiction-points removals recorded in the rehab logs">AP removed</p>
+              <p class="tnum mt-1 text-lg font-semibold text-fg">{data.rehab.addictionPointsRemoved}</p>
+              <p class="text-[11px] text-fg-faint">{data.rehab.addictionPointsKnownVisits ?? 0} visit{(data.rehab.addictionPointsKnownVisits ?? 0) === 1 ? "" : "s"} with AP data</p>
+            </div>
+            <div>
+              <p class="text-[11px] font-medium text-fg-faint" title="Total spend ÷ total removed AP — only shown when every costed visit carries an AP value">Cost / AP</p>
+              <p class="tnum mt-1 text-lg font-semibold text-fg">{data.rehab.costPerAddictionPoint?.value !== null && data.rehab.costPerAddictionPoint?.value !== undefined ? formatMoneyCompact(data.rehab.costPerAddictionPoint.value) : "—"}</p>
+              <p class="text-[11px] text-fg-faint">{data.rehab.costPerAddictionPoint?.value != null ? "derived" : "needs AP on all costed visits"}</p>
+            </div>
+            <div>
+              <p class="text-[11px] font-medium text-fg-faint" title="Median cost of your most recent costed visits — rehab pricing scales with addiction level, so this is an estimate">Est. next visit</p>
+              <p class="tnum mt-1 text-lg font-semibold text-fg">{data.rehab.estimatedNextCost?.value !== null && data.rehab.estimatedNextCost?.value !== undefined ? formatMoneyCompact(data.rehab.estimatedNextCost.value) : "—"}</p>
+              <p class="text-[11px] text-warning">{data.rehab.estimatedNextCost?.value != null ? "estimated" : ""}</p>
+            </div>
+          </dl>
+        {/if}
         {#if data.rehab.visitTrend.length >= 2}
           <div class="mt-4">
             <p class="text-[11px] font-medium text-fg-faint">Cost per visit (oldest → newest)</p>
@@ -389,6 +414,10 @@
                 <th>Substance</th>
                 <th class="text-right">Uses</th>
                 <th class="text-right">Overdoses</th>
+                <th class="text-right">Streak</th>
+                <th class="text-right">Longest</th>
+                <th class="text-right">Last use</th>
+                <th class="hidden md:table-cell text-right">Last OD</th>
                 <th class="text-right">Share</th>
                 <th class="text-right">Est. cost</th>
               </tr>
@@ -399,6 +428,10 @@
                   <td class="font-medium text-fg">{row.drug}</td>
                   <td class="tnum text-right text-fg-muted">{row.uses}</td>
                   <td class="tnum text-right {row.overdoses > 0 ? 'text-negative' : 'text-fg-faint'}">{row.overdoses}</td>
+                  <td class="tnum text-right {(row.currentStreak ?? 0) > 0 ? 'text-positive' : 'text-fg-faint'}" title="Consecutive successful uses since the last overdose">{row.currentStreak ?? 0}</td>
+                  <td class="tnum text-right text-fg-muted">{row.longestStreak ?? 0}</td>
+                  <td class="tnum text-right text-fg-muted">{row.lastUseAt !== null && row.lastUseAt !== undefined ? formatRelative(row.lastUseAt) : "—"}</td>
+                  <td class="hidden md:table-cell tnum text-right text-fg-muted">{row.lastOverdoseAt !== null && row.lastOverdoseAt !== undefined ? formatRelative(row.lastOverdoseAt) : "never"}</td>
                   <td class="tnum text-right text-fg-muted">{(row.shareOfTotal * 100).toFixed(0)}%</td>
                   <td class="tnum text-right text-fg-muted">{row.estimatedCost !== null ? formatMoneyCompact(row.estimatedCost) : "—"}</td>
                 </tr>
