@@ -44,6 +44,12 @@ from real stored Torn titles.
 `drug_cooldown`, `medical_cooldown`, `booster_cooldown`,
 `education_complete`, `bank_matured`, `nerve_full`.
 
+The browser-local heads-up cues (Overview, thresholds in Settings →
+Notifications) project from the cockpit snapshot's cached timestamps (2.0.7):
+a landing T-2m cue fires without any Torn call, so a rate-limited upstream
+never silences the warning layer. Push notifications (this document's
+delivery path) are unchanged.
+
 **Energy & nerve** (exact, from fresh 5-minute `BarsSnapshot` data):
 `energy_full`, `energy_near_full` (configurable `nearFullThreshold`).
 Energy is owned by the bars producer — NOT the live-timer path — with

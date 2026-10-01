@@ -1,32 +1,52 @@
 /**
- * ONE shared dashboard ticker for the whole Overview cockpit (2.0.5).
+ * ONE shared dashboard ticker for the whole Overview cockpit (2.0.5/2.0.7).
  *
  * LiveNow, CommandCenter and the Heads-up layer all need a 1-second "now",
  * but each running its own setInterval duplicates work and multiplies wakeups.
- * This module owns the single interval (visibility-gated) and hands out the
- * reactive value. Components import `dashboardNow` — reading it inside a
- * template/derived expression subscribes them to the tick.
+ *
+ * 2.0.7: the clock starts ONCE at module import (never inside a $derived
+ * context — writing state during derivation is a Svelte error) and
+ * `dashboardNow()` is a pure read. The value is MONOTONIC: anchored to
+ * performance.now() and clamped non-decreasing, so server-clock corrections
+ * via `setDashboardClockOffset` can never drag countdowns backwards.
  */
-import { onMount } from "svelte";
 
 const state = $state({ nowMs: Date.now() });
-let started = false;
+let anchorPerf: number | null = null;
 
-export function startDashboardClock(): void {
-  if (started || typeof document === "undefined") return;
-  started = true;
+function reanchor(wallMs: number): void {
+  if (typeof performance !== "undefined" && anchorPerf !== null) {
+    const projected = state.nowMs + (performance.now() - anchorPerf);
+    anchorPerf = performance.now();
+    state.nowMs = Math.max(projected, wallMs);
+  } else {
+    anchorPerf = typeof performance !== "undefined" ? performance.now() : null;
+    state.nowMs = wallMs;
+  }
+}
+
+if (typeof document !== "undefined") {
+  reanchor(Date.now());
+  // No visibility gate: the clock is ONE 1s interval for the whole cockpit
+  // (trivial cost) and freezing it would freeze every countdown — including
+  // around landings, where it matters most.
   setInterval(() => {
-    if (document.visibilityState === "visible") state.nowMs = Date.now();
+    const base = anchorPerf !== null && typeof performance !== "undefined" ? state.nowMs + (performance.now() - anchorPerf) : Date.now();
+    reanchor(Math.round(base));
   }, 1000);
 }
 
-/** Reactive server-agnostic wall clock (unix ms). */
+/** Reactive, MONOTONIC wall clock (unix ms). Pure read — no side effects. */
 export function dashboardNow(): number {
-  startDashboardClock();
   return state.nowMs;
 }
 
-/** Server-clock skew correction, set once a Today payload has landed. */
+/**
+ * Server-clock skew correction (fetchedAt − local at fetch time). Clamped
+ * non-decreasing: a delayed/older response can never move the shared clock
+ * (and therefore any countdown) backwards.
+ */
 export function setDashboardClockOffset(offsetMs: number): void {
-  if (Number.isFinite(offsetMs)) state.nowMs = Date.now() + offsetMs;
+  if (!Number.isFinite(offsetMs)) return;
+  reanchor(Date.now() + offsetMs);
 }

@@ -45,6 +45,18 @@ import { errors } from "../errors.js";
  */
 
 const CACHE_TTL_MS = Number(process.env.TODAY_CACHE_TTL_MS ?? 30_000);
+/**
+ * F5-storm guard (2.0.7): a served persisted copy is revalidated at most
+ * once per this interval per user. Repeated page reloads inside the window
+ * keep rendering the cached cockpit without triggering new upstream Torn
+ * refreshes (single-flight still coalesces whatever is in flight).
+ */
+const REFETCH_MIN_INTERVAL_MS = Number(process.env.TODAY_REFETCH_MIN_INTERVAL_MS ?? 15_000);
+
+/** Pure gate for tests/policy: may a background refresh start now? */
+export function shouldStartTodayRefresh(lastStartedAtMs: number | null | undefined, nowMs: number): boolean {
+  return lastStartedAtMs === null || lastStartedAtMs === undefined || nowMs - lastStartedAtMs >= REFETCH_MIN_INTERVAL_MS;
+}
 const EDUCATION_CATALOG_TTL_MS = 24 * 60 * 60 * 1000;
 
 // TTL-bounded (TtlMap): a user who never returns is eventually swept, so the
@@ -129,9 +141,15 @@ function startRefresh(user: { id: string }): Promise<TodayResponse> {
   return promise;
 }
 
-/** Kick off a revalidation without ever surfacing its failure. */
+const lastRefreshStart = new Map<string, number>();
+
+/** Kick off a revalidation without ever surfacing its failure. Rate-limit
+ *  friendly: at most one background refresh per user per min-spacing window
+ *  (F5 storms keep rendering the cached cockpit instead of re-fetching). */
 function startBackgroundRefresh(user: { id: string }): void {
   if (refreshInFlight.has(user.id)) return;
+  if (!shouldStartTodayRefresh(lastRefreshStart.get(user.id) ?? null, Date.now())) return;
+  lastRefreshStart.set(user.id, Date.now());
   void startRefresh(user).catch(() => undefined);
 }
 

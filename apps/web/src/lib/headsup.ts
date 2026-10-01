@@ -229,6 +229,7 @@ export interface HeadsUpCue {
   type: UpcomingType;
   label: string;
   state: string | null;
+  dueAt: number;
   remainingSeconds: number;
   actionUrl: string;
 }
@@ -261,6 +262,7 @@ export function deriveHeadsUpCues(upcoming: ReadonlyArray<UpcomingAction>, thres
         type: u.type,
         label: u.label,
         state: u.state,
+        dueAt: u.dueAt,
         remainingSeconds: u.remainingSeconds,
         actionUrl: u.actionUrl,
       });
@@ -273,6 +275,7 @@ export function deriveHeadsUpCues(upcoming: ReadonlyArray<UpcomingAction>, thres
         type: u.type,
         label: u.label,
         state: u.state,
+        dueAt: u.dueAt,
         remainingSeconds: u.remainingSeconds,
         actionUrl: u.actionUrl,
       });

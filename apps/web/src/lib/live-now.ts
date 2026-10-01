@@ -18,6 +18,7 @@
 import type { TodayResponse } from "@tornscope/shared";
 import { formatCountdownCompact, formatMoneyCompact, remainingSeconds, TORN_URLS } from "@tornscope/shared";
 import { cooldownDisplay, barFullDisplay } from "./live";
+import { monotonicRemaining } from "./monotonic-remaining";
 
 export interface LiveItem {
   key: string;
@@ -173,10 +174,13 @@ export function deriveTravelStatus(
     // the countdown stays valid even on a somewhat older payload.
     if (landsAt !== null && landsAt > nowSec) {
       const returning = t.direction === "returning";
+      // Monotonic projection: a stable landsAt can only count down (wobble
+      // ≤90s is absorbed; a real change resets via a new identity).
+      const mono = monotonicRemaining("travel", landsAt, nowSec);
       return {
         kind: returning ? "returning" : "flying",
         state: returning ? (t.country ? `Returning from ${t.country}` : "Returning to Torn") : `Flying to ${t.country ?? "abroad"}`,
-        relative: formatCountdownCompact(landsAt - nowSec),
+        relative: formatCountdownCompact(mono.remainingSeconds),
         absolute: displayTime(landsAt),
         tone: "accent",
         ready: false,
@@ -308,11 +312,14 @@ function deriveBars(today: TodayResponse, serverNowMs: number, displayTime: (tsS
       continue;
     }
     const ticking = d.text.startsWith("Full in");
+    // Monotonic projection (2.0.7): the countdown is derived from the
+    // bar's own fullAt boundary and can only tick down for that boundary.
+    const mono = ticking && bar.fullAt !== null ? monotonicRemaining(`bar:${kind}`, bar.fullAt, Math.floor(serverNowMs / 1000)) : null;
     out.push(item({
       key: kind,
       label,
       state: `${bar.current} / ${bar.max}`,
-      relative: ticking ? d.text.slice("Full in ".length) : d.text === "—" ? null : d.text,
+      relative: ticking && mono ? formatCountdownCompact(mono.remainingSeconds) : d.text === "—" ? null : d.text,
       absolute: ticking && bar.fullAt !== null ? displayTime(bar.fullAt) : null,
       pct: Math.min(100, Math.max(2, bar.percent)),
       tone: "accent",

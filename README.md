@@ -169,7 +169,8 @@ PostgreSQL and Redis intentionally keep their official upstream images — TornS
 
 | Tag | Meaning |
 | --- | --- |
-| `2.0.6` | Exact release — **recommended**, pin it via `TORNSCOPE_VERSION` in `.env` |
+| `2.0.7` | Exact release — **recommended**, pin it via `TORNSCOPE_VERSION` in `.env` |
+| `2.0.6` | Previous release |
 | `1` / `1.0` | Rolling major / minor line — moves with new releases |
 | `latest` | Current stable release |
 | `<full-commit-sha>` | Built from exactly that commit — matches the API's `x-tornscope-build` header for exact reproducibility |

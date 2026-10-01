@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { TodayResponse } from "@tornscope/shared";
-  import { dashboardNow, setDashboardClockOffset } from "$lib/dashboard-clock.svelte";
+  import { dashboardNow } from "$lib/dashboard-clock.svelte";
   import {
     deriveUpcomingActions,
     deriveHeadsUpCues,
@@ -10,9 +10,9 @@
     type Ocs,
   } from "$lib/headsup";
   import { playHeadsUpPing } from "$lib/headsup-sound";
+  import { monotonicRemaining } from "$lib/monotonic-remaining";
   import { prefs } from "$lib/state.svelte";
   import { formatCountdownCompact } from "@tornscope/shared";
-  import { onMount } from "svelte";
 
   /**
    * Heads-up (2.0.5) — the cockpit's anticipatory layer: "this is about to
@@ -64,7 +64,9 @@
   let fired = loadFired();
   let soundPlayedFor = $state<string | null>(null);
 
-  onMount(() => setDashboardClockOffset(today ? today.fetchedAt - Date.now() : 0));
+  // Server-clock sync lives in the page's load flow (plain code at payload
+  // arrival) — never in an effect/onMount here: writing the shared clock that
+  // this cockpit renders from can deadlock the graph at the first tick.
 
   const nowMs = $derived(dashboardNow());
   const nowSec = $derived(Math.floor(nowMs / 1000));
@@ -113,7 +115,9 @@
   const visibleCues = $derived(prefs.headsupCue ? cues : []);
   const showConflict = $derived(prefs.headsupCue && conflict !== null);
 
-  function fmt(remaining: number): string {
+  function fmt(cue: HeadsUpCue): string {
+    // Monotonic projection: same boundary can only count down.
+    const remaining = monotonicRemaining(`cue:${cue.eventKey}`, cue.dueAt, nowSec).remainingSeconds;
     return remaining > 0 ? formatCountdownCompact(remaining) : "now";
   }
 </script>
@@ -140,7 +144,7 @@
             {cue.kind === "pre" ? "Soon" : "Now"} · {cue.label}{cue.state ? ` · ${cue.state}` : ""}
           </p>
         </div>
-        <span class="tnum shrink-0 text-[17px] font-semibold {cue.kind === 'pre' ? 'text-warning' : 'text-positive'}">{fmt(cue.remainingSeconds)}</span>
+        <span class="tnum shrink-0 text-[17px] font-semibold {cue.kind === 'pre' ? 'text-warning' : 'text-positive'}">{fmt(cue)}</span>
       </div>
     {/each}
   </section>

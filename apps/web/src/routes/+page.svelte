@@ -1,5 +1,6 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
+  import { untrack } from "svelte";
   import type { DashboardResponse, TodayResponse, DailySummaryResponse, CommandCenterResponse, GoalsResponse } from "@tornscope/shared";
   import { formatMoneyCompact, formatNumberCompact, formatSignedNumberCompact, formatKpiValue, periodLabel, formatSignedMoneyCompact } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
@@ -18,6 +19,9 @@
   import StateMessage from "$lib/components/StateMessage.svelte";
   import { C, GRID, timeAxis, valueAxis, moneyValueAxis, moneyTooltipValue, dayLabel, hourLabel, axisTimeTooltip, tealArea, MOTION } from "$lib/charts";
   import * as td from "$lib/time-display.svelte.js";
+  import { loadCockpitSnapshot, saveCockpitSnapshot, shouldSkipTodayRequest, clearCockpitSnapshot, type CockpitSnapshot } from "$lib/cockpit-cache";
+  import { setDashboardClockOffset } from "$lib/dashboard-clock.svelte";
+  import { createLoadGuard } from "$lib/loadGuard";
 
   /**
    * Overview — "my live Torn control panel" (dashboard-first redesign, 2.x).
@@ -42,19 +46,77 @@
   let travelDurations = $state<Record<string, number> | null>(null);
   let loading = $state(true);
   let error = $state<string | null>(null);
+  let liveNotice = $state<string | null>(null);
   let reloadToken = $state(0);
+  let cockpitSnapshot = $state<CockpitSnapshot | null>(null);
+  let cockpitSnapshotLoaded = false;
+  const todayGuard = createLoadGuard();
+
+  // CACHE-FIRST (2.0.7): render the best locally known cockpit immediately.
+  // The snapshot is per-user and versioned; a live payload replaces it the
+  // moment a newer response lands (monotonic on fetchedAt). The one-shot
+  // flag matters: the effect writes the state it reads, and without the
+  // flag every run JSON-parses a fresh object → infinite self-rerun
+  // (effect_update_depth_exceeded) that froze the whole cockpit.
+  const meUserId = $derived(me.data?.userId ?? null);
+  // Server-clock sync is applied WHERE A PAYLOAD ARRIVES (plain code, never a
+  // $effect): an effect that writes the shared dashboard clock — which this
+  // page's whole cockpit renders from — re-renders on its own write and
+  // deadlocks the graph at the first clock tick (effect_update_depth_exceeded).
+  function applyServerClock(payload: TodayResponse): void {
+    if (payload.stale !== true) setDashboardClockOffset(payload.fetchedAt - Date.now());
+  }
+  $effect(() => {
+    if (!meUserId || cockpitSnapshotLoaded) return;
+    cockpitSnapshotLoaded = true;
+    cockpitSnapshot = loadCockpitSnapshot(meUserId);
+    if (cockpitSnapshot && shouldSkipTodayRequest(cockpitSnapshot, Date.now())) {
+      // Fresh enough (<120s): pure client projection — no today request.
+      const snapToday = cockpitSnapshot.today as TodayResponse;
+      today = snapToday;
+      applyServerClock(snapToday);
+      myOcs = (cockpitSnapshot.ocs as typeof myOcs) ?? null;
+      travelDurations = cockpitSnapshot.travelDurations ?? null;
+    }
+  });
 
   // DB-backed panels render as soon as the dashboard lands. The live-status
   // call can wait on upstream Torn (first-ever load with no persisted
   // last-known copy) — it fills in independently and must never hold the
   // whole page hostage (real-user cold-load finding).
   async function load() {
+    if (!me.loaded) return; // deferred: snapshot requires the verified user id
     loading = true;
     error = null;
-    void endpoints
-      .today()
-      .then((res) => (today = res))
-      .catch(() => undefined);
+    const seq = todayGuard.begin();
+    // CACHE-FIRST: render the persisted browser snapshot immediately; a
+    // fresh (<120s) snapshot even skips the today request entirely. The
+    // request, when made, stays SWR server-side and never blocks this render.
+    if (meUserId && cockpitSnapshot) {
+      today = cockpitSnapshot.today as TodayResponse;
+      applyServerClock(today);
+      myOcs = (cockpitSnapshot.ocs as typeof myOcs) ?? myOcs;
+      travelDurations = cockpitSnapshot.travelDurations ?? travelDurations;
+    }
+    if (!shouldSkipTodayRequest(cockpitSnapshot, Date.now())) {
+      void endpoints
+        .today()
+        .then((res) => {
+          // Response ordering: a slower/older response never replaces a
+          // newer one (monotonic on fetchedAt).
+          if (!todayGuard.isCurrent(seq) || (today && res.fetchedAt < today.fetchedAt)) return;
+          today = res;
+          applyServerClock(res);
+          if (meUserId) saveCockpitSnapshot(meUserId, { fetchedAtMs: res.fetchedAt, today: res, ocs: myOcs, travelDurations });
+          liveNotice = res.stale === true ? "Using cached live data — revalidating" : null;
+        })
+        .catch(() => {
+          // Rate limit / transient: the cockpit keeps rendering from the
+          // last-known state — never a full-page failure when usable cached
+          // data exists.
+          if (todayGuard.isCurrent(seq)) liveNotice = "Using cached live data — upstream temporarily unavailable";
+        });
+    }
     // The Command Center feed fills in independently — a slow or failed
     // attention feed must never hold the dashboard hostage.
     void endpoints
@@ -78,21 +140,41 @@
         endpoints.dailySummary().catch(() => null),
         endpoints.factionOcs({ preset: "30d" }).catch(() => null),
       ]);
+      if (!todayGuard.isCurrent(seq)) return;
       data = dash;
       todaySummary = summaryRes;
       myOcs = ocsRes?.ocs.filter((o) => o.myParticipation && o.state === "active") ?? null;
+      if (meUserId) saveCockpitSnapshot(meUserId, { fetchedAtMs: Date.now(), today: today, ocs: myOcs, travelDurations });
     } catch (err) {
-      error = err instanceof ApiClientError ? err.message : (err as Error).message;
+      // A failure here only invalidates the ANALYTICS zone; the cockpit
+      // (from snapshot/state) keeps rendering — a transient upstream error
+      // must never replace a usable dashboard with a full-page error.
+      if (!data && !cockpitSnapshot) {
+        error = err instanceof ApiClientError ? err.message : (err as Error).message;
+      } else {
+        error = null;
+      }
     } finally {
       loading = false;
     }
   }
 
+  // Deliberate dependency list: ONLY range/reload/me-settling may re-arm this
+  // load. load() itself reads AND writes cockpit state (`today`, travel
+  // timers); tracking those reads turned every payload arrival into a new
+  // load — an unbounded request loop (2.0.7 finding) — so the call runs
+  // untracked and the dependency list is explicit. Waiting for me to settle
+  // means the cockpit snapshot (keyed per-user) is known BEFORE the first
+  // today decision: an F5 storm replays the browser snapshot instead of
+  // re-requesting /api/today on every mount.
   $effect(() => {
     void dateRange.preset;
     void dateRange.from;
     void reloadToken;
-    void load();
+    void me.loaded;
+    void meUserId;
+    void cockpitSnapshot;
+    untrack(() => void load());
   });
 
   // ── Landing fast-path (2.0.6): context-aware travel refresh. ──
@@ -120,6 +202,7 @@
         .today()
         .then((res) => {
           today = res;
+          applyServerClock(res);
           scheduleTravelRefresh();
         })
         .catch(() => scheduleTravelRefresh());
@@ -216,11 +299,21 @@
 <svelte:head><title>Overview · TornScope</title></svelte:head>
 
 <div class="space-y-8">
-  {#if loading && !data}
+  {#if loading && !data && !today}
     <StateMessage state="loading" />
-  {:else if error}
+  {:else if error && !data && !today}
+    <!-- Full-page failure ONLY when nothing renderable exists; with a
+         cockpit (snapshot or live payload) the Overview stays usable. -->
     <StateMessage state="error" title="Could not load Overview" hint={error} action={{ label: "Retry", run: () => (reloadToken += 1) }} />
-  {:else if data}
+  {:else}
+    {#if error && !data && !loading}
+      <!-- Transient/analytics failure with a usable cockpit: keep the
+           dashboard, offer a retry for the analytics zone only. -->
+      <div class="mb-4 flex items-center justify-between gap-3 rounded-tile border border-warning/40 bg-warning/5 px-4 py-2.5 text-[13px]">
+        <span class="text-fg-muted">{error} — analytics unavailable right now.</span>
+        <button class="btn btn-sm" onclick={() => (reloadToken += 1)}>Retry</button>
+      </div>
+    {/if}
     <!-- Focus areas reorder ANALYTICS prominence (personalization): the
          cockpit above is always live-first; this order shapes the lower
          data zone only. -->
@@ -266,6 +359,9 @@
 
     <!-- ══ ZONE A · COCKPIT — live state, timers, attention, goals ══ -->
     {#if today}
+      {#if liveNotice}
+        <p class="text-[11px] text-fg-faint" title="Live Torn refresh is temporarily unavailable — timer timestamps keep counting locally.">{liveNotice} · {formatRelative(Math.floor(today.fetchedAt))}</p>
+      {/if}
       <HeadsUp today={today} ocs={myOcs} travelDurations={travelDurations} thresholds={me.data?.headsUp} />
     {/if}
     <div class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
@@ -280,6 +376,7 @@
       </div>
     </div>
 
+    {#if data}
     <!-- ══ ZONE B · FINANCIAL SNAPSHOT — figures, no chart ══ -->
     <section class="section-rule" aria-label="Financial snapshot">
       <div class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
@@ -642,5 +739,6 @@
       </div>
     </section>
     </div>
+    {/if}
   {/if}
 </div>

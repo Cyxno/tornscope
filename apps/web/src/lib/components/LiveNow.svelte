@@ -4,7 +4,7 @@
   import { deriveLiveBoard, type LiveItem, type LiveBoard } from "$lib/live-now";
 import Icon from "./Icon.svelte";
   import { displayTime } from "$lib/time-display.svelte.js";
-  import { dashboardNow, setDashboardClockOffset } from "$lib/dashboard-clock.svelte";
+  import { dashboardNow } from "$lib/dashboard-clock.svelte";
 
   /**
    * "Right now" — the LIVE cockpit block of the Overview (dashboard-first
@@ -34,9 +34,11 @@ import Icon from "./Icon.svelte";
     onOpenToday: () => void;
   } = $props();
 
-  $effect(() => {
-    if (today) setDashboardClockOffset(today.fetchedAt - Date.now());
-  });
+  // NOTE: server-clock sync does NOT live here. The clock offset is applied
+  // where a payload arrives (the page's load flow, plain code): an effect
+  // writing the shared clock — which this component renders from — re-runs
+  // off its own write and deadlocks the graph at the first clock tick
+  // (effect_update_depth_exceeded, bisect-confirmed 2.0.7).
   const serverNowMs = $derived(dashboardNow());
 
   const board: LiveBoard = $derived(deriveLiveBoard(today, ocs, serverNowMs, displayTime));

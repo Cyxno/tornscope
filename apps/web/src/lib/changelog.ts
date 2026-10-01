@@ -34,9 +34,41 @@ export const CHANGELOG_KINDS: ChangelogKind[] = ["Added", "Improved", "Fixed", "
 
 export const CHANGELOG: ChangelogRelease[] = [
   {
-    version: "2.0.6",
+    version: "2.0.7",
     stage: "Public Testing",
     current: true,
+    summary:
+      "Cached Cockpit update: the Overview opens from the browser's own snapshot and projects timers locally — a rate-limited upstream or an F5 storm can no longer blank the cockpit or glitch the countdowns. Server data is a checkpoint; the browser timer is the live projection.",
+    changes: [
+      {
+        kind: "Fixed",
+        text: "Overview — a Torn rate limit (429) no longer replaces the dashboard with a full-page error. When cached state exists, the cockpit keeps rendering from the last-known snapshot with a quiet \u201cUsing cached live data\u201d notice; only a truly unrenderable cold load shows the error screen.",
+      },
+      {
+        kind: "Fixed",
+        text: "Overview — countdowns are now monotonic. Each timer is projected per identity (travel landing, bar full-time, cooldown end) and can never run backwards for the same boundary — the 2h\u21921h50m\u21922h glitch class is gone. A real boundary change resets the projection; server clock corrections and arrival-time wobble (up to 90s) can never drag a countdown backwards.",
+      },
+      {
+        kind: "Improved",
+        text: "Overview — cache-first loading: the cockpit renders instantly from a versioned, per-user browser snapshot (no secrets, schema-checked), skips the live request entirely while it is fresh, and revalidates in the background. Revisiting within two minutes makes zero live-data requests.",
+      },
+      {
+        kind: "Improved",
+        text: "Overview — an F5 storm now replays the browser snapshot instead of hammering the API: ten rapid reloads produce one live fetch (server-side single-flight + minimum refetch spacing guard the shared Torn rate budget; the client adds none).",
+      },
+      {
+        kind: "Improved",
+        text: "Cockpit — heads-up cues and travel countdowns keep working from cached timestamps: a landing pre-alert (T-2m) fires from the snapshot without any Torn call, so a rate-limited upstream never silences the warning layer.",
+      },
+      {
+        kind: "Technical",
+        text: "Client refresh is decoupled from Torn refresh: /api/today serves the persisted latest-known copy immediately (stale-while-revalidate, single-flight, 15s minimum spacing per user) and background revalidation stays the only path to live Torn data. Out-of-order responses are dropped (monotonic on fetchedAt), and the shared dashboard clock is anchored to performance time — clamped non-decreasing, one 1s ticker for the whole cockpit.",
+      },
+    ],
+  },
+  {
+    version: "2.0.6",
+    stage: "Public Testing",
     summary:
       "Travel freshness hotfix: the cockpit's travel state is now resource-specific — an unrelated section's stale payload can no longer show \u201cTravel data stale\u201d, landings confirm within seconds of the boundary, and the gap reads as an honest \u201cLanding…\u201d transition.",
     changes: [
