@@ -178,7 +178,7 @@ Top-up properties:
 - Restore drill (any dump): `pg_restore -U tornscope -d <target-db> --no-owner <dump>` — the same
   command path the rehearsal script uses, so restore capability is exercised
   regularly, not just assumed.
-- Postgres data lives in `/mnt/user/appdata/tornscope/postgres` and is covered
+- Postgres data lives in `/mnt/cache/appdata/tornscope/postgres` (direct pool path, shfs bypassed — see docs/ENVIRONMENTS.md storage policy) and is covered
   by normal appdata backups. There is no permanent dev stack; if a temporary
   environment is created for migration testing, its data directory is
   disposable and must be destroyed with the rest of that environment.

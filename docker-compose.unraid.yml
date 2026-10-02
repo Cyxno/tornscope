@@ -1,8 +1,9 @@
 # TornScope deployment stack for Unraid.
 #
 # Differences from docker-compose.yml:
-# - PostgreSQL data lives in /mnt/user/appdata/tornscope/postgres (on the
-#   array/pool, so it is included in normal appdata backups)
+# - PostgreSQL data lives on the DIRECT pool path
+#   /mnt/cache/appdata/tornscope/postgres — never through shfs /mnt/user
+#   (storage hardening 2026-10-02; see docs/ENVIRONMENTS.md)
 # - web is published on the LAN (0.0.0.0:5173) so the portal is reachable
 #   from other devices
 # - api is published on 127.0.0.1:3100 only (host 3000 is taken by Nginx
@@ -21,7 +22,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB:-tornscope}
     volumes:
-      - /mnt/user/appdata/tornscope/postgres:/var/lib/postgresql/data
+      - /mnt/cache/appdata/tornscope/postgres:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tornscope} -d ${POSTGRES_DB:-tornscope}"]
       interval: 10s

@@ -15,7 +15,7 @@ dev/staging stack anymore.
 | Env file | `.env` (secrets, never committed) |
 | Web port | `5173` |
 | API port (host) | `127.0.0.1:3100` |
-| Postgres | `tornscope-postgres-1`, DB `tornscope`, data in `/mnt/user/appdata/tornscope/postgres` |
+| Postgres | `tornscope-postgres-1`, DB `tornscope`, data in `/mnt/cache/appdata/tornscope/postgres` (direct pool path — see storage policy below) |
 | Redis | `tornscope-redis-1` (internal) |
 | UI environment chip | **Production** |
 
@@ -25,6 +25,30 @@ ports 5273/3101) was removed after 1.0.0.
 
 **`torn.familievalk.com` is no longer an active TornScope environment.**
 Its NPM proxy host has been removed; the hostname must not serve TornScope.
+
+
+### PostgreSQL storage policy
+
+TornScope PostgreSQL MUST run on the direct Unraid pool path:
+
+```
+/mnt/cache/appdata/tornscope/postgres
+```
+
+NEVER through the shfs/FUSE layer (`/mnt/user/...`). Reason: database I/O
+is latency-sensitive and shfs adds an extra userspace storage layer; during
+the 2026-10-02 incident shfs wedged while direct pool I/O stayed healthy,
+wedging every postgres backend. The appdata share is cache-only
+(`shareUseCache="only"`, pool `cache`), so both paths address the SAME
+physical files — the direct bind is not a copy.
+
+Rules:
+- The appdata share must remain cache-only/exclusive. If the pool name
+  changes, update the compose bind AND `scripts/preflight-postgres-path.sh`
+  (`EXPECTED_SOURCE`) together.
+- Do not move or copy postgres files while the server is running.
+- The deploy preflight hard-aborts on any `/mnt/user/...` postgres bind, on
+  a missing/empty data directory, and on data stranded in a named volume.
 
 ## Normal workflow (small fixes)
 
