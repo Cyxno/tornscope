@@ -216,7 +216,9 @@ export function isOverdoseTitle(title: string): boolean {
 /* -------------------------------------------------------------------------- */
 
 /**
- * Amount keys observed in real payloads, most specific first. `cost_total`
+ * Amount keys observed in real payloads, most specific first. `deposited`/
+ * `withdrawn` cover the offshore-bank transfer payloads ({balance, deposited}
+ * / {balance, withdrawn}) filed under the Travel category. `cost_total`
  * and friends beat generic keys: "Points market add" carries price_total for
  * a listing (not a movement) while "Points market buy" carries cost_total.
  */
@@ -226,6 +228,8 @@ export const MONEY_AMOUNT_KEYS = [
   "money_lost",
   "money_mugged",
   "balance_change",
+  "deposited",
+  "withdrawn",
   "upkeep_paid",
   "rent",
   "cost_total",
@@ -345,6 +349,9 @@ export function moneyPlanFor(category: string, title: string): MoneyPlan | null 
   if (is(/^property rental market extension accept renter$/)) return { category: "housing", direction: "expense", skip: false, transfer: false };
   // Gym memberships (category "Gym"): a service fee, not an asset.
   if (is(/^gym purchase$/)) return { category: "gym", direction: "expense", skip: false, transfer: false };
+  // Travel fees (category "Travel", payload {cost}): a real expense, not a
+  // transition — without this rule the generic fallback cannot see it.
+  if (is(/^travel fee$/)) return { category: "travel", direction: "expense", skip: false, transfer: false };
   // Stock dividends pay cash for shares already owned — earned income, NOT a
   // conversion and never "unknown": without this rule the generic fallback
   // cannot see the word and files the row as direction "unknown", which
@@ -436,6 +443,13 @@ export function routeLog(category: string, title: string): LogRoute {
 
   // Rehab visits are titled "Rehab" but filed under the Travel category.
   if (t === "rehab" || c.includes("rehab") || t.includes("rehab") || c.includes("rehabilitation")) return "rehab";
+
+  // Torn files offshore banking and travel fees under the "Travel"
+  // category, but both are money movements (payloads {deposited}/
+  // {withdrawn} / {cost} in the stored archive). The travel route must not
+  // shadow the ledger for them (proven false-negative class).
+  if (/^offshore bank (deposit|withdraw)/.test(t)) return "money";
+  if (/^travel fee$/.test(t)) return "money";
 
   // Travel: transitions and abroad purchases.
   if (c.includes("travel") || c.includes("abroad") || t.includes("abroad")) return "travel";

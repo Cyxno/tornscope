@@ -34,10 +34,31 @@ export const CHANGELOG_KINDS: ChangelogKind[] = ["Added", "Improved", "Fixed", "
 
 export const CHANGELOG: ChangelogRelease[] = [
   {
-    version: "2.1.2",
+    version: "2.1.3",
     date: "2026-10-02",
     stage: "Public Testing",
     current: true,
+    summary:
+      "Normalizer maintenance: offshore bank movements and travel fees — which Torn files under the Travel category — now reach the money ledger, and the affected historical rows were repaired additively from their raw logs. Demo analytics generation is now day-deterministic, removing a date-sensitive test flake.",
+    changes: [
+      {
+        kind: "Fixed",
+        text: "Money ledger — offshore bank deposits/withdrawals (cayman transfers) and travel fees were shadowed by the travel route and never produced money ledger rows; routing now proves the money movement from the payload ({deposited}/{withdrawn}/{cost}) and the ten affected historical rows were repaired additively from their raw logs.",
+      },
+      {
+        kind: "Fixed",
+        text: "Demo analytics — incremental demo generation now seeds its per-day randomness by UTC day instead of by sync window, so reruns replay identical decisions regardless of window boundaries, calendar date or timezone.",
+      },
+      {
+        kind: "Improved",
+        text: "Regression coverage — cross-domain routing tests (offshore/travel-fee money semantics vs travel transitions, category-authoritative routing) and DB-backed additive repair tests with idempotence.",
+      },
+    ],
+  },
+  {
+    version: "2.1.2",
+    date: "2026-10-02",
+    stage: "Public Testing",
     summary:
       "Data correctness fix: tightened drug-log classification so non-drug activity that happens to contain a drug name (gym speed training, job specials) can no longer be counted as substance use, and repaired the affected historical drug and consumption records from their original log provenance.",
     changes: [

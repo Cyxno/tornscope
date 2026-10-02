@@ -8,7 +8,7 @@ TornScope is a self-hostable [Torn](https://www.torn.com) analytics and history 
 
 | | |
 | --- | --- |
-| **Version** | 2.1.2 — [Public Testing](https://tornscope.cyxno.eu) |
+| **Version** | 2.1.3 — [Public Testing](https://tornscope.cyxno.eu) |
 | **CI** | [GitHub Actions](.github/workflows/ci.yml): lint, typecheck, svelte-check, tests, build, Docker smoke |
 | **Docker images** | [![Docker images on GHCR](https://img.shields.io/badge/images-ghcr.io%2Fcyxno-2088FF)](https://github.com/Cyxno?tab=packages&repo_name=tornscope) published per release — web / api / worker |
 | **Runtime** | Docker Compose (Node ≥ 20.19, PostgreSQL, Redis) |
@@ -177,7 +177,7 @@ PostgreSQL and Redis intentionally keep their official upstream images — TornS
 
 | Tag | Meaning |
 | --- | --- |
-| `2.1.2` | Exact release — **recommended**, pin it via `TORNSCOPE_VERSION` in `.env` |
+| `2.1.3` | Exact release — **recommended**, pin it via `TORNSCOPE_VERSION` in `.env` |
 | `2.0.6` | Previous release |
 | `1` / `1.0` | Rolling major / minor line — moves with new releases |
 | `latest` | Current stable release |

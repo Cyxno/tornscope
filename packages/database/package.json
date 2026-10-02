@@ -1,6 +1,6 @@
 {
   "name": "@tornscope/database",
-  "version": "2.1.2",
+  "version": "2.1.3",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
@@ -22,7 +22,8 @@
     "audit": "tsx src/audit/audit.ts",
     "renormalize": "tsx src/renormalize/renormalize.ts",
     "topup:demo": "tsx src/demo/topup-cli.ts",
-    "repair:drug-classification": "tsx src/repair/drug-classification.ts"
+    "repair:drug-classification": "tsx src/repair/drug-classification.ts",
+    "repair:money-gaps": "tsx src/repair/money-gaps.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.16.2",

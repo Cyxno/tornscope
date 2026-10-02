@@ -558,7 +558,7 @@ export async function generateDemoHistory(db: ReturnType<typeof getPrismaClient>
   // OD log rows (exact energy_decreased) and a light archive mix (hunting,
   // bank, casino) so the Energy page and the Log Explorer render with the
   // same payload shapes Torn writes. Deterministic via the same rngFor seed.
-  const deepRng = rngFor("deep-logs", from, to);
+  // rng is seeded per UTC DAY (the top-up family contract): a watermark-rewound rerun covers an overlap with a DIFFERENT window, so window-keyed chance() decisions would not replay identically.
   const STAT_KEYS = ["strength", "defense", "speed", "dexterity"] as const;
   type LogRow = Prisma.TimelineEventCreateManyInput;
   const gymRows: LogRow[] = [];
@@ -589,6 +589,7 @@ export async function generateDemoHistory(db: ReturnType<typeof getPrismaClient>
   const archiveRows: LogRow[] = [];
   for (let day = utcDayNumber(barsFromAligned); day <= lastDay; day++) {
     const dayStart = day * DAY;
+    const deepRng = rngFor("deep-logs", day);
     if (deepRng.chance(0.5)) {
       const at = dayStart + 12 * HOUR + deepRng.between(0, 3600);
       const cost = 500;

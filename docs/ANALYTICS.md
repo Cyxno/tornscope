@@ -190,3 +190,8 @@ cleanup (docs/HOSTED-SECURITY.md) is the only data lifecyle.
 - Rehab cost/AP requires AP values on every costed visit.
 - Demo data includes representative deep-analytics rows (gym/OD/archive
   logs) so the pages render meaningfully in demo mode.
+- Money-ledger walk scope: a few categories with money-shaped payloads
+  (Bounties, Vault, Hunting, Missions, Racing upgrades, Education, Ammo)
+  are not part of the money_logs walk keywords, so their rows stay
+  timeline-only — a sync-scope decision, listed here rather than silently
+  treated as complete.
