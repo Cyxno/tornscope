@@ -230,6 +230,33 @@ suite("log explorer service", () => {
     for (const item of page2.items) expect(ids1.has(item.id)).toBe(false);
   });
 
+  it("continues payload-filtered pagination past sparse pages (regression)", async () => {
+    // Sparse money-filtered query: a long tail of non-matching rows sits
+    // around the matches, so no single fetch page can contain them all.
+    const tail = [];
+    for (let i = 0; i < 400; i++) {
+      tail.push(logRow(userA.id, `deep:a:noise:${i}`, new Date((FROM - (i + 100) * 86400) * 1000), "Hunting", "Hunting", { cost: 500 }));
+    }
+    // Gain matches deep inside the noise tail: positions beyond the first
+    // scan page (limit*4+100 rows), so page 1 cannot contain them all.
+    for (const offsetDays of [150, 250, 350]) {
+      tail.push(logRow(userA.id, `deep:a:crime:${offsetDays}`, new Date((FROM - offsetDays * 86400) * 1000), "Crimes", "Crime success", { money_gained: 250_000 }));
+    }
+    await db.timelineEvent.createMany({ data: tail });
+
+    const wide = { preset: "custom", from: FROM - 500 * 86400, to: TO };
+    const page1 = await getLogs(userA.id, wide, { outcome: "gain", minAmount: "1000", limit: 3 });
+    expect(page1.items).toHaveLength(3);
+    // Regression: a short FILTERED page must still report a cursor when more
+    // source rows exist beyond the scanned window.
+    expect(page1.nextCursor).not.toBeNull();
+    const page2 = await getLogs(userA.id, wide, { outcome: "gain", minAmount: "1000", limit: 50, cursor: page1.nextCursor });
+    const ids1 = new Set(page1.items.map((i) => i.id));
+    for (const item of page2.items) expect(ids1.has(item.id)).toBe(false);
+    expect(page2.items.length).toBeGreaterThanOrEqual(1);
+    expect(page2.items.some((i) => i.title === "Crime success")).toBe(true);
+  });
+
   it("keeps profiles isolated", async () => {
     const res = await getLogs(userB.id, RANGE, { limit: 50 });
     expect(res.items.some((l) => l.title === "Gym train strength")).toBe(true);

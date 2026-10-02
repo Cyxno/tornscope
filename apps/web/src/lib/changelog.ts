@@ -34,12 +34,33 @@ export const CHANGELOG_KINDS: ChangelogKind[] = ["Added", "Improved", "Fixed", "
 
 export const CHANGELOG: ChangelogRelease[] = [
   {
-    version: "2.1.0",
-    date: "2026-10-01",
+    version: "2.1.1",
+    date: "2026-10-02",
     stage: "Public Testing",
     current: true,
     summary:
-      "Deep Analytics: torn.report-level historical depth in TornScope's own design language — a full energy accounting (sources, uses, losses with honest provenance), drug/rehab streaks and deep rehab economics, travel flight-time economics, and a filterable Log Explorer with streaming CSV/JSON export. Everything reads from locally ingested history: opening a page never triggers a Torn fetch, and the production topology stays one stack.",
+      "Deep Analytics polish: presentation and documentation refinements across Energy, Drugs, Travel and Logs — clearer provenance wording, better empty/error states and a pagination fix for filtered log queries. Public documentation now describes TornScope features in its own terms.",
+    changes: [
+      {
+        kind: "Fixed",
+        text: "Log Explorer — filtered queries (money outcome / amount range) no longer stop paginating early when matches are sparse across many pages; page assembly now continues server-side within a bounded scan budget.",
+      },
+      {
+        kind: "Improved",
+        text: "Analytics presentation — the travel activity chart labels its profit lens as estimated, the energy intelligence strip states its provenance per figure, and provenance wording across the Deep Analytics pages is consistent (exact / derived / estimated / inferred).",
+      },
+      {
+        kind: "Improved",
+        text: "Documentation — docs/ANALYTICS.md and the built-in changelog describe features independently, without comparisons to other Torn tools; the README intro reflects the current product surface.",
+      },
+    ],
+  },
+  {
+    version: "2.1.0",
+    date: "2026-10-01",
+    stage: "Public Testing",
+    summary:
+      "Deep Analytics: expanded historical analytics across energy, drugs, travel and account activity — a full energy accounting (sources, uses, losses with honest provenance), drug/rehab streaks and deep rehab economics, travel flight-time economics, and a filterable Log Explorer with streaming CSV/JSON export. Everything reads from locally ingested history: opening a page never triggers a Torn fetch, and the production topology stays one stack.",
     changes: [
       {
         kind: "Added",

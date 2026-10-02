@@ -235,6 +235,7 @@
         <div class="md:pr-5">
           <dt class="text-[11px] font-medium text-fg-faint">Average energy / day</dt>
           <dd class="tnum mt-1 text-lg font-semibold text-fg">{data.intelligence.averageEnergyPerDay.value !== null ? formatNumberCompact(Math.round(data.intelligence.averageEnergyPerDay.value)) + " E" : "—"}</dd>
+          <dd class="text-[11px] text-fg-faint">derived — regen + gains over covered days</dd>
         </div>
         <div class="md:px-5">
           <dt class="text-[11px] font-medium text-fg-faint" title="Xanax uses per calendar day in the range">Xanax / day</dt>
@@ -242,7 +243,7 @@
           <dd class="text-[11px] text-warning">estimated</dd>
         </div>
         <div class="md:px-5">
-          <dt class="text-[11px] font-medium text-fg-faint">Refills used</dt>
+          <dt class="text-[11px] font-medium text-fg-faint" title="Exact from each refill log's own payload">Refills used</dt>
           <dd class="tnum mt-1 text-lg font-semibold text-fg">{data.intelligence.refillCount}</dd>
           <dd class="text-[11px] text-fg-faint">{formatNumberCompact(data.intelligence.refillEnergy)} E{data.intelligence.refillPointsSpent !== null ? ` · ${formatNumberCompact(data.intelligence.refillPointsSpent)} points` : ""}</dd>
         </div>

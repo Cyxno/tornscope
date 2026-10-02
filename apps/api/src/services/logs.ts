@@ -97,48 +97,69 @@ export async function getLogs(userId: string, rangeInput: DateRangeInput, filter
     ...cursorWhere(filters.cursor),
   };
 
-  // Amount/outcome filters need the payload — applied after the bounded page
-  // fetch on the shaped DTO (post-filtering a keyset page only risks a
-  // shorter page; totals stay honest because no total is claimed for
-  // payload-filtered queries).
+  // Amount/outcome filters need the payload and cannot run in SQL, so the
+  // page is assembled server-side: consecutive keyset fetches until the page
+  // is full, the source is exhausted, or the bounded scan budget is spent.
+  // Stopping on the scan budget (not exhaustion) still emits a cursor from
+  // the last FETCHED row, so a short page never truncates the result set.
   const needsPayload =
     filters.outcome !== undefined || filters.minAmount !== undefined || filters.maxAmount !== undefined;
+  const matchesPayload = (dto: LogEventDto): boolean => {
+    if (!needsPayload) return true;
+    if (dto.money === null) return false;
+    if (filters.outcome === "gain" && dto.money <= 0) return false;
+    if (filters.outcome === "loss" && dto.money >= 0) return false;
+    if (filters.minAmount !== undefined && filters.minAmount !== null && Math.abs(dto.money) < filters.minAmount) return false;
+    if (filters.maxAmount !== undefined && filters.maxAmount !== null && Math.abs(dto.money) > filters.maxAmount) return false;
+    return true;
+  };
 
-  const fetchLimit = needsPayload ? filters.limit * 4 + 100 : filters.limit;
-  const rows = await db.timelineEvent.findMany({
-    where,
-    orderBy: [{ occurredAt: "desc" }, { id: "desc" }],
-    take: fetchLimit,
-    select: { id: true, occurredAt: true, category: true, title: true, metadata: true },
-  });
+  const PAGE = needsPayload ? filters.limit * 4 + 100 : filters.limit;
+  const MAX_SCAN_PAGES = needsPayload ? 12 : 1;
+  const shaped: LogEventDto[] = [];
+  let scanCursor = filters.cursor;
+  let lastFetched: { occurredAt: Date; id: string } | undefined;
+  let sourceExhausted = false;
 
-  const shaped = rows
-    .map((row) => shapeLogRow(row))
-    .filter((dto): dto is LogEventDto => {
-      if (!needsPayload) return true;
-      if (dto.money === null) return false;
-      if (filters.outcome === "gain" && dto.money <= 0) return false;
-      if (filters.outcome === "loss" && dto.money >= 0) return false;
-      if (filters.minAmount !== undefined && filters.minAmount !== null && Math.abs(dto.money) < filters.minAmount) return false;
-      if (filters.maxAmount !== undefined && filters.maxAmount !== null && Math.abs(dto.money) > filters.maxAmount) return false;
-      return true;
-    })
-    .slice(0, filters.limit);
-
-  // "Has more" detection: without payload filters the page fetch decides
-  // (short page = end); with payload filters a full overfetch page that
-  // produced a full shaped page may still be followed by more.
-  const rowById = new Map(rows.map((r) => [r.id, r]));
-  const lastShaped = shaped[shaped.length - 1];
-  const lastRow = lastShaped ? rowById.get(lastShaped.id) : undefined;
-  let nextCursor: string | null = null;
-  if (lastRow) {
-    const sourceExhausted = needsPayload ? false : rows.length < fetchLimit;
-    if (!sourceExhausted && (needsPayload ? shaped.length === filters.limit : true)) {
-      nextCursor = encodeCursor({ occurredAt: Math.floor(lastRow.occurredAt.getTime() / 1000), id: lastRow.id });
+  for (let page = 0; page < MAX_SCAN_PAGES; page++) {
+    const pageWhere: Prisma.TimelineEventWhereInput = scanCursor
+      ? { ...where, AND: [cursorWhere(scanCursor) as Prisma.TimelineEventWhereInput] }
+      : where;
+    const rows = await db.timelineEvent.findMany({
+      where: pageWhere,
+      orderBy: [{ occurredAt: "desc" }, { id: "desc" }],
+      take: PAGE,
+      select: { id: true, occurredAt: true, category: true, title: true, metadata: true },
+    });
+    if (rows.length === 0) {
+      sourceExhausted = true;
+      break;
     }
+    lastFetched = rows[rows.length - 1];
+    for (const row of rows) {
+      const dto = shapeLogRow(row);
+      if (matchesPayload(dto) && shaped.length < filters.limit) shaped.push(dto);
+    }
+    if (rows.length < PAGE) {
+      sourceExhausted = true;
+      break;
+    }
+    const lastInPage = lastFetched;
+    if (!lastInPage) break;
+    scanCursor = encodeCursor({
+      occurredAt: Math.floor(lastInPage.occurredAt.getTime() / 1000),
+      id: lastInPage.id,
+    });
+    if (shaped.length >= filters.limit) break;
   }
 
+  let nextCursor: string | null = null;
+  if (lastFetched && !sourceExhausted) {
+    nextCursor = encodeCursor({
+      occurredAt: Math.floor(lastFetched.occurredAt.getTime() / 1000),
+      id: lastFetched.id,
+    });
+  }
   return {
     range: { from: range.from, to: range.to },
     items: shaped,

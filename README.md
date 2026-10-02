@@ -8,7 +8,7 @@ TornScope is a self-hostable [Torn](https://www.torn.com) analytics and history 
 
 | | |
 | --- | --- |
-| **Version** | 2.1.0 — [Public Testing](https://tornscope.cyxno.eu) |
+| **Version** | 2.1.1 — [Public Testing](https://tornscope.cyxno.eu) |
 | **CI** | [GitHub Actions](.github/workflows/ci.yml): lint, typecheck, svelte-check, tests, build, Docker smoke |
 | **Docker images** | [![Docker images on GHCR](https://img.shields.io/badge/images-ghcr.io%2Fcyxno-2088FF)](https://github.com/Cyxno?tab=packages&repo_name=tornscope) published per release — web / api / worker |
 | **Runtime** | Docker Compose (Node ≥ 20.19, PostgreSQL, Redis) |
@@ -28,7 +28,7 @@ TornScope treats **historical data as a first-class concern**. A background work
 
 Both are append-only, deduplicated, and stored in PostgreSQL from your very first successful sync. Analytics then run against that growing history — which is why starting collection early matters.
 
-And since 2.0, that history works for you: **TornScope 1.0 records your Torn history — TornScope 2.0 turns that history into intelligence.**
+And that history works for you: **TornScope records your Torn history and turns it into intelligence** — a live cockpit, goals and projections, economy and deep historical analytics (energy accounting, travel history, drug and rehab analytics, and a full log explorer).
 
 ## Why TornScope?
 
@@ -177,7 +177,7 @@ PostgreSQL and Redis intentionally keep their official upstream images — TornS
 
 | Tag | Meaning |
 | --- | --- |
-| `2.1.0` | Exact release — **recommended**, pin it via `TORNSCOPE_VERSION` in `.env` |
+| `2.1.1` | Exact release — **recommended**, pin it via `TORNSCOPE_VERSION` in `.env` |
 | `2.0.6` | Previous release |
 | `1` / `1.0` | Rolling major / minor line — moves with new releases |
 | `latest` | Current stable release |

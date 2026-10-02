@@ -135,7 +135,7 @@ describe("itemNameFromUseTitle", () => {
   });
 });
 
-describe("overdose old-log normalization (Torn.report-style history)", () => {
+describe("overdose old-log normalization (old-style log era)", () => {
   it("an old 'Overdosed on Xanax' log (empty payload, title only) yields an overdose DrugEvent AND a consumption event", () => {
     const writes = normalize("Overdosed on Xanax", "Item use drug", {}, ctx({ names: { [XANAX_ID]: "Xanax" }, types: { [XANAX_ID]: "Drug" }, prices: { [XANAX_ID]: 840_000 } }));
     expect(writes.drugEvents).toHaveLength(1);

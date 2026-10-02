@@ -2,8 +2,8 @@
 
 TornScope's deep-analytics layer answers "what does my Torn history actually
 mean?" — energy accounting, drug/rehab patterns, travel economics and a full
-log explorer — from ONE locally ingested history, without becoming a
-torn.report clone and without a second stack on the server.
+log explorer — computed from ONE locally ingested history, on the existing
+production stack (no second deployment of any kind).
 
 ## Architecture principle
 

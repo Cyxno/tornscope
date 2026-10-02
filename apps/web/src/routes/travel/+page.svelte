@@ -345,7 +345,7 @@
           </Panel>
         </div>
         <div class="min-w-0 lg:col-span-3">
-          <Panel title="Activity by departure day" caption="One lens at a time — profit, volume or time in the air" flush>
+          <Panel title="Activity by departure day" caption="One lens at a time — estimated profit, departures or time in the air" flush>
             {#if summary.overview}
               <div class="flex gap-1.5 px-6 pt-4" role="tablist" aria-label="Daily chart lens">
                 {#each [["profit", "Profit"], ["trips", "Trips"], ["flightTime", "Flight time"]] as [key, label] (key)}
