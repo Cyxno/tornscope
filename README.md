@@ -8,7 +8,7 @@ TornScope is a self-hostable [Torn](https://www.torn.com) analytics and history 
 
 | | |
 | --- | --- |
-| **Version** | 2.1.3 — [Public Testing](https://tornscope.cyxno.eu) |
+| **Version** | 2.2.0 — [Live instance](https://tornscope.cyxno.eu) |
 | **CI** | [GitHub Actions](.github/workflows/ci.yml): lint, typecheck, svelte-check, tests, build, Docker smoke |
 | **Docker images** | [![Docker images on GHCR](https://img.shields.io/badge/images-ghcr.io%2Fcyxno-2088FF)](https://github.com/Cyxno?tab=packages&repo_name=tornscope) published per release — web / api / worker |
 | **Runtime** | Docker Compose (Node ≥ 20.19, PostgreSQL, Redis) |
@@ -177,7 +177,7 @@ PostgreSQL and Redis intentionally keep their official upstream images — TornS
 
 | Tag | Meaning |
 | --- | --- |
-| `2.1.3` | Exact release — **recommended**, pin it via `TORNSCOPE_VERSION` in `.env` |
+| `2.2.0` | Exact release — **recommended**, pin it via `TORNSCOPE_VERSION` in `.env` |
 | `2.0.6` | Previous release |
 | `1` / `1.0` | Rolling major / minor line — moves with new releases |
 | `latest` | Current stable release |
@@ -333,7 +333,7 @@ On the public instance you can explore TornScope with the demo profile — no AP
 
 ## Live instance
 
-A **Public Testing** instance runs at **[https://tornscope.cyxno.eu](https://tornscope.cyxno.eu)**. You can browse it with the synthetic demo profile, or sign in with your own Torn API key and start collecting your own history. It is a testing deployment, not a guaranteed hosted service — self-hosting is the intended path.
+A live instance runs at **[https://tornscope.cyxno.eu](https://tornscope.cyxno.eu)**. You can browse it with the synthetic demo profile, or sign in with your own Torn API key and start collecting your own history. Self-hosting is the intended path — the hosted instance is a convenience, not a guaranteed service.
 
 ## Tech stack
 

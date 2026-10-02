@@ -21,7 +21,7 @@
   // Footer status label mirrors the header chip: production shows "Public
   // Beta"; non-production deployments set PUBLIC_ENV_LABEL (e.g. "Development")
   // and the footer reports that environment instead.
-  const statusLabel = publicEnv.PUBLIC_ENV_LABEL?.trim() || "Public Testing";
+  const statusLabel = publicEnv.PUBLIC_ENV_LABEL?.trim() || "Production";
 
   let { children } = $props();
 

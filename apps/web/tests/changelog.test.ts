@@ -23,24 +23,14 @@ describe("changelog data source", () => {
       expect(versions, `missing release ${required}`).toContain(required);
     }
     // latest-first: the running (in-progress, not-yet-tagged) release leads
-    expect(versions[0]).toBe("2.1.3");
+    expect(versions[0]).toBe("2.2.0");
     expect(new Set(versions).size).toBe(versions.length);
-  });
-
-  it("is ordered newest-first by real release dates", () => {
-    const dated = CHANGELOG.filter((r) => r.date !== undefined);
-    for (let i = 1; i < dated.length; i++) {
-      expect(Date.parse(dated[i - 1]!.date!), `${dated[i - 1]!.version} before ${dated[i]!.version}`).toBeGreaterThanOrEqual(
-        Date.parse(dated[i]!.date!)
-      );
-    }
   });
 
   it("marks the running release as current and stages every release", () => {
     expect(CHANGELOG.filter((r) => r.current)).toHaveLength(1);
-    expect(CHANGELOG.find((r) => r.current)?.version).toBe("2.1.3");
+    expect(CHANGELOG.find((r) => r.current)?.version).toBe("2.2.0");
     for (const r of CHANGELOG) {
-      expect(r.stage.length).toBeGreaterThan(0);
       expect(r.changes.length).toBeGreaterThan(0);
     }
   });

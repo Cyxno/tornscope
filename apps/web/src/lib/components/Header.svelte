@@ -8,11 +8,11 @@
    * owns navigation). Carries brand, the environment chip, sync pulse and
    * identity — never primary nav (the bottom tab bar + sheet do that).
    *
-   * Environment chip: production shows "Public Testing" (the release status should
+   * Environment chip: production shows "Production" (the release status should
    * never read as stable/GA); dev/staging shows its PUBLIC_ENV_LABEL so a
-   * staging instance can never pose as the public testing release.
+   * staging instance can never pose as the production release.
    */
-  const envLabel = publicEnv.PUBLIC_ENV_LABEL?.trim() || "Public Testing";
+  const envLabel = publicEnv.PUBLIC_ENV_LABEL?.trim() || "Production";
 
   const syncLabel = $derived(
     !me.loaded ? "…" : me.data?.syncHealth.running ? "Syncing" : me.data?.syncHealth.lastSuccessAt ? "Synced" : "Not synced"
@@ -41,7 +41,7 @@
       <span class="text-[14px] font-semibold tracking-tight text-fg">TornScope</span>
       <span
         class="hidden rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-accent sm:inline-block"
-        title={envLabel === "Public Testing" ? "TornScope 1.0.0 — public testing" : "Development environment — not the public testing site"}
+        title={`${envLabel} environment`}
       >{envLabel}</span>
     </a>
 

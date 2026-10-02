@@ -38,7 +38,7 @@
     {#each releases as release (release.version)}
       {@const groups = entriesByKind(release)}
       <section aria-label={`Release ${release.version}`} class="scroll-mt-24">
-        <!-- Release header: version, stage, date — the current deployment marked -->
+        <!-- Release header: version — the current deployment marked -->
         <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-border pb-3">
           <h2 class="font-display text-[22px] font-medium leading-tight text-fg">
             {release.version}
@@ -46,10 +46,6 @@
               <span class="ml-1 inline-flex h-2 w-2 translate-y-[-2px] rounded-full bg-accent" title="This deployment runs this release" aria-label="current release"></span>
             {/if}
           </h2>
-          <span class="chip chip-quiet !border-border !text-[10px] uppercase">{release.stage}</span>
-          {#if release.date}
-            <span class="tnum text-xs text-fg-faint">{release.date}</span>
-          {/if}
         </div>
 
         {#if release.summary}

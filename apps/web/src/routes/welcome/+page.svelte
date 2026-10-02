@@ -27,7 +27,7 @@
   // 1 = key form · 2 = detected access · 3 = existing-profile link ·
   // 4 = import progress · 5 = generic saving spinner
   let step = $state(1);
-  const envLabel = publicEnv.PUBLIC_ENV_LABEL?.trim() || "Public Testing";
+  const envLabel = publicEnv.PUBLIC_ENV_LABEL?.trim() || "Production";
 
   // Detected access (step 2) — validated live against Torn WITHOUT storing
   // anything, so the access summary is shown BEFORE the first sync starts.
@@ -347,7 +347,7 @@
         </a>
         <span
           class="chip chip-accent !text-[10px] font-semibold uppercase tracking-[0.14em]"
-          title={envLabel === "Public Testing" ? "TornScope 1.0.0 — public testing" : `${envLabel} environment — not the public testing site`}
+          title={`${envLabel} environment`}
         >{envLabel}</span>
       </div>
       <h1 class="font-display text-5xl font-medium leading-tight text-fg">
@@ -357,9 +357,7 @@
         {branding.tagline} — continuously collected and normalized on the TornScope server, from the very first sync onward.
       </p>
       <p class="mx-auto max-w-md text-xs leading-relaxed text-fg-faint">
-        {envLabel === "Public Testing"
-          ? `TornScope 1.0.0 (${branding.publicVersion}) is in public testing: historical tracking and analytics are stable and in active production use, with fixes and improvements landing continuously.`
-          : `This is a ${envLabel.toLowerCase()} environment for testing upcoming TornScope work — the public testing site is the polished experience.`}
+        TornScope (${branding.publicVersion}) tracks your Torn history and turns it into analytics — historical tracking and insights in active production use, with fixes and improvements landing continuously.
       </p>
     </div>
 

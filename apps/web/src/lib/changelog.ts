@@ -17,12 +17,8 @@ export interface ChangelogEntry {
 }
 
 export interface ChangelogRelease {
-  /** Exact release tag (e.g. "v1.0.0"); the current in-progress release uses its plain version ("1.0.3") until tagged. */
+  /** Exact release tag (e.g. "v2.2.0"); the current in-progress release uses its plain version ("2.1.3") until tagged. */
   version: string;
-  /** Release date (YYYY-MM-DD) when known — from the tag, never guessed. */
-  date?: string;
-  /** Lifecycle stage as shown on the release. */
-  stage: string;
   /** True for the release this running deployment represents. */
   current?: boolean;
   /** One-paragraph positioning of the release. */
@@ -34,10 +30,35 @@ export const CHANGELOG_KINDS: ChangelogKind[] = ["Added", "Improved", "Fixed", "
 
 export const CHANGELOG: ChangelogRelease[] = [
   {
-    version: "2.1.3",
-    date: "2026-10-02",
-    stage: "Public Testing",
+    version: "2.2.0",
     current: true,
+    summary:
+      "First regular stable release: TornScope is now presented as the product it already is — a self-hosted Torn analytics and live-status platform in production use — with a simplified release history and a hardened CI pipeline that runs the full verification reliably in a clean environment.",
+    changes: [
+      {
+        kind: "Improved",
+        text: "TornScope is presented as a regular stable release rather than a public-testing build — across the interface, documentation and deployment defaults.",
+      },
+      {
+        kind: "Improved",
+        text: "Simplified release history: redundant release dates and lifecycle labels were removed from the in-app changelog.",
+      },
+      {
+        kind: "Improved",
+        text: "Hardened GitHub CI: the demo-data seed now builds every internal package it depends on, so the complete verification pipeline runs reliably from a clean checkout.",
+      },
+      {
+        kind: "Fixed",
+        text: "GitHub CI on main reported a failed status because the seed step resolved an unbuilt internal package on a clean checkout; the build order is fixed and verified against a clean-environment reproduction.",
+      },
+      {
+        kind: "Technical",
+        text: "Release and changelog metadata were simplified without changing any historical feature or fix descriptions.",
+      },
+    ],
+  },
+  {
+    version: "2.1.3",
     summary:
       "Normalizer maintenance: offshore bank movements and travel fees — which Torn files under the Travel category — now reach the money ledger, and the affected historical rows were repaired additively from their raw logs. Demo analytics generation is now day-deterministic, removing a date-sensitive test flake.",
     changes: [
@@ -57,8 +78,6 @@ export const CHANGELOG: ChangelogRelease[] = [
   },
   {
     version: "2.1.2",
-    date: "2026-10-02",
-    stage: "Public Testing",
     summary:
       "Data correctness fix: tightened drug-log classification so non-drug activity that happens to contain a drug name (gym speed training, job specials) can no longer be counted as substance use, and repaired the affected historical drug and consumption records from their original log provenance.",
     changes: [
@@ -74,8 +93,6 @@ export const CHANGELOG: ChangelogRelease[] = [
   },
   {
     version: "2.1.1",
-    date: "2026-10-02",
-    stage: "Public Testing",
     summary:
       "Deep Analytics polish: presentation and documentation refinements across Energy, Drugs, Travel and Logs — clearer provenance wording, better empty/error states and a pagination fix for filtered log queries. Public documentation now describes TornScope features in its own terms.",
     changes: [
@@ -95,8 +112,6 @@ export const CHANGELOG: ChangelogRelease[] = [
   },
   {
     version: "2.1.0",
-    date: "2026-10-01",
-    stage: "Public Testing",
     summary:
       "Deep Analytics: expanded historical analytics across energy, drugs, travel and account activity — a full energy accounting (sources, uses, losses with honest provenance), drug/rehab streaks and deep rehab economics, travel flight-time economics, and a filterable Log Explorer with streaming CSV/JSON export. Everything reads from locally ingested history: opening a page never triggers a Torn fetch, and the production topology stays one stack.",
     changes: [
@@ -136,7 +151,6 @@ export const CHANGELOG: ChangelogRelease[] = [
   },
   {
     version: "2.0.7",
-    stage: "Public Testing",
     summary:
       "Cached Cockpit update: the Overview opens from the browser's own snapshot and projects timers locally — a rate-limited upstream or an F5 storm can no longer blank the cockpit or glitch the countdowns. Server data is a checkpoint; the browser timer is the live projection.",
     changes: [
@@ -168,7 +182,6 @@ export const CHANGELOG: ChangelogRelease[] = [
   },
   {
     version: "2.0.6",
-    stage: "Public Testing",
     summary:
       "Travel freshness hotfix: the cockpit's travel state is now resource-specific — an unrelated section's stale payload can no longer show \u201cTravel data stale\u201d, landings confirm within seconds of the boundary, and the gap reads as an honest \u201cLanding…\u201d transition.",
     changes: [
@@ -196,7 +209,6 @@ export const CHANGELOG: ChangelogRelease[] = [
   },
   {
     version: "2.0.5",
-    stage: "Public Testing",
     summary:
       "Cockpit heads-up update: Active States sort by urgency, configurable pre-alert cues for landing/cooldowns/OC/bank, and a travel-vs-OC timing conflict warning — conservative, deduped, personally configurable.",
     changes: [
@@ -224,7 +236,6 @@ export const CHANGELOG: ChangelogRelease[] = [
   },
   {
     version: "2.0.4",
-    stage: "Public Testing",
     summary:
       "Live-status correctness: Travel is a canonical state on the Overview — it always renders exactly one explicit status (Home / Flying / Returning / Landed / Abroad / Stale / Unavailable), with flights at the top of the cockpit. Hidden is never a travel state.",
     changes: [
@@ -236,7 +247,6 @@ export const CHANGELOG: ChangelogRelease[] = [
   },
   {
     version: "2.0.3",
-    stage: "Public Testing",
     summary:
       "Dashboard-first Overview: the homepage now opens with a live cockpit — dominant Energy/Nerve/Happy/Life bars, compact cooldown tiles, current states only, capped Needs-attention and goal mini-cards — with charts and trend data moved below.",
     changes: [
@@ -256,7 +266,6 @@ export const CHANGELOG: ChangelogRelease[] = [
   },
   {
     version: "2.0.2",
-    stage: "Public Testing",
     summary:
       "Honest labeling pass on the battle-stat projection: it is an EMPIRICAL projection (calibrated on your observed stat growth), not a mechanistic simulator — confidence is now capped so a perfect historical fit can never read as a certain forecast, and the assumptions are stated verbatim.",
     changes: [
@@ -276,7 +285,6 @@ export const CHANGELOG: ChangelogRelease[] = [
   },
   {
     version: "2.0.1",
-    stage: "Public Testing",
     summary:
       "Semantic correctness for the intelligence layer: battle-stat projections now respect Torn's stat scaling (calibrated compounding with honest ETA ranges), level goals no longer claim an ETA, and display-coherence repairs.",
     changes: [
@@ -296,7 +304,6 @@ export const CHANGELOG: ChangelogRelease[] = [
   },
   {
     version: "2.0.0",
-    stage: "Public Testing",
     summary: "From recording your history to acting on it: a Command Center that prioritizes what needs attention, personal goals with honest trend projections, a deterministic insights engine, training & wealth intelligence, smarter notification rules and a real data-freshness view.",
     changes: [
       { kind: "Added", text: "Command Center — the Overview now opens with a prioritized attention feed built from deterministic rules: energy capped (possible regen loss), cooldowns ready, bank matured, travel landing, OC almost ready, education finishing, hospital/jail, goals at a milestone, top insights and data-health warnings. At most one entry per fact, explicit activation thresholds and per-priority caps — information hierarchy instead of notification spam." },
@@ -313,7 +320,6 @@ export const CHANGELOG: ChangelogRelease[] = [
   },
   {
     version: "1.0.4",
-    stage: "Public Testing",
     summary: "Fixed over-capped (stacked) energy being displayed as full — the real value is now shown everywhere, with an honest over-cap note.",
     changes: [
       { kind: "Fixed", text: "Overview / Today — Energy above its natural cap is no longer clamped to \"150 / 150\". Stacked energy — e.g. 400/150 after a Xanax — now shows the real numbers (\"400 / 150\") with a calm \"Stacked · +250 over cap\" note instead of a misleading \"Full\". No full-at countdown is invented while over cap (Torn supplies none: regeneration really is stopped until you drop below the cap), and the normal energy accent is kept — a stack is intentional, not an error. Your natural cap (100 or 150) is always the denominator, never hardcoded." },
@@ -322,8 +328,6 @@ export const CHANGELOG: ChangelogRelease[] = [
   },
   {
     version: "1.0.3",
-    date: "2026-09-17",
-    stage: "Public Testing",
     summary: "Fixed test push delivery for Apple devices, and rebuilt the Overview \"Right now\" area as an action board with direct Torn.com links.",
     changes: [
       { kind: "Fixed", text: "Notifications — test pushes (and all alerts) now actually arrive on iPhone/iPad. Apple's push service rejected deliveries with 403 BadJwtToken because the server identified itself with a reserved-TLD mailto address; the subject is now the site's own https address. Desktop providers had accepted the old value, which is why only Apple devices were affected." },
@@ -336,8 +340,6 @@ export const CHANGELOG: ChangelogRelease[] = [
   },
   {
     version: "1.0.2",
-    date: "2026-09-17",
-    stage: "Public Testing",
     summary: "Hotfix: enabling push notifications failed on every browser — most visibly on iPhone, where Safari reports it as \"The string contains invalid characters.\"",
     changes: [
       { kind: "Fixed", text: "Notifications — enabling push works again. The server's VAPID public key is base64URL; a settings-rebuild regression fed it to the browser's decoder unnormalized, which browsers reject (WebKit's wording: \"The string contains invalid characters.\") before subscription even starts." },
@@ -347,8 +349,6 @@ export const CHANGELOG: ChangelogRelease[] = [
   },
   {
     version: "1.0.1",
-    date: "2026-09-16",
-    stage: "Public Testing",
     summary: "First maintenance release on the production-only workflow: two chart fixes, a notification reliability fix and this changelog.",
     changes: [
       { kind: "Fixed", text: "Overview — the net-worth chart no longer blanks while you hover it; the tooltip, line and area stay visible and mouse-out is clean." },
@@ -360,10 +360,8 @@ export const CHANGELOG: ChangelogRelease[] = [
   },
   {
     version: "v1.0.0",
-    date: "2026-09-15",
-    stage: "Public Testing",
     summary:
-      "First stable release — a year of continuous development certified against live production data, and the culmination of the Public Beta 2 development line. The hosted service runs as PUBLIC TESTING.",
+      "First stable release — a year of continuous development certified against live production data, and the culmination of the Public Beta 2 development line.",
     changes: [
       { kind: "Added", text: "Wealth-first financial reporting everywhere: net-worth change first, then true income vs. true costs, with asset conversions and wallet movement as clearly-labeled neutral context — cash moving between forms is never a loss, sale proceeds never profit." },
       { kind: "Added", text: "Merits and Stocks: the full merit ledger with ranks, concentration and unspent points; stock positions with benefit blocks, missing shares, estimated cost-to-reach, yield and payback." },
@@ -382,8 +380,6 @@ export const CHANGELOG: ChangelogRelease[] = [
   },
   {
     version: "v0.1.3",
-    date: "2026-09-09",
-    stage: "Public Beta",
     summary: "Sync recovery reliability fix for stuck resources.",
     changes: [
       { kind: "Fixed", text: "Stale sync recovery livelock: staleness is now judged by a dedicated run heartbeat instead of a bookkeeping timestamp, so a worker crash mid-run recovers instead of looping \"resource busy\" forever. No cursor or history reset required." },
@@ -391,8 +387,6 @@ export const CHANGELOG: ChangelogRelease[] = [
   },
   {
     version: "v0.1.1",
-    date: "2026-09-09",
-    stage: "Public Beta",
     summary: "Layout polish pass on the first public beta.",
     changes: [
       { kind: "Fixed", text: "Settings — the API-key input row and quiet-hours row wrap on narrow phones instead of overflowing." },
@@ -401,8 +395,6 @@ export const CHANGELOG: ChangelogRelease[] = [
   },
   {
     version: "v0.1.0-beta.1",
-    date: "2026-09-09",
-    stage: "Public Beta",
     summary: "The first public beta: the core TornScope record — live account status and the analytics foundation.",
     changes: [
       { kind: "Added", text: "Live account overview, Today view, Timeline, and the first analytics surfaces: Economy, Progression, Combat, Crimes, Drugs, Travel, Stocks and Faction." },

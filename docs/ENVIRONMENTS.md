@@ -8,7 +8,7 @@ dev/staging stack anymore.
 |---|---|
 | Branch | `main` |
 | Checkout on the server | `/workspace/tornscope` |
-| Release line | `1.0.0` — Public Testing |
+| Release line | `2.2.0` — Production |
 | URL | https://tornscope.cyxno.eu |
 | Compose project | `tornscope` |
 | Compose file | `docker-compose.unraid.yml` |
@@ -17,7 +17,7 @@ dev/staging stack anymore.
 | API port (host) | `127.0.0.1:3100` |
 | Postgres | `tornscope-postgres-1`, DB `tornscope`, data in `/mnt/user/appdata/tornscope/postgres` |
 | Redis | `tornscope-redis-1` (internal) |
-| UI environment chip | **Public Testing** |
+| UI environment chip | **Production** |
 
 The old development environment (`tornscope-dev` compose project, DB
 `tornscope_dev`, `/workspace/tornscope-dev`, `/mnt/user/appdata/tornscope-dev`,
@@ -94,7 +94,7 @@ destroy it afterwards (see [DATABASE-MIGRATIONS.md](DATABASE-MIGRATIONS.md)).
 
 ## Versioning
 
-- `1.0.0` — first stable release (production: PUBLIC TESTING)
+- `2.2.0` — first stable release (production: PRODUCTION); historical: `1.0.0`–`2.1.x` shipped under the public-testing label
 - historical: `0.1.x` — Public Beta 1 (v0.1.3); `0.2.x` — Public Beta 2 line
 - patch releases increment `package.json` on `main` (e.g. `1.0.1`) and are
   tagged (`v1.0.x`).

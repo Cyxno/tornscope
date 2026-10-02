@@ -158,21 +158,19 @@ describe("profile/browser wording", () => {
   });
 });
 
-describe("public testing presentation", () => {
+describe("environment presentation", () => {
   const header = read("../../web/src/lib/components/Header.svelte");
   const layout = read("../../web/src/routes/+layout.svelte");
 
-  it("header shows the Public Testing badge beside the wordmark", () => {
-    // Default (PUBLIC_ENV_LABEL unset — production) is the Public Testing chip.
-    expect(header).toContain('|| "Public Testing"');
-    expect(header).toContain("TornScope 1.0.0 — public testing");
+  it("header shows the environment label beside the wordmark (production default)", () => {
+    // Default (PUBLIC_ENV_LABEL unset — production) is the Production chip.
+    expect(header).toContain('|| "Production"');
     // Dev/staging deployments override the chip via PUBLIC_ENV_LABEL so a
-    // staging instance can never pose as the public testing release.
+    // staging instance can never pose as the production release.
     expect(header).toContain("PUBLIC_ENV_LABEL");
   });
 
-  it("footer marks Public Testing and links the maintainer safely", () => {
-    expect(layout).toContain("Public Testing");
+  it("footer links the maintainer safely", () => {
     expect(layout).toContain("maintained by");
     expect(layout).toContain('href="https://www.torn.com/profiles.php?XID=1816206"');
     expect(layout).toContain('target="_blank"');
@@ -184,13 +182,12 @@ describe("public testing presentation", () => {
     expect(layout).toContain("private TornScope Docker deployment");
   });
 
-  it("onboarding states the public testing status and expectations", () => {
+  it("onboarding states the release status and expectations", () => {
     // The chip and status sentence are environment-aware (product-finish
-    // PF-013): a dev/staging onboarding must never pose as the public release.
-    expect(welcome).toContain('envLabel === "Public Testing" ? "TornScope 1.0.0 — public testing"');
-    expect(welcome).toContain("TornScope 1.0.0 (${branding.publicVersion}) is in public testing");
+    // PF-013): a dev/staging onboarding must never pose as production.
+    expect(welcome).toContain("branding.publicVersion");
     expect(welcome).toContain("fixes and improvements landing continuously");
-    expect(welcome).toContain("the public testing site is the polished experience");
+    expect(welcome).not.toMatch(/public testing/i);
   });
 
   it("welcome offers the private-deployment contact path", () => {
@@ -206,10 +203,10 @@ describe("public testing presentation", () => {
     expect(settings).toContain("not operated, endorsed, or hosted by Torn");
   });
 
-  it("shared branding carries the real repository URL and the 1.0.0 public testing version", () => {
+  it("shared branding carries the real repository URL and the plain release version", () => {
     const branding = read("../../../packages/shared/src/branding.ts");
     expect(branding).toContain("publicVersion");
-    expect(branding).toContain("Public Testing");
-    expect(branding).not.toContain("Public Beta");
+    // Lifecycle labels belong to no release: the public version is plain.
+    expect(branding).not.toMatch(/public testing|public beta/i);
   });
 });

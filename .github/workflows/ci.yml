@@ -57,7 +57,16 @@ jobs:
         env:
           DATABASE_URL: postgresql://tornscope:ci-test-password@localhost:5432/tornscope_test
       - name: Build internal packages needed by seed
-        run: pnpm --filter @tornscope/shared --filter @tornscope/torn-api build
+        # The seed imports the @tornscope/database barrel, whose module
+        # graph reaches the other internal packages (@tornscope/shared,
+        # @tornscope/torn-api and @tornscope/analytics via the
+        # intelligence-facts re-export). A clean checkout has NO dist
+        # output, so building only some of them left @tornscope/analytics
+        # unresolved and the seed failed with ERR_MODULE_NOT_FOUND — which
+        # is why main CI was red while local verify (pre-built dist) was
+        # green. Build every internal package; pnpm orders them
+        # topologically by their workspace dependencies.
+        run: pnpm --filter './packages/**' build
 
       - name: Seed demo data (required by some DB-backed tests)
         run: |
