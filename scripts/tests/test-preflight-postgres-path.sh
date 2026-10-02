@@ -56,14 +56,16 @@ if [[ -f "$LIVE_DATA/PG_VERSION" ]]; then
   PASS_DATA="$LIVE_DATA"
 else
   PASS_DATA="$TMP/pass-data"
-  mkdir -p "$PASS_DATA/base" "$PASS_DATA/global"
+  # A minimal but REALISTIC postgres data layout (the preflight's
+  # population guard requires more than the bare minimum).
+  mkdir -p "$PASS_DATA/base" "$PASS_DATA/global" "$PASS_DATA/pg_wal" "$PASS_DATA/pg_tblspc"
   echo 16 > "$PASS_DATA/PG_VERSION"
 fi
 make_fixture "$PASS_DATA" "$TMP/compose-cache.yaml"
 make_fixture "/mnt/user/appdata/tornscope/postgres" "$TMP/compose-shfs.yaml"
 
 # 1. Direct pool bind in compose + no running container clash -> PASS.
-TEST_CONTAINER_NAME="pf-test-nonexistent" \
+TEST_BIND_SOURCE="$PASS_DATA" TEST_CONTAINER_NAME="pf-test-nonexistent" \
   expect_pass "compose with direct pool bind passes" "$TMP/compose-cache.yaml"
 
 # 2. shfs bind in compose -> FAIL (the core policy).
