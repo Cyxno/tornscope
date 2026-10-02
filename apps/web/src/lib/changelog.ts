@@ -34,10 +34,27 @@ export const CHANGELOG_KINDS: ChangelogKind[] = ["Added", "Improved", "Fixed", "
 
 export const CHANGELOG: ChangelogRelease[] = [
   {
-    version: "2.1.1",
+    version: "2.1.2",
     date: "2026-10-02",
     stage: "Public Testing",
     current: true,
+    summary:
+      "Data correctness fix: tightened drug-log classification so non-drug activity that happens to contain a drug name (gym speed training, job specials) can no longer be counted as substance use, and repaired the affected historical drug and consumption records from their original log provenance.",
+    changes: [
+      {
+        kind: "Fixed",
+        text: "Drug classification — routing to the drugs domain now requires definitive category evidence (Drugs / Item use drug) or an explicit name-anchored use title (Item use xanax, Used Speed, Overdosed on Xanax); a bare drug word inside any other title is never sufficient. Gym speed training and job special logs can no longer create Speed use events.",
+      },
+      {
+        kind: "Fixed",
+        text: "Historical repair — proven false-positive drug and consumption rows were removed using each row's original log provenance (evidence-based, idempotent, raw archive untouched); legitimate historical Speed use is preserved and downstream drug analytics now compute from clean data.",
+      },
+    ],
+  },
+  {
+    version: "2.1.1",
+    date: "2026-10-02",
+    stage: "Public Testing",
     summary:
       "Deep Analytics polish: presentation and documentation refinements across Energy, Drugs, Travel and Logs — clearer provenance wording, better empty/error states and a pagination fix for filtered log queries. Public documentation now describes TornScope features in its own terms.",
     changes: [

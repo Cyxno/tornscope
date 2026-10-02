@@ -164,6 +164,44 @@ export function drugNameFromTitle(title: string): string | null {
   return null;
 }
 
+/**
+ * EXPLICIT drug-use title grammar — the only title shapes Torn writes for
+ * drug consumption (verified against a multi-year stored archive + the
+ * official log catalog):
+ *   "Item use xanax" / "Item use xanax overdose"   (category "Drugs")
+ *   "Used xanax" / "Overdosed on xanax"            (category "Item use drug")
+ * A title that merely CONTAINS a drug name ("Gym train speed", "Company
+ * special gain speed", "Speed increased") is NEVER a drug-use title:
+ * name recognition alone must not route a log to the drugs domain.
+ */
+/**
+ * Name-anchored use grammar: the recognized drug name must be the OBJECT of
+ * an explicit use verb (optionally suffixed "overdose"). Built from the
+ * canonical alias names so "Item use speed loader" can never match while
+ * "Item use speed" / "Used Speed" / "Overdosed on Speed" do. Torn title
+ * forms verified against the stored multi-year archive: "Item use xanax"
+ * (+ " overdose", category "Drugs") and "Used Xanax" / "Overdosed on Xanax"
+ * (category "Item use drug").
+ */
+function escapeRe(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function nameAlternation(): string {
+  return DRUG_NAME_ALIASES.map(([, name]) => escapeRe(name.toLowerCase())).join("|");
+}
+
+const EXPLICIT_USE_PATTERNS: RegExp[] = [
+  /^item use (?:a |an |some )?(?:%NAMES%)(?: overdose)?$/i,
+  /^drug use (?:%NAMES%)/i,
+  /^used (?:%NAMES%)(?: overdose)?$/i,
+  /^overdosed on (?:%NAMES%)$/i,
+].map((re) => new RegExp(re.source.replace("%NAMES%", "(" + nameAlternation() + ")"), re.flags));
+
+export function isExplicitDrugUseTitle(title: string): boolean {
+  return EXPLICIT_USE_PATTERNS.some((re) => re.test(title.trim()));
+}
+
 /** "Item use xanax" / "Item use xanax overdose" -> the used item part. */
 export function isDrugUseTitle(title: string): boolean {
   return drugNameFromTitle(title) !== null;
@@ -403,7 +441,12 @@ export function routeLog(category: string, title: string): LogRoute {
   if (c.includes("travel") || c.includes("abroad") || t.includes("abroad")) return "travel";
 
   // Drug use (category "Drugs", titles like "Item use xanax").
-  if (c.includes("drug") || isDrugUseTitle(title)) return "drugs";
+  // Category "Drugs" / "Item use drug" is DEFINITIVE drug-domain evidence.
+  // Outside those categories only the explicit use grammar routes here —
+  // never bare name recognition ("Gym train speed" is a gym log, not a
+  // Speed use).
+  if (c.includes("drug")) return "drugs";
+  if (isExplicitDrugUseTitle(title)) return "drugs";
 
   // Crime attempts and consequences (category "Crimes") — normalized to
   // CrimeEvents with the cash side mirrored into MoneyEvent.
