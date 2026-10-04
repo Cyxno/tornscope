@@ -20,3 +20,4 @@ export * from "./insights.js";
 export * from "./economy-intelligence.js";
 export * from "./training-intelligence.js";
 export * from "./energy.js";
+export * from "./decision-intelligence.js";

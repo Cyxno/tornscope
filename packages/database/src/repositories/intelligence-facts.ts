@@ -243,3 +243,160 @@ export async function gatherInsightFacts(db: PrismaClientType, userId: string, n
     ),
   };
 }
+
+/* -------------------------------------------------------------------------- */
+/* Decision Intelligence facts (2.3.0)                                         */
+/* -------------------------------------------------------------------------- */
+
+export interface DecisionFactsInput {
+  now: number;
+  money: {
+    events: Array<{ t: number; category: string; direction: "income" | "expense" | "neutral" | "unknown"; amount: number }>;
+    trackingSince: number | null;
+  };
+  drugs: {
+    events: Array<{ t: number; drugName: string | null; outcome: "success" | "overdose" }>;
+    rehab: Array<{ t: number; cost: number | null; sessions: number | null }>;
+    trackingSince: number | null;
+  };
+  travel: {
+    trips: Array<{
+      destination: string;
+      departedAt: number;
+      durationSeconds: number | null;
+      items: Array<{ totalCost: number; estimatedUnitValue: number | null; quantity: number }>;
+    }>;
+    trackingSince: number | null;
+  };
+  energy: {
+    gym: Array<{ t: number; energyUsed: number }>;
+    refills: Array<{ t: number }>;
+    xanaxUses: Array<{ t: number }>;
+    trackingSince: number | null;
+  };
+  goals: {
+    paced: Array<{ id: string; label: string; metric: string; target: number; targetDate: number }>;
+    networthPerDay: number | null;
+  };
+}
+
+/**
+ * Bounded fact gathering for Decision Intelligence: ONE window (trailing
+ * 37 days = recent 7d + baseline 30d) of indexed, capped reads — all
+ * aggregates computed downstream in the pure engine. No Torn API calls.
+ */
+export async function gatherDecisionFacts(db: PrismaClientType, userId: string, nowSec: number): Promise<DecisionFactsInput> {
+  const from = nowSec - 37 * DAY;
+  const fromDate = new Date(from * 1000);
+  const toDate = new Date(nowSec * 1000);
+
+  const [
+    moneyRows,
+    drugRows,
+    rehabRows,
+    gymRows,
+    refillCountRows,
+    trips,
+    moneySince,
+    drugsSince,
+    rehabSince,
+    travelSince,
+    goals,
+  ] = await Promise.all([
+    db.moneyEvent.findMany({
+      where: { userId, occurredAt: { gte: fromDate, lte: toDate } },
+      orderBy: { occurredAt: "asc" },
+      take: 20_000,
+      select: { occurredAt: true, category: true, direction: true, amount: true },
+    }),
+    db.drugEvent.findMany({
+      where: { userId, occurredAt: { gte: fromDate, lte: toDate } },
+      orderBy: { occurredAt: "asc" },
+      take: 10_000,
+      select: { occurredAt: true, drugName: true, outcome: true },
+    }),
+    db.rehabEvent.findMany({
+      where: { userId, occurredAt: { gte: fromDate, lte: toDate } },
+      orderBy: { occurredAt: "asc" },
+      take: 2_000,
+      select: { occurredAt: true, cost: true, sessions: true },
+    }),
+    db.timelineEvent.findMany({
+      where: { userId, title: { startsWith: "Gym train", mode: "insensitive" }, occurredAt: { gte: fromDate, lte: toDate } },
+      orderBy: { occurredAt: "asc" },
+      take: 8_000,
+      select: { occurredAt: true, metadata: true },
+    }),
+    db.timelineEvent.findMany({
+      where: { userId, title: "Points energy refill use", occurredAt: { gte: fromDate, lte: toDate } },
+      orderBy: { occurredAt: "asc" },
+      take: 2_000,
+      select: { occurredAt: true },
+    }),
+    loadTripsWindow(db, userId, from, nowSec),
+    db.moneyEvent.findFirst({ where: { userId }, orderBy: { occurredAt: "asc" }, select: { occurredAt: true } }),
+    db.drugEvent.findFirst({ where: { userId }, orderBy: { occurredAt: "asc" }, select: { occurredAt: true } }),
+    db.rehabEvent.findFirst({ where: { userId }, orderBy: { occurredAt: "asc" }, select: { occurredAt: true } }),
+    db.travelTransition.findFirst({ where: { userId }, orderBy: { occurredAt: "asc" }, select: { occurredAt: true } }),
+    db.goal.findMany({ where: { userId, status: "active", targetDate: { not: null } }, select: { id: true, metric: true, target: true, targetDate: true, note: true } }),
+  ]);
+
+  const gym: DecisionFactsInput["energy"]["gym"] = [];
+  for (const row of gymRows) {
+    const data = (row.metadata as { data?: Record<string, unknown> } | null)?.data ?? {};
+    const used = typeof data.energy_used === "number" && Number.isFinite(data.energy_used) && data.energy_used > 0 ? data.energy_used : null;
+    if (used !== null) gym.push({ t: Math.floor(row.occurredAt.getTime() / 1000), energyUsed: used });
+  }
+
+  const sec = (d: Date): number => Math.floor(d.getTime() / 1000);
+  const secOrNull = (d: Date | null): number | null => (d ? sec(d) : null);
+
+  return {
+    now: nowSec,
+    money: {
+      events: moneyRows.map((r) => ({
+        t: sec(r.occurredAt),
+        category: r.category,
+        direction: r.direction as "income" | "expense" | "neutral" | "unknown",
+        amount: bigintToNumber(r.amount) ?? 0,
+      })),
+      trackingSince: secOrNull(moneySince?.occurredAt ?? null),
+    },
+    drugs: {
+      events: drugRows.map((r) => ({ t: sec(r.occurredAt), drugName: r.drugName, outcome: r.outcome as "success" | "overdose" })),
+      rehab: rehabRows.map((r) => ({ t: sec(r.occurredAt), cost: bigintToNumber(r.cost), sessions: r.sessions })),
+      trackingSince: secOrNull(drugsSince?.occurredAt ?? null),
+    },
+    travel: {
+      trips: trips.map((t) => ({
+        destination: t.destination,
+        departedAt: t.departedAt,
+        durationSeconds: t.durationSeconds,
+        items: t.items.map((i) => ({
+          totalCost: i.totalCost,
+          estimatedUnitValue: i.estimatedUnitValue ?? null,
+          quantity: i.quantity,
+        })),
+      })),
+      trackingSince: secOrNull(travelSince?.occurredAt ?? null),
+    },
+    energy: {
+      gym,
+      refills: refillCountRows.map((r) => ({ t: sec(r.occurredAt) })),
+      xanaxUses: drugRows.filter((r) => r.drugName === "Xanax" && r.outcome === "success").map((r) => ({ t: sec(r.occurredAt) })),
+      trackingSince: secOrNull(drugsSince?.occurredAt ?? null),
+    },
+    goals: {
+      paced: goals
+        .filter((g) => g.targetDate !== null)
+        .map((g) => ({
+          id: g.id,
+          label: g.note?.trim() ? g.note.trim().slice(0, 60) : g.metric,
+          metric: g.metric,
+          target: bigintToNumber(g.target) ?? 0,
+          targetDate: Math.floor((g.targetDate as Date).getTime() / 1000),
+        })),
+      networthPerDay: null, // filled by the service from recent money income pace
+    },
+  };
+}

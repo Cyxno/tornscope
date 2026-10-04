@@ -39,6 +39,8 @@ import type {
   EnergySummaryResponse,
   LogsResponse,
   LogsMetaResponse,
+  DecisionSignalsResponse,
+  DecisionPrefsUpdate,
 } from "@tornscope/shared";
 
 /**
@@ -288,4 +290,13 @@ export const deepAnalytics = {
   /** Direct download through the same-origin /api proxy (session cookie auth). */
   logsExportUrl: (range: QueryRange, opts: LogsQuery, format: "csv" | "json"): string =>
     `/api/logs/export?${logsQueryParams(range, opts, { format })}`,
+};
+
+
+/* ---- 2.3.0 decision intelligence ---- */
+
+export const decisions = {
+  signals: () => api.get<DecisionSignalsResponse>("/decisions"),
+  prefs: () => api.get<DecisionSignalsResponse["prefs"]>("/decisions/preferences"),
+  updatePrefs: (patch: DecisionPrefsUpdate) => api.post<DecisionSignalsResponse["prefs"]>("/decisions/preferences", patch),
 };

@@ -30,8 +30,39 @@ export const CHANGELOG_KINDS: ChangelogKind[] = ["Added", "Improved", "Fixed", "
 
 export const CHANGELOG: ChangelogRelease[] = [
   {
-    version: "2.2.0",
+    version: "2.3.0",
     current: true,
+    summary:
+      "Decision Intelligence: a small number of explainable, conservative signals derived from your own Torn history — opportunities, risks, trends and anomalies compared against your own rolling baselines, each with evidence, confidence, provenance and sample-size context. Historical signals only: no live optimization claims, no duplication of live alerts, no new Torn API pressure.",
+    changes: [
+      {
+        kind: "Added",
+        text: "Decision Intelligence with personalized opportunities, risks, trends and anomalies derived from your own Torn history.",
+      },
+      {
+        kind: "Added",
+        text: "Personal rolling baselines across energy, travel, drugs and money (trailing 7 days versus the previous 30, per covered day).",
+      },
+      {
+        kind: "Added",
+        text: "Evidence-backed signal explanations with confidence, provenance and sample-size context.",
+      },
+      {
+        kind: "Added",
+        text: "Goal-aware historical pacing signals — only for goals with an explicit target date.",
+      },
+      {
+        kind: "Improved",
+        text: "Insights now leads with actionable historical signals instead of isolated metrics; Overview can surface a small number of high-value decision signals without duplicating live heads-up alerts.",
+      },
+      {
+        kind: "Technical",
+        text: "Shared deterministic decision engine with bounded queries, coverage guards, robust statistics (median/MAD) and stable signal lifecycle semantics; preferences and lifecycle state reuse the existing settings storage — no new tables, no migration.",
+      },
+    ],
+  },
+  {
+    version: "2.2.0",
     summary:
       "First regular stable release: TornScope is now presented as the product it already is — a self-hosted Torn analytics and live-status platform in production use — with a simplified release history and a hardened CI pipeline that runs the full verification reliably in a clean environment.",
     changes: [

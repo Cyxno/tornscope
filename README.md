@@ -8,7 +8,7 @@ TornScope is a self-hostable [Torn](https://www.torn.com) analytics and history 
 
 | | |
 | --- | --- |
-| **Version** | 2.2.0 — [Live instance](https://tornscope.cyxno.eu) |
+| **Version** | 2.3.0 — [Live instance](https://tornscope.cyxno.eu) |
 | **CI** | [GitHub Actions](.github/workflows/ci.yml): lint, typecheck, svelte-check, tests, build, Docker smoke |
 | **Docker images** | [![Docker images on GHCR](https://img.shields.io/badge/images-ghcr.io%2Fcyxno-2088FF)](https://github.com/Cyxno?tab=packages&repo_name=tornscope) published per release — web / api / worker |
 | **Runtime** | Docker Compose (Node ≥ 20.19, PostgreSQL, Redis) |
@@ -63,7 +63,7 @@ Wealth-first dashboard: official net worth with extended wealth, historical char
 ### Intelligence (2.0)
 **Command Center** — a prioritized attention feed: energy capped, cooldowns ready, bank matured, travel landing, OC almost ready, goals at a milestone, the strongest insight, data-health warnings. Deterministic rules, one entry per fact, per-priority caps.
 **Goals & projections** — targets for net worth, liquid wealth, battle stats and level, with an honest ETA from your 7/30/90-day trend (confidence shown; no ETA when history is short, flat or noisy).
-**Insights** — a curated, fully deterministic engine: income/spending shifts vs your baseline, travel profit swings, rehab highs, xanax usage changes, training efficiency shifts, personal records. Every insight names its comparison, evidence window and sample size.
+**Insights & Decision Intelligence** — decision signals derived from your own history (opportunities, risks, trends, anomalies) with rolling personal baselines, evidence, confidence and provenance; plus the deterministic observed-shifts feed. Historical signals only — never live optimization claims.
 **Training & wealth intelligence** — 7d vs 7d vs 30-day training comparisons with personal bests; wealth velocity, a 30-day trend projection, wealth attribution (conversions are never losses) and all-time financial records.
 
 ### Today

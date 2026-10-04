@@ -2541,3 +2541,67 @@ export type LogsMetaResponse = z.infer<typeof LogsMetaResponseSchema>;
 
 export const LogExportFormatSchema = z.enum(["csv", "json"]);
 export type LogExportFormat = z.infer<typeof LogExportFormatSchema>;
+
+/* -------------------------------------------------------------------------- */
+/* 2.3.0 — Decision Intelligence                                               */
+/* -------------------------------------------------------------------------- */
+
+export const DecisionCategorySchema = z.enum(["OPPORTUNITY", "RISK", "INEFFICIENCY", "TREND", "MILESTONE", "ANOMALY"]);
+export const DecisionConfidenceSchema = z.enum(["high", "medium", "low"]);
+export const DecisionDomainSchema = z.enum(["energy", "drugs", "travel", "money", "goals"]);
+export type DecisionDomain = z.infer<typeof DecisionDomainSchema>;
+
+export const DecisionSignalSchema = z.object({
+  id: z.string(),
+  domain: DecisionDomainSchema,
+  category: DecisionCategorySchema,
+  title: z.string(),
+  summary: z.string(),
+  evidence: z.array(z.string()),
+  impact: z.string(),
+  confidence: DecisionConfidenceSchema,
+  provenance: ProvenanceSchema,
+  urgency: z.number(),
+  horizon: z.enum(["now", "7d", "30d", "90d"]),
+  metricBefore: z.number().nullable(),
+  metricAfter: z.number().nullable(),
+  metricUnit: z.string(),
+  reason: z.string(),
+  limitations: z.array(z.string()),
+  actionUrl: z.string(),
+  generatedAt: z.number(),
+  /** Lifecycle (reconciled against the profile's persisted signal state). */
+  isNew: z.boolean(),
+  firstSeenAt: z.number().nullable(),
+});
+export type DecisionSignalDto = z.infer<typeof DecisionSignalSchema>;
+
+export const DecisionSignalsResponseSchema = z.object({
+  generatedAt: z.number(),
+  signals: z.array(DecisionSignalSchema),
+  overviewSignals: z.array(z.string()),
+  recentlyResolved: z.array(z.object({ id: z.string(), domain: DecisionDomainSchema, resolvedAt: z.number() })),
+  suppressedInsufficientData: z.number(),
+  domainsSuppressed: z.array(DecisionDomainSchema),
+  coverage: z.record(
+    DecisionDomainSchema,
+    z.object({ coveredDays: z.number(), events: z.number(), trackingSince: z.number().nullable() })
+  ),
+  prefs: z.object({
+    enabled: z.boolean(),
+    domains: z.record(DecisionDomainSchema, z.boolean()),
+    includeLowConfidence: z.boolean(),
+    maxOverviewSignals: z.number(),
+  }),
+});
+export type DecisionSignalsResponse = z.infer<typeof DecisionSignalsResponseSchema>;
+
+export const DecisionPrefsUpdateSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    domains: z.object({ energy: z.boolean().optional(), drugs: z.boolean().optional(), travel: z.boolean().optional(), money: z.boolean().optional(), goals: z.boolean().optional() }).optional(),
+    includeLowConfidence: z.boolean().optional(),
+    maxOverviewSignals: z.number().int().min(1).max(5).optional(),
+  })
+  .strict();
+export type DecisionPrefsUpdate = z.infer<typeof DecisionPrefsUpdateSchema>;

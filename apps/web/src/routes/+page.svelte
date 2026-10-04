@@ -16,6 +16,9 @@
   import ConfidenceBadge from "$lib/components/ConfidenceBadge.svelte";
   import Chart from "$lib/components/Chart.svelte";
   import SegmentedDateRange from "$lib/components/SegmentedDateRange.svelte";
+  import { decisions as decisionsApi } from "$lib/api";
+  import type { DecisionSignalsResponse } from "@tornscope/shared";
+  import SignalCard from "$lib/components/SignalCard.svelte";
   import StateMessage from "$lib/components/StateMessage.svelte";
   import { C, GRID, timeAxis, valueAxis, moneyValueAxis, moneyTooltipValue, dayLabel, hourLabel, axisTimeTooltip, tealArea, MOTION } from "$lib/charts";
   import * as td from "$lib/time-display.svelte.js";
@@ -84,6 +87,19 @@
   // call can wait on upstream Torn (first-ever load with no persisted
   // last-known copy) — it fills in independently and must never hold the
   // whole page hostage (real-user cold-load finding).
+  // Decision strip state — lazy, cockpit-first: loaded after the primary
+  // render settles so the strip can never delay the cockpit.
+  let decisionsData = $state<DecisionSignalsResponse | null>(null);
+
+  async function loadDecisions() {
+    try {
+      decisionsData = await decisionsApi.signals();
+    } catch {
+      // Decision signals are additive: absence must never surface an error.
+      decisionsData = null;
+    }
+  }
+
   async function load() {
     if (!me.loaded) return; // deferred: snapshot requires the verified user id
     loading = true;
@@ -174,7 +190,11 @@
     void me.loaded;
     void meUserId;
     void cockpitSnapshot;
-    untrack(() => void load());
+    untrack(() => {
+      void load();
+      // Decision strip: non-blocking, after the cockpit settles.
+      setTimeout(() => void loadDecisions(), 1500);
+    });
   });
 
   // ── Landing fast-path (2.0.6): context-aware travel refresh. ──
@@ -620,6 +640,21 @@
     </section>
 
     <!-- ── Recent activity ledger ── -->
+    {#if decisionsData && decisionsData.signals.length > 0 && decisionsData.prefs.enabled}
+      <!-- ── Decision strip: what deserves attention? (max N per prefs) ── -->
+      <section class="section-rule" aria-label="Decision signals" style="order: {order.activity + 0.5};">
+        <div class="flex items-baseline justify-between gap-3">
+          <h2 class="section-label">What deserves attention</h2>
+          <a href="/insights" class="text-link shrink-0 text-xs font-medium">All signals →</a>
+        </div>
+        <div class="mt-3 grid gap-3 lg:grid-cols-3">
+          {#each decisionsData.signals.filter((sg) => decisionsData!.overviewSignals.includes(sg.id)) as signal (signal.id)}
+            <SignalCard signal={signal} isNew={signal.isNew} compact />
+          {/each}
+        </div>
+      </section>
+    {/if}
+
     <section class="section-rule" aria-label="Recent activity" style="order: {order.activity};">
       <div class="flex items-baseline justify-between gap-3">
         <h2 class="section-label">Recent activity</h2>

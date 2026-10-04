@@ -1,12 +1,13 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { goto } from "$app/navigation";
-  import type { InsightsResponse } from "@tornscope/shared";
-  import { endpoints, ApiClientError } from "$lib/api";
+  import type { InsightsResponse, DecisionSignalsResponse } from "@tornscope/shared";
+  import { endpoints, decisions as decisionsApi, ApiClientError } from "$lib/api";
   import { ALL_NAV_ITEMS } from "$lib/nav";
   import { categoryChips, categoryLabel, clickPathLabel, comparisonParts, confidenceChip, evidenceLine, kindLabel, sortInsights } from "$lib/insights-view";
   import PageHeader from "$lib/components/PageHeader.svelte";
   import StateMessage from "$lib/components/StateMessage.svelte";
+  import SignalCard from "$lib/components/SignalCard.svelte";
   import ProvenanceBadge from "$lib/components/ProvenanceBadge.svelte";
   import * as td from "$lib/time-display.svelte.js";
 
@@ -22,13 +23,32 @@
   let refreshing = $state(false);
   let error = $state<string | null>(null);
   let category = $state<"all" | string>("all");
+  let decisions = $state<DecisionSignalsResponse | null>(null);
+  let decisionError = $state<string | null>(null);
+  let signalView = $state<"all" | "TREND" | "OPPORTUNITY" | "RISK">("all");
+
+  const SIGNAL_VIEWS: Array<{ key: "all" | "TREND" | "OPPORTUNITY" | "RISK"; label: string }> = [
+    { key: "all", label: "All signals" },
+    { key: "OPPORTUNITY", label: "Opportunities" },
+    { key: "TREND", label: "Trends" },
+    { key: "RISK", label: "Risks & inefficiencies" },
+  ];
 
   async function load(silent = false) {
     if (silent) refreshing = true;
     else loading = true;
     error = null;
+    decisionError = null;
     try {
-      data = await endpoints.insights();
+      const [insights, dec] = await Promise.all([
+        endpoints.insights(),
+        decisionsApi.signals().catch((err) => {
+          decisionError = err instanceof ApiClientError ? err.message : (err as Error).message;
+          return null;
+        }),
+      ]);
+      data = insights;
+      decisions = dec;
     } catch (err) {
       error = err instanceof ApiClientError ? err.message : (err as Error).message;
       if (!silent) data = null;
@@ -37,6 +57,22 @@
       refreshing = false;
     }
   }
+
+  const visibleSignals = $derived.by(() => {
+    if (!decisions) return [];
+    if (signalView === "all") return decisions.signals;
+    if (signalView === "RISK") return decisions.signals.filter((s) => s.category === "RISK" || s.category === "INEFFICIENCY" || s.category === "ANOMALY");
+    return decisions.signals.filter((s) => s.category === signalView);
+  });
+  const signalCounts = $derived.by(() => {
+    const c: Record<string, number> = { all: decisions?.signals.length ?? 0, TREND: 0, OPPORTUNITY: 0, RISK: 0 };
+    for (const s of decisions?.signals ?? []) {
+      if (s.category === "TREND") c.TREND += 1;
+      else if (s.category === "OPPORTUNITY") c.OPPORTUNITY += 1;
+      else if (s.category === "RISK" || s.category === "INEFFICIENCY" || s.category === "ANOMALY") c.RISK += 1;
+    }
+    return c;
+  });
 
   onMount(() => {
     void load();
@@ -56,7 +92,7 @@
   <PageHeader
     eyebrow="Intelligence · Insights"
     title="Insights"
-    description="Observed shifts in your own data — each one compares two measured periods and shows its evidence. No causal claims, no noise."
+    description="Decision signals and observed shifts from your own recorded history — every claim carries its evidence, confidence and provenance. No live optimization, no noise."
   >
     {#snippet actions()}
       <button class="btn btn-sm" disabled={refreshing} onclick={() => void load(true)}>
@@ -64,6 +100,70 @@
       </button>
     {/snippet}
   </PageHeader>
+
+    <!-- ── Decision signals (2.3.0): sections A–D via intent filter ── -->
+    <section aria-label="Decision signals" class="space-y-4">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <h2 class="section-label">Decision signals</h2>
+        <div class="flex flex-wrap items-center gap-2" role="group" aria-label="Filter signals by intent">
+          {#each SIGNAL_VIEWS as view (view.key)}
+            <button
+              class="chip cursor-pointer {signalView === view.key ? 'chip-accent font-semibold' : 'chip-quiet'}"
+              aria-pressed={signalView === view.key}
+              onclick={() => (signalView = view.key)}
+            >
+              {view.label}
+              {#if view.key !== "all"}
+                <span class="tnum text-fg-faint">{signalCounts[view.key] ?? 0}</span>
+              {/if}
+            </button>
+          {/each}
+        </div>
+      </div>
+
+      {#if decisionError}
+        <StateMessage state="error" compact title="Decision signals unavailable" hint={decisionError} />
+      {:else if !decisions || !decisions.prefs.enabled}
+        <StateMessage state="empty" compact title="Decision signals are turned off" hint="Enable them in Settings → Decision Intelligence." />
+      {:else if decisions.signals.length === 0}
+        <StateMessage
+          state="empty"
+          compact
+          title="No decision signals right now"
+          hint={decisions.suppressedInsufficientData > 0
+            ? `${decisions.suppressedInsufficientData} comparison${decisions.suppressedInsufficientData === 1 ? "" : "s"} suppressed — not enough covered days in your history yet.`
+            : "Your recent activity compares cleanly against your own baselines — nothing crosses a threshold."}
+        />
+      {:else}
+        <div class="grid gap-3 lg:grid-cols-2">
+          {#each visibleSignals as signal (signal.id)}
+            <SignalCard {signal} isNew={signal.isNew} />
+          {:else}
+            <StateMessage state="empty" compact title="No signals in this view" />
+          {/each}
+        </div>
+        {#if decisions.domainsSuppressed.length > 0}
+          <p class="text-[11px] text-fg-faint">
+            Suppressed for insufficient coverage: {decisions.domainsSuppressed.join(", ")} — raw absence is never treated as zero.
+          </p>
+        {/if}
+      {/if}
+    </section>
+
+    <!-- ── Recently resolved signals ── -->
+    {#if decisions && decisions.recentlyResolved.length > 0}
+      <section aria-label="Recently resolved" class="space-y-2">
+        <h2 class="section-label">Recently resolved</h2>
+        <div class="flex flex-wrap gap-2">
+          {#each decisions.recentlyResolved as r (r.id + r.resolvedAt)}
+            <span class="chip chip-quiet text-[11px]" title="Resolved {td.displayDateTime(r.resolvedAt)}">
+              {r.id} · resolved {td.displayDate(r.resolvedAt)}
+            </span>
+          {/each}
+        </div>
+      </section>
+    {/if}
+
 
   {#if loading && !data}
     <StateMessage state="loading" />
@@ -107,7 +207,10 @@
         </div>
       {/if}
 
-      <section aria-label="Insights" class="space-y-4">
+      <section aria-label="Observed shifts" class="space-y-4">
+      <div class="flex items-baseline justify-between gap-3">
+        <h2 class="section-label">Observed shifts</h2>
+      </div>
         {#if filtered.length === 0}
           <StateMessage state="empty" compact title="No insights in this category" hint="Try All, or another category." />
         {:else}

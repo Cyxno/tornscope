@@ -18,3 +18,5 @@ export type { DemoContinuationState, DemoGenerationResult } from "./demo/generat
 export * from "./repositories/faction.js";
 export { getGoalFacts, gatherInsightFacts, loadTripsWindow, networthRowToFields } from "./repositories/intelligence-facts.js";
 export type { NetworthSnapshotRow } from "./repositories/intelligence-facts.js";
+export { gatherDecisionFacts } from "./repositories/intelligence-facts.js";
+export type { DecisionFactsInput } from "./repositories/intelligence-facts.js";

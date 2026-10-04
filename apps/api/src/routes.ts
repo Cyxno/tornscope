@@ -39,9 +39,10 @@ import { deleteEmptyProfile } from "@tornscope/database";
 import { getSyncStatus, getSyncHealth, requestManualSync, retryFailedSyncs, retrySyncNow, restartBackfill } from "./services/syncStatus.js";
 import { listGoals, createGoal, updateGoal, deleteGoal } from "./services/goals.js";
 import { getInsights } from "./services/insights.js";
+import { getDecisions, getDecisionPrefs, updateDecisionPrefs, DECISION_DOMAINS } from "./services/decisions.js";
 import { getCommandCenter } from "./services/commandCenter.js";
 import { getSystemHealth } from "./services/systemHealth.js";
-import { GoalCreateInputSchema, GoalUpdateInputSchema } from "@tornscope/shared";
+import { GoalCreateInputSchema, GoalUpdateInputSchema, DecisionPrefsUpdateSchema } from "@tornscope/shared";
 import { getApiContext } from "./context.js";
 import { checkReadiness } from "./services/readiness.js";
 import { getPrismaClient } from "@tornscope/database";
@@ -491,6 +492,26 @@ export function registerRoutes(app: FastifyInstance): void {
   // Deterministic personal insights (curated rule set over stored history).
   app.get("/api/insights", async (req) => {
     return getInsights(currentUser(req).id);
+  });
+
+  // Decision Intelligence (2.3.0): deterministic decision signals over
+  // locally ingested history — zero Torn calls, one bounded gather, cached.
+  app.get("/api/decisions", async (req) => {
+    return getDecisions(currentUser(req).id);
+  });
+
+  app.get("/api/decisions/preferences", async (req) => {
+    return getDecisionPrefs(currentUser(req).id);
+  });
+
+  app.post("/api/decisions/preferences", async (req) => {
+    const limit = checkRateLimit("decision-prefs", currentUser(req).id, 30, 10 * 60_000);
+    if (!limit.ok) throw errors.rateLimited("Too many preference changes — try again later.", limit.retryAfterSeconds);
+    const body = DecisionPrefsUpdateSchema.strict().safeParse(req.body);
+    if (!body.success) throw errors.validation(body.error.flatten());
+    const prefs = await updateDecisionPrefs(currentUser(req).id, body.data);
+    // Domain keys must all be present for the client UI.
+    return { ...prefs, domains: Object.fromEntries(DECISION_DOMAINS.map((d) => [d, prefs.domains[d]])) };
   });
 
   // System health: services, queue state and per-domain data freshness.

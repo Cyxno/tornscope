@@ -1,9 +1,9 @@
 <script lang="ts">
-  import type { ApiKeyStatusResponse, ApiKeyValidationResponse, KeyCapabilitiesDto, MeResponse } from "@tornscope/shared";
+  import type { ApiKeyStatusResponse, ApiKeyValidationResponse, KeyCapabilitiesDto, MeResponse, DecisionSignalsResponse, DecisionPrefsUpdate, DecisionDomain } from "@tornscope/shared";
   import { branding, CAPABILITY_KEYS, FEATURE_REQUIREMENTS, capabilityLevel, capabilitySetName } from "@tornscope/shared";
   import { onMount } from "svelte";
   import { env as publicEnv } from "$env/dynamic/public";
-  import { endpoints, ApiClientError } from "$lib/api";
+  import { endpoints, decisions as decisionsApi, ApiClientError } from "$lib/api";
   import { build, loadBuildIdentity } from "$lib/build.svelte";
   import { formatRelative } from "$lib/reltime";
   import PageHeader from "$lib/components/PageHeader.svelte";
@@ -50,6 +50,36 @@ import NotificationsSettings from "$lib/components/NotificationsSettings.svelte"
 
   // Client-only: a top-level call here would also run during SSR, where the
   // relative /api fetch fails and the retry sleeps would stall the response.
+  // ── Decision Intelligence prefs (2.3.0) ──
+  const DECISION_DOMAIN_LABELS: Array<[DecisionDomain, string]> = [
+    ["money", "Money"],
+    ["travel", "Travel"],
+    ["energy", "Energy"],
+    ["drugs", "Drugs & Rehab"],
+    ["goals", "Goals"],
+  ];
+  let decisionsPrefs = $state<DecisionSignalsResponse["prefs"] | null>(null);
+  let decisionsPrefsSaveSeq = 0;
+
+  async function saveDecisionPrefs(patch: DecisionPrefsUpdate): Promise<void> {
+    if (!decisionsPrefs) return;
+    const seq = ++decisionsPrefsSaveSeq;
+    decisionsPrefs = { ...decisionsPrefs, ...patch, domains: { ...decisionsPrefs.domains, ...(patch.domains ?? {}) } };
+    try {
+      const canonical = await decisionsApi.updatePrefs(patch);
+      if (seq === decisionsPrefsSaveSeq) decisionsPrefs = canonical;
+    } catch {
+      // Keep the optimistic value; the next settings visit re-syncs.
+    }
+  }
+
+  onMount(() => {
+    decisionsApi
+      .prefs()
+      .then((p) => (decisionsPrefs = p))
+      .catch(() => (decisionsPrefs = null));
+  });
+
   onMount(() => {
     void load();
   });
@@ -403,6 +433,74 @@ import NotificationsSettings from "$lib/components/NotificationsSettings.svelte"
         Stored in this browser; "Everything" is the default.
       </p>
     </Panel>
+    <Panel title="Decision Intelligence" caption="Evidence-backed signals from your own history — no live optimization">
+      {#if decisionsPrefs}
+        <div class="space-y-4">
+          <label class="flex cursor-pointer items-center justify-between gap-4">
+            <span>
+              <span class="text-[13.5px] font-medium text-fg">Decision signals</span>
+              <span class="block text-[11.5px] text-fg-muted">Deterministic comparisons of recent activity against your own rolling baselines.</span>
+            </span>
+            <input
+              type="checkbox"
+              class="h-5 w-5 shrink-0 cursor-pointer accent-accent"
+              checked={decisionsPrefs.enabled}
+              onchange={(e) => void saveDecisionPrefs({ enabled: e.currentTarget.checked })}
+            />
+          </label>
+
+          <div>
+            <p class="text-[11px] font-medium text-fg-faint">Domains</p>
+            <div class="mt-1.5 flex flex-wrap gap-2">
+              {#each DECISION_DOMAIN_LABELS as [domain, label] (domain)}
+                <button
+                  class="chip cursor-pointer {decisionsPrefs.domains[domain] ? 'chip-accent font-semibold' : 'chip-quiet'}"
+                  aria-pressed={decisionsPrefs.domains[domain]}
+                  disabled={!decisionsPrefs.enabled}
+                  onclick={() => { if (decisionsPrefs) void saveDecisionPrefs({ domains: { [domain]: !decisionsPrefs.domains[domain] } }); }}
+                >
+                  {label}
+                </button>
+              {/each}
+            </div>
+          </div>
+
+          <label class="flex cursor-pointer items-center justify-between gap-4">
+            <span>
+              <span class="text-[13.5px] font-medium text-fg">Include low-confidence signals</span>
+              <span class="block text-[11.5px] text-fg-muted">Thin-sample comparisons are shown labelled as low confidence.</span>
+            </span>
+            <input
+              type="checkbox"
+              class="h-5 w-5 shrink-0 cursor-pointer accent-accent"
+              checked={decisionsPrefs.includeLowConfidence}
+              disabled={!decisionsPrefs.enabled}
+              onchange={(e) => void saveDecisionPrefs({ includeLowConfidence: e.currentTarget.checked })}
+            />
+          </label>
+
+          <label class="flex items-center justify-between gap-4">
+            <span>
+              <span class="text-[13.5px] font-medium text-fg">Signals on Overview</span>
+              <span class="block text-[11.5px] text-fg-muted">Maximum number of signals in the Overview strip.</span>
+            </span>
+            <select
+              class="input w-20 shrink-0"
+              value={decisionsPrefs.maxOverviewSignals ?? 3}
+              disabled={!decisionsPrefs.enabled}
+              onchange={(e) => void saveDecisionPrefs({ maxOverviewSignals: Number(e.currentTarget.value) })}
+            >
+              {#each [1, 2, 3, 4, 5] as n (n)}
+                <option value={n}>{n}</option>
+              {/each}
+            </select>
+          </label>
+        </div>
+      {:else}
+        <StateMessage state="loading" compact />
+      {/if}
+    </Panel>
+
   {:else if activeTab === "appearance"}
     <Panel title="Appearance" caption="Applies immediately, stored in this browser">
       <AppearanceTab />
@@ -720,6 +818,7 @@ import NotificationsSettings from "$lib/components/NotificationsSettings.svelte"
       />
     {/if}
   </Panel>
+
 
 
   <Panel title="About TornScope" caption="Release status, maintainer and independence">
