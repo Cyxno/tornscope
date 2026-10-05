@@ -30,8 +30,39 @@ export const CHANGELOG_KINDS: ChangelogKind[] = ["Added", "Improved", "Fixed", "
 
 export const CHANGELOG: ChangelogRelease[] = [
   {
-    version: "2.4.0",
+    version: "2.5.0",
     current: true,
+    summary:
+      "Value Coverage Expansion: substantially more of your stored history is now semantically understood and turned into analytics — hunting sessions with skill progression, mission completions with credits, racing performance and upgrade spend, bounty placements and claims, education costs, and legacy casino payouts — with cross-domain value attribution that keeps exact cash, estimated item value and unpriced rewards strictly separate, and a corrected money reconciliation.",
+    changes: [
+      {
+        kind: "Added",
+        text: "Hunting analytics (/hunting) — per-session bait costs and prey-sale income (exact from Torn's own logs), net per session, session-type breakdown, and the hunting-skill trajectory they record.",
+      },
+      {
+        kind: "Added",
+        text: "Activity & value overview (/activity) — cross-domain value attribution across casino, openables, hunting, missions, racing, bounties and education: exact cash in/out and net, item value estimated at current catalog prices, progression quantities (racing points, mission credits) shown in their own units, and per-domain ledger linkage — semantic-only domains are labeled as such so nothing is double counted.",
+      },
+      {
+        kind: "Added",
+        text: "Expanded historical coverage: missions (exact cash + mission credits, credits-only completions included), racing finishes (position, exact racing points, skill gains) and upgrade spend, bounty placements (committed cost) vs claims (income) with correct opposite directions, and education starts (exact committed course cost).",
+      },
+      {
+        kind: "Improved",
+        text: "Legacy casino money logs (old-format rows with only an amount and no game attribution) are now normalized as unattributed legacy casino income — the game stays unknown rather than guessed — closing the largest previously unexplained value gap.",
+      },
+      {
+        kind: "Fixed",
+        text: "Money reconciliation now sums the signed ledger correctly (expense amounts are stored negative; the previous diagnostic double-flipped them). Differences between the semantic activity view and the ledger are disclosed with their structural causes — slots/keno/blackjack/high-low/bookie cash has no money logs in Torn's API, and lottery/wheel placements are pending — never silently patched.",
+      },
+      {
+        kind: "Technical",
+        text: "Expanded deterministic normalizer registry with per-family adapters anchored on category, exact title grammar and semantic payload keys; utilization audit 2.0 (audit:activities) reports recognized/normalized/analytics-used coverage at family and event level with an A–F gap classification; the historical repair covers all new families, stays idempotent, and treats the raw archive as read-only.",
+      },
+    ],
+  },
+  {
+    version: "2.4.0",
     summary:
       "Activity & Rewards Analytics: a generic normalization layer converts substantially more of your ingested Torn logs into analytics — a retrospective casino ledger (per-game wagers, returns and net P/L, exact from Torn's own logs), openables & rewards tracking (packs, caches, wallets: inputs vs rewards), plus a repair that backfills the newly recognized history and a diagnostic that surfaces value-bearing logs not yet covered.",
     changes: [
