@@ -30,8 +30,27 @@ export const CHANGELOG_KINDS: ChangelogKind[] = ["Added", "Improved", "Fixed", "
 
 export const CHANGELOG: ChangelogRelease[] = [
   {
-    version: "2.3.0",
+    version: "2.3.1",
     current: true,
+    summary:
+      "Performance hardening for Decision Intelligence, driven by a measured scalability audit: at extreme in-window density the signal reads now keep the newest history (previously the oldest could survive the read cap and the recent week could go unrepresented), and concurrent cold requests share a single build instead of duplicating work. Includes a reproducible benchmark harness with documented budgets and future trigger points.",
+    changes: [
+      {
+        kind: "Fixed",
+        text: "Extreme in-window density — signal reads kept the OLDEST rows above the read cap (ascending order), so the recent week could go unrepresented in comparisons. Reads now keep the newest rows; verified with a dense-recent probe (200k in-window events).",
+      },
+      {
+        kind: "Improved",
+        text: "Concurrent cold requests for the same profile share one build (per-user single-flight) instead of running identical gathers — Overview strip and Insights page can both fire within the same cold window.",
+      },
+      {
+        kind: "Technical",
+        text: "Reproducible benchmark harness (pnpm benchmark:decision) with deterministic synthetic fixtures at 1x/10x/100x scale, plus documented performance budgets and objective future trigger points in docs/DECISION-INTELLIGENCE-PERFORMANCE.md.",
+      },
+    ],
+  },
+  {
+    version: "2.3.0",
     summary:
       "Decision Intelligence: a small number of explainable, conservative signals derived from your own Torn history — opportunities, risks, trends and anomalies compared against your own rolling baselines, each with evidence, confidence, provenance and sample-size context. Historical signals only: no live optimization claims, no duplication of live alerts, no new Torn API pressure.",
     changes: [
