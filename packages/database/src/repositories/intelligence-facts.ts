@@ -305,31 +305,31 @@ export async function gatherDecisionFacts(db: PrismaClientType, userId: string, 
   ] = await Promise.all([
     db.moneyEvent.findMany({
       where: { userId, occurredAt: { gte: fromDate, lte: toDate } },
-      orderBy: { occurredAt: "asc" },
+      orderBy: { occurredAt: "desc" },
       take: 20_000,
       select: { occurredAt: true, category: true, direction: true, amount: true },
     }),
     db.drugEvent.findMany({
       where: { userId, occurredAt: { gte: fromDate, lte: toDate } },
-      orderBy: { occurredAt: "asc" },
+      orderBy: { occurredAt: "desc" },
       take: 10_000,
       select: { occurredAt: true, drugName: true, outcome: true },
     }),
     db.rehabEvent.findMany({
       where: { userId, occurredAt: { gte: fromDate, lte: toDate } },
-      orderBy: { occurredAt: "asc" },
+      orderBy: { occurredAt: "desc" },
       take: 2_000,
       select: { occurredAt: true, cost: true, sessions: true },
     }),
     db.timelineEvent.findMany({
       where: { userId, title: { startsWith: "Gym train", mode: "insensitive" }, occurredAt: { gte: fromDate, lte: toDate } },
-      orderBy: { occurredAt: "asc" },
+      orderBy: { occurredAt: "desc" },
       take: 8_000,
       select: { occurredAt: true, metadata: true },
     }),
     db.timelineEvent.findMany({
       where: { userId, title: "Points energy refill use", occurredAt: { gte: fromDate, lte: toDate } },
-      orderBy: { occurredAt: "asc" },
+      orderBy: { occurredAt: "desc" },
       take: 2_000,
       select: { occurredAt: true },
     }),
@@ -354,7 +354,7 @@ export async function gatherDecisionFacts(db: PrismaClientType, userId: string, 
   return {
     now: nowSec,
     money: {
-      events: moneyRows.map((r) => ({
+      events: moneyRows.slice().reverse().map((r) => ({
         t: sec(r.occurredAt),
         category: r.category,
         direction: r.direction as "income" | "expense" | "neutral" | "unknown",

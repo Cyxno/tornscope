@@ -33,7 +33,8 @@
     "torn:renormalize": "pnpm --filter @tornscope/database renormalize",
     "backfill": "tsx scripts/analytics-backfill.ts",
     "verify": "pnpm lint && pnpm typecheck && pnpm --filter @tornscope/web exec svelte-check --tsconfig ./tsconfig.json && pnpm test && pnpm build && docker compose config --quiet",
-    "check:web": "pnpm --filter @tornscope/web exec svelte-check --tsconfig ./tsconfig.json"
+    "check:web": "pnpm --filter @tornscope/web exec svelte-check --tsconfig ./tsconfig.json",
+    "benchmark:decision": "tsx scripts/benchmark-decision-intelligence.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

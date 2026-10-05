@@ -23,6 +23,13 @@ import { TtlMap } from "@tornscope/shared";
 
 const CACHE_TTL_MS = 60_000;
 const cache = new TtlMap<DecisionSignalsResponse>({ ttlMs: CACHE_TTL_MS });
+/**
+ * Per-user single-flight: concurrent cold misses for the SAME profile share
+ * one build instead of running N identical gathers (Overview strip + Insights
+ * page can legitimately fire within the same cold window). Never blocks
+ * other users.
+ */
+const inFlight = new Map<string, Promise<DecisionSignalsResponse>>();
 
 const PREFS_KEY = "decision_prefs";
 const LIFECYCLE_KEY = "decision_signal_state";
@@ -151,9 +158,19 @@ async function buildDecisions(userId: string): Promise<DecisionSignalsResponse> 
 export async function getDecisions(userId: string): Promise<DecisionSignalsResponse> {
   const cached = cache.get(userId);
   if (cached) return cached;
-  const response = await buildDecisions(userId);
-  cache.set(userId, response);
-  return response;
+  // Per-user single-flight: concurrent cold misses (Overview strip + Insights
+  // page within the same cold window) share ONE build instead of running N
+  // identical gathers. Never blocks other users.
+  const existing = inFlight.get(userId);
+  if (existing) return existing;
+  const build = buildDecisions(userId)
+    .then((response) => {
+      cache.set(userId, response);
+      return response;
+    })
+    .finally(() => inFlight.delete(userId));
+  inFlight.set(userId, build);
+  return build;
 }
 
 export function invalidateDecisionsCache(userId: string): void {

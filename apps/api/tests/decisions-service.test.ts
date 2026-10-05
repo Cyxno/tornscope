@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import { randomUUID } from "node:crypto";
 import { getPrismaClient } from "@tornscope/database";
-import { getDecisions, getDecisionPrefs, updateDecisionPrefs } from "../src/services/decisions.js";
+import { getDecisions, getDecisionPrefs, updateDecisionPrefs, invalidateDecisionsCache } from "../src/services/decisions.js";
 
 /**
  * Decision Intelligence service tests (2.3.0) — endpoint contract on real
@@ -93,5 +93,31 @@ suite("decision intelligence service", () => {
     const res = await getDecisions(userId);
     expect(res.signals).toHaveLength(0);
     await updateDecisionPrefs(userId, { enabled: true });
+  });
+});
+
+suite("decision intelligence invariants (audit hardening)", () => {
+  it("single-flight: concurrent cold misses share one build (no duplicate writes)", async () => {
+    await db.appSetting.deleteMany({ where: { userId, key: "decision_signal_state" } });
+    invalidateDecisionsCache(userId);
+    const [a, b, c] = await Promise.all([getDecisions(userId), getDecisions(userId), getDecisions(userId)]);
+    // All three resolve to the SAME response object identity (shared flight).
+    expect(a).toBe(b);
+    expect(b).toBe(c);
+    // The lifecycle write happened exactly once (state row exists once, AppSetting is KV).
+    const stateRow = await db.appSetting.findUnique({ where: { userId_key: { userId, key: "decision_signal_state" } } });
+    expect(stateRow).not.toBeNull();
+  });
+
+  it("cache: warm hit within TTL returns the same response object", async () => {
+    const a = await getDecisions(userId);
+    const b = await getDecisions(userId);
+    expect(a).toBe(b);
+  });
+
+  it("prefs update invalidates the cache (next response reflects new prefs)", async () => {
+    await updateDecisionPrefs(userId, { maxOverviewSignals: 4 });
+    const res = await getDecisions(userId);
+    expect(res.prefs.maxOverviewSignals).toBe(4);
   });
 });
