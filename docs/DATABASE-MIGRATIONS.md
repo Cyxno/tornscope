@@ -207,3 +207,8 @@ None. The value-coverage expansion is schema-additive in the ActivityEvent
 `metadata` JSON only: new domains (hunting/missions/racing/bounties/
 education) and legacy casino rows store their payload and parsed extras in
 the existing `metadata` column; no table, column or migration changes.
+
+## 2.5.1 migration delta (2.5.0 → 2.5.1)
+
+None. The hardening pass changes aggregation semantics, parsing guards and
+diagnostics only — no schema change.

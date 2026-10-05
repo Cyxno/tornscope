@@ -6,6 +6,7 @@ export * from "./normalizers/armory.js";
 export * from "./normalizers/titles.js";
 export * from "./normalizers/casino.js";
 export * from "./normalizers/domains.js";
+export * from "./normalizers/casino-economics.js";
 export * from "./normalizers/openables.js";
 export * from "./normalizers/guards.js";
 export * from "./repositories/ingest.js";

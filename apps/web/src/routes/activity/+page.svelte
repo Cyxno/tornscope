@@ -64,7 +64,7 @@
   {:else if data}
     <dl class="grid grid-cols-2 gap-y-5 md:grid-cols-4 md:divide-x md:divide-border">
       <div class="md:pr-5">
-        <dt class="text-[11px] font-medium text-fg-faint">Activities</dt>
+        <dt class="text-[11px] font-medium text-fg-faint" title="ActivityEvent rows — multi-event plays (placement + settlement) have one row per event">Activity events</dt>
         <dd class="tnum mt-1 text-[22px] font-semibold text-fg">{data.activities}</dd>
       </div>
       <div class="md:px-5">

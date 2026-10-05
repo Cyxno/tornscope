@@ -7,38 +7,135 @@ import { bigintToNumber, getPrismaClient, loadItemNameMap, loadMarketPrices } fr
 import { loadAvailabilityContext, sectionAvailability } from "./availability.js";
 
 /**
- * Openables / Rewards Analytics (2.4.0) — openings, reward components and
+ * Openables / Rewards Analytics (2.5.1) — openings, reward components and
  * valuations over normalized ActivityEvents (domain = openable). Bounded
  * SQL aggregation; no Torn calls, no MoneyEvent double counting.
  *
- * Valuation classes (docs/ACTIVITY-REWARDS.md):
- * - cash rewards: exact (payload money).
+ * Valuation classes (docs/DATA-CONFIDENCE.md):
+ * - cash rewards: exact (payload money; 0 = known zero, distinct from null).
  * - item rewards/inputs: quantities exact; monetary value is an ESTIMATE
- *   from the current catalog market price (never presented as exact
- *   historical value, and never silently $0 — unpriced quantities are
- *   reported separately).
+ *   from the current catalog market price.
+ * - unpriced: quantities with no catalog price stay visible — never zeroed.
+ * - malformed: reward components that no longer parse (future payload
+ *   drift) are excluded from sums and counted as `malformedComponents` —
+ *   never crash the endpoint, never silently priced.
+ *
+ * `valuationCoverage` tells the UI whether estimatedNet is complete
+ * (everything valued), partial (some components unpriced) or unpriced
+ * (rewards exist but nothing is defensibly valued).
  */
 
 interface ItemQtyRow {
   item_id: number;
   qty: string;
+  malformed: string;
 }
 
-/** Merge (itemId → qty) rows from several aggregate sources. */
+/**
+ * Defensive reward-quantity aggregation.
+ *
+ * Guards (all server-side):
+ * - `items` must be a JSON array before expansion (jsonb_typeof) — a
+ *   non-array `items` no longer crashes the scan;
+ * - each element must be an object;
+ * - `id` must be a JSON number with an integer text shape before ::int;
+ * - `qty`, `quantity` must be integers ≥ 1 (else counted malformed, never
+ *   defaulted to 1/0).
+ */
+const ITEMS_QTY_SQL = `
+  SELECT item_id, SUM(qty)::bigint AS qty,
+         count(*) FILTER (WHERE NOT id_ok OR NOT qty_ok)::bigint AS malformed
+  FROM (
+    SELECT CASE WHEN jsonb_typeof(e->'id') = 'number' AND (e->>'id')::text ~ '^-?[0-9]+$'
+                THEN (e->>'id')::int END AS item_id,
+           jsonb_typeof(e->'id') = 'number' AND (e->>'id')::text ~ '^-?[0-9]+$' AS id_ok,
+           jsonb_typeof(e) = 'object' AS is_object,
+           CASE WHEN jsonb_typeof(e->'qty') = 'number' AND (e->>'qty')::text ~ '^-?[0-9]+$'
+                THEN GREATEST((e->>'qty')::int, 1) END AS qty,
+           e->'qty' IS NULL OR (jsonb_typeof(e->'qty') = 'number' AND (e->>'qty')::text ~ '^-?[0-9]+$') AS qty_ok
+    FROM "ActivityEvent" ae,
+         jsonb_array_elements(CASE WHEN jsonb_typeof(COALESCE(ae.metadata->'items', '[]'::jsonb)) = 'array'
+                                   THEN ae.metadata->'items' ELSE '[]'::jsonb END) e
+    WHERE ae."userId" = $1 AND ae.domain = 'openable' AND ae."occurredAt" BETWEEN $2 AND $3
+  ) q
+  WHERE item_id IS NOT NULL
+  GROUP BY item_id`;;
+
+const ITEM2_QTY_SQL = `
+  SELECT item_id, SUM(qty_valid)::bigint AS qty, count(*) FILTER (WHERE NOT qty_ok)::bigint AS malformed FROM (
+    SELECT (ae.metadata->>'item2') AS item2_text,
+           (ae.metadata->>'item2')::int AS item_id,
+           CASE WHEN ae.metadata->>'quantity' ~ '^-?[0-9]+$' THEN GREATEST((ae.metadata->>'quantity')::int, 1) END AS qty_valid,
+           NOT (ae.metadata->>'quantity' ~ '^-?[0-9]+$') AS qty_ok
+    FROM "ActivityEvent" ae
+    WHERE ae."userId" = $1 AND ae.domain = 'openable' AND ae."occurredAt" BETWEEN $2 AND $3
+      AND jsonb_typeof(ae.metadata->'item2') = 'number' AND (ae.metadata->>'item2')::text ~ '^-?[0-9]+$'
+    UNION ALL
+    SELECT (e->>'id') AS item2_text,
+           CASE WHEN jsonb_typeof(e->'id') = 'number' AND (e->>'id')::text ~ '^-?[0-9]+$' THEN (e->>'id')::int END AS item_id,
+           CASE WHEN jsonb_typeof(e->'qty') = 'number' AND (e->>'qty')::text ~ '^-?[0-9]+$' THEN GREATEST((e->>'qty')::int, 1) END AS qty_valid,
+           NOT (jsonb_typeof(e->'id') = 'number' AND (e->>'id')::text ~ '^-?[0-9]+$'
+                AND jsonb_typeof(e->'qty') = 'number' AND (e->>'qty')::text ~ '^-?[0-9]+$') AS qty_ok
+    FROM "ActivityEvent" ae,
+         jsonb_array_elements(CASE WHEN jsonb_typeof(COALESCE(ae.metadata->'item2', '[]'::jsonb)) = 'array'
+                                   THEN ae.metadata->'item2' ELSE '[]'::jsonb END) e
+    WHERE ae."userId" = $1 AND ae.domain = 'openable' AND ae."occurredAt" BETWEEN $2 AND $3
+      AND jsonb_typeof(ae.metadata->'item2') = 'array'
+  ) q WHERE item_id IS NOT NULL GROUP BY item_id`;
+
+const INPUT_QTY_SQL = `
+  SELECT (ae.metadata->>'item')::int AS item_id, COUNT(*)::bigint AS qty, 0::bigint AS malformed
+  FROM "ActivityEvent" ae
+  WHERE ae."userId" = $1 AND ae.domain = 'openable' AND ae."occurredAt" BETWEEN $2 AND $3
+    AND jsonb_typeof(ae.metadata->'item') = 'number' AND (ae.metadata->>'item')::text ~ '^-?[0-9]+$'
+  GROUP BY 1`;
+
+/** Counts reward components that no longer parse (payload drift):
+ *  non-array containers, non-object/non-numeric elements, non-integer ids,
+ *  bad quantities. Excluded from every sum; never priced, never zeroed. */
+const MALFORMED_COMPONENTS_SQL = `
+  SELECT (
+    (SELECT count(*) FROM "ActivityEvent" ae
+      WHERE ae."userId" = $1 AND ae.domain = 'openable' AND ae."occurredAt" BETWEEN $2 AND $3
+        AND ae.metadata ? 'items' AND jsonb_typeof(ae.metadata->'items') <> 'array')
+  + (SELECT count(*) FROM "ActivityEvent" ae,
+         jsonb_array_elements(CASE WHEN jsonb_typeof(COALESCE(ae.metadata->'items', '[]'::jsonb)) = 'array'
+                                   THEN ae.metadata->'items' ELSE '[]'::jsonb END) e
+      WHERE ae."userId" = $1 AND ae.domain = 'openable' AND ae."occurredAt" BETWEEN $2 AND $3
+        AND NOT (jsonb_typeof(e) = 'object'
+                 AND jsonb_typeof(e->'id') = 'number' AND (e->>'id')::text ~ '^-?[0-9]+$'
+                 AND (e->'qty' IS NULL OR (jsonb_typeof(e->'qty') = 'number' AND (e->>'qty')::text ~ '^-?[0-9]+$'))))
+  + (SELECT count(*) FROM "ActivityEvent" ae
+      WHERE ae."userId" = $1 AND ae.domain = 'openable' AND ae."occurredAt" BETWEEN $2 AND $3
+        AND ae.metadata ? 'item2' AND jsonb_typeof(ae.metadata->'item2') NOT IN ('number', 'array'))
+  + (SELECT count(*) FROM "ActivityEvent" ae
+      WHERE ae."userId" = $1 AND ae.domain = 'openable' AND ae."occurredAt" BETWEEN $2 AND $3
+        AND jsonb_typeof(ae.metadata->'item2') = 'number' AND (ae.metadata->>'item2')::text !~ '^-?[0-9]+$')
+  + (SELECT count(*) FROM "ActivityEvent" ae,
+         jsonb_array_elements(CASE WHEN jsonb_typeof(COALESCE(ae.metadata->'item2', '[]'::jsonb)) = 'array'
+                                   THEN ae.metadata->'item2' ELSE '[]'::jsonb END) e
+      WHERE ae."userId" = $1 AND ae.domain = 'openable' AND ae."occurredAt" BETWEEN $2 AND $3
+        AND jsonb_typeof(ae.metadata->'item2') = 'array'
+        AND NOT (jsonb_typeof(e) = 'object'
+                 AND jsonb_typeof(e->'id') = 'number' AND (e->>'id')::text ~ '^-?[0-9]+$'
+                 AND jsonb_typeof(e->'qty') = 'number' AND (e->>'qty')::text ~ '^-?[0-9]+$'))
+  + (SELECT count(*) FROM "ActivityEvent" ae
+      WHERE ae."userId" = $1 AND ae.domain = 'openable' AND ae."occurredAt" BETWEEN $2 AND $3
+        AND ae.metadata ? 'item' AND NOT (jsonb_typeof(ae.metadata->'item') = 'number' AND (ae.metadata->>'item')::text ~ '^-?[0-9]+$'))
+  )::bigint AS malformed`;
+
 function mergeQty(map: Map<number, number>, rows: ItemQtyRow[]): void {
   for (const r of rows) {
-    map.set(r.item_id, (map.get(r.item_id) ?? 0) + Number(r.qty));
+    if (r.qty !== null) map.set(r.item_id, (map.get(r.item_id) ?? 0) + Number(r.qty));
   }
 }
 
 export interface OpenableItemValuation {
-  /** Reward item value at CURRENT catalog prices (estimate). */
   rewardValueEstimate: number | null;
-  /** Opened-item value at CURRENT catalog prices (estimate). */
   inputValueEstimate: number | null;
-  /** Reward/input quantities with no catalog price — never zeroed. */
   unpricedQty: number;
   anyItems: boolean;
+  malformedComponents: number;
 }
 
 /** Compact valuation totals for the cross-domain view (the /rewards page
@@ -49,44 +146,18 @@ export async function estimateOpenableItemValuation(
   toDate: Date,
 ): Promise<OpenableItemValuation> {
   const db = getPrismaClient();
-  const [itemsRewardRows, item2RewardRows, inputItemRows, prices] = await Promise.all([
-    db.$queryRawUnsafe<ItemQtyRow[]>(
-      `SELECT (e->>'id')::int AS item_id, SUM(COALESCE((e->>'qty')::int, 1))::bigint AS qty
-       FROM "ActivityEvent" ae, jsonb_array_elements(COALESCE(ae.metadata->'items', '[]'::jsonb)) e
-       WHERE ae."userId" = $1 AND ae.domain = 'openable' AND ae."occurredAt" BETWEEN $2 AND $3
-       GROUP BY 1`,
-      userId, fromDate, toDate,
-    ),
-    db.$queryRawUnsafe<ItemQtyRow[]>(
-      `SELECT item_id, SUM(qty)::bigint AS qty FROM (
-         SELECT (ae.metadata->>'item2')::int AS item_id,
-                GREATEST(COALESCE((ae.metadata->>'quantity')::int, 1), 1) AS qty
-         FROM "ActivityEvent" ae
-         WHERE ae."userId" = $1 AND ae.domain = 'openable' AND ae."occurredAt" BETWEEN $2 AND $3
-           AND jsonb_typeof(ae.metadata->'item2') = 'number'
-         UNION ALL
-         SELECT (e->>'id')::int AS item_id,
-                GREATEST(COALESCE((e->>'qty')::int, 1), 1) AS qty
-         FROM "ActivityEvent" ae, jsonb_array_elements(COALESCE(ae.metadata->'item2', '[]'::jsonb)) e
-         WHERE ae."userId" = $1 AND ae.domain = 'openable' AND ae."occurredAt" BETWEEN $2 AND $3
-           AND jsonb_typeof(ae.metadata->'item2') = 'array'
-       ) q GROUP BY item_id`,
-      userId, fromDate, toDate,
-    ),
-    db.$queryRawUnsafe<ItemQtyRow[]>(
-      `SELECT (ae.metadata->>'item')::int AS item_id, COUNT(*)::bigint AS qty
-       FROM "ActivityEvent" ae
-       WHERE ae."userId" = $1 AND ae.domain = 'openable' AND ae."occurredAt" BETWEEN $2 AND $3
-         AND ae.metadata->>'item' IS NOT NULL
-       GROUP BY 1`,
-      userId, fromDate, toDate,
-    ),
+  const [itemsRewardRows, item2RewardRows, inputItemRows, prices, malformedRows] = await Promise.all([
+    db.$queryRawUnsafe<ItemQtyRow[]>(ITEMS_QTY_SQL, userId, fromDate, toDate),
+    db.$queryRawUnsafe<ItemQtyRow[]>(ITEM2_QTY_SQL, userId, fromDate, toDate),
+    db.$queryRawUnsafe<ItemQtyRow[]>(INPUT_QTY_SQL, userId, fromDate, toDate),
     loadMarketPrices(db),
+    db.$queryRawUnsafe<Array<{ malformed: string }>>(MALFORMED_COMPONENTS_SQL, userId, fromDate, toDate),
   ]);
 
   const rewardQty = new Map<number, number>();
   mergeQty(rewardQty, itemsRewardRows);
   mergeQty(rewardQty, item2RewardRows);
+  const malformedComponents = Number(malformedRows[0]?.malformed ?? 0);
 
   let rewardEstimate = 0n;
   let inputEstimateBig = 0n;
@@ -107,8 +178,11 @@ export async function estimateOpenableItemValuation(
     inputValueEstimate: !anyItems ? null : bigintToNumber(inputEstimateBig),
     unpricedQty,
     anyItems,
+    malformedComponents,
   };
 }
+
+const toNum = (v: bigint | null | undefined): number | null => (v === null || v === undefined ? null : bigintToNumber(v));
 
 export async function getRewardsSummary(userId: string, rangeInput: DateRangeInput): Promise<RewardsSummaryResponse> {
   const db = getPrismaClient();
@@ -123,7 +197,7 @@ export async function getRewardsSummary(userId: string, rangeInput: DateRangeInp
     occurredAt: { gte: fromDate, lte: toDate },
   };
 
-  const [byType, totals, openings, oldest, lastOpenedRows, itemsRewardRows, item2RewardRows, inputItemRows] = await Promise.all([
+  const [byType, totals, openings, oldest, lastOpenedRows, itemsRewardRows, item2RewardRows, inputItemRows, malformedRows] = await Promise.all([
     db.activityEvent.groupBy({
       by: ["activityType", "activityLabel"],
       where,
@@ -139,44 +213,13 @@ export async function getRewardsSummary(userId: string, rangeInput: DateRangeInp
     db.activityEvent.findFirst({ where: { userId, domain: "openable" }, orderBy: { occurredAt: "asc" }, select: { occurredAt: true } }),
     // Last opened per type: one bounded groupBy (never per-type queries).
     db.activityEvent.groupBy({ by: ["activityType"], where, _max: { occurredAt: true } }),
-    // Reward item quantities across all payload shapes (items[] array,
-    // scalar item2 + quantity, array item2) — server-side jsonb
-    // aggregation, one bounded scan per shape.
-    db.$queryRawUnsafe<ItemQtyRow[]>(
-      `SELECT (e->>'id')::int AS item_id, SUM(COALESCE((e->>'qty')::int, 1))::bigint AS qty
-       FROM "ActivityEvent" ae, jsonb_array_elements(COALESCE(ae.metadata->'items', '[]'::jsonb)) e
-       WHERE ae."userId" = $1 AND ae.domain = 'openable' AND ae."occurredAt" BETWEEN $2 AND $3
-       GROUP BY 1`,
-      userId, fromDate, toDate,
-    ),
-    db.$queryRawUnsafe<ItemQtyRow[]>(
-      `SELECT item_id, SUM(qty)::bigint AS qty FROM (
-         SELECT (ae.metadata->>'item2')::int AS item_id,
-                GREATEST(COALESCE((ae.metadata->>'quantity')::int, 1), 1) AS qty
-         FROM "ActivityEvent" ae
-         WHERE ae."userId" = $1 AND ae.domain = 'openable' AND ae."occurredAt" BETWEEN $2 AND $3
-           AND jsonb_typeof(ae.metadata->'item2') = 'number'
-         UNION ALL
-         SELECT (e->>'id')::int AS item_id,
-                GREATEST(COALESCE((e->>'qty')::int, 1), 1) AS qty
-         FROM "ActivityEvent" ae, jsonb_array_elements(COALESCE(ae.metadata->'item2', '[]'::jsonb)) e
-         WHERE ae."userId" = $1 AND ae.domain = 'openable' AND ae."occurredAt" BETWEEN $2 AND $3
-           AND jsonb_typeof(ae.metadata->'item2') = 'array'
-       ) q GROUP BY item_id`,
-      userId, fromDate, toDate,
-    ),
-    // The opened (input) item per opening — quantities for input valuation.
-    db.$queryRawUnsafe<ItemQtyRow[]>(
-      `SELECT (ae.metadata->>'item')::int AS item_id, COUNT(*)::bigint AS qty
-       FROM "ActivityEvent" ae
-       WHERE ae."userId" = $1 AND ae.domain = 'openable' AND ae."occurredAt" BETWEEN $2 AND $3
-         AND ae.metadata->>'item' IS NOT NULL
-       GROUP BY 1`,
-      userId, fromDate, toDate,
-    ),
+    db.$queryRawUnsafe<ItemQtyRow[]>(ITEMS_QTY_SQL, userId, fromDate, toDate),
+    db.$queryRawUnsafe<ItemQtyRow[]>(ITEM2_QTY_SQL, userId, fromDate, toDate),
+    db.$queryRawUnsafe<ItemQtyRow[]>(INPUT_QTY_SQL, userId, fromDate, toDate),
+    db.$queryRawUnsafe<Array<{ malformed: string }>>(MALFORMED_COMPONENTS_SQL, userId, fromDate, toDate),
   ]);
 
-  const toNum = (v: bigint | null | undefined): number | null => (v === null || v === undefined ? null : bigintToNumber(v));
+  const malformedComponents = Number(malformedRows[0]?.malformed ?? 0);
 
   const lastOpenedByType = new Map(lastOpenedRows.map((r) => [r.activityType, r._max.occurredAt]));
   const types = byType
@@ -226,15 +269,30 @@ export async function getRewardsSummary(userId: string, rangeInput: DateRangeInp
   }
 
   const cashReceived = toNum(totals._sum.cashReward);
-  const itemValue = itemValueEstimate !== 0n || rewardQty.size > 0 ? bigintToNumber(itemValueEstimate) : null;
-  const inputEstimate = inputValueEstimate !== 0n || inputItemRows.length > 0 ? bigintToNumber(inputValueEstimate) : null;
+  const hasRewardComponents = rewardQty.size > 0 || inputItemRows.length > 0 || malformedComponents > 0;
+  const itemValue = hasRewardComponents || itemValueEstimate !== 0n ? bigintToNumber(itemValueEstimate) : null;
+  const inputEstimate = inputItemRows.length > 0 || inputValueEstimate !== 0n ? bigintToNumber(inputValueEstimate) : null;
   // Estimated net: cash (exact) + item rewards (est) − input value (est).
   // Null unless at least one component is defensibly valued.
   const netComponents: number[] = [];
   if (cashReceived !== null) netComponents.push(cashReceived);
-  if (itemValue !== null) netComponents.push(itemValue);
-  if (inputEstimate !== null) netComponents.push(-inputEstimate);
+  // A zero estimate (nothing priced / price 0) is not a valuation — when
+  // only such components exist the net stays null (coverage 'unpriced').
+  if (itemValue !== null && itemValueEstimate > 0n) netComponents.push(itemValue);
+  if (inputEstimate !== null && inputValueEstimate > 0n) netComponents.push(-inputEstimate);
   const estimatedNet = netComponents.length > 0 ? netComponents.reduce((a, b) => a + b, 0) : null;
+
+  // Coverage: complete = every reward/input component valued (or only exact
+  // cash present); partial = valued AND unpriced components mixed; unpriced
+  // = components exist but nothing defensibly valued.
+  const unpricedTotal = unpricedItemQty + unpricedInputQty;
+  const valuationCoverage: "complete" | "partial" | "unpriced" = !hasRewardComponents
+    ? "complete"
+    : itemValueEstimate === 0n && inputValueEstimate === 0n && unpricedTotal > 0
+      ? "unpriced"
+      : unpricedTotal > 0
+        ? "partial"
+        : "complete";
 
   return {
     range: { from: range.from, to: range.to },
@@ -243,9 +301,11 @@ export async function getRewardsSummary(userId: string, rangeInput: DateRangeInp
     cashReceived,
     inputValueEstimate: { value: inputEstimate, provenance: "estimated" },
     itemValueEstimate: { value: itemValue, provenance: "estimated" },
-    estimatedNet: { value: estimatedNet, provenance: estimatedNet !== null ? "estimated" : "unpriced" },
+    estimatedNet: { value: estimatedNet, provenance: estimatedNet !== null ? (valuationCoverage === "complete" ? "estimated" : "partial-estimate") : "unpriced" },
+    valuationCoverage,
     topItemRewards,
-    unpricedItemQty: unpricedItemQty + unpricedInputQty,
+    unpricedItemQty: unpricedTotal,
+    malformedComponents,
     types,
     coverage: {
       openings,

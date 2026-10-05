@@ -78,6 +78,12 @@
       </div>
     </dl>
 
+    {#if data.bestResult || data.worstResult}
+      <p class="text-[12px] leading-relaxed text-fg-faint">
+        {#if data.bestResult}Best session: <span class="text-positive tnum">{formatSignedMoneyCompact(data.bestResult.net)}</span> ({data.bestResult.label}, {td.displayDate(data.bestResult.occurredAt)}).{/if}
+        {#if data.worstResult} Worst session: <span class="text-negative tnum">{formatSignedMoneyCompact(data.worstResult.net)}</span> ({data.worstResult.label}, {td.displayDate(data.worstResult.occurredAt)}).{/if}
+      </p>
+    {/if}
     {#if data.activities === 0}
       <StateMessage
         state="empty"
@@ -92,7 +98,7 @@
             <thead>
               <tr>
                 <th>Game</th>
-                <th class="text-right">Plays</th>
+                <th class="text-right">Events</th>
                 <th class="text-right">Wagered</th>
                 <th class="text-right">Cash won</th>
                 <th class="text-right">Net</th>
@@ -103,7 +109,7 @@
               {#each data.games as game (game.game)}
                 <tr>
                   <td class="font-medium text-fg">{game.label}</td>
-                  <td class="tnum text-right text-fg-muted">{game.plays}</td>
+                  <td class="tnum text-right text-fg-muted" title="ActivityEvent rows — multi-event games (placement + settlement) have more rows than plays">{game.plays}</td>
                   <td class="tnum text-right text-fg-muted">{game.wagered !== null ? formatMoneyCompact(game.wagered) : "—"}</td>
                   <td class="tnum text-right text-fg-muted">{game.cashWon !== null ? formatMoneyCompact(game.cashWon) : "—"}</td>
                   <td class="tnum text-right font-semibold {game.net === null ? 'text-fg-faint' : game.net >= 0 ? 'text-positive' : 'text-negative'}">
@@ -116,7 +122,7 @@
           </table>
         </div>
         <p class="mt-2 text-[11px] leading-relaxed text-fg-faint">
-          All cash figures are exact values from Torn's own logs. Games without comparable win semantics (lottery placements, wheel starts) show activity counts without a win-rate. Past results never imply future outcomes.
+          All cash figures are exact values from Torn's own logs. "Events" counts ActivityEvent rows — multi-event games (bookie, blackjack, high-low, wheel) have one row per placement and per settlement, so rows exceed plays. Stakes are counted once (owned by the placement/start). Bookie withdrawals are balance movements, excluded from winnings and net. Pending placements are never losses. Past results never imply future outcomes.
         </p>
       </section>
     {/if}

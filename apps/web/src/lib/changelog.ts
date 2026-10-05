@@ -30,8 +30,31 @@ export const CHANGELOG_KINDS: ChangelogKind[] = ["Added", "Improved", "Fixed", "
 
 export const CHANGELOG: ChangelogRelease[] = [
   {
-    version: "2.5.0",
+    version: "2.5.1",
     current: true,
+    summary:
+      "Correctness and resilience hardening for Activity & Rewards: casino totals now use logical-play economics (stakes counted once, withdrawals excluded, pending placements never losses), best/worst session results are computed deterministically, reward parsing survives malformed or evolving payload shapes, and partial valuations are labeled as partial. The utilization audit evaluates payload-shape coverage and explains reconciliation differences.",
+    changes: [
+      {
+        kind: "Fixed",
+        text: "Casino aggregation no longer double-counts stakes that appear on both the placement and the settlement (bookie, blackjack), no longer treats bookie withdrawals as winnings, and no longer drops high-low lost stakes from the net. Best and worst session results are computed deterministically.",
+      },
+      {
+        kind: "Fixed",
+        text: "Reward parsing hardening: non-array item lists, non-integer ids and invalid quantities are excluded from every total and counted as malformed components — malformed or future payload shapes can no longer break the page, and no invalid value is converted to zero.",
+      },
+      {
+        kind: "Improved",
+        text: "Partial valuations are labeled explicitly (complete / partial / unpriced) so an estimated net that excludes unpriced rewards is never presented as complete. Null and exact zero stay strictly distinguished across casino and rewards surfaces.",
+      },
+      {
+        kind: "Technical",
+        text: "The utilization audit evaluates every payload shape per log family (not one representative sample), reports coverage by families, shapes and events, flags partially covered families, and emits stable JSON (--json). Casino reconciliation is decomposed into semantic wagers/returns/withdrawals/pending vs signed ledger income/expense/net. Historical repair output clarifies that recognized rows are exactly the rows an apply would insert.",
+      },
+    ],
+  },
+  {
+    version: "2.5.0",
     summary:
       "Value Coverage Expansion: substantially more of your stored history is now semantically understood and turned into analytics — hunting sessions with skill progression, mission completions with credits, racing performance and upgrade spend, bounty placements and claims, education costs, and legacy casino payouts — with cross-domain value attribution that keeps exact cash, estimated item value and unpriced rewards strictly separate, and a corrected money reconciliation.",
     changes: [

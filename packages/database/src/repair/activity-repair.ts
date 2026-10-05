@@ -144,6 +144,9 @@ async function main(): Promise<void> {
   }
 
   console.log(`Candidate raw logs: ${rows.length}`);
+  // Candidates already exclude sourceRefs that have an ActivityEvent (NOT
+  // EXISTS), so recognized == would-insert exactly; skipDuplicates can never
+  // dedupe further. Already-normalized raw logs are not candidates at all.
   console.log(`Recognized (would insert): ${stats.recognized}`);
   console.log(`Unsupported (casino-routed, no payload semantics): ${stats.unsupported}`);
   console.log(`Ambiguous: ${stats.ambiguous}`);

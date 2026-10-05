@@ -99,3 +99,32 @@ visible by the audit rather than guessed at):
 - `Hunting | Hunting` was claimed in 2.5.0 (sessions + skill).
 - Any future payload-shape change lands in class D/F of the audit —
   counted and listed, never silently dropped.
+
+## Event rows vs logical plays (2.5.1)
+
+One logical play can produce several ActivityEvent rows (placement +
+settlement). Rows are exact per log; the aggregation layer owns the
+logical-play economics per game:
+
+| Game | Stake owned by | Cash returned | Net | Notes |
+|---|---|---|---|---|
+| Slots / Roulette / Keno | the single log | the log | ΣnetValue | one log = one play |
+| Lottery | bet rows | — (none observed) | **null — pending** | no settlement log; pending is never a loss |
+| Spin the Wheel | start rows | outcome logs | ΣnetValue (start carries net −cost) | |
+| Blackjack | start rows ONLY | terminal rows | ΣnetValue (terminals are play-complete: won − bet / −losses) | settlements repeat the stake in their payload — wagered counts it once |
+| High-Low | start rows ONLY | win rows (pot) | ΣnetValue − Σ(start stakes) | win logs carry only the pot; lost stakes live on the start. Exact when every logged session settles (disclosed) |
+| Bookie | placed rows ONLY | win/refund settlements | ΣnetValue, withdrawals EXCLUDED | settlements repeat the stake; withdrawals are balance movements (reported separately, never winnings) |
+
+`/casino` therefore shows **Events** (ActivityEvent rows), not plays —
+multi-event games have more rows than plays. The reconciliation reports
+semantic wagered/returned/net/withdrawals/pending per profile against the
+signed ledger.
+
+## Unsupported casino evidence (2.4.0 → resolved in 2.5.0)
+
+The 448 `Money casino` rows from the 2.4.0 audit were inspected against
+real payloads: they carry NO structured payload at all — only the signed
+TimelineEvent.amount column — and belong to the demo archive. They
+normalize as `casino-legacy` (unattributed income/stake, `game = null`):
+the game stays unknown rather than guessed. After the 2.5.0 repair the
+demo profile's casino reconciliation matches the ledger exactly.

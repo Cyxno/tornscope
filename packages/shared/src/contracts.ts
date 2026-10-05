@@ -2626,7 +2626,11 @@ export const CasinoSummaryResponseSchema = z.object({
   games: z.array(CasinoGameSummarySchema),
   activeDays: z.number(),
   bestResult: z.object({ label: z.string(), net: z.number(), occurredAt: z.number() }).nullable(),
-  worstResult: z.null(),
+  worstResult: z.object({ label: z.string(), net: z.number(), occurredAt: z.number() }).nullable(),
+  /** Bookie withdrawals: balance movements excluded from game economics. */
+  withdrawn: z.number().nullable(),
+  /** Stakes placed without settlement semantics yet — activity, never a loss. */
+  pendingActivities: z.number(),
   coverage: z.object({ activities: z.number(), trackingSince: z.number().nullable() }),
   availability: z.object({ history: FeatureAvailabilitySchema }).optional(),
 });
@@ -2651,6 +2655,12 @@ export const RewardsSummaryResponseSchema = z.object({
   itemValueEstimate: z.object({ value: z.number().nullable(), provenance: z.string() }),
   /** cash (exact) + item rewards (est) − input value (est); null when nothing is defensibly valued. */
   estimatedNet: z.object({ value: z.number().nullable(), provenance: z.string() }),
+  /** complete = everything valued; partial = valued + unpriced mixed;
+   *  unpriced = rewards exist but nothing is defensibly valued. */
+  valuationCoverage: z.enum(["complete", "partial", "unpriced"]),
+  /** Reward components that no longer parse (payload drift) — excluded from
+   *  all sums, never priced, never zeroed. */
+  malformedComponents: z.number(),
   topItemRewards: z.array(RewardsItemRewardSchema),
   /** Reward/input quantities with no catalog price — kept visible, never $0. */
   unpricedItemQty: z.number(),

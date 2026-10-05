@@ -87,7 +87,7 @@
       <div class="md:pl-5">
         <dt class="text-[11px] font-medium text-fg-faint" title="Exact cash plus estimated item rewards minus estimated input value">Estimated net</dt>
         <dd class="tnum mt-1 text-[22px] font-semibold {data.estimatedNet.value === null ? 'text-fg-faint' : data.estimatedNet.value >= 0 ? 'text-positive' : 'text-negative'}">{data.estimatedNet.value !== null ? formatSignedMoneyCompact(data.estimatedNet.value) : "—"}</dd>
-        <dd class="mt-0.5 text-[11px] text-fg-faint">mixed: exact cash, estimated items</dd>
+        <dd class="mt-0.5 text-[11px] text-fg-faint">{data.estimatedNet.provenance === 'partial-estimate' ? 'partial estimate — unpriced rewards excluded' : data.valuationCoverage === 'unpriced' ? 'unpriced' : 'mixed: exact cash, estimated items'}</dd>
       </div>
     </dl>
 
@@ -125,7 +125,7 @@
           </div>
           {#if data.unpricedItemQty > 0}
             <p class="mt-2 text-[11px] leading-relaxed text-fg-faint">
-              {data.unpricedItemQty} reward/input units have no catalog price and are shown as unpriced — never counted as zero.
+              {data.unpricedItemQty} reward/input units have no catalog price and are shown as unpriced — never counted as zero.{data.malformedComponents > 0 ? ` ${data.malformedComponents} reward components no longer parse (payload drift) and are excluded from every total.` : ""}
             </p>
           {/if}
         </section>

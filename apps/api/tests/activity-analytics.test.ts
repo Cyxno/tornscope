@@ -166,9 +166,11 @@ suite("rewards analytics service", () => {
     // Input: 2 openings of priced items (wallet @1000 ×1) = 1000.
     expect(res.inputValueEstimate.value).toBe(1_000);
 
-    // Estimated net = 130 + 1200 − 1000.
+    // Estimated net = 130 + 1200 − 1000 — a PARTIAL estimate: the 2 unpriced
+    // item-1084 units stay visible and out of the net.
     expect(res.estimatedNet.value).toBe(330);
-    expect(res.estimatedNet.provenance).toBe("estimated");
+    expect(res.estimatedNet.provenance).toBe("partial-estimate");
+    expect(res.valuationCoverage).toBe("partial");
 
     // Unpriced quantity (2 × item 1084) reported, never zeroed.
     expect(res.unpricedItemQty).toBeGreaterThanOrEqual(2);

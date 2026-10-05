@@ -230,3 +230,27 @@ Known limitations, disclosed rather than hidden:
 Coverage accounting (recognized / normalized / analytics-used at family
 and event level) lives in `docs/VALUE-COVERAGE.md` and is measurable with
 `audit:activities`.
+
+## Hardening pass (2.5.1)
+
+- **Payload-shape coverage.** Recognition is audited per payload SHAPE
+  (sorted data keys + JSON types, fingerprinted in SQL — never values), not
+  per family sample: a family whose shapes normalize inconsistently is
+  reported PARTIAL, and uncovered value-bearing shapes are listed
+  precisely. `audit:activities --json` emits the full report as stable
+  JSON for automated checks.
+- **Malformed reward components.** Reward components that no longer parse
+  (non-array containers, non-integer ids, bad quantities) are excluded
+  from every sum and counted as `malformedComponents` — never crash the
+  endpoint, never priced, never zeroed. Raw provenance is untouched.
+- **Partial valuation.** `valuationCoverage` is `complete`, `partial` or
+  `unpriced`; when unpriced components remain, the estimated net is
+  labeled a *partial estimate* and unpriced quantities are excluded from
+  it (a zero estimate is not a valuation).
+- **Casino logical-play economics.** Stakes are owned by placement/start
+  rows and counted once; settlements that repeat the stake never add a
+  second wager; bookie withdrawals are balance movements (disclosed
+  separately, excluded from winnings and net); pending placements are
+  never losses. See the ownership table in docs/ACTIVITY-REWARDS.md.
+- **Unknown stays unknown.** No `?? 0` shortcuts: a genuine zero comes
+  only from an explicit payload zero; everything else renders as "—".

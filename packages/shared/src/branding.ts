@@ -14,7 +14,7 @@ export const branding = {
    * Must match the release tag this main branch is preparing; bump together
    * with the root package.json version.
    */
-  publicVersion: "v2.5.0",
+  publicVersion: "v2.5.1",
 } as const;
 
 export type Branding = typeof branding;

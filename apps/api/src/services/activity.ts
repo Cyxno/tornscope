@@ -6,6 +6,8 @@ import {
 import { bigintToNumber, getPrismaClient } from "@tornscope/database";
 import { loadAvailabilityContext, sectionAvailability } from "./availability.js";
 import { estimateOpenableItemValuation } from "./rewards.js";
+import { aggregateCasinoEconomics } from "@tornscope/database";
+import { loadCasinoRows } from "./casino-economics.js";
 
 /**
  * Cross-domain value attribution (2.5.0) — one bounded, server-side view
@@ -52,7 +54,7 @@ export async function getActivitySummary(userId: string, rangeInput: DateRangeIn
     occurredAt: { gte: fromDate, lte: toDate },
   };
 
-  const [byDomain, breakdownRows, oldest, itemValuation] = await Promise.all([
+  const [byDomain, breakdownRows, oldest, itemValuation, casinoRows] = await Promise.all([
     // One grouped scan for all domains — never per-domain queries.
     db.$queryRawUnsafe<Array<{
       domain: string; count: bigint; cash_input: string | null; cash_reward: string | null;
@@ -77,7 +79,11 @@ export async function getActivitySummary(userId: string, rangeInput: DateRangeIn
     }),
     db.activityEvent.findFirst({ where: { userId }, orderBy: { occurredAt: "asc" }, select: { occurredAt: true } }),
     estimateOpenableItemValuation(userId, fromDate, toDate),
+    // Casino economics need logical-play ownership (stakes once, withdrawals
+    // excluded) — raw sums would double-count settled stakes.
+    loadCasinoRows(db, userId, fromDate, toDate),
   ]);
+  const casinoEco = aggregateCasinoEconomics(casinoRows);
 
   const toNum = (v: string | bigint | null | undefined): number | null => {
     if (v === null || v === undefined) return null;
@@ -93,12 +99,7 @@ export async function getActivitySummary(userId: string, rangeInput: DateRangeIn
   }
 
   // Casino ledger reconciliation (signed sums) — disclosed, never patched.
-  const [casinoActivityRows, casinoLedgerRows] = await Promise.all([
-    db.$queryRawUnsafe<Array<{ user_id: string; activity_cash: string }>>(
-      `SELECT "userId" AS user_id, sum(COALESCE("cashReward",0) - COALESCE("cashInput",0))::text AS activity_cash
-       FROM "ActivityEvent" WHERE domain = 'casino' AND ("cashReward" IS NOT NULL OR "cashInput" IS NOT NULL)
-       GROUP BY 1`,
-    ),
+  const [casinoLedgerRows] = await Promise.all([
     db.$queryRawUnsafe<Array<{ user_id: string; ledger_cash: string }>>(
       // MoneyEvent.amount is SIGNED (expenses negative) — summed directly.
       `SELECT "userId" AS user_id, sum(amount)::text AS ledger_cash
@@ -123,13 +124,14 @@ export async function getActivitySummary(userId: string, rangeInput: DateRangeIn
           tokens: b._sum.tokensReward === null ? null : Number(b._sum.tokensReward),
         }))
         .sort((a, b) => b.count - a.count);
+      const isCasino = domain === "casino";
       return {
         domain,
         label,
         activities: Number(agg.count),
-        cashSpent: toNum(agg.cash_input),
-        cashReceived: toNum(agg.cash_reward),
-        exactNetCash: toNum(agg.net_value),
+        cashSpent: isCasino ? toNum(casinoEco.wagered) : toNum(agg.cash_input),
+        cashReceived: isCasino ? toNum(casinoEco.returned) : toNum(agg.cash_reward),
+        exactNetCash: isCasino ? toNum(casinoEco.net) : toNum(agg.net_value),
         estimatedItemValue: domain === "openable" ? itemValuation.rewardValueEstimate : null,
         unpricedActivities: Number(agg.unpriced),
         progressionPoints: agg.points === null ? null : Number(agg.points),
@@ -141,11 +143,13 @@ export async function getActivitySummary(userId: string, rangeInput: DateRangeIn
     });
 
   const totalActivities = byDomain.reduce((acc, r) => acc + Number(r.count), 0);
-  const exactNet = byDomain.reduce((acc, r) => acc + BigInt(r.net_value ?? 0n), 0n);
-  const hasNet = byDomain.some((r) => r.net_value !== null);
+  const exactNet = byDomain.reduce((acc, r) => acc + BigInt(r.domain === "casino" ? (casinoEco.net ?? 0n) : (r.net_value ?? 0n)), 0n);
+  const hasNet = byDomain.some((r) => (r.domain === "casino" ? casinoEco.net !== null : r.net_value !== null));
   const totalActivitiesCount = await db.activityEvent.count({ where: windowWhere });
   const userIdForRecon = userId;
-  const casinoActivity = toNum(casinoActivityRows.find((r) => r.user_id === userIdForRecon)?.activity_cash);
+  // Semantic casino cash uses logical-play economics (stakes once, no
+  // withdrawals) so the reconciliation explains real differences.
+  const casinoActivity = toNum(casinoEco.net);
   const casinoLedger = ledgerByUser.get(userIdForRecon) ?? null;
 
   const reconciliation: ActivitySummaryResponse["reconciliation"] = domains

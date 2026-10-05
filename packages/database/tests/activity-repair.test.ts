@@ -15,7 +15,7 @@ const REPAIR_SCRIPT = fileURLToPath(new URL("../src/repair/activity-repair.ts", 
 
 function runRepair(extra: string[] = []): string {
   return execFileSync("pnpm", ["--filter", "@tornscope/database", "exec", "tsx", REPAIR_SCRIPT, ...extra], {
-    env: { ...process.env, DATABASE_URL: dbUrl },
+    env: { ...process.env, DATABASE_URL: dbUrl + (dbUrl.includes("?") ? "&" : "?") + "connection_limit=2" },
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
   });
