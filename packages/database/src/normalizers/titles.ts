@@ -429,7 +429,7 @@ export { INCOME_WORDS, EXPENSE_WORDS, TRANSFER_WORDS };
 /* Domain routing                                                             */
 /* -------------------------------------------------------------------------- */
 
-export type LogRoute = "money" | "rehab" | "travel" | "drugs" | "itemuse" | "crimes" | "casino" | "openable" | "timeline";
+export type LogRoute = "money" | "rehab" | "travel" | "drugs" | "itemuse" | "crimes" | "casino" | "openable" | "hunting" | "missions" | "racing" | "bounties" | "education" | "timeline";
 
 /**
  * Route a raw log to its structured domain (or "timeline" for timeline-only
@@ -446,6 +446,12 @@ export function routeLog(category: string, title: string): LogRoute {
   // handling inside the case). Anchored on category/exact prefixes — never
   // bare keyword matching (Speed-lesson).
   if (c === "casino" || /^bookie /.test(t) || /^casino /.test(t)) return "casino";
+
+  // Domain activity (2.5.0): hunting, missions, racing, bounties and
+  // education are exact category matches — one domain each, normalized to
+  // ActivityEvent only (their cash never flows through money logs; the
+  // reconciliation reports them as semantic-only domains).
+  if (c === "hunting" || c === "missions" || c === "racing" || c === "bounties" || c === "education") return c;
 
   // Rehab visits are titled "Rehab" but filed under the Travel category.
   if (t === "rehab" || c.includes("rehab") || t.includes("rehab") || c.includes("rehabilitation")) return "rehab";

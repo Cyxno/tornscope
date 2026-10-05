@@ -1,21 +1,27 @@
 import { getPrismaClient } from "../client.js";
 import { normalizeCasinoLog as normalizeCasino } from "../normalizers/casino.js";
 import { normalizeOpenableLog } from "../normalizers/openables.js";
+import { buildDomainMetadata, normalizeDomainLog } from "../normalizers/domains.js";
 import { routeLog } from "../normalizers/titles.js";
 
-
-
 /**
- * Activity & Rewards repair (2.4.0) — backfill ActivityEvents from the raw
+ * Activity & Rewards repair (2.5.0) — backfill ActivityEvents from the raw
  * TimelineEvent archive using the current normalizers.
  *
  *   pnpm --filter @tornscope/database repair:activities [--dry-run]
  *
  * Idempotent via (userId, source, sourceRef) unique; raw archive untouched;
  * dry-run prints candidate/recognized/unsupported counts first. Also prints
- * the money-reconciliation diagnostic for casino activities with exact cash
- * (activity cash delta vs MoneyEvent casino delta) — differences are
- * reported, never patched.
+ * money-reconciliation diagnostics for every domain that carries exact cash
+ * — differences are reported, never patched.
+ *
+ * 2.5.0 additions:
+ * - hunting / missions / racing / bounties / education domain families.
+ * - Legacy casino money logs (old-format rows whose only value is the
+ *   TimelineEvent.amount column — no structured payload, no game
+ *   attribution): normalized as unattributed legacy casino income so the
+ *   semantic view converges with the ledger instead of leaving 400+ value
+ *   rows unexplained. The game is UNKNOWN and stays unknown — never guessed.
  */
 
 function parseArgs(argv: string[]): { dryRun: boolean } {
@@ -28,28 +34,35 @@ interface Candidate {
   occurredAt: Date;
   title: string;
   category: string;
+  /** Structured payload when the row carries one; empty for legacy rows. */
   data: Record<string, unknown>;
-  domain: "casino" | "openable";
+  /** TimelineEvent.amount column (legacy money logs carry only this). */
+  amount: bigint | null;
+  kind: "casino" | "openable" | "domain" | "casino-legacy";
 }
 
 async function main(): Promise<void> {
   const { dryRun } = parseArgs(process.argv);
   const db = getPrismaClient();
 
-  // Candidate rows: casino/openable-routed raw logs that do not yet have an
-  // ActivityEvent with the same sourceRef. Candidates are a deliberate
-  // SUPERSET of what the normalizers claim (both casino categories, every
-  // item-use log with a reward-shaped payload key); the normalizers decide
-  // recognition and the rest lands in the unsupported/ambiguous buckets,
-  // which is the unrecognized-value diagnostic.
+  // Candidate rows: raw logs one of the normalizers may claim that do not
+  // yet have an ActivityEvent with the same sourceRef. The SQL is a
+  // deliberate SUPERSET of normalizer claims; recognition is decided by the
+  // normalizers and the rest lands in unsupported/ambiguous — the
+  // unrecognized-value diagnostic.
   const rows = await db.$queryRawUnsafe<Array<{
-    userId: string; sourceRef: string; occurredAt: Date; category: string; title: string; metadata: unknown;
+    userId: string; sourceRef: string; occurredAt: Date; category: string; title: string; metadata: unknown; amount: string | null;
   }>>(`
-    SELECT te."userId", te."sourceRef", te."occurredAt", te."category", te."title", te."metadata"
+    SELECT te."userId", te."sourceRef", te."occurredAt", te."category", te."title", te."metadata", te."amount"::text AS amount
     FROM "TimelineEvent" te
     WHERE te."type" = 'log'
       AND (
         te."category" ILIKE '%casino%'
+        OR te."category" ILIKE '%hunting%'
+        OR te."category" ILIKE '%missions%'
+        OR te."category" ILIKE '%racing%'
+        OR te."category" ILIKE '%bounties%'
+        OR te."category" ILIKE '%education%'
         OR (te."category" = 'Item use' AND (
           te."metadata"->'data' ? 'items'
           OR te."metadata"->'data' ? 'item2'
@@ -68,27 +81,66 @@ async function main(): Promise<void> {
   const candidates: Candidate[] = [];
   const stats = { recognized: 0, unsupported: 0, ambiguous: 0 };
   const byTitle = new Map<string, number>();
+  const bump = (key: string) => byTitle.set(key, (byTitle.get(key) ?? 0) + 1);
+
   for (const row of rows) {
     const data = (row.metadata as { data?: Record<string, unknown> } | null)?.data ?? {};
+    const amount = row.amount !== null ? BigInt(row.amount) : null;
+
     if (routeLog(row.category, row.title) === "casino") {
       const casino = normalizeCasino(row.category, row.title, data);
       if (casino) {
         stats.recognized += 1;
-        candidates.push({ userId: row.userId, sourceRef: row.sourceRef, occurredAt: row.occurredAt, title: row.title, category: row.category, data, domain: "casino" });
+        candidates.push({ userId: row.userId, sourceRef: row.sourceRef, occurredAt: row.occurredAt, title: row.title, category: row.category, data, amount, kind: "casino" });
+        continue;
+      }
+      // Legacy money-format casino logs: no structured payload, only the
+      // signed amount column. Income amounts are casino payouts of unknown
+      // game; negative amounts are unattributed stakes. Only claimed when
+      // the payload is genuinely absent — a structured payload with
+      // different semantics must never fall in here.
+      if (amount !== null && amount !== 0n && Object.keys(data).length === 0) {
+        stats.recognized += 1;
+        candidates.push({ userId: row.userId, sourceRef: row.sourceRef, occurredAt: row.occurredAt, title: row.title, category: row.category, data, amount, kind: "casino-legacy" });
         continue;
       }
       stats.unsupported += 1;
-      byTitle.set(`${row.category} | ${row.title}`, (byTitle.get(`${row.category} | ${row.title}`) ?? 0) + 1);
+      bump(`${row.category} | ${row.title}`);
       continue;
     }
-    const openable = normalizeOpenableLog(row.title, data);
-    if (openable) {
-      stats.recognized += 1;
-      candidates.push({ userId: row.userId, sourceRef: row.sourceRef, occurredAt: row.occurredAt, title: row.title, category: row.category, data, domain: "openable" });
+
+    const route = routeLog(row.category, row.title);
+    if (route === "hunting" || route === "missions" || route === "racing" || route === "bounties" || route === "education") {
+      const domain = normalizeDomainLog(row.category, row.title, data);
+      if (domain) {
+        stats.recognized += 1;
+        candidates.push({ userId: row.userId, sourceRef: row.sourceRef, occurredAt: row.occurredAt, title: row.title, category: row.category, data, amount, kind: "domain" });
+        continue;
+      }
+      // Domain-category rows the normalizer does not claim stay
+      // unrecognized-but-visible in the gap list (never dropped, never guessed).
+      stats.ambiguous += 1;
+      bump(`${row.category} | ${row.title}`);
       continue;
     }
+
+    if (route !== "timeline") {
+      // Openable item-use candidates.
+      const openable = normalizeOpenableLog(row.title, data);
+      if (openable) {
+        stats.recognized += 1;
+        candidates.push({ userId: row.userId, sourceRef: row.sourceRef, occurredAt: row.occurredAt, title: row.title, category: row.category, data, amount, kind: "openable" });
+        continue;
+      }
+      stats.ambiguous += 1;
+      bump(`${row.category} | ${row.title}`);
+      continue;
+    }
+
+    // Timeline-routed rows can only be casino candidates misrouted here —
+    // keep them visible rather than silently dropped.
     stats.ambiguous += 1;
-    byTitle.set(`${row.category} | ${row.title}`, (byTitle.get(`${row.category} | ${row.title}`) ?? 0) + 1);
+    bump(`${row.category} | ${row.title}`);
   }
 
   console.log(`Candidate raw logs: ${rows.length}`);
@@ -110,7 +162,7 @@ async function main(): Promise<void> {
 
   const inserts: Array<Record<string, unknown>> = [];
   for (const c of candidates) {
-    if (c.domain === "casino") {
+    if (c.kind === "casino") {
       const casino = normalizeCasino(c.category, c.title, c.data);
       if (!casino) continue;
       const netValue =
@@ -146,24 +198,77 @@ async function main(): Promise<void> {
       });
       continue;
     }
-    const openable = normalizeOpenableLog(c.title, c.data);
-    if (!openable) continue;
+    if (c.kind === "casino-legacy") {
+      const amount = c.amount!; // legacy candidates are only built with a non-null amount
+      const isIncome = amount > 0n;
+      inserts.push({
+        userId: c.userId,
+        occurredAt: c.occurredAt,
+        domain: "casino",
+        activityType: "casino-legacy",
+        activityLabel: "Casino (legacy)",
+        subtype: isIncome ? "win" : "stake",
+        outcome: isIncome ? "win" : "loss",
+        game: null, // old-format logs carry no game attribution — stays unknown
+        wheel: null,
+        cashInput: isIncome ? null : -amount,
+        cashReward: isIncome ? amount : null,
+        pointsReward: null,
+        tokensReward: null,
+        netValue: amount,
+        valuation: "exact",
+        provenance: "exact",
+        source: "torn_log",
+        sourceRef: c.sourceRef,
+        metadata: { legacy: true, title: c.title, category: c.category },
+      });
+      continue;
+    }
+    if (c.kind === "openable") {
+      const openable = normalizeOpenableLog(c.title, c.data);
+      if (!openable) continue;
+      inserts.push({
+        userId: c.userId,
+        occurredAt: c.occurredAt,
+        domain: "openable",
+        activityType: openable.activityType,
+        activityLabel: openable.activityLabel,
+        subtype: "opened",
+        outcome: "opened",
+        cashReward: openable.cashReward,
+        pointsReward: openable.pointsReward,
+        netValue: openable.cashReward,
+        valuation: openable.cashReward !== null ? "exact" : "unpriced",
+        provenance: "exact",
+        source: "torn_log",
+        sourceRef: c.sourceRef,
+        metadata: c.data,
+      });
+      continue;
+    }
+    const domain = normalizeDomainLog(c.category, c.title, c.data);
+    if (!domain) continue;
     inserts.push({
       userId: c.userId,
       occurredAt: c.occurredAt,
-      domain: "openable",
-      activityType: openable.activityType,
-      activityLabel: openable.activityLabel,
-      subtype: "opened",
-      outcome: "opened",
-      cashReward: openable.cashReward,
-      pointsReward: openable.pointsReward,
-      netValue: openable.cashReward,
-      valuation: openable.cashReward !== null ? "exact" : "unpriced",
-      provenance: "exact",
+      domain: domain.domain,
+      activityType: domain.activityType,
+      activityLabel: domain.activityLabel,
+      subtype: domain.subtype,
+      outcome: domain.outcome,
+      game: null,
+      wheel: null,
+      opponentId: domain.opponentId,
+      cashInput: domain.cashInput,
+      cashReward: domain.cashReward,
+      pointsReward: domain.pointsReward,
+      tokensReward: domain.tokensReward,
+      netValue: domain.netValue,
+      valuation: domain.valuation,
+      provenance: domain.provenance,
       source: "torn_log",
       sourceRef: c.sourceRef,
-      metadata: c.data,
+      metadata: buildDomainMetadata(c.category, c.title, c.data),
     });
   }
 
@@ -174,25 +279,45 @@ async function main(): Promise<void> {
     inserted += result.count;
   }
   console.log(`Repair applied: ${inserted} ActivityEvent rows inserted (skipDuplicates; raw archive untouched).`);
-  console.log("Re-run — it must now report 0 candidates.");
+  console.log("Re-run — it must now report 0 new recognized rows.");
 
-  // Money reconciliation diagnostic: casino activity cash delta vs ledger
-  // casino delta. Differences are REPORTED, never patched.
-  const casinoMoney = await db.$queryRawUnsafe<Array<{ user_id: string; activity_cash: string }>>(`
-    SELECT "userId" AS user_id, sum(COALESCE("cashReward",0) - COALESCE("cashInput",0))::text AS activity_cash
-    FROM "ActivityEvent" WHERE domain = 'casino' GROUP BY "userId"
-  `);
-  const ledgerMoney = await db.$queryRawUnsafe<Array<{ user_id: string; ledger_cash: string }>>(`
-    SELECT "userId" AS user_id, sum(CASE WHEN direction='income' THEN amount ELSE -amount END)::text AS ledger_cash
-    FROM "MoneyEvent" WHERE category = 'casino' GROUP BY "userId"
-  `);
-  const ledgerByUser = new Map(ledgerMoney.map((r) => [r.user_id, BigInt(r.ledger_cash)]));
-  console.log("\nMoney reconciliation (casino): activity cash delta vs ledger casino delta");
-  for (const row of casinoMoney) {
-    const activity = BigInt(row.activity_cash);
-    const ledger = ledgerByUser.get(row.user_id) ?? 0n;
-    const diff = activity - ledger;
-    console.log(`  user ${row.user_id}: activity=${activity} ledger=${ledger} diff=${diff}${diff !== 0n ? " (known ledger gap: slots/bookie/blackjack/high-low/keno bet keys are not money-key-covered — see docs/ACTIVITY-REWARDS.md)" : ""}`);
+  await printReconciliation(db);
+}
+
+/** Money reconciliation (2.5.0): semantic ActivityEvent cash delta vs the
+ *  MoneyEvent ledger, per user and domain. MoneyEvent.amount is SIGNED —
+ *  summed directly. Casino games whose cash never appears in money logs
+ *  (slots/keno/blackjack/high-low/bookie) are a KNOWN structural ledger
+ *  gap, disclosed — never patched. */
+async function printReconciliation(db: ReturnType<typeof getPrismaClient>): Promise<void> {
+  const activity = await db.$queryRawUnsafe<Array<{ user_id: string; domain: string; activity_cash: string }>>(
+    `SELECT "userId" AS user_id, domain, sum(COALESCE("cashReward",0) - COALESCE("cashInput",0))::text AS activity_cash
+     FROM "ActivityEvent" WHERE "cashReward" IS NOT NULL OR "cashInput" IS NOT NULL
+     GROUP BY 1, 2`,
+  );
+  const ledger = await db.$queryRawUnsafe<Array<{ user_id: string; category: string; ledger_cash: string }>>(
+    `SELECT "userId" AS user_id, category, sum(amount)::text AS ledger_cash
+     FROM "MoneyEvent" GROUP BY 1, 2`,
+  );
+  const ledgerByUserCategory = new Map(ledger.map((r) => [`${r.user_id}|${r.category}`, BigInt(r.ledger_cash)]));
+  // Domain → the ledger category that should carry its cash (only casino has
+  // a real mapping; hunting/missions/racing/bounties/education cash is
+  // semantic-only by construction).
+  const ledgerCategoryByDomain: Record<string, string> = { casino: "casino" };
+
+  console.log("\nMoney reconciliation (semantic activity cash vs MoneyEvent ledger, signed):");
+  const byUserDomain = new Map<string, bigint>();
+  for (const row of activity) byUserDomain.set(`${row.user_id}|${row.domain}`, BigInt(row.activity_cash));
+  for (const [key, activityCash] of [...byUserDomain.entries()].sort()) {
+    const [userId, domain] = key.split("|");
+    const ledgerCategory = ledgerCategoryByDomain[domain!];
+    if (!ledgerCategory) {
+      console.log(`  user ${userId} ${domain}: activity=${activityCash} ledger=n/a (semantic-only domain — Torn emits no money logs for it)`);
+      continue;
+    }
+    const ledgerCash = ledgerByUserCategory.get(`${userId}|${ledgerCategory}`) ?? 0n;
+    const diff = activityCash - ledgerCash;
+    console.log(`  user ${userId} ${domain}: activity=${activityCash} ledger=${ledgerCash} diff=${diff}${diff !== 0n ? " (surfaced, not patched — known structural ledger gaps: slots/keno/blackjack/high-low/bookie + pending placements)" : ""}`);
   }
 }
 

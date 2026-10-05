@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { normalizeCasinoLog } from "../src/normalizers/casino.js";
 import { normalizeOpenableLog } from "../src/normalizers/openables.js";
+import { normalizeDomainLog, buildDomainMetadata } from "../src/normalizers/domains.js";
 import { routeLog } from "../src/normalizers/titles.js";
 import { normalizeLogEntry } from "../src/normalizers/logs.js";
 
@@ -213,5 +214,133 @@ describe("negative & cross-domain collisions (Speed-lesson)", () => {
     expect(a.domain).toBe("casino");
     expect(a.activityType).toBe("slots");
     expect(a.netValue).toBe(2000n);
+  });
+});
+
+describe("domain normalization (2.5.0) — positive fixtures", () => {
+  it("hunting session: exact cost/income/net + parsed skill", () => {
+    const writes = normalize("Hunting", "Hunting", {
+      cost: 500, income: 7985, session_type: "a beginners hunting session",
+      hunting_skill: "56.781", hunting_skill_gain: "and gained 0.0865 hunting skill",
+    });
+    const a = writes.activityEvents[0]!;
+    expect(a.domain).toBe("hunting");
+    expect(a.subtype).toBe("beginners");
+    expect(a.cashInput).toBe(500n);
+    expect(a.cashReward).toBe(7985n);
+    expect(a.netValue).toBe(7485n);
+    expect(a.valuation).toBe("exact");
+    const meta = a.metadata as { skillLevel?: number; skillGain?: number };
+    expect(meta.skillLevel).toBeCloseTo(56.781, 4);
+    expect(meta.skillGain).toBeCloseTo(0.0865, 4);
+  });
+
+  it("hunting skill level up: progression, no value fabricated", () => {
+    const writes = normalize("Hunting skill level up", "Hunting", { skill_level: 55 });
+    const a = writes.activityEvents[0]!;
+    expect(a.subtype).toBe("skill-level-up");
+    expect(a.outcome).toBe("progressed");
+    expect(a.netValue).toBeNull();
+    expect(a.valuation).toBe("unpriced");
+  });
+
+  it("missions complete: exact cash (zero stays zero) + credits as domain tokens", () => {
+    const cash = normalize("Missions complete", "Missions", { type: "contract", agent: 3, money: 112000, credits: 67, mission: 51, difficulty: "vhard" });
+    const a = cash.activityEvents[0]!;
+    expect(a.domain).toBe("missions");
+    expect(a.cashReward).toBe(112000n);
+    expect(a.netValue).toBe(112000n);
+    expect(a.tokensReward).toBe(67);
+    expect(a.valuation).toBe("exact");
+
+    const creditsOnly = normalize("Missions complete", "Missions", { type: "contract", money: 0, credits: 18, mission: 15, difficulty: "vhard" });
+    const b = creditsOnly.activityEvents[0]!;
+    expect(b.cashReward).toBe(0n);
+    expect(b.tokensReward).toBe(18);
+  });
+
+  it("racing: finish ordinals + points grammar, upgrade cost exact", () => {
+    const win = normalize("Racing finish official race", "Racing", { car: 82, track: 23, race_id: 20621581, position: "1st", racing_skill: "and gained 0.0228 racing skill", racing_points: "1 racing point" });
+    const a = win.activityEvents[0]!;
+    expect(a.domain).toBe("racing");
+    expect(a.outcome).toBe("win");
+    expect(a.pointsReward).toBe(1);
+    expect(a.cashReward).toBeNull();
+    expect(a.valuation).toBe("unpriced");
+    const meta = a.metadata as { racingSkillGain?: number };
+    expect(meta.racingSkillGain).toBeCloseTo(0.0228, 4);
+
+    const mid = normalize("Racing finish official race", "Racing", { position: "3rd", racing_points: "0 racing points" });
+    expect(mid.activityEvents[0]!.outcome).toBe("podium");
+    expect(mid.activityEvents[0]!.pointsReward).toBe(0);
+
+    const upgrade = normalize("Racing upgrade car", "Racing", { car: 82, cost: 3000, upgrade: 12, racing_points: "2 racing points" });
+    const u = upgrade.activityEvents[0]!;
+    expect(u.subtype).toBe("upgrade");
+    expect(u.cashInput).toBe(3000n);
+    expect(u.netValue).toBe(-3000n);
+    expect(u.valuation).toBe("exact");
+  });
+
+  it("bounties: placement is a committed cost, claim is income — never one direction", () => {
+    const place = normalize("Bounty place", "Bounties", { cost: 450000, reason: "", target: 3086444, quantity: 1, anonymous: null, bounty_reward: 300000 });
+    const p = place.activityEvents[0]!;
+    expect(p.subtype).toBe("placed");
+    expect(p.cashInput).toBe(450000n);
+    // bounty_reward belongs to the CLAIMER — never counted as placer income.
+    expect(p.cashReward).toBeNull();
+    expect(p.netValue).toBe(-450000n);
+    expect(p.opponentId).toBe(3086444);
+
+    const claim = normalize("Bounty claim", "Bounties", { lister: 3437615, target: 2135330, anonymous: 0, bounty_reward: 300000 });
+    const c = claim.activityEvents[0]!;
+    expect(c.subtype).toBe("claimed");
+    expect(c.cashReward).toBe(300000n);
+    expect(c.cashInput).toBeNull();
+    expect(c.netValue).toBe(300000n);
+    expect(c.opponentId).toBe(2135330);
+  });
+
+  it("education start: exact committed cost, no fabricated ROI", () => {
+    const writes = normalize("Education start", "Education", { cost: 2880, course: 50, duration: 1270080 });
+    const a = writes.activityEvents[0]!;
+    expect(a.domain).toBe("education");
+    expect(a.subtype).toBe("course-started");
+    expect(a.cashInput).toBe(2880n);
+    expect(a.netValue).toBe(-2880n);
+    expect(a.cashReward).toBeNull();
+  });
+});
+
+describe("domain normalization (2.5.0) — negative & collision fixtures", () => {
+  it("missing semantic fields are never normalized", () => {
+    expect(normalizeDomainLog("Hunting", "Hunting", {})).toBeNull();
+    expect(normalizeDomainLog("Hunting", "Hunting skill level up", {})).toBeNull();
+    expect(normalizeDomainLog("Missions", "Missions complete", {})).toBeNull();
+    expect(normalizeDomainLog("Racing", "Racing upgrade car", {})).toBeNull();
+    expect(normalizeDomainLog("Bounties", "Bounty place", {})).toBeNull();
+    expect(normalizeDomainLog("Bounties", "Bounty claim", {})).toBeNull();
+    expect(normalizeDomainLog("Education", "Education start", {})).toBeNull();
+  });
+
+  it("wrong titles inside domain categories stay unclaimed", () => {
+    expect(normalizeDomainLog("Racing", "Racing finish custom race", { position: "1st" })).toBeNull();
+    expect(routeLog("Racing", "Racing finish custom race")).toBe("racing"); // routed, sample-rejected → visible in diagnostics
+    expect(normalizeDomainLog("Missions", "Missions dossier", { money: 5 })).toBeNull();
+  });
+
+  it("domain words outside their categories never become activities", () => {
+    expect(normalize("Gym train hunting stance", "Gym", { energy_used: 200 }).activityEvents).toHaveLength(0);
+    expect(normalize("Company racing team duty", "Company", {}).activityEvents).toHaveLength(0);
+    expect(normalizeLogEntry(
+      { id: 2, timestamp: 1_750_000_000, details: { id: 2, title: "Mission board", category: "Jobs" }, data: { money: 100 }, params: {} },
+      { itemNameById: new Map(), itemIdByName: new Map() },
+    ).activityEvents).toHaveLength(0);
+  });
+
+  it("unknown payload variants in domain categories degrade to diagnostics, not crashes", () => {
+    const writes = normalize("Hunting", "Hunting", { session_type: "a beginners hunting session" });
+    expect(writes.activityEvents).toHaveLength(0); // no cost AND no income → unclaimed
+    expect(buildDomainMetadata("Hunting", "Hunting", { hunting_skill: "56.781", hunting_skill_gain: "and gained 0.0865 hunting skill" })).toMatchObject({ skillLevel: 56.781, skillGain: 0.0865 });
   });
 });

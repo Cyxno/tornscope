@@ -38,7 +38,9 @@
     | "insight"
     | "logs"
     | "slots"
-    | "cache";
+    | "cache"
+    | "hunting"
+    | "activity";
 
   const paths: Record<IconName, string> = {
     overview: "M3 3h7v9H3zM14 3h7v5h-7zM14 12h7v9h-7zM3 16h7v5H3z",
@@ -73,6 +75,8 @@
     logs: "M4 4h13l3 3v13a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zM8 9h8M8 13h8M8 17h5",
     slots: "M5 3h14a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM8 3v14M16 3v14M12 3v14M4 10h16",
     cache: "M4 7l8-4 8 4v10l-8 4-8-4V7zM4 7l8 4 8-4M12 11v10",
+    hunting: "M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0-6 0M12 2v4M12 18v4M2 12h4M18 12h4",
+    activity: "M3 7l6-4 6 4 6-4v14l-6 4-6-4-6 4V7zM9 3v14M15 7v14",
   };
 </script>
 

@@ -42,6 +42,8 @@ import { getInsights } from "./services/insights.js";
 import { getDecisions, getDecisionPrefs, updateDecisionPrefs, DECISION_DOMAINS } from "./services/decisions.js";
 import { getCasinoSummary } from "./services/casino.js";
 import { getRewardsSummary } from "./services/rewards.js";
+import { getHuntingSummary } from "./services/hunting.js";
+import { getActivitySummary } from "./services/activity.js";
 import { getCommandCenter } from "./services/commandCenter.js";
 import { getSystemHealth } from "./services/systemHealth.js";
 import { GoalCreateInputSchema, GoalUpdateInputSchema, DecisionPrefsUpdateSchema } from "@tornscope/shared";
@@ -504,6 +506,22 @@ export function registerRoutes(app: FastifyInstance): void {
     const user = currentUser(req);
     const range = parseRange(req.query as Record<string, unknown>);
     return getRewardsSummary(user.id, range);
+  });
+
+  // Hunting Analytics (2.5.0): sessions, exact cash and skill progression
+  // over normalized hunting ActivityEvents — bounded SQL, zero Torn calls.
+  app.get("/api/hunting", async (req) => {
+    const user = currentUser(req);
+    const range = parseRange(req.query as Record<string, unknown>);
+    return getHuntingSummary(user.id, range);
+  });
+
+  // Cross-domain value attribution (2.5.0): exact / estimated / unpriced
+  // semantics per activity domain with ledger-linkage disclosure.
+  app.get("/api/activity", async (req) => {
+    const user = currentUser(req);
+    const range = parseRange(req.query as Record<string, unknown>);
+    return getActivitySummary(user.id, range);
   });
 
   // Deterministic personal insights (curated rule set over stored history).

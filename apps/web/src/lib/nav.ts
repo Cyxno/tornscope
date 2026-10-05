@@ -43,6 +43,8 @@ export const NAV_GROUPS: Array<{ id: NavItem["group"]; label: string; items: Nav
       { href: "/travel", label: "Travel", icon: "travel", group: "analytics" },
       { href: "/casino", label: "Casino", icon: "slots", group: "analytics" },
       { href: "/rewards", label: "Rewards", icon: "cache", group: "analytics" },
+      { href: "/hunting", label: "Hunting", icon: "hunting", group: "analytics" },
+      { href: "/activity", label: "Activity", icon: "activity", group: "analytics" },
     ],
   },
   {

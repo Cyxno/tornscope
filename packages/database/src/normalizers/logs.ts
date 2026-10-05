@@ -9,6 +9,7 @@ import {
   type LogRecord,
 } from "./extract.js";
 import { normalizeCasinoLog } from "./casino.js";
+import { buildDomainMetadata, normalizeDomainLog } from "./domains.js";
 import { normalizeOpenableLog } from "./openables.js";
 import {
   routeLog,
@@ -764,6 +765,44 @@ export function normalizeLogEntry(log: TornUserLog, ctx: NormalizeContext): Norm
           sourceRef: ref,
           description: logTitle,
           raw: log,
+        });
+      }
+      break;
+    }
+
+    case "hunting":
+    case "missions":
+    case "racing":
+    case "bounties":
+    case "education": {
+      // Domain activity (2.5.0): semantic ActivityEvent ONLY. These logs
+      // carry no money-log semantics (their cash never flows through money
+      // logs — the reconciliation reports these domains as semantic-only),
+      // so nothing is added to the ledger and nothing is double counted.
+      const domain = normalizeDomainLog(categoryTitle, logTitle, data);
+      if (domain) {
+        writes.activityEvents.push({
+          occurredAt,
+          domain: domain.domain,
+          activityType: domain.activityType,
+          activityLabel: domain.activityLabel,
+          subtype: domain.subtype,
+          outcome: domain.outcome,
+          game: null,
+          wheel: null,
+          opponentId: domain.opponentId,
+          cashInput: domain.cashInput,
+          cashReward: domain.cashReward,
+          pointsReward: domain.pointsReward,
+          tokensReward: domain.tokensReward,
+          nonPriceable: null,
+          inputValue: domain.cashInput,
+          rewardValue: domain.cashReward,
+          netValue: domain.netValue,
+          valuation: domain.valuation,
+          provenance: domain.provenance,
+          sourceRef: ref,
+          metadata: buildDomainMetadata(categoryTitle, logTitle, data),
         });
       }
       break;

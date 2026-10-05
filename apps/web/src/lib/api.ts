@@ -43,6 +43,8 @@ import type {
   DecisionPrefsUpdate,
   CasinoSummaryResponse,
   RewardsSummaryResponse,
+  HuntingSummaryResponse,
+  ActivitySummaryResponse,
 } from "@tornscope/shared";
 
 /**
@@ -309,4 +311,6 @@ export const decisions = {
 export const activities = {
   casino: (range: QueryRange) => api.get<CasinoSummaryResponse>(`/casino?${rangeQuery(range)}`),
   rewards: (range: QueryRange) => api.get<RewardsSummaryResponse>(`/rewards?${rangeQuery(range)}`),
+  hunting: (range: QueryRange) => api.get<HuntingSummaryResponse>(`/hunting?${rangeQuery(range)}`),
+  activity: (range: QueryRange) => api.get<ActivitySummaryResponse>(`/activity?${rangeQuery(range)}`),
 };

@@ -31,6 +31,85 @@ function mergeQty(map: Map<number, number>, rows: ItemQtyRow[]): void {
   }
 }
 
+export interface OpenableItemValuation {
+  /** Reward item value at CURRENT catalog prices (estimate). */
+  rewardValueEstimate: number | null;
+  /** Opened-item value at CURRENT catalog prices (estimate). */
+  inputValueEstimate: number | null;
+  /** Reward/input quantities with no catalog price — never zeroed. */
+  unpricedQty: number;
+  anyItems: boolean;
+}
+
+/** Compact valuation totals for the cross-domain view (the /rewards page
+ *  computes its detailed per-item breakdown separately). */
+export async function estimateOpenableItemValuation(
+  userId: string,
+  fromDate: Date,
+  toDate: Date,
+): Promise<OpenableItemValuation> {
+  const db = getPrismaClient();
+  const [itemsRewardRows, item2RewardRows, inputItemRows, prices] = await Promise.all([
+    db.$queryRawUnsafe<ItemQtyRow[]>(
+      `SELECT (e->>'id')::int AS item_id, SUM(COALESCE((e->>'qty')::int, 1))::bigint AS qty
+       FROM "ActivityEvent" ae, jsonb_array_elements(COALESCE(ae.metadata->'items', '[]'::jsonb)) e
+       WHERE ae."userId" = $1 AND ae.domain = 'openable' AND ae."occurredAt" BETWEEN $2 AND $3
+       GROUP BY 1`,
+      userId, fromDate, toDate,
+    ),
+    db.$queryRawUnsafe<ItemQtyRow[]>(
+      `SELECT item_id, SUM(qty)::bigint AS qty FROM (
+         SELECT (ae.metadata->>'item2')::int AS item_id,
+                GREATEST(COALESCE((ae.metadata->>'quantity')::int, 1), 1) AS qty
+         FROM "ActivityEvent" ae
+         WHERE ae."userId" = $1 AND ae.domain = 'openable' AND ae."occurredAt" BETWEEN $2 AND $3
+           AND jsonb_typeof(ae.metadata->'item2') = 'number'
+         UNION ALL
+         SELECT (e->>'id')::int AS item_id,
+                GREATEST(COALESCE((e->>'qty')::int, 1), 1) AS qty
+         FROM "ActivityEvent" ae, jsonb_array_elements(COALESCE(ae.metadata->'item2', '[]'::jsonb)) e
+         WHERE ae."userId" = $1 AND ae.domain = 'openable' AND ae."occurredAt" BETWEEN $2 AND $3
+           AND jsonb_typeof(ae.metadata->'item2') = 'array'
+       ) q GROUP BY item_id`,
+      userId, fromDate, toDate,
+    ),
+    db.$queryRawUnsafe<ItemQtyRow[]>(
+      `SELECT (ae.metadata->>'item')::int AS item_id, COUNT(*)::bigint AS qty
+       FROM "ActivityEvent" ae
+       WHERE ae."userId" = $1 AND ae.domain = 'openable' AND ae."occurredAt" BETWEEN $2 AND $3
+         AND ae.metadata->>'item' IS NOT NULL
+       GROUP BY 1`,
+      userId, fromDate, toDate,
+    ),
+    loadMarketPrices(db),
+  ]);
+
+  const rewardQty = new Map<number, number>();
+  mergeQty(rewardQty, itemsRewardRows);
+  mergeQty(rewardQty, item2RewardRows);
+
+  let rewardEstimate = 0n;
+  let inputEstimateBig = 0n;
+  let unpricedQty = 0;
+  for (const [itemId, qty] of rewardQty) {
+    const price = prices.get(itemId) ?? null;
+    if (price !== null) rewardEstimate += price * BigInt(qty);
+    else unpricedQty += qty;
+  }
+  for (const r of inputItemRows) {
+    const price = prices.get(r.item_id) ?? null;
+    if (price !== null) inputEstimateBig += price * BigInt(Number(r.qty));
+    else unpricedQty += Number(r.qty);
+  }
+  const anyItems = rewardQty.size > 0 || inputItemRows.length > 0;
+  return {
+    rewardValueEstimate: !anyItems ? null : bigintToNumber(rewardEstimate),
+    inputValueEstimate: !anyItems ? null : bigintToNumber(inputEstimateBig),
+    unpricedQty,
+    anyItems,
+  };
+}
+
 export async function getRewardsSummary(userId: string, rangeInput: DateRangeInput): Promise<RewardsSummaryResponse> {
   const db = getPrismaClient();
   const range = resolveDateRange(rangeInput);

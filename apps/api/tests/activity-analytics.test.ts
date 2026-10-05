@@ -78,8 +78,8 @@ beforeAll(async () => {
   // logs above (slots −1M/+6M, bookie placement not yet settled).
   await db.moneyEvent.createMany({
     data: [
-      { userId, occurredAt: t(3_600), category: "casino", subcategory: "Casino slots lose", direction: "expense", amount: 1_000_000n, source: "torn_log", sourceRef: "act-t:slots:lose", description: "Casino slots lose" },
-      { userId, occurredAt: t(3_000), category: "casino", subcategory: "Casino slots win", direction: "income", amount: 6_000_000n, source: "torn_log", sourceRef: "act-t:slots:win", description: "Casino slots win" },
+      { userId, occurredAt: t(3_600), category: "casino", subcategory: "Casino slots lose", direction: "expense", amount: -1_000_000n, source: "torn_log", sourceRef: "act-t:slots:lose", description: "Casino slots lose" },
+      { userId, occurredAt: t(3_000), category: "casino", subcategory: "Casino slots win", direction: "income", amount: 6_000_000n, source: "torn_log", sourceRef: "act25:ledger:win", description: "Casino slots win" },
     ],
   });
 
@@ -137,7 +137,7 @@ suite("casino analytics service", () => {
     });
     const byDirection = new Map(ledger.map((r) => [r.direction, r._sum.amount ?? 0n]));
     expect(byDirection.get("income")).toBe(6_000_000n);
-    expect(byDirection.get("expense")).toBe(1_000_000n);
+    expect(byDirection.get("expense")).toBe(-1_000_000n); // expense amounts are stored signed (production convention)
     const slotsNet = -1_000_000n + 5_000_000n;
     const slotsActivity = await db.activityEvent.aggregate({
       where: { userId, activityType: "slots" },
@@ -210,6 +210,84 @@ suite("activity ingest + query shape", () => {
     // Any userId-scoped index serving the window predicate is fine — the
     // planner picks the composite index once tables outgrow seq scans
     // (verified at 60k rows: Bitmap Index Scan on the composite index).
-    expect(planText).toMatch(/Index Scan using "ActivityEvent_userId[^"]*_idx"/);
+    expect(planText).toMatch(/Index Scan using "ActivityEvent_userId[^"]*_(idx|key)"/);
+  });
+});
+
+suite("domain services (2.5.0)", () => {
+  it("hunting summary: exact cash, skill trajectory, session types", async () => {
+    const t = (s: number) => new Date((now - s) * 1000);
+    await insertActivityEvents(db, userId, [
+      { sourceRef: "act25:hunt:1", occurredAt: t(5_000), domain: "hunting", activityType: "hunting", activityLabel: "Hunting", subtype: "beginners", outcome: "completed", cashInput: 500n, cashReward: 7_985n, netValue: 7_485n, valuation: "exact", provenance: "exact", metadata: { skillLevel: 56.781, skillGain: 0.0865 } },
+      { sourceRef: "act25:hunt:2", occurredAt: t(4_000), domain: "hunting", activityType: "hunting", activityLabel: "Hunting", subtype: "standard", outcome: "completed", cashInput: 500n, cashReward: 1_100_000n, netValue: 1_099_500n, valuation: "exact", provenance: "exact", metadata: { skillLevel: 56.8675, skillGain: 0.0865 } },
+      { sourceRef: "act25:level:1", occurredAt: t(3_900), domain: "hunting", activityType: "hunting", activityLabel: "Hunting", subtype: "skill-level-up", outcome: "progressed", valuation: "unpriced", provenance: "exact", metadata: { skill_level: 57 } },
+    ] as never[]);
+    const hunting = await import("../src/services/hunting.js");
+    const res = await hunting.getHuntingSummary(userId, range);
+    expect(res.hunts).toBe(2);
+    expect(res.levelUps).toBe(1);
+    expect(res.cashSpent).toBe(1_000);
+    expect(res.cashEarned).toBe(1_107_985);
+    expect(res.netCash.value).toBe(1_106_985);
+    expect(res.netCash.provenance).toBe("exact");
+    expect(res.valuePerHunt).toBe(553_492.5);
+    expect(res.skill.current).toBeCloseTo(56.8675, 4);
+    expect(res.skill.firstSeen).toBeCloseTo(56.781, 4);
+    expect(res.skill.totalGain).toBeCloseTo(0.173, 3);
+    expect(res.skill.levelUps).toBe(1);
+    expect(res.sessionTypes.find((s) => s.type === "beginners")!.net).toBe(7_485);
+    expect(res.bestHunt!.net).toBe(1_099_500);
+    expect(res.recent.length).toBe(2);
+  });
+
+  it("cross-domain activity summary: value attribution + semantic-only disclosure + signed ledger", async () => {
+    const t = (s: number) => new Date((now - s) * 1000);
+    await insertActivityEvents(db, userId, [
+      // Missions: cash + credits token units.
+      { sourceRef: "act25:mis:1", occurredAt: t(3_800), domain: "missions", activityType: "missions", activityLabel: "Missions", subtype: "contract", outcome: "completed", cashReward: 112_000n, tokensReward: 67, netValue: 112_000n, valuation: "exact", provenance: "exact", metadata: {} },
+      // Bounty place (cost) + claim (income) — opposite directions.
+      { sourceRef: "act25:bou:1", occurredAt: t(3_700), domain: "bounties", activityType: "bounties", activityLabel: "Bounties", subtype: "placed", outcome: "placed", opponentId: 3086444, cashInput: 450_000n, netValue: -450_000n, valuation: "exact", provenance: "exact", metadata: {} },
+      { sourceRef: "act25:bou:2", occurredAt: t(3_600), domain: "bounties", activityType: "bounties", activityLabel: "Bounties", subtype: "claimed", outcome: "claimed", opponentId: 2135330, cashReward: 300_000n, netValue: 300_000n, valuation: "exact", provenance: "exact", metadata: {} },
+      // Racing: performance + upgrade spend.
+      { sourceRef: "act25:rac:1", occurredAt: t(3_500), domain: "racing", activityType: "racing", activityLabel: "Racing", subtype: "official-finish", outcome: "win", pointsReward: 1, valuation: "unpriced", provenance: "exact", metadata: {} },
+      { sourceRef: "act25:rac:2", occurredAt: t(3_400), domain: "racing", activityType: "racing", activityLabel: "Racing", subtype: "upgrade", outcome: "upgraded", cashInput: 3_000n, netValue: -3_000n, valuation: "exact", provenance: "exact", metadata: {} },
+      // Education: committed course cost.
+      { sourceRef: "act25:edu:1", occurredAt: t(3_300), domain: "education", activityType: "education", activityLabel: "Education", subtype: "course-started", outcome: "started", cashInput: 2_880n, netValue: -2_880n, valuation: "exact", provenance: "exact", metadata: {} },
+    ] as never[]);
+    // Explicit signed ledger rows: income + NEGATIVE expense — the signed-sum
+    // invariant that the 2.4 diagnostics got wrong.
+    await db.moneyEvent.createMany({
+      data: [
+        { userId, occurredAt: t(3_000), category: "casino", subcategory: "Casino slots win", direction: "income", amount: 6_000_000n, source: "torn_log", sourceRef: "act25:ledger2:win", description: "Casino slots win" },
+        { userId, occurredAt: t(3_600), category: "casino", subcategory: "Casino slots lose", direction: "expense", amount: -1_000_000n, source: "torn_log", sourceRef: "act25:ledger2:lose", description: "Casino slots lose" },
+      ],
+    });
+
+    const activity = await import("../src/services/activity.js");
+    const res = await activity.getActivitySummary(userId, range);
+
+    const domains = new Map(res.domains.map((d) => [d.domain, d]));
+    expect(domains.get("hunting")!.activities).toBe(3);
+    expect(domains.get("hunting")!.exactNetCash).toBe(1_106_985);
+    expect(domains.get("missions")!.progressionTokens).toBe(67);
+    expect(domains.get("missions")!.ledgerLinked).toBe(false);
+    expect(domains.get("racing")!.progressionPoints).toBe(1);
+    expect(domains.get("racing")!.exactNetCash).toBe(-3_000);
+    expect(domains.get("bounties")!.cashSpent).toBe(450_000);
+    expect(domains.get("bounties")!.cashReceived).toBe(300_000);
+    expect(domains.get("education")!.exactNetCash).toBe(-2_880);
+    expect(domains.get("casino")!.ledgerLinked).toBe(true);
+    // Ledger cash is SIGNED. Both seeds together: (6M + 6M) income and
+    // (−1M + −1M) expense → 10M. The 2.4 double-flip bug would report 14M.
+    const casinoRecon = res.reconciliation.find((r) => r.domain === "casino")!;
+    expect(casinoRecon.ledgerCash).toBe(10_000_000);
+    expect(casinoRecon.semanticOnly).toBe(false);
+    // Semantic-only domains disclose that their cash exists nowhere else.
+    const huntingRecon = res.reconciliation.find((r) => r.domain === "hunting")!;
+    expect(huntingRecon.semanticOnly).toBe(true);
+    expect(huntingRecon.ledgerCash).toBeNull();
+    // Nothing is collapsed: exact cash net covers all domains' netValues.
+    // Total exact net across domains, including the earlier casino seed (+4M).
+    expect(res.exactNetCash).toBe(Number(4_000_000n + 7_485n + 1_099_500n + 112_000n - 450_000n + 300_000n - 3_000n - 2_880n));
   });
 });

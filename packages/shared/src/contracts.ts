@@ -2665,3 +2665,97 @@ export const RewardsSummaryResponseSchema = z.object({
   availability: z.object({ history: FeatureAvailabilitySchema }).optional(),
 });
 export type RewardsSummaryResponse = z.infer<typeof RewardsSummaryResponseSchema>;
+
+export const HuntingSessionTypeSchema = z.object({
+  type: z.string(),
+  hunts: z.number(),
+  cashEarned: z.number().nullable(),
+  cashSpent: z.number().nullable(),
+  net: z.number().nullable(),
+});
+
+export const HuntingSkillSchema = z.object({
+  current: z.number().nullable(),
+  firstSeen: z.number().nullable(),
+  totalGain: z.number().nullable(),
+  levelUps: z.number(),
+});
+
+export const HuntingRecentHuntSchema = z.object({
+  occurredAt: z.number(),
+  subtype: z.string().nullable(),
+  cashSpent: z.number().nullable(),
+  cashEarned: z.number().nullable(),
+  net: z.number().nullable(),
+  skillLevel: z.number().nullable(),
+  skillGain: z.number().nullable(),
+});
+
+export const HuntingSummaryResponseSchema = z.object({
+  range: z.object({ from: z.number(), to: z.number() }),
+  hunts: z.number(),
+  levelUps: z.number(),
+  cashEarned: z.number().nullable(),
+  cashSpent: z.number().nullable(),
+  netCash: z.object({ value: z.number().nullable(), provenance: z.string() }),
+  valuePerHunt: z.number().nullable(),
+  activeDays: z.number(),
+  bestHunt: z.object({ net: z.number(), occurredAt: z.number() }).nullable(),
+  sessionTypes: z.array(HuntingSessionTypeSchema),
+  skill: HuntingSkillSchema,
+  recent: z.array(HuntingRecentHuntSchema),
+  coverage: z.object({ hunts: z.number(), trackingSince: z.number().nullable() }),
+  availability: z.object({ history: FeatureAvailabilitySchema }).optional(),
+});
+export type HuntingSummaryResponse = z.infer<typeof HuntingSummaryResponseSchema>;
+
+export const ActivityBreakdownRowSchema = z.object({
+  activityType: z.string(),
+  subtype: z.string().nullable(),
+  count: z.number(),
+  cashSpent: z.number().nullable(),
+  cashReceived: z.number().nullable(),
+  net: z.number().nullable(),
+  points: z.number().nullable(),
+  tokens: z.number().nullable(),
+});
+
+export const ActivityDomainSummarySchema = z.object({
+  domain: z.string(),
+  label: z.string(),
+  activities: z.number(),
+  cashSpent: z.number().nullable(),
+  cashReceived: z.number().nullable(),
+  exactNetCash: z.number().nullable(),
+  estimatedItemValue: z.number().nullable(),
+  /** Activities whose only reward has no defensible valuation — kept visible, never zeroed. */
+  unpricedActivities: z.number().nullable(),
+  progressionPoints: z.number().nullable(),
+  progressionTokens: z.number().nullable(),
+  /** true when this domain's cash also flows through the MoneyEvent ledger. */
+  ledgerLinked: z.boolean(),
+  lastActivityAt: z.number().nullable(),
+  breakdown: z.array(ActivityBreakdownRowSchema),
+});
+
+export const ActivityReconciliationRowSchema = z.object({
+  domain: z.string(),
+  activityCash: z.number().nullable(),
+  ledgerCash: z.number().nullable(),
+  difference: z.number().nullable(),
+  semanticOnly: z.boolean(),
+  note: z.string().nullable(),
+});
+
+export const ActivitySummaryResponseSchema = z.object({
+  range: z.object({ from: z.number(), to: z.number() }),
+  activities: z.number(),
+  exactNetCash: z.number().nullable(),
+  estimatedItemValue: z.object({ value: z.number().nullable(), provenance: z.string() }),
+  unpricedActivities: z.number(),
+  domains: z.array(ActivityDomainSummarySchema),
+  reconciliation: z.array(ActivityReconciliationRowSchema),
+  coverage: z.object({ activities: z.number(), trackingSince: z.number().nullable() }),
+  availability: z.object({ history: FeatureAvailabilitySchema }).optional(),
+});
+export type ActivitySummaryResponse = z.infer<typeof ActivitySummaryResponseSchema>;

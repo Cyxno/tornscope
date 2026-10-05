@@ -200,3 +200,10 @@ One migration: `20261001196000_timeline_log_type_index` (SAFE EXPAND, index-only
 
 There are **no destructive, rename, type-rewrite or NOT NULL-tightening
 operations** in the 2.1 delta.
+
+## 2.5.0 migration delta (2.4.0 → 2.5.0)
+
+None. The value-coverage expansion is schema-additive in the ActivityEvent
+`metadata` JSON only: new domains (hunting/missions/racing/bounties/
+education) and legacy casino rows store their payload and parsed extras in
+the existing `metadata` column; no table, column or migration changes.

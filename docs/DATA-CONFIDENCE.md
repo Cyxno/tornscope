@@ -188,3 +188,45 @@ not `failed`):
 
 - Introduced in v0.2.0 (roadmap item #1) — derivation, sync-health integration,
   Overview + Economy integration, capability-loss runtime detection.
+
+---
+
+## Value coverage & valuation semantics (2.5.0)
+
+With the activity/rewards layer (2.4.0+) the confidence model extends from
+*datasets* to *value components*. Where the activity surfaces show money,
+they distinguish three valuation classes — provenance for values, exactly
+as above:
+
+| Class | Meaning | Example |
+|---|---|---|
+| **exact** | Verbatim from a Torn log payload or the signed ledger amount. | Casino bet/won, hunting cost/income, bounty cost/reward, mission cash. |
+| **estimated** | Exact quantities valued with CURRENT catalog market prices; always labeled "estimated using current market prices". | Openable reward/input items. |
+| **unpriced** | A reward exists but no defensible monetary valuation does. Shown, never converted to zero. | Mission credits, racing points, hunting skill, points-only pack rewards. |
+
+An exact zero (e.g. a credits-only mission completion with `money: 0`) is a
+known zero and stays zero — distinct from an unknown, per the valid-zero
+rule above.
+
+Known limitations, disclosed rather than hidden:
+
+- **No historical prices.** Only the current catalog price exists
+  (`TornItemCatalog`); past item values are present-day estimates, never
+  presented as historical profit.
+- **Legacy casino money logs** (old-format rows with only a signed amount)
+  normalize as `casino-legacy` with `game = null` — the game stays unknown.
+- **Casino ledger gaps are structural** (slots/keno/blackjack/high-low/
+  bookie cash never appears in Torn money logs; lottery/wheel placements
+  have no settlement log). Differences are disclosed by the reconciliation
+  — never patched.
+- **Hunting/missions/racing/bounties/education cash is semantic-only**:
+  Torn emits no money logs for it, so the activity surfaces report it once
+  and the money ledger does not contain it (no double counting, and no
+  silent absence — the `/activity` page labels each domain
+  `ledger + semantic` or `semantic-only`).
+- **Education** claims only the logged start (cost, course, duration); no
+  completion or ROI semantics are fabricated.
+
+Coverage accounting (recognized / normalized / analytics-used at family
+and event level) lives in `docs/VALUE-COVERAGE.md` and is measurable with
+`audit:activities`.
