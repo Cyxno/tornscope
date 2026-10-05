@@ -2605,3 +2605,63 @@ export const DecisionPrefsUpdateSchema = z
   })
   .strict();
 export type DecisionPrefsUpdate = z.infer<typeof DecisionPrefsUpdateSchema>;
+
+export const CasinoGameSummarySchema = z.object({
+  game: z.string(),
+  label: z.string(),
+  plays: z.number(),
+  wagered: z.number().nullable(),
+  cashWon: z.number().nullable(),
+  net: z.number().nullable(),
+  lastPlayedAt: z.number().nullable(),
+});
+
+export const CasinoSummaryResponseSchema = z.object({
+  range: z.object({ from: z.number(), to: z.number() }),
+  activities: z.number(),
+  totalWagered: z.object({ value: z.number().nullable(), provenance: z.string() }),
+  cashReturned: z.object({ value: z.number().nullable(), provenance: z.string() }),
+  netCash: z.object({ value: z.number().nullable(), provenance: z.string() }),
+  outcomeCounts: z.record(z.string(), z.number()),
+  games: z.array(CasinoGameSummarySchema),
+  activeDays: z.number(),
+  bestResult: z.object({ label: z.string(), net: z.number(), occurredAt: z.number() }).nullable(),
+  worstResult: z.null(),
+  coverage: z.object({ activities: z.number(), trackingSince: z.number().nullable() }),
+  availability: z.object({ history: FeatureAvailabilitySchema }).optional(),
+});
+export type CasinoSummaryResponse = z.infer<typeof CasinoSummaryResponseSchema>;
+
+export const RewardsItemRewardSchema = z.object({
+  itemId: z.number(),
+  label: z.string().nullable(),
+  qty: z.number(),
+  unitPriceEstimate: z.number().nullable(),
+  valueEstimate: z.number().nullable(),
+});
+
+export const RewardsSummaryResponseSchema = z.object({
+  range: z.object({ from: z.number(), to: z.number() }),
+  openings: z.number(),
+  containerTypes: z.number(),
+  cashReceived: z.number().nullable(),
+  /** Opened-item value at CURRENT catalog prices — an estimate, never exact. */
+  inputValueEstimate: z.object({ value: z.number().nullable(), provenance: z.string() }),
+  /** Reward item value at CURRENT catalog prices — an estimate, never exact. */
+  itemValueEstimate: z.object({ value: z.number().nullable(), provenance: z.string() }),
+  /** cash (exact) + item rewards (est) − input value (est); null when nothing is defensibly valued. */
+  estimatedNet: z.object({ value: z.number().nullable(), provenance: z.string() }),
+  topItemRewards: z.array(RewardsItemRewardSchema),
+  /** Reward/input quantities with no catalog price — kept visible, never $0. */
+  unpricedItemQty: z.number(),
+  types: z.array(z.object({
+    activityType: z.string(),
+    label: z.string(),
+    openings: z.number(),
+    cashReward: z.number().nullable(),
+    lastOpenedAt: z.number().nullable(),
+  })),
+  coverage: z.object({ openings: z.number(), trackingSince: z.number().nullable() }),
+  availability: z.object({ history: FeatureAvailabilitySchema }).optional(),
+});
+export type RewardsSummaryResponse = z.infer<typeof RewardsSummaryResponseSchema>;

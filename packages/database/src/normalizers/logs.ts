@@ -8,6 +8,8 @@ import {
   stripHtml,
   type LogRecord,
 } from "./extract.js";
+import { normalizeCasinoLog } from "./casino.js";
+import { normalizeOpenableLog } from "./openables.js";
 import {
   routeLog,
   travelTransitionFor,
@@ -141,6 +143,31 @@ export interface TravelItemEventInput {
   raw: unknown;
 }
 
+export interface ActivityEventInput {
+  occurredAt: Date;
+  domain: string;
+  activityType: string;
+  activityLabel: string;
+  subtype: string | null;
+  outcome: string | null;
+  game: string | null;
+  wheel: string | null;
+  opponentId: number | null;
+  cashInput: bigint | null;
+  cashReward: bigint | null;
+  pointsReward: number | null;
+  tokensReward: number | null;
+  /** Non-priceable reward descriptor (free spin, property, hospital). */
+  nonPriceable: string | null;
+  inputValue: bigint | null;
+  rewardValue: bigint | null;
+  netValue: bigint | null;
+  valuation: string;
+  provenance: string;
+  sourceRef: string;
+  metadata: unknown;
+}
+
 export interface MoneyEventInput {
   occurredAt: Date;
   category: MoneyCategory;
@@ -180,6 +207,7 @@ export interface TimelineEventInput {
 }
 
 export interface NormalizedLogWrites {
+  activityEvents: ActivityEventInput[];
   drugEvents: DrugEventInput[];
   consumptionEvents: ConsumptionEventInput[];
   crimeEvents: CrimeEventInput[];
@@ -361,6 +389,7 @@ export function energyDeltaFromLog(data: LogRecord): number | null {
  * filled only when their shape is recognized.
  */
 export function normalizeLogEntry(log: TornUserLog, ctx: NormalizeContext): NormalizedLogWrites {  const writes: NormalizedLogWrites = {
+    activityEvents: [],
     drugEvents: [],
     consumptionEvents: [],
     crimeEvents: [],
@@ -504,6 +533,36 @@ export function normalizeLogEntry(log: TornUserLog, ctx: NormalizeContext): Norm
     }
 
     case "itemuse": {
+      // Openable detection (2.4.0): an item-use log carrying reward
+      // components (items[]/item2/money) is an OPENABLE opening, not a
+      // plain consumable use. The ActivityEvent adds reward semantics;
+      // consumption normalization continues unchanged below.
+      const openable = normalizeOpenableLog(logTitle, data);
+      if (openable) {
+        writes.activityEvents.push({
+          occurredAt,
+          domain: "openable",
+          activityType: openable.activityType,
+          activityLabel: openable.activityLabel,
+          subtype: "opened",
+          outcome: "opened",
+          game: null,
+          wheel: null,
+          opponentId: null,
+          cashInput: null,
+          cashReward: openable.cashReward,
+          pointsReward: openable.pointsReward,
+          tokensReward: null,
+          nonPriceable: openable.nonPriceable,
+          inputValue: null,
+          rewardValue: null,
+          netValue: openable.cashReward,
+          valuation: openable.cashReward !== null ? "exact" : "unpriced",
+          provenance: "exact",
+          sourceRef: ref,
+          metadata: data,
+        });
+      }
       // Generic consumable use ("Item use erotic dvd", "Used Edvd Boosters",
       // energy drinks, candy, medical items). Drugs are claimed by the drugs
       // route above; stash boxes stay on the money route (their use pays out
@@ -645,6 +704,65 @@ export function normalizeLogEntry(log: TornUserLog, ctx: NormalizeContext): Norm
           country: transition.country ?? countryString,
           countryId: transition.countryId,
           sourceRef: ref,
+          raw: log,
+        });
+      }
+      break;
+    }
+
+    case "casino": {
+      // Casino domain: ActivityEvent (semantic view) + the SAME MoneyEvent
+      // the money case would produce (ledger view). Money semantics are
+      // computed by signMoneyLog exactly as before — no double counting in
+      // the ledger, no lost casino context.
+      const casino = normalizeCasinoLog(categoryTitle, logTitle, data);
+      if (casino) {
+        writes.activityEvents.push({
+          occurredAt,
+          domain: "casino",
+          activityType: casino.activityType,
+          activityLabel: casino.activityLabel,
+          subtype: casino.subtype,
+          outcome: casino.outcome,
+          game: casino.game,
+          wheel: casino.wheel,
+          opponentId: null,
+          cashInput: casino.cashInput,
+          cashReward: casino.cashReward,
+          pointsReward: casino.pointsReward,
+          tokensReward: casino.tokensReward,
+          nonPriceable: casino.nonPriceable,
+          inputValue: casino.cashInput,
+          rewardValue: casino.cashReward,
+          // P/L ONLY on settlements; placements (lottery bet, blackjack/
+          // high-low start, bookie bet) are pending — never a loss.
+          netValue: casino.outcome === "placed"
+            ? null
+            : casino.cashReward !== null && casino.cashInput !== null
+              ? casino.cashReward - casino.cashInput
+              : casino.cashReward !== null
+                ? casino.cashReward
+                : casino.cashInput !== null
+                  ? -casino.cashInput
+                  : null,
+          valuation: "exact",
+          provenance: "exact",
+          sourceRef: ref,
+          metadata: data,
+        });
+      }
+      // fall through to money-case behavior for the ledger (identical
+      // semantics: signMoneyLog decides the cash movement).
+      const casinoSignature = signMoneyLog(categoryTitle, logTitle, data, params);
+      if (casinoSignature.amount !== null) {
+        writes.moneyEvents.push({
+          occurredAt,
+          category: moneyPlanFor(categoryTitle, logTitle)?.category ?? "casino",
+          subcategory: logTitle,
+          direction: casinoSignature.transfer ? "neutral" : casinoSignature.direction === "unknown" ? "unknown" : casinoSignature.direction,
+          amount: BigInt(Math.round(casinoSignature.amount)),
+          sourceRef: ref,
+          description: logTitle,
           raw: log,
         });
       }

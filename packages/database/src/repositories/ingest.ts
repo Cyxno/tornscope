@@ -2,6 +2,7 @@ import { Prisma } from "../generated/client/client.js";
 import type { PrismaClientType } from "../client.js";
 import { rejectImplausibleRows, isPlausibleIngestedDate } from "../normalizers/guards.js";
 import type {
+  ActivityEventInput,
   ConsumptionEventInput,
   CrimeEventInput,
   DrugEventInput,
@@ -600,4 +601,38 @@ export async function upsertTornAccount(db: PrismaClientType, userId: string, ac
       lastSeenAt: account.seenAt,
     },
   });
+}
+
+export async function insertActivityEvents(db: PrismaClientType, userId: string, events: ActivityEventInput[]): Promise<number> {
+  if (events.length === 0) return 0;
+  const plausible = rejectImplausibleRows(events, (e) => e.occurredAt, (e) => e.sourceRef);
+  if (plausible.length === 0) return 0;
+  const result = await db.activityEvent.createMany({
+    data: plausible.map((e) => ({
+      userId,
+      occurredAt: e.occurredAt,
+      domain: e.domain,
+      activityType: e.activityType,
+      activityLabel: e.activityLabel,
+      subtype: e.subtype,
+      outcome: e.outcome,
+      game: e.game,
+      wheel: e.wheel,
+      opponentId: e.opponentId,
+      cashInput: e.cashInput,
+      cashReward: e.cashReward,
+      pointsReward: e.pointsReward,
+      tokensReward: e.tokensReward,
+      inputValue: e.inputValue,
+      rewardValue: e.rewardValue,
+      netValue: e.netValue,
+      valuation: e.valuation,
+      provenance: e.provenance,
+      source: "torn_log",
+      sourceRef: e.sourceRef,
+      metadata: e.metadata as never,
+    })),
+    skipDuplicates: true,
+  });
+  return result.count;
 }

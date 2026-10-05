@@ -1,7 +1,7 @@
 import { getPrismaClient, bigintToNumber } from "../client.js";
 import { loadItemIdByName, loadItemNameMap, loadItemTypeMap, loadMarketPrices } from "../repositories/catalog.js";
 import { normalizeLogEntry } from "../normalizers/logs.js";
-import { insertConsumptionEvents, insertCrimeEvents, insertDrugEvents, insertMoneyEvents, insertRehabEvents, insertTimelineEvents, insertTravelItemEvents, insertTravelTransitions } from "../repositories/ingest.js";
+import { insertActivityEvents, insertConsumptionEvents, insertCrimeEvents, insertDrugEvents, insertMoneyEvents, insertRehabEvents, insertTimelineEvents, insertTravelItemEvents, insertTravelTransitions } from "../repositories/ingest.js";
 import { assembleTripsFromTransitions } from "../travel/assemble.js";
 import type { TornUserLog } from "@tornscope/torn-api";
 
@@ -150,6 +150,7 @@ async function main(): Promise<void> {
     const merged = {
       timelineEvents: chunk.flatMap((w) => w.timelineEvents),
       drugEvents: chunk.flatMap((w) => w.drugEvents),
+      activityEvents: chunk.flatMap((w) => w.activityEvents),
       consumptionEvents: chunk.flatMap((w) => w.consumptionEvents),
       crimeEvents: chunk.flatMap((w) => w.crimeEvents),
       rehabEvents: chunk.flatMap((w) => w.rehabEvents),
@@ -158,6 +159,7 @@ async function main(): Promise<void> {
       moneyEvents: chunk.flatMap((w) => w.moneyEvents),
     };
     await insertTimelineEvents(db, user.id, merged.timelineEvents);
+    await insertActivityEvents(db, user.id, merged.activityEvents);
     await insertDrugEvents(db, user.id, merged.drugEvents);
     await insertConsumptionEvents(db, user.id, merged.consumptionEvents);
     await insertCrimeEvents(db, user.id, merged.crimeEvents);

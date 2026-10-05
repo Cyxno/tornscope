@@ -4,6 +4,7 @@ import {
   encryptionFromEnv,
   insertConsumptionEvents,
   insertCrimeEvents,
+  insertActivityEvents,
   insertDrugEvents,
   insertMoneyEvents,
   insertNetworthSnapshot,
@@ -488,6 +489,7 @@ async function syncLogsByCategories(args: SyncHandlerArgs, resource: SyncResourc
             // page data is safely persisted (the upsert happens below, after
             // the whole walk succeeded).
             await insertTimelineEvents(ctx.db, args.userId, normalized.timelineEvents);
+            await insertActivityEvents(ctx.db, args.userId, normalized.activityEvents);
             await insertDrugEvents(ctx.db, args.userId, normalized.drugEvents);
             await insertConsumptionEvents(ctx.db, args.userId, normalized.consumptionEvents);
             await insertRehabEvents(ctx.db, args.userId, normalized.rehabEvents);

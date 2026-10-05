@@ -41,6 +41,8 @@ import type {
   LogsMetaResponse,
   DecisionSignalsResponse,
   DecisionPrefsUpdate,
+  CasinoSummaryResponse,
+  RewardsSummaryResponse,
 } from "@tornscope/shared";
 
 /**
@@ -299,4 +301,12 @@ export const decisions = {
   signals: () => api.get<DecisionSignalsResponse>("/decisions"),
   prefs: () => api.get<DecisionSignalsResponse["prefs"]>("/decisions/preferences"),
   updatePrefs: (patch: DecisionPrefsUpdate) => api.post<DecisionSignalsResponse["prefs"]>("/decisions/preferences", patch),
+};
+
+
+/* ---- 2.4.0 activity & rewards ---- */
+
+export const activities = {
+  casino: (range: QueryRange) => api.get<CasinoSummaryResponse>(`/casino?${rangeQuery(range)}`),
+  rewards: (range: QueryRange) => api.get<RewardsSummaryResponse>(`/rewards?${rangeQuery(range)}`),
 };

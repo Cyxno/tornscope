@@ -429,7 +429,7 @@ export { INCOME_WORDS, EXPENSE_WORDS, TRANSFER_WORDS };
 /* Domain routing                                                             */
 /* -------------------------------------------------------------------------- */
 
-export type LogRoute = "money" | "rehab" | "travel" | "drugs" | "itemuse" | "crimes" | "timeline";
+export type LogRoute = "money" | "rehab" | "travel" | "drugs" | "itemuse" | "crimes" | "casino" | "openable" | "timeline";
 
 /**
  * Route a raw log to its structured domain (or "timeline" for timeline-only
@@ -440,6 +440,12 @@ export type LogRoute = "money" | "rehab" | "travel" | "drugs" | "itemuse" | "cri
 export function routeLog(category: string, title: string): LogRoute {
   const t = title.toLowerCase();
   const c = category.toLowerCase();
+
+  // Casino domain (2.4.0): category "Casino"/"Money casino" and bookie
+  // logs route to the casino normalizer (ActivityEvent + identical ledger
+  // handling inside the case). Anchored on category/exact prefixes — never
+  // bare keyword matching (Speed-lesson).
+  if (c === "casino" || /^bookie /.test(t) || /^casino /.test(t)) return "casino";
 
   // Rehab visits are titled "Rehab" but filed under the Travel category.
   if (t === "rehab" || c.includes("rehab") || t.includes("rehab") || c.includes("rehabilitation")) return "rehab";

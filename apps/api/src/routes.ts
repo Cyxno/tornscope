@@ -40,6 +40,8 @@ import { getSyncStatus, getSyncHealth, requestManualSync, retryFailedSyncs, retr
 import { listGoals, createGoal, updateGoal, deleteGoal } from "./services/goals.js";
 import { getInsights } from "./services/insights.js";
 import { getDecisions, getDecisionPrefs, updateDecisionPrefs, DECISION_DOMAINS } from "./services/decisions.js";
+import { getCasinoSummary } from "./services/casino.js";
+import { getRewardsSummary } from "./services/rewards.js";
 import { getCommandCenter } from "./services/commandCenter.js";
 import { getSystemHealth } from "./services/systemHealth.js";
 import { GoalCreateInputSchema, GoalUpdateInputSchema, DecisionPrefsUpdateSchema } from "@tornscope/shared";
@@ -487,6 +489,21 @@ export function registerRoutes(app: FastifyInstance): void {
     const params = z.object({ id: z.string().min(1).max(64) }).safeParse(req.params);
     if (!params.success) throw errors.validation(params.error.flatten());
     return deleteGoal(currentUser(req).id, params.data.id);
+  });
+
+  // Casino Analytics (2.4.0): retrospective P/L over normalized casino
+  // ActivityEvents — bounded SQL aggregation, zero Torn calls.
+  app.get("/api/casino", async (req) => {
+    const user = currentUser(req);
+    const range = parseRange(req.query as Record<string, unknown>);
+    return getCasinoSummary(user.id, range);
+  });
+
+  // Openables / Rewards Analytics (2.4.0).
+  app.get("/api/rewards", async (req) => {
+    const user = currentUser(req);
+    const range = parseRange(req.query as Record<string, unknown>);
+    return getRewardsSummary(user.id, range);
   });
 
   // Deterministic personal insights (curated rule set over stored history).

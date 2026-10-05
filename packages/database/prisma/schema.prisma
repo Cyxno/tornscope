@@ -100,6 +100,7 @@ model User {
   notificationEvents   NotificationEvent[]
   todayLastKnown       TodayLastKnown?
   goals                Goal[]
+  activityEvents       ActivityEvent[]
 }
 
 /// The Torn player connected to a user.
@@ -1050,6 +1051,43 @@ model NotificationState {
 /// value sits far below 2^53). Additive table: nothing existing is touched,
 /// and profile deletion cascades. `status` is active | achieved | archived;
 /// achievement is written by lazy evaluation on read and by the worker.
+/// Semantic activity/reward event (2.4.0): casino plays, openable
+/// openings, and future reward-bearing activity. MoneyEvent remains the
+/// accounting ledger; ActivityEvent is the semantic explanation and may
+/// reference the same wallet movements. Idempotent ingest via
+/// (userId, source, sourceRef) — provenance and valuation follow
+/// docs/ACTIVITY-REWARDS.md.
+model ActivityEvent {
+  id            String   @id @default(cuid())
+  userId        String
+  occurredAt    DateTime
+  source        String
+  sourceRef     String
+  domain        String
+  activityType  String
+  activityLabel String
+  subtype       String?
+  outcome       String?
+  game          String?
+  wheel         String?
+  opponentId    Int?
+  cashInput     BigInt?
+  cashReward    BigInt?
+  pointsReward  Int?
+  tokensReward  Int?
+  inputValue    BigInt?
+  rewardValue   BigInt?
+  netValue      BigInt?
+  valuation     String   @default("unpriced")
+  provenance    String   @default("exact")
+  metadata      Json?
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, source, sourceRef])
+  @@index([userId, occurredAt])
+  @@index([userId, domain, activityType, occurredAt])
+}
+
 model Goal {
   id         String    @id @default(cuid())
   userId     String

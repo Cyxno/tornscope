@@ -41,6 +41,8 @@ export const NAV_GROUPS: Array<{ id: NavItem["group"]; label: string; items: Nav
       { href: "/merits", label: "Merits", icon: "merits", group: "analytics" },
       { href: "/drugs", label: "Drugs", icon: "drugs", group: "analytics" },
       { href: "/travel", label: "Travel", icon: "travel", group: "analytics" },
+      { href: "/casino", label: "Casino", icon: "slots", group: "analytics" },
+      { href: "/rewards", label: "Rewards", icon: "cache", group: "analytics" },
     ],
   },
   {
