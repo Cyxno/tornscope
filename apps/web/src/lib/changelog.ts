@@ -30,8 +30,31 @@ export const CHANGELOG_KINDS: ChangelogKind[] = ["Added", "Improved", "Fixed", "
 
 export const CHANGELOG: ChangelogRelease[] = [
   {
-    version: "2.3.1",
+    version: "2.4.0",
     current: true,
+    summary:
+      "Activity & Rewards Analytics: a generic normalization layer converts substantially more of your ingested Torn logs into analytics — a retrospective casino ledger (per-game wagers, returns and net P/L, exact from Torn's own logs), openables & rewards tracking (packs, caches, wallets: inputs vs rewards), plus a repair that backfills the newly recognized history and a diagnostic that surfaces value-bearing logs not yet covered.",
+    changes: [
+      {
+        kind: "Added",
+        text: "Casino Analytics (/casino) — retrospective per-game wagers, cash returned and net P/L, exact from Torn's own logs: slots, roulette, keno, lottery, spin-the-wheel (all wheel variants), blackjack, high-low and bookie (placement vs settlement semantics; placements never counted as losses). Descriptive history only — never gambling advice.",
+      },
+      {
+        kind: "Added",
+        text: "Openables & Rewards (/rewards) — supply packs, caches, wallets and similar openings normalized into input-vs-reward analytics: exact cash rewards, exact item/point quantities, and item values estimated at current catalog prices (clearly labeled, never silently zero) with an estimated net where defensible.",
+      },
+      {
+        kind: "Added",
+        text: "Unrecognized value-bearing log diagnostic — casino-routed logs without payload semantics and item-use logs with reward components that no normalizer claims are counted and listed, so future Torn log changes become visible.",
+      },
+      {
+        kind: "Technical",
+        text: "Generic ActivityEvent semantic layer (additive migration) with an explicit per-game casino registry and payload-driven openable detection — anchored on category/title grammar and payload keys, never bare keywords. Historical repair backfills from the raw log archive idempotently (raw logs untouched) and a utilization audit reports raw vs recognized vs normalized vs unclassified value-bearing log families. MoneyEvent remains the accounting ledger with reconciliation diagnostics — no double counting.",
+      },
+    ],
+  },
+  {
+    version: "2.3.1",
     summary:
       "Performance hardening for Decision Intelligence, driven by a measured scalability audit: at extreme in-window density the signal reads now keep the newest history (previously the oldest could survive the read cap and the recent week could go unrepresented), and concurrent cold requests share a single build instead of duplicating work. Includes a reproducible benchmark harness with documented budgets and future trigger points.",
     changes: [
