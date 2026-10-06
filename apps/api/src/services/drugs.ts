@@ -151,6 +151,7 @@ export async function getDrugsSummary(userId: string, rangeInput: DateRangeInput
     },
     xanaxFunding: {
       used: xanaxUses.length,
+      overdoses: xanaxUses.filter((e) => e.outcome === "overdose").length,
       // Provenance-aware buckets (evidence-based, range-independent).
       confirmedPersonal: funding.confirmedPersonal,
       confirmedFaction: funding.confirmedFaction,

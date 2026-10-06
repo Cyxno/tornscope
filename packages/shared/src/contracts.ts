@@ -1553,6 +1553,9 @@ export const DrugsSummaryResponseSchema = z.object({
    */
   xanaxFunding: z.object({
     used: z.number(),
+    /** In-range xanax overdoses — "used" counts ALL uses (an overdose also
+     *  consumed a pill); successful = used - overdoses. */
+    overdoses: z.number(),
     confirmedPersonal: z.number(),
     confirmedFaction: z.number(),
     confirmedOther: z.number(),

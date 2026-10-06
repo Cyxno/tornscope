@@ -188,7 +188,7 @@
       <div class="md:px-5">
         <dt class="text-[11px] font-medium text-fg-faint">Xanax / day</dt>
         <dd class="tnum mt-1 text-[22px] font-semibold text-fg">{histBlocked ? "—" : data.overall.xanaxPerDay !== null ? data.overall.xanaxPerDay : "—"}</dd>
-        <dd class="mt-0.5 text-[11px] text-fg-faint">{data.overall.coveredDays !== null ? `${data.xanaxFunding.used} used · ${data.overall.coveredDays} covered day${data.overall.coveredDays === 1 ? "" : "s"}` : ""}</dd>
+        <dd class="mt-0.5 text-[11px] text-fg-faint">{data.overall.coveredDays !== null ? `${data.xanaxFunding.used} used (${data.xanaxFunding.used - data.xanaxFunding.overdoses} good) · ${data.overall.coveredDays} covered day${data.overall.coveredDays === 1 ? "" : "s"}` : ""}</dd>
       </div>
       <div class="md:px-5">
         <dt class="text-[11px] font-medium text-fg-faint">Overdoses</dt>
@@ -196,7 +196,7 @@
         <dd class="mt-0.5 text-[11px] text-fg-faint">{histBlocked && data.overall.totalUses > 0 ? `${Math.round(data.overall.overdoseRate * 100)}% OD rate` : ""}</dd>
       </div>
       <div class="md:px-5">
-        <dt class="text-[11px] font-medium text-fg-faint" title="Consecutive successful uses since your last overdose (full recorded history up to the range end)">Good streak</dt>
+        <dt class="text-[11px] font-medium text-fg-faint" title="Consecutive successful uses of ANY drug since your last overdose (full recorded history up to the range end). Uses include only successful outcomes — an overdose resets the streak. Per-drug streaks: drill-down table below.">Good streak · all drugs</dt>
         <dd class="tnum mt-1 text-[22px] font-semibold text-positive">{histBlocked ? "—" : data.overall.streaks ? data.overall.streaks.current : "—"}</dd>
         <dd class="mt-0.5 text-[11px] text-fg-faint">{data.overall.streaks && data.overall.streaks.lastOverdoseAt !== null ? `last OD ${formatRelative(data.overall.streaks.lastOverdoseAt)}` : data.overall.streaks?.lastUseAt !== null && data.overall.streaks ? "no overdose on record" : ""}</dd>
       </div>
