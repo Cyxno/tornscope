@@ -30,8 +30,35 @@ export const CHANGELOG_KINDS: ChangelogKind[] = ["Added", "Improved", "Fixed", "
 
 export const CHANGELOG: ChangelogRelease[] = [
   {
-    version: "2.5.1",
+    version: "2.5.2",
     current: true,
+    summary:
+      "Navigation realignment for a growing analytics surface: primary destinations stay visible while secondary pages moved into expandable families, the mobile More menu became a compact accordion sheet, and the current page is always in context. Also carries the Xanax usage/streak presentation clarification and realigns the release identity as 2.5.2.",
+    changes: [
+      {
+        kind: "Improved",
+        text: "Reorganized navigation as the analytics surface has grown: Economy, Progression and Activity act as hubs, with Stocks, Energy/Merits/Drugs and Timeline/Logs one expand away.",
+      },
+      {
+        kind: "Improved",
+        text: "Reduced sidebar clutter with progressive disclosure for secondary pages — Gameplay and Rewards & games group the rest, and collapsed groups persist per device.",
+      },
+      {
+        kind: "Improved",
+        text: "Made the mobile More menu faster to scan: a compact accordion of groups (at most two open at once) instead of a full route matrix, with the current group pre-expanded.",
+      },
+      {
+        kind: "Improved",
+        text: "Improved current-section context across secondary pages: an active child expands and lights its family, and the mobile header shows the current page next to the brand.",
+      },
+      {
+        kind: "Fixed",
+        text: "Clarified Xanax usage and successful-use streak semantics — the used count includes overdoses, the good streak counts consecutive successful uses across all drugs, and both populations are labeled explicitly.",
+      },
+    ],
+  },
+  {
+    version: "2.5.1",
     summary:
       "Correctness and resilience hardening for Activity & Rewards: casino totals now use logical-play economics (stakes counted once, withdrawals excluded, pending placements never losses), best/worst session results are computed deterministically, reward parsing survives malformed or evolving payload shapes, and partial valuations are labeled as partial. The utilization audit evaluates payload-shape coverage and explains reconciliation differences.",
     changes: [

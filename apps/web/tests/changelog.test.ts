@@ -23,13 +23,13 @@ describe("changelog data source", () => {
       expect(versions, `missing release ${required}`).toContain(required);
     }
     // latest-first: the running (in-progress, not-yet-tagged) release leads
-    expect(versions[0]).toBe("2.5.1");
+    expect(versions[0]).toBe("2.5.2");
     expect(new Set(versions).size).toBe(versions.length);
   });
 
   it("marks the running release as current and stages every release", () => {
     expect(CHANGELOG.filter((r) => r.current)).toHaveLength(1);
-    expect(CHANGELOG.find((r) => r.current)?.version).toBe("2.5.1");
+    expect(CHANGELOG.find((r) => r.current)?.version).toBe("2.5.2");
     for (const r of CHANGELOG) {
       expect(r.changes.length).toBeGreaterThan(0);
     }
@@ -61,7 +61,7 @@ describe("changelog page + navigation", () => {
   });
 
   it("navigation entry exists for desktop rail and mobile sheet", () => {
-    expect(nav).toContain('{ href: "/changelog", label: "Changelog", icon: "changelog", group: "system" }');
+    expect(nav).toContain('{ href: "/changelog", label: "Changelog", icon: "changelog", section: "system" }');
     expect(icon).toContain("| \"changelog\"");
     expect(icon).toMatch(/changelog: "M/);
   });
