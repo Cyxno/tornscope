@@ -15,8 +15,9 @@ migration, no new analytics domains, no new upstream API calls.
   Activity act as hub pages; Stocks, Energy/Merits/Drugs and Timeline/Logs live
   one expand away. Crimes, Combat, Faction and Travel form a Gameplay group;
   Casino, Rewards and Hunting group under Rewards & games.
-- **Progressive disclosure on desktop**: collapsible families reduce the
-  always-visible rail from 24 to 14 rows; the family containing the current page
+- **Progressive disclosure on desktop**: collapsible families shrink the main
+  nav list from 24 rows to 12 (System pages stay in the footer); the family
+  containing the current page
   expands automatically, other collapsed choices persist browser-locally, and
   the hub label navigates while only the chevron toggles.
 - **Mobile More menu** is a compact accordion of semantic groups (at most two
