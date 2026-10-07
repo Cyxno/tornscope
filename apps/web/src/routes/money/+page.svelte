@@ -496,6 +496,33 @@
                   title="Side by side on purpose: the two figures measure different things and are never summed"
                 />
               </div>
+              {#if economy.networth.position}
+                <div class="grid grid-cols-1 gap-px overflow-hidden rounded-card border border-border bg-border shadow-panel sm:grid-cols-3">
+                  <div class="bg-surface px-5 py-4">
+                    <p class="text-[11px] font-medium text-fg-faint">Gross assets — before debts</p>
+                    <p class="tnum mt-1 text-lg font-semibold text-fg">{economy.networth.position.grossAssets.current !== null ? formatMoneyCompact(economy.networth.position.grossAssets.current) : "—"}</p>
+                    <p class="mt-0.5 text-[10px] text-fg-faint">{economy.networth.position.grossAssets.change !== null ? (economy.networth.position.grossAssets.change >= 0 ? "+" : "") + formatMoneyCompact(economy.networth.position.grossAssets.change) + " in range" : "No baseline snapshot yet"}</p>
+                  </div>
+                  <div class="bg-surface px-5 py-4">
+                    <p class="text-[11px] font-medium text-fg-faint">Liabilities — loans + unpaid fees</p>
+                    <p class="tnum mt-1 text-lg font-semibold" class:text-fg={(economy.networth.position.liabilities.current ?? 0) === 0} class:text-negative={(economy.networth.position.liabilities.current ?? 0) > 0}>
+                      {economy.networth.position.liabilities.current !== null ? formatMoneyCompact(economy.networth.position.liabilities.current) : "—"}
+                    </p>
+                    <p class="mt-0.5 text-[10px] text-fg-faint">
+                      loans {economy.networth.position.loans.current !== null ? formatMoneyCompact(economy.networth.position.loans.current) : "—"} · fees {economy.networth.position.unpaidFees.current !== null ? formatMoneyCompact(economy.networth.position.unpaidFees.current) : "—"}
+                    </p>
+                  </div>
+                  <div class="bg-surface px-5 py-4">
+                    <p class="text-[11px] font-medium text-fg-faint">Net worth</p>
+                    <p class="tnum mt-1 text-lg font-semibold text-fg">{economy.networth.position.net.current !== null ? formatMoneyCompact(economy.networth.position.net.current) : "—"}</p>
+                    <p class="mt-0.5 text-[10px] text-fg-faint" title="gross assets − liabilities">gross − liabilities</p>
+                  </div>
+                </div>
+                <p class="text-[11px] leading-relaxed text-fg-faint">
+                  Balance-sheet figures from the official networth snapshots — exact provenance, never cashflow: a loan paying out raises assets and liabilities by the same amount.
+                </p>
+              {/if}
+
               <details class="group rounded-tile border border-border bg-surface px-5 py-3">
                 <summary class="flex cursor-pointer items-center justify-between gap-3 text-xs font-medium text-fg-muted transition-colors hover:text-fg [&::-webkit-details-marker]:hidden">
                   Why net worth change is not profit
@@ -822,6 +849,37 @@
 
           <!-- ─────────────── Lens 4 · Cash movement ─────────────── -->
           <div id="lens-panel-cash" role="tabpanel" aria-labelledby="lens-tab-cash" class="space-y-5 {activeLens === 'cash' ? '' : 'max-lg:hidden'}">
+            {#if economy.transfers && economy.transfers.moved > 0}
+              <Panel title="Internal transfers" caption="Vault and bank deposits/withdrawals — your own money changing pools. Accounting-neutral: never income, never expense, never P/L">
+                <div class="grid grid-cols-2 gap-px overflow-hidden rounded-tile border border-border bg-border md:grid-cols-3">
+                  <div class="bg-surface px-4 py-3">
+                    <p class="text-[11px] text-fg-faint">Deposited</p>
+                    <p class="tnum mt-0.5 text-[15px] font-semibold text-fg">{formatMoneyCompact(economy.transfers.deposited)}</p>
+                  </div>
+                  <div class="bg-surface px-4 py-3">
+                    <p class="text-[11px] text-fg-faint">Withdrawn</p>
+                    <p class="tnum mt-0.5 text-[15px] font-semibold text-fg">{formatMoneyCompact(economy.transfers.withdrawn)}</p>
+                  </div>
+                  <div class="bg-surface px-4 py-3">
+                    <p class="text-[11px] text-fg-faint">Total moved</p>
+                    <p class="tnum mt-0.5 text-[15px] font-semibold text-fg">{formatMoneyCompact(economy.transfers.moved)}</p>
+                  </div>
+                </div>
+                {#if economy.transfers.byAccount.length > 1}
+                  <ul class="mt-3 space-y-1.5 text-[13px]">
+                    {#each economy.transfers.byAccount as a (a.category)}
+                      <li class="flex items-baseline justify-between gap-3">
+                        <span class="text-fg-muted">{a.label}</span>
+                        <span class="tnum text-[12px] text-fg" title="{a.rows} movement{a.rows === 1 ? '' : 's'}">
+                          ↓ {formatMoneyCompact(a.deposited)} · ↑ {formatMoneyCompact(a.withdrawn)}
+                        </span>
+                      </li>
+                    {/each}
+                  </ul>
+                {/if}
+              </Panel>
+            {/if}
+
             <div class="flex flex-wrap items-baseline justify-between gap-2">
               <h2 class="section-label text-[12px]"><span class="mr-2 text-accent">4</span> Cash movement — money that moved through your wallet (transport, not P&amp;L)</h2>
               <span class="chip chip-quiet !border-border !text-[10px]" title="Cash in and out is not the same as income and expense">cash ≠ income</span>

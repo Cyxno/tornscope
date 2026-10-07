@@ -21,3 +21,6 @@ export * from "./economy-intelligence.js";
 export * from "./training-intelligence.js";
 export * from "./energy.js";
 export * from "./decision-intelligence.js";
+export * from "./counter-series.js";
+export * from "./account-counters.js";
+export * from "./faction-trend.js";

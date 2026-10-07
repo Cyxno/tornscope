@@ -11,7 +11,11 @@ import { aggregateMoneyEvents, aggregateMoneySemantics, buildCashReceivedBreakdo
  */
 describe("Overview / Economy semantic equivalence", () => {
   it("aggregateMoneyEvents totals equal aggregateMoneySemantics for the whole category universe", () => {
-    const events = MONEY_CATEGORIES.map((category: MoneyCategory, i: number) => ({
+    // 2.6.0: vault and ammo have their own lanes (neutral transfers / expenses)
+    // and are covered by dedicated tests (money-transfers-repair) — this
+    // invariant spans the pre-existing cash categories.
+    const universe = MONEY_CATEGORIES.filter((category) => category !== "vault" && category !== "ammo");
+    const events = universe.map((category: MoneyCategory, i: number) => ({
       id: `e${i}`,
       occurredAt: 1_000 + i,
       category,

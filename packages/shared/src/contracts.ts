@@ -620,10 +620,60 @@ export type MovementRole = z.infer<typeof MovementRoleSchema>;
  * conversion net does not equal net worth change.
  * Plus the estimated travel profit, kept separate from all of the above.
  */
+/* -------------------------------------------------------------------------- */
+/* Internal transfers (2.6.0): vault + bank movements — never P/L              */
+/* -------------------------------------------------------------------------- */
+
+export const InternalTransferAccountSchema = z.object({
+  category: z.string(),
+  label: z.string(),
+  deposited: z.number(),
+  withdrawn: z.number(),
+  moved: z.number(),
+  rows: z.number(),
+});
+export type InternalTransferAccount = z.infer<typeof InternalTransferAccountSchema>;
+
+/**
+ * Economy view: clearly separated financial lenses.
+ * - Cash Flow: ONLY real cash movements (purchases, sales, fees, payouts).
+ * - Economic Effect: true income/expense — value gained or lost, conversions
+ *   excluded, derived bank interest included.
+ * - Conversions: cash ↔ asset exchanges (bank, stocks, items, points, vault).
+ * - Consumption: value of items used up — never added to the cash P&L.
+ * - Wallet: reconciliation of opening cash → recorded movements → actual.
+ * - Networth: Torn snapshot totals and their change over the period.
+ * - Explanation: deterministic contributors + what remains unexplained.
+ * The lenses are related, NOT additive — cash net + economic net +
+ * conversion net does not equal net worth change.
+ * Plus the estimated travel profit, kept separate from all of the above.
+ */
+/* -------------------------------------------------------------------------- */
+/* Networth balance-sheet position (2.6.0): gross assets / liabilities / net   */
+/* -------------------------------------------------------------------------- */
+
+export const NetworthPositionLineSchema = z.object({
+  current: z.number().nullable(),
+  baseline: z.number().nullable(),
+  change: z.number().nullable(),
+});
+export type NetworthPositionLine = z.infer<typeof NetworthPositionLineSchema>;
+
 export const EconomySummaryResponseSchema = z.object({
   range: z.object({ from: z.number(), to: z.number(), interval: z.string() }),
   /** Unix seconds when this payload was computed. */
   generatedAt: z.number(),
+  /** Internal transfers (2.6.0): vault + bank own-pool movements — visibility
+   *  only, never part of income/expense/net. Null for deploy-order tolerance. */
+  transfers: z
+    .object({
+      deposited: z.number(),
+      withdrawn: z.number(),
+      moved: z.number(),
+      byAccount: z.array(InternalTransferAccountSchema),
+      provenance: z.literal("exact"),
+    })
+    .nullable(),
   availability: z
     .object({
       cashFlow: FeatureAvailabilitySchema,
@@ -784,6 +834,20 @@ export const EconomySummaryResponseSchema = z.object({
     byCategory: z.array(NetworthCategoryChangeSchema),
     /** Earliest real networth snapshot ("Tracking since"). */
     trackingSince: z.number().nullable(),
+    /** Balance-sheet position (2.6.0): gross assets / liabilities / net over
+     *  the range — balance-sheet only, never cashflow. Null for tolerance. */
+    position: z
+      .object({
+        net: NetworthPositionLineSchema,
+        grossAssets: NetworthPositionLineSchema,
+        liabilities: NetworthPositionLineSchema,
+        loans: NetworthPositionLineSchema,
+        unpaidFees: NetworthPositionLineSchema,
+        coverage: NetworthCoverageSchema,
+        trackedFrom: z.number().nullable(),
+        provenance: ProvenanceSchema,
+      })
+      .nullable(),
   }),
   travel: z.object({
     estimatedProfit: KpiValueSchema,
@@ -1057,8 +1121,26 @@ export const CrimeEventDtoSchema = z.object({
 });
 export type CrimeEventDto = z.infer<typeof CrimeEventDtoSchema>;
 
+/* -------------------------------------------------------------------------- */
+/* Crime skill progression (2.6.0) — timeline bookkeeping productized          */
+/* -------------------------------------------------------------------------- */
+
+export const CrimeSkillStatSchema = z.object({
+  crime: z.string(),
+  level: z.number().nullable(),
+  opening: z.number().nullable(),
+  delta: z.number().nullable(),
+  levelUps: z.number(),
+  levelDowns: z.number(),
+  lastChangeAt: z.number().nullable(),
+});
+export type CrimeSkillStat = z.infer<typeof CrimeSkillStatSchema>;
+
 export const CrimesSummaryResponseSchema = z.object({
   range: z.object({ from: z.number(), to: z.number() }),
+  /** Per-crime skill progression from the stored skill bookkeeping logs
+   *  (2.6.0). Empty when the profile has no skill-change logs. */
+  skillProgression: z.array(CrimeSkillStatSchema),
   availability: z.object({ history: FeatureAvailabilitySchema }).optional(),
   attempts: z.number(),
   successful: z.number(),
@@ -1227,7 +1309,38 @@ export const RankedWarRowSchema = z.object({
 });
 export type RankedWarRow = z.infer<typeof RankedWarRowSchema>;
 
+/* -------------------------------------------------------------------------- */
+/* Faction snapshot history (2.6.0) — respect & members over time              */
+/* -------------------------------------------------------------------------- */
+
+export const FactionTrendPointSchema = z.object({
+  t: z.number(),
+  respect: z.number().nullable(),
+  members: z.number().nullable(),
+});
+export type FactionTrendPoint = z.infer<typeof FactionTrendPointSchema>;
+
+export const FactionTrendLineSchema = z.object({
+  opening: z.number().nullable(),
+  closing: z.number().nullable(),
+  delta: z.number().nullable(),
+  ratePerDay: z.number().nullable(),
+});
+
 export const FactionOverviewResponseSchema = z.object({
+  /** Stored FactionSnapshot history (2.6.0) — every point is a real stored
+   *  snapshot, never fabricated. Null when the faction has no snapshots. */
+  factionTrend: z
+    .object({
+      series: z.array(FactionTrendPointSchema),
+      delta: z.object({
+        respect: FactionTrendLineSchema,
+        members: FactionTrendLineSchema,
+        trackingSince: z.number().nullable(),
+        points: z.number(),
+      }),
+    })
+    .nullable(),
   availability: z
     .object({
       basic: FeatureAvailabilitySchema,
@@ -1445,6 +1558,8 @@ export const FactionLedgerResponseSchema = z.object({
 });
 export type FactionLedgerResponse = z.infer<typeof FactionLedgerResponseSchema>;
 
+
+
 export const NetworthResponseSchema = z.object({
   range: z.object({ from: z.number(), to: z.number(), interval: z.string() }),
   series: z.array(
@@ -1484,6 +1599,21 @@ export const NetworthResponseSchema = z.object({
   }),
   /** Earliest real snapshot across ALL history (independent of the range). */
   trackingSince: z.number().nullable(),
+  /** Balance-sheet position over the selected range (2.6.0). Liabilities are
+   *  positive figures (how much is owed); net = grossAssets - liabilities.
+   *  Balance-sheet only — never cashflow. */
+  position: z
+    .object({
+      net: NetworthPositionLineSchema,
+      grossAssets: NetworthPositionLineSchema,
+      liabilities: NetworthPositionLineSchema,
+      loans: NetworthPositionLineSchema,
+      unpaidFees: NetworthPositionLineSchema,
+      coverage: NetworthCoverageSchema,
+      trackedFrom: z.number().nullable(),
+      provenance: ProvenanceSchema,
+    })
+    .nullable(),
 });
 export type NetworthResponse = z.infer<typeof NetworthResponseSchema>;
 
@@ -2141,6 +2271,28 @@ const TrainingPeriodStatsSchema = z.object({
 
 const TrainingRecordSchema = z.object({ value: z.number(), at: z.number(), sampleSize: z.number() });
 
+
+/* -------------------------------------------------------------------------- */
+/* Account progression counters (2.6.0) — PersonalStatSnapshot history         */
+/* -------------------------------------------------------------------------- */
+
+export const AccountCounterSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  group: z.string(),
+  opening: z.number().nullable(),
+  closing: z.number().nullable(),
+  delta: z.number().nullable(),
+  ratePerDay: z.number().nullable(),
+  trackingSince: z.number().nullable(),
+  points: z.number(),
+  resetDetected: z.boolean(),
+  decreases: z.number(),
+  preResetClosing: z.number().nullable(),
+  current: z.number().nullable(),
+});
+export type AccountCounter = z.infer<typeof AccountCounterSchema>;
+
 export const ProgressionResponseSchema = z.object({
   range: z.object({ from: z.number(), to: z.number() }),
   generatedAt: z.number(),
@@ -2301,6 +2453,15 @@ export const ProgressionResponseSchema = z.object({
     awards: z.number().nullable(),
     awardsDelta: z.number().nullable(),
   }),
+  /** Long-term account counters from the stored PersonalStatSnapshot history
+   *  (2.6.0). Null when the profile has no personalstats history yet. */
+  accountCounters: z
+    .object({
+      trackingSince: z.number().nullable(),
+      primary: z.array(AccountCounterSchema),
+      secondary: z.array(AccountCounterSchema),
+    })
+    .nullable(),
 });
 export type ProgressionResponse = z.infer<typeof ProgressionResponseSchema>;
 

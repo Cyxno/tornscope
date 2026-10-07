@@ -1,11 +1,13 @@
 import { autoInterval, resolveDateRange, type DateRangeInput, type NetworthCoverage, type NetworthResponse } from "@tornscope/shared";
-import { buildNetworthSeries, calculateNetworthChanges, calculateNetworthPeriodChange, type NetworthSnapshotFields } from "@tornscope/analytics";
+import { buildNetworthSeries, calculateNetworthChanges, calculateNetworthPeriodChange, calculateNetworthPosition, type NetworthSnapshotFields } from "@tornscope/analytics";
 import { bigintToNumber, getPrismaClient } from "@tornscope/database";
 
 const SNAPSHOT_SELECT = {
   capturedAt: true,
   total: true,
   pending: true,
+  loans: true,
+  unpaidFees: true,
   wallet: true,
   vault: true,
   bookie: true,
@@ -29,6 +31,8 @@ interface SnapshotRow {
   capturedAt: Date;
   total: bigint;
   pending: bigint;
+  loans: bigint;
+  unpaidFees: bigint;
   wallet: bigint;
   vault: bigint;
   bookie: bigint;
@@ -53,6 +57,8 @@ function toFields(row: SnapshotRow): NetworthSnapshotFields {
     capturedAt: Math.floor(row.capturedAt.getTime() / 1000),
     total: bigintToNumber(row.total) ?? 0,
     pending: bigintToNumber(row.pending) ?? 0,
+    loans: bigintToNumber(row.loans) ?? 0,
+    unpaidFees: bigintToNumber(row.unpaidFees) ?? 0,
     wallet: bigintToNumber(row.wallet) ?? 0,
     vault: bigintToNumber(row.vault) ?? 0,
     bookie: bigintToNumber(row.bookie) ?? 0,
@@ -156,8 +162,13 @@ export async function getNetworth(userId: string, rangeInput: DateRangeInput): P
     };
   });
 
+  // Balance-sheet position (2.6.0): gross assets / liabilities / net over
+  // the selected period. Balance-sheet only — never presented as cashflow.
+  const position = calculateNetworthPosition(periodAnchors, range.from, range.to);
+
   return {
     range: { from: range.from, to: range.to, interval: autoInterval(range) },
+    position,
     series,
     changes: {
       current: changes.current,
@@ -227,5 +238,8 @@ export async function getNetworthPeriodForRange(userId: string, from: number, to
     .filter((r): r is SnapshotRow => r !== null)
     .map(toFields)
     .sort((a, b) => a.capturedAt - b.capturedAt);
-  return calculateNetworthPeriodChange(anchors, from, to);
+  return {
+    ...calculateNetworthPeriodChange(anchors, from, to),
+    position: calculateNetworthPosition(anchors, from, to),
+  };
 }

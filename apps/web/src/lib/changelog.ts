@@ -30,8 +30,36 @@ export const CHANGELOG_KINDS: ChangelogKind[] = ["Added", "Improved", "Fixed", "
 
 export const CHANGELOG: ChangelogRelease[] = [
   {
-    version: "2.5.4",
+    version: "2.6.0",
     current: true,
+    summary:
+      "Data utilization expansion: more value from the history TornScope already stores — long-term account progression, balance-sheet liabilities, internal transfer visibility for vault activity, crime skill progression and faction historical trends, plus a permanent audit that keeps stored-but-unused data visible.",
+    changes: [
+      {
+        kind: "Added",
+        text: "Deeper account progression: long-term counters (awards, trains, refills, crimes, hospitalizations, trips and more) with exact snapshot deltas and rate/day on the Progression page.",
+      },
+      {
+        kind: "Added",
+        text: "Internal transfer visibility: vault deposits/withdrawals are now neutral ledger transfers with an Economy breakdown per account — never income, never expense, never P/L.",
+      },
+      {
+        kind: "Added",
+        text: "Liability context in net-worth analytics: gross assets, liabilities (loans + unpaid fees) and net as balance-sheet figures.",
+      },
+      {
+        kind: "Added",
+        text: "Crime skill progression from Torn's own skill bookkeeping, and faction respect/member historical trends from stored snapshots.",
+      },
+      {
+        kind: "Improved",
+        text: "Broader utilization of already-stored Torn history; the new audit:data-utilization tool detects stored-but-unused data automatically. Ammo purchases now complete the ledger coverage.",
+      },
+    ],
+  },
+  {
+    version: "2.5.4",
+    current: false,
     summary:
       "Release-infrastructure hardening: every full-suite run now rebuilds the test database to the same baseline automatically, eliminating the test-state leakage that could make release-gate results depend on earlier runs.",
     changes: [

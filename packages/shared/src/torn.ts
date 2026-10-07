@@ -160,6 +160,9 @@ export const MONEY_CATEGORIES = [
   "auction",
   "missions",
   "other",
+  // 2.6.0: property-vault movements (neutral transfers) and ammo purchases.
+  "vault",
+  "ammo",
 ] as const;
 
 export type MoneyCategory = (typeof MONEY_CATEGORIES)[number];

@@ -51,9 +51,12 @@ describe("cross-domain routing: offshore bank & travel fees", () => {
   });
 
   it("deposited/withdrawn keys alone never turn non-movement logs into money", () => {
-    // The new payload keys only matter where the route already proves a
-    // money movement — vault logs stay timeline-only (walk-scope decision).
-    expect(routeLog("Vault", "Vault deposit")).toBe("timeline");
+    // Payload keys only matter where the route proves a money movement.
+    // 2.6.0: the Vault CATEGORY is an explicit exception — property-vault
+    // movements are own-pool transfers routed to the ledger as NEUTRAL
+    // (category=vault), never income/expense.
+    expect(routeLog("Vault", "Vault deposit")).toBe("money");
+    expect(moneyPlanFor("Vault", "Vault withdraw")).toMatchObject({ direction: "neutral", transfer: true });
   });
 });
 

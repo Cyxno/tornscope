@@ -79,6 +79,8 @@ export function calculateNetworthChanges(
 /** All networth fields needed for the category breakdown (numbers, not BigInt). */
 export interface NetworthSnapshotFields extends NetworthPointLike {
   pending: number;
+  loans: number;
+  unpaidFees: number;
   wallet: number;
   vault: number;
   bookie: number;
@@ -101,6 +103,10 @@ export interface NetworthSnapshotFields extends NetworthPointLike {
 export interface NetworthBreakdownPoint {
   capturedAt: number;
   total: number;
+  /** Loans + unpaid fees (stored NEGATIVE in Torn's own breakdown). */
+  liabilities: number;
+  /** Net total minus liabilities (balance sheet: assets before debts). */
+  grossAssets: number;
   /** Wallet + vault + pending. */
   cash: number;
   /** City bank + Cayman bank + piggy bank + bookie. */
@@ -174,6 +180,11 @@ export function buildNetworthSeries(rows: ReadonlyArray<{ capturedAt: number; to
 }
 
 export function toBreakdownPoint(snapshot: NetworthSnapshotFields): NetworthBreakdownPoint {
+  // Torn stores loans/unpaid fees as NEGATIVE components and total is NET
+  // (verified over the stored archive: total = sum of ALL components).
+  // Liabilities are reported as a positive balance-sheet figure; gross
+  // assets = net + liabilities. Balance-sheet only — never cashflow.
+  const liabilities = -(snapshot.loans + snapshot.unpaidFees) || 0;
   const cash = snapshot.wallet + snapshot.vault + snapshot.pending;
   const banks = snapshot.cityBank + snapshot.caymanBank + snapshot.piggyBank + snapshot.bookie;
   const stocks = snapshot.stockMarket;
@@ -183,6 +194,8 @@ export function toBreakdownPoint(snapshot: NetworthSnapshotFields): NetworthBrea
   return {
     capturedAt: snapshot.capturedAt,
     total: snapshot.total,
+    liabilities,
+    grossAssets: snapshot.total + liabilities || 0,
     cash,
     banks,
     stocks,
@@ -249,4 +262,62 @@ export function calculateNetworthPeriodChange(snapshots: readonly NetworthSnapsh
   }));
 
   return { current: currentPoint, baseline: baselinePoint, change, changePct, coverage: "full", trackedFrom, byCategory, provenance: "exact" };
+}
+
+
+/* -------------------------------------------------------------------------- */
+/* Balance-sheet position (2.6.0): gross assets / liabilities / net            */
+/* -------------------------------------------------------------------------- */
+
+export interface NetworthPositionLine {
+  current: number | null;
+  baseline: number | null;
+  change: number | null;
+}
+
+export interface NetworthPosition {
+  net: NetworthPositionLine;
+  grossAssets: NetworthPositionLine;
+  liabilities: NetworthPositionLine;
+  loans: NetworthPositionLine;
+  unpaidFees: NetworthPositionLine;
+  /** full / partial / none — same semantics as the period change. */
+  coverage: "full" | "partial" | "none";
+  trackedFrom: number | null;
+  provenance: Provenance;
+}
+
+/** Balance-sheet position over the period. Liabilities are POSITIVE figures
+ *  (how much is owed); net = grossAssets − liabilities. Never cashflow. */
+export function calculateNetworthPosition(snapshots: readonly NetworthSnapshotFields[], from: number, to: number): NetworthPosition {
+  const sorted = [...snapshots].sort((a, b) => a.capturedAt - b.capturedAt);
+  const trackedFrom = sorted.length > 0 ? sorted[0]!.capturedAt : null;
+  const line = (pick: (s: NetworthSnapshotFields) => number | null): NetworthPositionLine => ({
+    current: null,
+    baseline: null,
+    change: null,
+  });
+  const build = (s: NetworthSnapshotFields | undefined) => (s === undefined ? null : s);
+  const current = valueAtOrBefore(sorted, to);
+  const baseline = valueAtOrBefore(sorted, from);
+  let coverage: "full" | "partial" | "none" = "none";
+  if (current && baseline && baseline.capturedAt !== current.capturedAt) coverage = "full";
+  else if (current) coverage = "partial";
+  const effectiveBaseline = baseline ?? sorted.find((s) => s.capturedAt >= from && s.capturedAt <= to);
+  const mk = (pick: (s: NetworthSnapshotFields) => number): NetworthPositionLine => ({
+    current: current ? pick(current) : null,
+    baseline: effectiveBaseline ? pick(effectiveBaseline) : null,
+    change: current && effectiveBaseline ? pick(current) - pick(effectiveBaseline) : null,
+  });
+  void line;
+  return {
+    net: mk((s) => s.total),
+    grossAssets: mk((s) => s.total + -(s.loans + s.unpaidFees)),
+    liabilities: mk((s) => -(s.loans + s.unpaidFees) || 0),
+    loans: mk((s) => -s.loans || 0),
+    unpaidFees: mk((s) => -s.unpaidFees || 0),
+    coverage,
+    trackedFrom,
+    provenance: "exact",
+  };
 }

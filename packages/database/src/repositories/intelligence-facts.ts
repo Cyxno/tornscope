@@ -31,6 +31,8 @@ const DAY = 86_400;
 const SNAPSHOT_SELECT = {
   capturedAt: true,
   total: true,
+  loans: true,
+  unpaidFees: true,
   wallet: true,
   vault: true,
   pending: true,
@@ -71,6 +73,8 @@ export type NetworthSnapshotRow = {
   property: bigint;
   stockMarket: bigint;
   company: bigint;
+  loans: bigint;
+  unpaidFees: bigint;
   points: bigint;
 };
 
@@ -78,6 +82,8 @@ export function networthRowToFields(r: NetworthSnapshotRow): NetworthSnapshotFie
   return {
     capturedAt: Math.floor(r.capturedAt.getTime() / 1000),
     total: Number(r.total),
+    loans: Number(r.loans ?? 0n),
+    unpaidFees: Number(r.unpaidFees ?? 0n),
     wallet: Number(r.wallet),
     vault: Number(r.vault),
     pending: Number(r.pending),

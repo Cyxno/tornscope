@@ -878,3 +878,72 @@ export function majorMoneyMovements(events: readonly MoneyEventLike[], from: num
 
   return rows.sort((a, b) => b.amount - a.amount || a.occurredAt - b.occurredAt || a.id.localeCompare(b.id)).slice(0, limit);
 }
+
+
+/* -------------------------------------------------------------------------- */
+/* Internal transfers (2.6.0): vault + bank movements, never P/L               */
+/* -------------------------------------------------------------------------- */
+
+export interface InternalTransferRowLike {
+  category: string;
+  direction: string;
+  amount: bigint;
+}
+
+export interface InternalTransferAccount {
+  category: string;
+  label: string;
+  deposited: number;
+  withdrawn: number;
+  moved: number;
+  rows: number;
+}
+
+export interface InternalTransfersSummary {
+  deposited: number;
+  withdrawn: number;
+  moved: number;
+  byAccount: InternalTransferAccount[];
+  provenance: "exact";
+}
+
+const INTERNAL_TRANSFER_LABELS: Record<string, string> = {
+  vault: "Vault",
+  city_bank: "City bank",
+  cayman_bank: "Cayman bank",
+};
+
+/**
+ * Aggregate NEUTRAL own-pool movements (vault deposits/withdrawals, bank
+ * deposits/withdrawals) into a per-account transfer view. Direction-neutral
+ * by definition: these rows NEVER enter income, expenses, net or alerts —
+ * this function only makes their volume visible.
+ */
+export function buildInternalTransfers(rows: readonly InternalTransferRowLike[]): InternalTransfersSummary {
+  const accounts = new Map<string, InternalTransferAccount>();
+  let deposited = 0;
+  let withdrawn = 0;
+  for (const row of rows) {
+    const label = INTERNAL_TRANSFER_LABELS[row.category];
+    if (label === undefined) continue; // only known internal accounts
+    if (row.direction !== "neutral") continue; // defensive: transfers are neutral
+    const amount = Number(row.amount);
+    if (!Number.isFinite(amount) || amount === 0) continue;
+    let account = accounts.get(row.category);
+    if (!account) {
+      account = { category: row.category, label, deposited: 0, withdrawn: 0, moved: 0, rows: 0 };
+      accounts.set(row.category, account);
+    }
+    if (amount > 0) {
+      account.withdrawn += amount;
+      withdrawn += amount;
+    } else {
+      account.deposited += -amount;
+      deposited += -amount;
+    }
+    account.rows += 1;
+    account.moved = account.deposited + account.withdrawn;
+  }
+  const byAccount = [...accounts.values()].sort((a, b) => b.moved - a.moved);
+  return { deposited, withdrawn, moved: deposited + withdrawn, byAccount, provenance: "exact" };
+}

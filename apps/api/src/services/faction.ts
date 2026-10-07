@@ -15,7 +15,19 @@ import {
   type FactionWarMemberRow,
   KpiValue,
 } from "@tornscope/shared";
-import { deriveMemberStats, matchPayout, matchOcPayout, warCombatEvents, summarizeWars, warResult, type WarLike, type PayoutCandidateInput, type WarCombatEventLike, type PayoutMatch } from "@tornscope/analytics";
+import {
+  buildFactionTrend,
+  deriveMemberStats,
+  matchPayout,
+  matchOcPayout,
+  warCombatEvents,
+  summarizeWars,
+  warResult,
+  type WarLike,
+  type PayoutCandidateInput,
+  type WarCombatEventLike,
+  type PayoutMatch,
+} from "@tornscope/analytics";
 import { bigintToNumber, getPrismaClient, loadItemNameMap, loadItemTypeMap, loadMarketPrices } from "@tornscope/database";
 import { loadAvailabilityContext, sectionAvailability } from "./availability.js";
 
@@ -98,7 +110,7 @@ export async function getFactionOverview(userId: string, rangeInput: DateRangeIn
   // Tenant isolation: no implicit fallback to some global faction.
   const factionId = account?.factionId ?? null;
 
-  const [faction, membership, wars, combatEvents, payouts, balanceRow, chainRow, chainCount, ocCount] = await Promise.all([
+  const [faction, membership, wars, combatEvents, payouts, balanceRow, chainRow, chainCount, ocCount, snapshotRows] = await Promise.all([
     factionId !== null ? db.faction.findUnique({ where: { id: factionId } }) : Promise.resolve(null),
     db.factionMembership.findFirst({ where: { userId, isActive: true }, select: { joinedAt: true } }),
     loadWars(userId),
@@ -108,6 +120,17 @@ export async function getFactionOverview(userId: string, rangeInput: DateRangeIn
     factionId !== null ? db.factionChain.findFirst({ where: { userId, factionId }, orderBy: { startedAt: "desc" } }) : Promise.resolve(null),
     db.factionChain.count({ where: { userId } }),
     db.organizedCrime.count({ where: { userId } }),
+    // Faction history (2.6.0): the stored snapshot series. Bounded — a year
+    // at ~15-min cadence is ~35k rows; cap keeps the overview read safe and
+    // downgrades nothing (the trend reports its own coverage).
+    factionId !== null
+      ? db.factionSnapshot.findMany({
+          where: { factionId, capturedAt: { gte: new Date(range.from * 1000 - 30 * 86_400 * 1000), lte: new Date(range.to * 1000) } },
+          orderBy: { capturedAt: "asc" },
+          take: 50_000,
+          select: { capturedAt: true, respect: true, members: true },
+        })
+      : Promise.resolve([] as Array<{ capturedAt: Date; respect: number | null; members: number | null }>),
   ]);
 
   // Current war: a war whose endedAt is null.
@@ -161,7 +184,20 @@ export async function getFactionOverview(userId: string, rangeInput: DateRangeIn
       opponentScore: w.opponentScore,
     }));
 
+  const factionTrend =
+    snapshotRows.length > 0
+      ? buildFactionTrend(
+          snapshotRows.map((r) => ({
+            t: Math.floor(r.capturedAt.getTime() / 1000),
+            respect: r.respect,
+            members: r.members,
+          })),
+          { from: range.from, to: range.to }
+        )
+      : null;
+
   return {
+    factionTrend,
     availability: {
       basic: sectionAvailability(availCtx, "faction_basic", "faction_basic"),
       members: sectionAvailability(availCtx, "faction_members", "faction"),

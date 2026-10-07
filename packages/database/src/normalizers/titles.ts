@@ -318,6 +318,10 @@ export function moneyPlanFor(category: string, title: string): MoneyPlan | null 
   if (is(/^property rental market rent expire renter$/)) return { category: "housing", direction: "neutral", skip: true, transfer: false };
 
   // --- transfers: money moves between the player's own pools ---
+  // Property vault deposits/withdrawals (category "Vault"): payload carries
+  // {balance, deposited|withdrawn, property_id} — balance-sheet movement
+  // between the player's own pools, never income/expense (2.6.0).
+  if (c === "vault") return { category: "vault", direction: "neutral", skip: false, transfer: true };
   if (is(/^bank invest/)) return { category: "city_bank", direction: "neutral", skip: false, transfer: true };
   if (is(/^bank (withdraw|withdrawal)/)) return { category: "city_bank", direction: "neutral", skip: false, transfer: true };
   if (is(/^bank deposit/)) return { category: "city_bank", direction: "neutral", skip: false, transfer: true };
@@ -461,6 +465,11 @@ export function routeLog(category: string, title: string): LogRoute {
   // {withdrawn} / {cost} in the stored archive). The travel route must not
   // shadow the ledger for them (proven false-negative class).
   if (/^offshore bank (deposit|withdraw)/.test(t)) return "money";
+
+  // Property vault deposits/withdrawals (category "Vault"): money movements
+  // between the player's own pools, routed to the ledger as neutral
+  // transfers (2.6.0) — previously timeline-only.
+  if (c === "vault") return "money";
   if (/^travel fee$/.test(t)) return "money";
 
   // Travel: transitions and abroad purchases.

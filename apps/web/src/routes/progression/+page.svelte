@@ -452,6 +452,63 @@
     </section>
 
 
+          <Panel title="Account progression" caption="Long-term counters from your stored personalstats history — exact snapshot deltas over the selected range">
+            {#if !progression.accountCounters}
+              <StateMessage state="empty" compact title="No personalstats history yet" hint="Hourly stat snapshots accumulate automatically while the sync runs." />
+            {:else}
+              {#if progression.accountCounters.primary.length === 0}
+                <StateMessage state="empty" compact title="No known counters observed yet" />
+              {:else}
+                <ul class="space-y-2.5 text-[13px]">
+                  {#each progression.accountCounters.primary as c (c.key)}
+                    <li class="flex items-baseline justify-between gap-3">
+                      <span class="text-fg">{c.label}</span>
+                      <span class="flex items-baseline gap-2">
+                        <span class="tnum text-[11px] text-fg-faint" title="Current total (Torn cumulative counter)">{c.current !== null ? formatNumberCompact(c.current) : "—"}</span>
+                        {#if c.delta !== null && c.delta !== 0}
+                          <span class="tnum font-medium {c.delta > 0 ? 'text-positive' : c.resetDetected ? 'text-warn' : 'text-negative'}"
+                            title={c.resetDetected
+                              ? "Torn's counter was observed resetting — the delta covers the period after the reset"
+                              : c.delta > 0
+                                ? "Exact snapshot delta over the selected range"
+                                : "Counter decreased — shown as-is, never hidden"}>
+                            {c.delta > 0 ? "+" : ""}{formatNumberCompact(c.delta)}{c.ratePerDay !== null ? ' · ' + formatNumberCompact(c.ratePerDay) + '/day' : ''}
+                          </span>
+                        {/if}
+                      </span>
+                    </li>
+                  {/each}
+                </ul>
+                {#if progression.accountCounters.secondary.length > 0}
+                  <details class="mt-3">
+                    <summary class="cursor-pointer select-none text-[12px] font-medium text-fg-muted transition-colors hover:text-fg">
+                      More progression stats ({progression.accountCounters.secondary.length})
+                    </summary>
+                    <ul class="mt-2.5 space-y-2.5 text-[13px]">
+                      {#each progression.accountCounters.secondary as c (c.key)}
+                        <li class="flex items-baseline justify-between gap-3">
+                          <span class="text-fg-muted">{c.label}</span>
+                          <span class="flex items-baseline gap-2">
+                            <span class="tnum text-[11px] text-fg-faint">{c.current !== null ? formatNumberCompact(c.current) : "—"}</span>
+                            {#if c.delta !== null && c.delta !== 0}
+                              <span class="tnum font-medium {c.delta > 0 ? 'text-positive' : 'text-negative'}"
+                                title={c.resetDetected ? 'Counter reset observed — delta covers the post-reset period' : 'Exact snapshot delta'}>
+                                {c.delta > 0 ? '+' : ''}{formatNumberCompact(c.delta)}
+                              </span>
+                            {/if}
+                          </span>
+                        </li>
+                      {/each}
+                    </ul>
+                  </details>
+                {/if}
+                <p class="mt-3 text-[11px] leading-relaxed text-fg-faint">
+                  Counters are Torn's own cumulative personalstats values, snapshot-sampled hourly — provenance exact, deltas cover the tracked span.
+                </p>
+              {/if}
+            {/if}
+          </Panel>
+
     <!-- ═══ B · Training ═══ -->
     <section class="space-y-5">
       <h2 class="section-label text-[12px]"><span class="mr-2 text-accent">B</span> Training — sessions inferred from energy declines and stat gains</h2>

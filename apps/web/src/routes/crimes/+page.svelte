@@ -165,6 +165,42 @@
       <span class="font-medium text-warning">estimates</span> from the Torn item catalog and are never mixed into the exact cash total.
     </p>
 
+    {#if summary && summary.skillProgression.length > 0}
+      <section>
+        <h2 class="section-label text-[12px]">Crime skill progression — from Torn's own skill bookkeeping</h2>
+        <div class="overflow-hidden rounded-card border border-border bg-surface shadow-panel">
+          <table class="w-full text-left text-[13px]">
+            <thead class="border-b border-border text-[11px] uppercase tracking-wide text-fg-faint">
+              <tr>
+                <th class="px-4 py-2.5 font-medium">Crime</th>
+                <th class="px-4 py-2.5 text-right font-medium">Skill level</th>
+                <th class="px-4 py-2.5 text-right font-medium">Change</th>
+                <th class="hidden px-4 py-2.5 text-right font-medium sm:table-cell">Level ups / downs</th>
+                <th class="hidden px-4 py-2.5 text-right font-medium sm:table-cell">Last change</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each summary.skillProgression as sk (sk.crime)}
+                <tr class="border-b border-border/60 last:border-0">
+                  <td class="px-4 py-2.5 capitalize text-fg">{sk.crime}</td>
+                  <td class="tnum px-4 py-2.5 text-right font-medium text-fg">{sk.level ?? "—"}</td>
+                  <td class="tnum px-4 py-2.5 text-right {sk.delta !== null ? (sk.delta > 0 ? 'text-positive' : sk.delta < 0 ? 'text-warning' : 'text-fg-faint') : 'text-fg-faint'}"
+                    title={sk.delta !== null && sk.delta < 0 ? "Net level decrease — includes observed skill-down events (exact observations, never hidden)" : "Net level change over observed skill events"}>
+                    {sk.delta !== null ? (sk.delta > 0 ? "+" : "") + String(sk.delta) : "—"}
+                  </td>
+                  <td class="tnum hidden px-4 py-2.5 text-right text-fg-muted sm:table-cell">{sk.levelUps} / {sk.levelDowns}</td>
+                  <td class="tnum hidden px-4 py-2.5 text-right text-fg-faint sm:table-cell">{sk.lastChangeAt !== null ? td.displayDate(sk.lastChangeAt) : "—"}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+          <p class="border-t border-border/60 px-4 py-2.5 text-[11px] leading-relaxed text-fg-faint">
+            Skill levels are Torn's own per-crime values from the log bookkeeping (exact). Levels are observed at skill-change moments — between changes they are interpolated by the counter, not estimated.
+          </p>
+        </div>
+      </section>
+    {/if}
+
     <section class="grid gap-6 lg:grid-cols-2">
       <Panel title="Attempts & successes" caption="Per day over the selected range" flush>
         {#if !trendOption}

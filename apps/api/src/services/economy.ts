@@ -13,6 +13,7 @@ import {
 } from "@tornscope/shared";
 import {
   aggregateConversions,
+  buildInternalTransfers,
   aggregateMoneyEvents,
   aggregateMoneySemantics,
   aggregateConsumption,
@@ -413,9 +414,14 @@ export async function getEconomySummary(userId: string, rangeInput: DateRangeInp
     source: "Includes market repricing, inventory revaluation and activity outside available history",
   });
 
+  // Internal transfers (2.6.0): vault + bank movements. Accounting-neutral —
+  // surfaced for visibility only, never part of income/expense/net.
+  const transfers = buildInternalTransfers(moneyRows);
+
   return {
     range: { from: range.from, to: range.to, interval: autoInterval(range) },
     generatedAt: Math.floor(Date.now() / 1000),
+    transfers,
     availability: {
       cashFlow: sectionAvailability(availCtx, "money_cash_flow", "money_logs"),
       walletBridge: sectionAvailability(availCtx, "wallet_bridge", "money_logs"),
@@ -484,6 +490,7 @@ export async function getEconomySummary(userId: string, rangeInput: DateRangeInp
       })),
     },
     networth: {
+      position: nwPeriod.position ?? null,
       current: { value: nwPeriod.current?.total ?? null, provenance: "exact", availability: nwPeriod.current ? "ok" : "unavailable" },
       currentAt: nwPeriod.current?.capturedAt ?? null,
       baseline: nwPeriod.baseline?.total ?? null,

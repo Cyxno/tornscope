@@ -33,6 +33,8 @@ const SNAPSHOT_SELECT = {
   property: true,
   stockMarket: true,
   company: true,
+  loans: true,
+  unpaidFees: true,
   points: true,
 } as const;
 
@@ -56,6 +58,8 @@ type SnapshotRow = {
   property: bigint;
   stockMarket: bigint;
   company: bigint;
+  loans: bigint;
+  unpaidFees: bigint;
   points: bigint;
 };
 
@@ -63,6 +67,8 @@ function toFields(r: SnapshotRow): NetworthSnapshotFields {
   return {
     capturedAt: Math.floor(r.capturedAt.getTime() / 1000),
     total: Number(r.total),
+    loans: Number(r.loans ?? 0n),
+    unpaidFees: Number(r.unpaidFees ?? 0n),
     wallet: Number(r.wallet),
     vault: Number(r.vault),
     pending: Number(r.pending),

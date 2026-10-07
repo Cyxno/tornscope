@@ -167,6 +167,41 @@
         only rows matched to a ranked war count as war payouts — the rest is <span class="font-medium text-fg">unmatched faction income</span>.
       </p>
 
+      {#if overview.factionTrend && overview.factionTrend.series.length > 1}
+        <Panel
+          title="Faction history — respect & members over time"
+          caption={`From ${overview.factionTrend.delta.points} stored snapshots${overview.factionTrend.delta.trackingSince !== null ? ` since ${td.displayDate(overview.factionTrend.delta.trackingSince)}` : ""} — every point is a real stored snapshot`}
+          flush
+        >
+          <div class="grid grid-cols-2 gap-px bg-border md:grid-cols-4">
+            <div class="bg-surface px-4 py-3">
+              <p class="text-[11px] text-fg-faint">Respect now</p>
+              <p class="tnum mt-0.5 text-[15px] font-semibold text-fg">{overview.factionTrend.delta.respect.closing !== null ? overview.factionTrend.delta.respect.closing.toLocaleString("en-US") : "—"}</p>
+            </div>
+            <div class="bg-surface px-4 py-3">
+              <p class="text-[11px] text-fg-faint">Respect change{overview.factionTrend.delta.respect.ratePerDay !== null ? "" : ""}</p>
+              <p class="tnum mt-0.5 text-[15px] font-semibold {overview.factionTrend.delta.respect.delta !== null ? (overview.factionTrend.delta.respect.delta >= 0 ? 'text-positive' : 'text-negative') : 'text-fg-faint'}">
+                {overview.factionTrend.delta.respect.delta !== null ? (overview.factionTrend.delta.respect.delta >= 0 ? "+" : "") + overview.factionTrend.delta.respect.delta.toLocaleString("en-US") : "—"}
+              </p>
+              <p class="text-[10px] text-fg-faint">{overview.factionTrend.delta.respect.ratePerDay !== null ? `${overview.factionTrend.delta.respect.ratePerDay >= 0 ? "+" : ""}${overview.factionTrend.delta.respect.ratePerDay.toFixed(1)}/day` : ""}</p>
+            </div>
+            <div class="bg-surface px-4 py-3">
+              <p class="text-[11px] text-fg-faint">Members now</p>
+              <p class="tnum mt-0.5 text-[15px] font-semibold text-fg">{overview.factionTrend.delta.members.closing !== null ? String(overview.factionTrend.delta.members.closing) : "—"}</p>
+            </div>
+            <div class="bg-surface px-4 py-3">
+              <p class="text-[11px] text-fg-faint">Member change</p>
+              <p class="tnum mt-0.5 text-[15px] font-semibold {overview.factionTrend.delta.members.delta !== null ? (overview.factionTrend.delta.members.delta >= 0 ? 'text-positive' : 'text-negative') : 'text-fg-faint'}">
+                {overview.factionTrend.delta.members.delta !== null ? (overview.factionTrend.delta.members.delta >= 0 ? "+" : "") + String(overview.factionTrend.delta.members.delta) : "—"}
+              </p>
+            </div>
+          </div>
+          <p class="mt-3 text-[11px] leading-relaxed text-fg-faint">
+            Snapshot-derived, exact provenance: the deltas span the tracked snapshots only — never a fabricated join/leave date.
+          </p>
+        </Panel>
+      {/if}
+
       {#if overview.currentWar}
         <Panel title="Current ranked war" caption="Live state from Torn" flush>
           <div class="grid grid-cols-2 gap-px bg-border md:grid-cols-4">

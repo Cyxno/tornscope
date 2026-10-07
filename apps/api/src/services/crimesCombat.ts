@@ -1,3 +1,4 @@
+import { buildCrimeSkillProgression } from "@tornscope/analytics";
 import { resolveDateRange, type CrimesSummaryResponse, type CrimesTimelineResponse, type CombatSummaryResponse, type CombatTimelineResponse, type KpiValue, type DateRangeInput, type Paginated, type CrimeEventDto, type CombatEventDto } from "@tornscope/shared";
 import { aggregateCrimeStats, aggregateCombatStats } from "@tornscope/analytics";
 import { bigintToNumber, getPrismaClient } from "@tornscope/database";
@@ -8,6 +9,22 @@ import { loadAvailabilityContext, sectionAvailability } from "./availability.js"
 export async function getCrimesSummary(userId: string, rangeInput: DateRangeInput): Promise<CrimesSummaryResponse> {
   const db = getPrismaClient();
   const range = resolveDateRange(rangeInput);
+  // Crime skill progression (2.6.0): the "Crime skill level up/down" logs are
+  // progression bookkeeping (timeline-only by design). Their payloads carry
+  // the exact per-crime skill level — enough for level/delta/trend without a
+  // new table. Bounded read.
+  const skillRows = await db.$queryRawUnsafe<Array<{ occurredAt: Date; title: string; crime: string; skill_level: number }>>(
+    'SELECT te."occurredAt", te."title", (te."metadata"->\'data\'->>\'crime\') AS crime, (te."metadata"->\'data\'->>\'skill_level\')::int AS skill_level FROM "TimelineEvent" te WHERE te."userId" = $1 AND te."type" = \'log\' AND te."category" = \'Crimes\' AND te."title" IN (\'Crime skill level up\', \'Crime skill level down\') AND te."occurredAt" >= $2 AND te."occurredAt" <= $3 ORDER BY te."occurredAt" ASC LIMIT 20000',
+    userId, new Date(range.from * 1000), new Date(range.to * 1000)
+  );
+  const skillProgression = buildCrimeSkillProgression(
+    skillRows.map((r) => ({
+      t: Math.floor(r.occurredAt.getTime() / 1000),
+      crime: String(r.crime ?? "unknown"),
+      level: r.skill_level,
+      direction: (/down/i.test(r.title) ? "down" : "up") as "down" | "up",
+    }))
+  );
   const rows = await db.crimeEvent.findMany({
     where: { userId, occurredAt: { gte: new Date(range.from * 1000), lte: new Date(range.to * 1000) } },
     orderBy: { occurredAt: "asc" },
@@ -52,6 +69,7 @@ export async function getCrimesSummary(userId: string, rangeInput: DateRangeInpu
     crimesPerDay: stats.crimesPerDay,
     byCrime: stats.byCrime,
     dailySeries: stats.dailySeries,
+    skillProgression,
     coverage: {
       trackingSince: earliest ? Math.floor(earliest.occurredAt.getTime() / 1000) : null,
       earliestStored: earliest ? Math.floor(earliest.occurredAt.getTime() / 1000) : null,

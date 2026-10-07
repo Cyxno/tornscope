@@ -9,6 +9,7 @@ import {
 } from "@tornscope/shared";
 import {
   battlestatProgression,
+  buildAccountCounters,
   buildBattlestatSeries,
   buildEnergyCappedHours,
   buildEnergyLedger,
@@ -214,6 +215,12 @@ export async function getProgression(userId: string, rangeInput: DateRangeInput)
   // attribution on every surface (real-user finding #13).
   const ledgerWhole = buildEnergyLedger(bars, gains, competing);
   const statSeriesWhole = buildBattlestatSeries(statRowsShaped);
+  // Account progression counters (2.6.0): long-term cumulative counters from
+  // the same PersonalStatSnapshot history — deltas over the selected range.
+  const accountCounters = buildAccountCounters(
+    statRowsShaped.map((r) => ({ t: r.capturedAt, stats: r.stats })),
+    { from, to }
+  );
   const allSessions = detectTrainingSessions(ledgerWhole, statSeriesWhole, counterSeries);
   const rangeSessions = allSessions.filter((s) => s.startedAt >= from && s.startedAt <= to);
   const baselineSessions = allSessions.filter((s) => s.startedAt < from);
@@ -368,6 +375,7 @@ export async function getProgression(userId: string, rangeInput: DateRangeInput)
       awardsDelta:
         latestCounters?.awards != null && baselineCounters?.awards != null ? latestCounters.awards - baselineCounters.awards : null,
     },
+    accountCounters: statRowsShaped.length > 0 ? accountCounters : null,
   };
 }
 
