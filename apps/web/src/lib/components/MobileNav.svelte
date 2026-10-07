@@ -16,6 +16,8 @@
   /** Open accordion groups, most-recently-opened last (cap: two). */
   let openGroups = $state<string[]>([]);
   let sheetEl: HTMLElement | undefined = $state();
+  /** The More tab: focus returns here when the sheet closes. */
+  let moreBtn: HTMLElement | undefined = $state();
 
   const activeGroup = $derived(MOBILE_SHEET_GROUPS.find((g) => g.items.some((i) => isActivePath(page.url.pathname, i.href)))?.id ?? null);
 
@@ -42,6 +44,9 @@
 
   function closeSheet() {
     sheetOpen = false;
+    // The sheet unmounts: put focus back on the trigger so keyboard users
+    // never land on <body> (FASE 14 focus-return rule).
+    queueMicrotask(() => moreBtn?.focus());
   }
 
   /** Max two groups open at once — opening a third closes the oldest. */
@@ -80,6 +85,7 @@
     {/each}
     <button
       type="button"
+      bind:this={moreBtn}
       class="flex min-h-[56px] flex-col items-center justify-center gap-1 py-2 transition-colors {moreActive ? 'text-accent' : 'text-fg-faint'}"
       aria-expanded={sheetOpen}
       aria-haspopup="dialog"

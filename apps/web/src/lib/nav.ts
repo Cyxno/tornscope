@@ -5,11 +5,13 @@ import type { IconName } from "$lib/components/Icon.svelte";
  * mobile tab bar and the mobile More sheet. Route semantics (hrefs) never
  * change here; only presentation does.
  *
- * IA (2.5.2): progressive disclosure. Primary destinations stay always
- * visible; secondary pages live exactly one interaction away inside
- * collapsible families. Max two levels (family → route) — pages themselves
- * own any deeper tabs. Nothing is removed from the model: every user-facing
- * route appears exactly once (nav.test.ts pins that).
+ * IA (2.5.2, refined 2.5.3): progressive disclosure. Primary destinations
+ * stay always visible; secondary pages live exactly one interaction away
+ * inside collapsible families. Max two levels (family → route) — pages
+ * themselves own any deeper tabs. Every family is HUB-FIRST: its label is a
+ * navigating hub page and only the chevron toggles, so every clickable-looking
+ * row actually navigates (a family without a real hub page must not exist —
+ * nav.test.ts pins that). Every user-facing route appears exactly once.
  */
 
 export type NavSectionId = "core" | "intelligence" | "analytics" | "gameplay" | "specialty" | "system";
@@ -21,16 +23,14 @@ export interface NavItem {
   section: NavSectionId;
 }
 
-/** A collapsible unit: a hub page with its secondary children, or a
- * label-only header group when no natural hub page exists. */
+/** A collapsible unit: a hub page with its secondary children. */
 export interface NavFamily {
   /** Stable key for collapse-state persistence. */
   id: string;
   section: NavSectionId;
-  /** Navigating hub page, when one exists. */
-  parent?: NavItem;
-  /** Label-only collapsible header when the family has no hub page. */
-  header?: { label: string; icon: IconName };
+  /** Navigating hub page — the family label. Required: an inert,
+   * link-looking family header was a 2.5.2 usability bug (2.5.3 fix). */
+  parent: NavItem;
   children: NavItem[];
 }
 
@@ -65,6 +65,9 @@ const travel: NavItem = { href: "/travel", label: "Travel", icon: "travel", sect
 const casino: NavItem = { href: "/casino", label: "Casino", icon: "slots", section: "specialty" };
 const rewards: NavItem = { href: "/rewards", label: "Rewards", icon: "cache", section: "specialty" };
 const hunting: NavItem = { href: "/hunting", label: "Hunting", icon: "hunting", section: "specialty" };
+/** Light wayfinding hub for the casino/rewards/hunting cluster — makes the
+ * family label navigate like every other family (2.5.3). */
+const rewardsGames: NavItem = { href: "/rewards-games", label: "Rewards & games", icon: "slots", section: "specialty" };
 const systemHealth: NavItem = { href: "/system", label: "System health", icon: "sync", section: "system" };
 const changelog: NavItem = { href: "/changelog", label: "Changelog", icon: "changelog", section: "system" };
 
@@ -117,9 +120,9 @@ export const NAV_SECTIONS: NavSection[] = [
     label: "Rewards & games",
     entries: [],
     families: [
-      // No single hub page covers casino + rewards + hunting, so this family
-      // uses a label-only header instead of inventing a fake landing page.
-      { id: "specialty", section: "specialty", header: { label: "Rewards & games", icon: "slots" }, children: [casino, rewards, hunting] },
+      // The cluster's light wayfinding hub (/rewards-games) leads the family,
+      // so the label navigates exactly like Economy/Progression/Activity.
+      { id: "specialty", section: "specialty", parent: rewardsGames, children: [casino, rewards, hunting] },
     ],
   },
   {
@@ -134,7 +137,7 @@ export const NAV_SECTIONS: NavSection[] = [
 export const ALL_NAV_ITEMS: NavItem[] = [
   ...NAV_SECTIONS.flatMap((s) => [
     ...s.entries,
-    ...s.families.flatMap((f) => [...(f.parent ? [f.parent] : []), ...f.children]),
+    ...s.families.flatMap((f) => [f.parent, ...f.children]),
   ]),
   ...PERSISTENT_ITEMS,
 ];
@@ -154,7 +157,7 @@ export const MOBILE_SHEET_GROUPS: Array<{ id: string; label: string; icon: IconN
   { id: "progression", label: "Progression", icon: progression.icon, items: [progression, energy, merits, drugs] },
   { id: "activity", label: "Activity", icon: activity.icon, items: [activity, timeline, logs] },
   { id: "gameplay", label: "Gameplay", icon: "combat", items: [crimes, combat, faction, travel] },
-  { id: "specialty", label: "Rewards & games", icon: "slots", items: [casino, rewards, hunting] },
+  { id: "specialty", label: "Rewards & games", icon: "slots", items: [rewardsGames, casino, rewards, hunting] },
   { id: "system", label: "System", icon: "sync", items: [systemHealth, changelog, ...PERSISTENT_ITEMS] },
 ];
 

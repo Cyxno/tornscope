@@ -96,6 +96,26 @@
     return false;
   }
 
+  // On short screens an expanded family can push the active row below the
+  // scrollable nav's fold. After each route change, bring the active row into
+  // view so the current page is never scrolled out of its own navigation.
+  // Two rAFs cover the settled first paint; a re-check after fonts.ready
+  // covers webfont swap, which grows row heights after the first layout.
+  $effect(() => {
+    const path = page.url.pathname;
+    if (!browser) return;
+    const bringActiveIntoView = () => {
+      const el = document.querySelector('aside nav a[aria-current="page"]');
+      const nav = document.querySelector('aside nav[aria-label="Primary"]');
+      if (!el || !nav) return;
+      const er = el.getBoundingClientRect();
+      const nr = nav.getBoundingClientRect();
+      if (er.top < nr.top || er.bottom > nr.bottom) el.scrollIntoView({ block: "nearest", inline: "nearest" });
+    };
+    requestAnimationFrame(() => requestAnimationFrame(bringActiveIntoView));
+    void document.fonts?.ready.then(() => requestAnimationFrame(bringActiveIntoView));
+  });
+
   function toggleFamily(family: NavFamily) {
     const expandedNow = isExpanded(family);
     const collapsed = collapse.collapsed.filter((id) => id !== family.id);
@@ -107,10 +127,6 @@
     }
     collapse = { collapsed, expanded };
     persistCollapse(collapse);
-  }
-
-  function familyLabel(family: NavFamily): string {
-    return family.parent?.label ?? family.header?.label ?? family.id;
   }
 
   /** System pages live in the rail footer (always visible), not the list. */
@@ -173,41 +189,33 @@
           {#each section.families as family (family.id)}
           {@const expanded = isExpanded(family)}
           {@const childActive = family.children.some((c) => isActivePath(page.url.pathname, c.href))}
-          {@const parentActive = family.parent ? isActivePath(page.url.pathname, family.parent.href) : false}
+          {@const parentActive = isActivePath(page.url.pathname, family.parent.href)}
           <div>
             <div class="flex items-center">
-              {#if family.parent}
-                <!-- Hub page: the label navigates, only the chevron toggles. -->
-                <a
-                  href={family.parent.href}
-                  title={family.parent.label}
-                  class="relative flex min-h-[34px] min-w-0 flex-1 items-center gap-3 rounded-l-[10px] px-3 text-[13.5px] font-medium transition-colors {(parentActive || childActive)
-                    ? 'text-fg'
-                    : 'text-fg-muted hover:bg-surface hover:text-fg'}"
-                  aria-current={parentActive ? "page" : undefined}
-                >
-                  {#if parentActive}
-                    <span class="absolute -left-3 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full bg-accent" aria-hidden="true"></span>
-                  {/if}
-                  <Icon name={family.parent.icon} size={18} class="shrink-0 {(parentActive || childActive) ? 'text-accent' : ''}" />
-                  <span class="hidden truncate xl:block">{family.parent.label}</span>
-                </a>
-              {:else if family.header}
-                <span
-                  class="flex min-h-[34px] min-w-0 flex-1 items-center gap-3 px-3 text-[13.5px] font-medium text-fg-muted"
-                  title={family.header.label}
-                >
-                  <Icon name={family.header.icon} size={18} class="shrink-0 {childActive ? 'text-accent' : ''}" />
-                  <span class="hidden truncate xl:block">{family.header.label}</span>
-                </span>
-              {/if}
+              <!-- Hub-first rule (2.5.3): EVERY family label navigates to its
+                   hub page — a link-looking row that does nothing must never
+                   exist. Only the chevron toggles the children. -->
+              <a
+                href={family.parent.href}
+                title={family.parent.label}
+                class="relative flex min-h-[34px] min-w-0 flex-1 items-center gap-3 rounded-l-[10px] px-3 text-[13.5px] font-medium transition-colors {(parentActive || childActive)
+                  ? 'text-fg'
+                  : 'text-fg-muted hover:bg-surface hover:text-fg'}"
+                aria-current={parentActive ? "page" : undefined}
+              >
+                {#if parentActive}
+                  <span class="absolute -left-3 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full bg-accent" aria-hidden="true"></span>
+                {/if}
+                <Icon name={family.parent.icon} size={18} class="shrink-0 {(parentActive || childActive) ? 'text-accent' : ''}" />
+                <span class="hidden truncate xl:block">{family.parent.label}</span>
+              </a>
               <button
                 type="button"
-                class="flex h-[34px] w-7 shrink-0 items-center justify-center rounded-r-[10px] text-fg-faint transition-colors hover:text-fg"
+                class="relative flex h-[34px] w-7 shrink-0 items-center justify-center rounded-r-[10px] text-fg-faint transition-colors hover:text-fg after:absolute after:inset-y-[-6px] after:left-[-4px] after:right-[-4px] after:content-['']"
                 aria-expanded={expanded}
                 aria-controls={"nav-family-" + family.id}
-                aria-label={(expanded ? "Collapse " : "Expand ") + familyLabel(family)}
-                title={(expanded ? "Collapse " : "Expand ") + familyLabel(family)}
+                aria-label={(expanded ? "Collapse " : "Expand ") + family.parent.label}
+                title={(expanded ? "Collapse " : "Expand ") + family.parent.label}
                 onclick={() => toggleFamily(family)}
               >
                 <Icon

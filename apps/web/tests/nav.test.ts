@@ -89,17 +89,21 @@ describe("progressive disclosure structure", () => {
     expect(analytics?.families.map((f) => f.parent?.href)).toEqual(["/money", "/progression", "/activity"]);
   });
 
-  it("hubs are real pages, not invented headers — except where no hub exists", () => {
+  it("EVERY family is hub-first — no clickable-looking header without action", () => {
+    // 2.5.2 shipped a label-only "Rewards & games" family header that looked
+    // exactly like the navigating hub families but did nothing (2.5.3 bug).
+    // The model can no longer express that: every family MUST have a
+    // navigating parent whose href is a real route in the model.
     for (const family of NAV_FAMILIES) {
-      if (family.parent) {
-        expect(ALL_NAV_ITEMS).toContain(family.parent);
-      } else {
-        expect(family.header?.label).toBeTruthy();
-      }
+      expect(family.parent, `family "${family.id}" has no hub parent`).toBeTruthy();
+      expect(ALL_NAV_ITEMS.some((i) => i.href === family.parent!.href), `family "${family.id}" hub href not in model`).toBe(true);
+      expect(ALL_NAV_ITEMS).toContain(family.parent);
+      // The hub must not also be a child somewhere (single representation).
+      for (const f of NAV_FAMILIES) expect(f.children).not.toContain(family.parent);
     }
-    const specialty = NAV_FAMILIES.find((f) => f.id === "specialty");
-    expect(specialty?.parent).toBeUndefined();
-    expect(specialty?.header?.label).toBe("Rewards & games");
+    // The rail renders hubs as links and nothing inert: no header branch.
+    const rail = read("../src/lib/components/NavRail.svelte");
+    expect(rail).not.toContain("family.header");
   });
 
   it("the mobile sheet is a compact set of accordion groups", () => {
@@ -121,6 +125,23 @@ describe("active state derivation", () => {
     expect(isActivePath("/faction/ranked-wars", "/faction")).toBe(true);
     expect(isActivePath("/drugs", "/drugs")).toBe(true);
     expect(isActivePath("/drugstore", "/drugs")).toBe(false);
+    // The rewards hub must not swallow /rewards or vice versa.
+    expect(isActivePath("/rewards-games", "/rewards")).toBe(false);
+    expect(isActivePath("/rewards", "/rewards-games")).toBe(false);
+    expect(isActivePath("/rewards-games", "/rewards-games")).toBe(true);
+  });
+
+  it("the rewards & games hub leads its family on both form factors", () => {
+    const family = familyForPath("/rewards-games");
+    expect(family?.id).toBe("specialty");
+    expect(family?.parent?.href).toBe("/rewards-games");
+    expect(family?.children.map((c) => c.href)).toEqual(["/casino", "/rewards", "/hunting"]);
+    // Mobile sheet mirrors the desktop hub-first structure.
+    const sheetGroup = MOBILE_SHEET_GROUPS.find((g) => g.id === "specialty");
+    expect(sheetGroup?.items[0]?.href).toBe("/rewards-games");
+    // Header context resolves the hub like any other page.
+    expect(activeItemForPath("/rewards-games")?.item.label).toBe("Rewards & games");
+    expect(activeItemForPath("/casino")?.family?.id).toBe("specialty");
   });
 
   it("an active child activates its family (rail parent lights up)", () => {
@@ -178,6 +199,18 @@ describe("navigation components stay wired to the single model", () => {
     expect(rail).toContain("family.id === activeFamilyId");
     // No hover-only disclosure: toggling is a real button.
     expect(rail).toMatch(/<button[^>]*aria-expanded/);
+    // Hub-first interaction rule: label navigates (anchor), chevron toggles
+    // (button) — clicking one can never trigger the other.
+    expect(rail).toMatch(/<a\s+href=\{family\.parent\.href\}/);
+    expect(rail).toMatch(/aria-expanded=\{expanded\}\s+aria-controls=\{"nav-family-/);
+    // The chevron keeps an enlarged hit zone (pseudo-element inset) without
+    // growing the visual footprint of the narrow icon-only rail.
+    expect(rail).toContain("after:absolute");
+    // On short screens the active row scrolls into the nav's view after a
+    // route change — an expanded family must never hide the current page
+    // below the fold.
+    expect(rail).toContain('aside nav a[aria-current="page"]');
+    expect(rail).toContain("scrollIntoView");
   });
 
   it("the mobile sheet is an accordion with Escape close and active group", () => {
@@ -189,6 +222,8 @@ describe("navigation components stay wired to the single model", () => {
     expect(mobile).toContain("aria-modal");
     // Active group opens automatically (never buried).
     expect(mobile).toContain("activeGroup");
+    // Focus returns to the More trigger when the sheet closes.
+    expect(mobile).toContain("moreBtn?.focus()");
   });
 
   it("the mobile header derives current-page context from the model", () => {

@@ -30,8 +30,28 @@ export const CHANGELOG_KINDS: ChangelogKind[] = ["Added", "Improved", "Fixed", "
 
 export const CHANGELOG: ChangelogRelease[] = [
   {
-    version: "2.5.2",
+    version: "2.5.3",
     current: true,
+    summary:
+      "Navigation correctness pass: every collapsible section is now led by a real hub page — the Rewards & games header navigates to a light wayfinding hub instead of being an inert, link-looking label — with consistent click targets and keyboard focus handling across desktop and mobile.",
+    changes: [
+      {
+        kind: "Fixed",
+        text: "The Rewards & games section header now navigates to a light /rewards-games hub (pointing at Casino, Openables & rewards and Hunting) instead of looking clickable but doing nothing.",
+      },
+      {
+        kind: "Improved",
+        text: "Standardized hub navigation: all four collapsible families (Economy, Progression, Activity, Rewards & games) follow one interaction rule — the label navigates, only the chevron expands.",
+      },
+      {
+        kind: "Improved",
+        text: "Enlarged the family expand/collapse hit area in the sidebar and returned keyboard focus to the More button when the mobile section sheet closes.",
+      },
+    ],
+  },
+  {
+    version: "2.5.2",
+    current: false,
     summary:
       "Navigation realignment for a growing analytics surface: primary destinations stay visible while secondary pages moved into expandable families, the mobile More menu became a compact accordion sheet, and the current page is always in context. Also carries the Xanax usage/streak presentation clarification and realigns the release identity as 2.5.2.",
     changes: [
