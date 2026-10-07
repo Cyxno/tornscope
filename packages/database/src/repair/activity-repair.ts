@@ -277,9 +277,32 @@ async function main(): Promise<void> {
 
   const BATCH = 500;
   let inserted = 0;
+  let skippedVanishedUsers = 0;
   for (let i = 0; i < inserts.length; i += BATCH) {
-    const result = await db.activityEvent.createMany({ data: inserts.slice(i, i + BATCH) as never[], skipDuplicates: true });
-    inserted += result.count;
+    const batch = inserts.slice(i, i + BATCH) as never[];
+    try {
+      const result = await db.activityEvent.createMany({ data: batch, skipDuplicates: true });
+      inserted += result.count;
+    } catch (err) {
+      // A concurrent user deletion (session revocation, profile cleanup) can
+      // remove a candidate's user between the scan and this insert. The
+      // repair runs against LIVE databases — one vanished user must never
+      // abort the whole pass: retry the batch row-by-row, skipping the rows
+      // whose user no longer exists.
+      if ((err as { code?: string }).code !== "P2003") throw err;
+      for (const row of batch) {
+        try {
+          await db.activityEvent.create({ data: row });
+          inserted += 1;
+        } catch (rowErr) {
+          if ((rowErr as { code?: string }).code !== "P2003") throw rowErr;
+          skippedVanishedUsers += 1;
+        }
+      }
+    }
+  }
+  if (skippedVanishedUsers > 0) {
+    console.log(`Skipped ${skippedVanishedUsers} candidate rows whose user disappeared mid-repair (concurrent deletion).`);
   }
   console.log(`Repair applied: ${inserted} ActivityEvent rows inserted (skipDuplicates; raw archive untouched).`);
   console.log("Re-run — it must now report 0 new recognized rows.");

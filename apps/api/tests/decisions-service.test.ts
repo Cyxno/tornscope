@@ -21,21 +21,30 @@ beforeAll(async () => {
   // gym logs, refills, trips + items.
   const now = Math.floor(Date.now() / 1000);
   const D = 86_400;
+  // Baseline rows sit 9-34 days back: comfortably inside the facts gatherer's
+  // 37-day window with days of margin. The original layout put the oldest row
+  // EXACTLY on that 37-day boundary — any second of delay between the fixture
+  // and the service call dropped it from the gather (the 46-vs-47 coverage
+  // flake fixed in 2.5.4).
+  const baseline = (i: number) => now - 9 * D - i * 20 * 3600;
+  // The drugs baseline has 40 rows: tighter 15h spacing keeps the oldest
+  // within ~33 days (still days clear of the 37-day gather window).
+  const drugsBaseline = (i: number) => now - 9 * D - i * 15 * 3600;
   const moneyRows = [];
   for (let i = 0; i < 7; i++) moneyRows.push({ userId, occurredAt: new Date((now - i * D - 100) * 1000), category: "other", direction: "expense" as const, amount: BigInt(5000 + i), source: "test", sourceRef: `di:exp:${i}` });
-  for (let i = 0; i < 30; i++) moneyRows.push({ userId, occurredAt: new Date((now - 8 * D - i * D) * 1000), category: "other", direction: "expense" as const, amount: BigInt(1000), source: "test", sourceRef: `di:expb:${i}` });
+  for (let i = 0; i < 30; i++) moneyRows.push({ userId, occurredAt: new Date(baseline(i) * 1000), category: "other", direction: "expense" as const, amount: BigInt(1000), source: "test", sourceRef: `di:expb:${i}` });
   for (let i = 0; i < 10; i++) moneyRows.push({ userId, occurredAt: new Date((now - i * D - 50) * 1000), category: "salary", direction: "income" as const, amount: BigInt(20_000), source: "test", sourceRef: `di:inc:${i}` });
   await db.moneyEvent.createMany({ data: moneyRows });
   await db.drugEvent.createMany({
     data: [
       ...Array.from({ length: 10 }, (_, i) => ({ userId, occurredAt: new Date((now - (i % 5) * D - 100) * 1000), drugName: "Xanax", outcome: "success" as const, source: "test", sourceRef: `di:xan:${i}` })),
-      ...Array.from({ length: 40 }, (_, i) => ({ userId, occurredAt: new Date((now - 8 * D - i * D) * 1000), drugName: "Xanax", outcome: "success" as const, source: "test", sourceRef: `di:xanb:${i}` })),
+      ...Array.from({ length: 40 }, (_, i) => ({ userId, occurredAt: new Date(drugsBaseline(i) * 1000), drugName: "Xanax", outcome: "success" as const, source: "test", sourceRef: `di:xanb:${i}` })),
     ],
   });
   await db.timelineEvent.createMany({
     data: [
       ...Array.from({ length: 8 }, (_, i) => ({ userId, occurredAt: new Date((now - (i % 4) * D - 100) * 1000), type: "log", category: "Gym", title: "Gym train strength", source: "torn_log", sourceRef: `di:gym:${i}`, metadata: { data: { energy_used: 400 } } })),
-      ...Array.from({ length: 30 }, (_, i) => ({ userId, occurredAt: new Date((now - 8 * D - i * D) * 1000), type: "log", category: "Gym", title: "Gym train strength", source: "torn_log", sourceRef: `di:gymb:${i}`, metadata: { data: { energy_used: 100 } } })),
+      ...Array.from({ length: 30 }, (_, i) => ({ userId, occurredAt: new Date(baseline(i) * 1000), type: "log", category: "Gym", title: "Gym train strength", source: "torn_log", sourceRef: `di:gymb:${i}`, metadata: { data: { energy_used: 100 } } })),
     ],
   });
 });

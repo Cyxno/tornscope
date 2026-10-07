@@ -298,7 +298,10 @@ suite("economy analytics — semantic lenses", () => {
     await seedEconomyDay(p.id, false);
     // The travel revenue side values from the CURRENT catalog (estimated);
     // seed a price for the trip item so the estimate is computable, then
-    // remove it again — TornItemCatalog is a global table.
+    // remove it again — TornItemCatalog is a global table. Only remove it
+    // when THIS test created it: parallel suites (daily-summary, golden-data)
+    // may have seeded the same row, and only its creator cleans up (2.5.4).
+    const ecoCreatedTeddyRow = (await db.tornItemCatalog.findUnique({ where: { itemId: 438 } })) === null;
     await db.tornItemCatalog.upsert({
       where: { itemId: 438 },
       create: { itemId: 438, name: "Teddy", type: "Plushie", marketPrice: 10_000n },
@@ -323,7 +326,7 @@ suite("economy analytics — semantic lenses", () => {
       // Economic effect contains neither figure.
       expect(s.economicEffect.income.value).toBe(365_000 + 21_000);
     } finally {
-      await db.tornItemCatalog.deleteMany({ where: { itemId: 438 } });
+      if (ecoCreatedTeddyRow) await db.tornItemCatalog.deleteMany({ where: { itemId: 438 } });
     }
   });
 

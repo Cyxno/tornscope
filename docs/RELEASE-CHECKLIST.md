@@ -23,7 +23,10 @@ proves the tree is internally coherent whatever it is).
 - [ ] `pnpm --filter @tornscope/web exec svelte-kit sync`
 - [ ] `pnpm --filter @tornscope/web exec svelte-check --tsconfig ./tsconfig.json`
 - [ ] Full DB-backed suite with `TEST_DATABASE_URL` set (a Postgres instance;
-      hosted CI runs the same suite — see `.github/workflows/ci.yml`)
+      hosted CI runs the same suite — see `.github/workflows/ci.yml`).
+      The vitest global setup resets the database to the deterministic
+      baseline automatically — no manual cleanup, re-runs are safe
+      (see `docs/TEST-DATABASE-LIFECYCLE.md`)
 - [ ] `pnpm build`
 - [ ] Compose variants validate: `docker compose config -q` for the base,
       dev and unraid files

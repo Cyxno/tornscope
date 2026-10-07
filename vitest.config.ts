@@ -21,6 +21,10 @@ export default defineConfig({
     ],
     // Database/Redis integration tests are skipped unless services are reachable.
     testTimeout: 15000,
+    // Deterministic lifecycle: every run with TEST_DATABASE_URL set resets
+    // the database to the same baseline (schema drop -> migrate -> demo seed)
+    // before any test executes — one lifecycle for local, preflight and CI.
+    globalSetup: ["./vitest.global-setup.ts"],
     // Defaults for DB-backed suites: the modules they import read
     // encryption/rate-limit env at load time, before test-file bodies run.
     setupFiles: ["./vitest.setup.ts"],

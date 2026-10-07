@@ -179,21 +179,26 @@ suite("demo top-up", () => {
     const realUser = await db.user.create({ data: { email: `real-${suffix}@tornscope.local`, displayName: "Real Player", role: "user", isDemo: false } });
     await db.moneyEvent.create({ data: { userId: realUser.id, occurredAt: new Date(NOW * 1000), category: "salary", direction: "income", amount: 1n, source: "torn_log", sourceRef: "real-money-1" } });
     await db.syncState.create({ data: { userId: realUser.id, resource: "money_logs", status: "idle", frequencySeconds: 600 } });
+    // The invariant is proven on a RESERVED item (same range as catalog-integrity's
+    // 9_999_001), NOT on the real Xanax row: several suites value Xanax through the
+    // shared catalog row 206, and parallel vitest workers must never race each
+    // other on that row (2.5.3's gate flaked exactly that way).
+    const invariantItem = 9_999_206;
     await db.tornItemCatalog.upsert({
-      where: { itemId: 206 },
-      create: { itemId: 206, name: "Xanax", type: "Drug", marketPrice: 77_777n },
+      where: { itemId: invariantItem },
+      create: { itemId: invariantItem, name: "Topup invariant item", type: "Other", marketPrice: 77_777n },
       update: { marketPrice: 77_777n },
     });
 
     const realMoneyBefore = await db.moneyEvent.findMany({ where: { userId: realUser.id } });
-    const catalogBefore = await db.tornItemCatalog.findUnique({ where: { itemId: 206 } });
+    const catalogBefore = await db.tornItemCatalog.findUnique({ where: { itemId: invariantItem } });
 
     await maybeTopUpDemoData(NOW + 6 * DAY_SEC + 2 * HOUR, demoUserId);
 
     const realMoneyAfter = await db.moneyEvent.findMany({ where: { userId: realUser.id } });
     expect(realMoneyAfter).toEqual(realMoneyBefore);
     expect((await db.moneyEvent.count({ where: { userId: realUser.id } }))).toBe(1);
-    const catalogAfter = await db.tornItemCatalog.findUnique({ where: { itemId: 206 } });
+    const catalogAfter = await db.tornItemCatalog.findUnique({ where: { itemId: invariantItem } });
     expect(catalogAfter?.marketPrice).toBe(catalogBefore?.marketPrice);
     expect(catalogAfter?.marketPrice).toBe(77_777n);
 
@@ -201,6 +206,7 @@ suite("demo top-up", () => {
     expect(realSync?.lastSuccessAt).toBeNull(); // demo top-up must not touch it
 
     await db.user.delete({ where: { id: realUser.id } }).catch(() => undefined);
+    await db.tornItemCatalog.delete({ where: { itemId: invariantItem } }).catch(() => undefined);
   });
 
   it("keeps the financial semantics coherent in the topped-up window", async () => {

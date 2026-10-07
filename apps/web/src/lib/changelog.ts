@@ -30,8 +30,28 @@ export const CHANGELOG_KINDS: ChangelogKind[] = ["Added", "Improved", "Fixed", "
 
 export const CHANGELOG: ChangelogRelease[] = [
   {
-    version: "2.5.3",
+    version: "2.5.4",
     current: true,
+    summary:
+      "Release-infrastructure hardening: every full-suite run now rebuilds the test database to the same baseline automatically, eliminating the test-state leakage that could make release-gate results depend on earlier runs.",
+    changes: [
+      {
+        kind: "Fixed",
+        text: "Eliminated test database state leakage that could cause non-reproducible release-gate failures — every vitest run now starts from the same schema-plus-seed baseline, locally and in CI alike.",
+      },
+      {
+        kind: "Fixed",
+        text: "Parallel test workers no longer race on shared catalog rows, and the activity repair no longer aborts when a candidate's user disappears mid-run.",
+      },
+      {
+        kind: "Improved",
+        text: "Aligned local, release-preflight and CI database lifecycle into one deterministic path; re-running the suite against a reused database is now always safe.",
+      },
+    ],
+  },
+  {
+    version: "2.5.3",
+    current: false,
     summary:
       "Navigation correctness pass: every collapsible section is now led by a real hub page — the Rewards & games header navigates to a light wayfinding hub instead of being an inert, link-looking label — with consistent click targets and keyboard focus handling across desktop and mobile.",
     changes: [

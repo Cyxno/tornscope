@@ -30,6 +30,10 @@ const suite = dbUrl ? describe : describe.skip;
 
 const db = getPrismaClient();
 const createdUsers: string[] = [];
+// Whether THIS suite created the shared Teddy catalog row (438) itself —
+// parallel suites (daily-summary, economy) also seed it; only the creator
+// may remove it (2.5.4: no cross-worker mutation of shared catalog rows).
+let goldenCreatedTeddyRow = false;
 const DAY = 86_400;
 const nowSec = Math.floor(Date.now() / 1000);
 
@@ -91,7 +95,7 @@ afterAll(async () => {
     }
     await db.user.deleteMany({ where: { id } }).catch(() => undefined);
   }
-  await db.tornItemCatalog.deleteMany({ where: { itemId: 438 } }).catch(() => undefined);
+  if (goldenCreatedTeddyRow) await db.tornItemCatalog.deleteMany({ where: { itemId: 438 } }).catch(() => undefined);
 });
 
 /* ------------------------------------------------------------------ */
@@ -378,6 +382,7 @@ suite("travel golden", () => {
     });
     // The valuation authority is the item CATALOG (current market price),
     // deliberately not the per-row stored estimate.
+    goldenCreatedTeddyRow = (await db.tornItemCatalog.findUnique({ where: { itemId: 438 } })) === null;
     await db.tornItemCatalog.upsert({
       where: { itemId: 438 },
       create: { itemId: 438, name: "Teddy", type: "Plushie", marketPrice: 10_000n },
