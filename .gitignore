@@ -21,7 +21,7 @@ generated/
 packages/database/generated/
 
 # Logs
-logs/
+/logs/
 *.log
 npm-debug.log*
 
