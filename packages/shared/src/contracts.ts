@@ -1158,6 +1158,10 @@ export const CrimeSkillStatSchema = z.object({
   levelUps: z.number(),
   levelDowns: z.number(),
   lastChangeAt: z.number().nullable(),
+  /** Exact current level from the latest personalstats snapshot (2.8.0) —
+   *  covers crimes whose skill never produced a level-change log in the
+   *  archive; null when the snapshot carries no value for this crime. */
+  snapshotLevel: z.number().nullable().default(null),
 });
 export type CrimeSkillStat = z.infer<typeof CrimeSkillStatSchema>;
 

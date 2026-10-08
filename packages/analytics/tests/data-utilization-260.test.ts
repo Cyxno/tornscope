@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCrimeSkillProgression, buildFactionTrend, buildUserMilestones } from "../src/faction-trend.js";
+import { buildCrimeSkillProgression, buildFactionTrend, buildUserMilestones, mergeCrimeSkillSnapshot } from "../src/faction-trend.js";
 import { calculateNetworthPosition, type NetworthSnapshotFields } from "../src/networth.js";
 import { buildInternalTransfers } from "../src/money.js";
 
@@ -156,5 +156,38 @@ describe("crime skill progression", () => {
     expect(burglary.levelDowns).toBe(1);
     const skimming = stats.find((s) => s.crime === "skimming")!;
     expect(skimming.delta).toBe(0); // single observation: no fabricated delta
+  });
+
+  // 2.8.0: personalstats snapshot as the per-crime skill AUTHORITY —
+  // real production shapes (crimes.skills map vs log crime names).
+  it("merges snapshot levels without overwriting log-observed levels", () => {
+    const logStats = buildCrimeSkillProgression([
+      { t: 0, crime: "shoplifting", level: 76, direction: "up" },
+      { t: 100, crime: "skimming", level: 94, direction: "up" },
+    ]);
+    // Real snapshot keys: underscored names; "skimming" (log) vs
+    // "card_skimming" (snapshot) stay SEPARATE — never guessed onto each other.
+    const merged = mergeCrimeSkillSnapshot(logStats, {
+      shoplifting: 100, // matches the log crime (normalized)
+      card_skimming: 98, // snapshot-only name — new row
+      forgery: 1, // snapshot-only, never played in logs
+    });
+    const shop = merged.find((s) => s.crime === "shoplifting")!;
+    expect(shop.level).toBe(76); // log-observed level untouched
+    expect(shop.snapshotLevel).toBe(100); // authority rides alongside
+    const skimming = merged.find((s) => s.crime === "skimming")!;
+    expect(skimming.level).toBe(94);
+    expect(skimming.snapshotLevel).toBeNull(); // no defensible name match
+    const card = merged.find((s) => s.crime === "card_skimming")!;
+    expect(card.snapshotLevel).toBe(98);
+    expect(card.level).toBeNull();
+    const forgery = merged.find((s) => s.crime === "forgery")!;
+    expect(forgery.snapshotLevel).toBe(1);
+  });
+
+  it("tolerates missing/invalid snapshot skill maps", () => {
+    const logStats = buildCrimeSkillProgression([{ t: 0, crime: "burglary", level: 8, direction: "up" }]);
+    expect(mergeCrimeSkillSnapshot(logStats, null)).toEqual(logStats);
+    expect(mergeCrimeSkillSnapshot(logStats, { burglary: "high" })).toEqual(logStats); // non-numeric ignored
   });
 });

@@ -101,4 +101,65 @@ describe("account counters", () => {
     // counters absent from the blobs never appear
     expect(result.primary.find((c) => c.key === "missions_credits")).toBeUndefined();
   });
+
+  it("counters absent from the blobs never appear", () => {
+    const result = buildAccountCounters([{ t: 0, stats: statsBlob }]);
+    expect(result.primary.find((c) => c.key === "missions_credits")).toBeUndefined();
+  });
+
+  // 2.8.0: the Combat / Racing / bounty families — every path proven in the
+  // stored production archive (JSON-path fingerprint, 2026-10-08).
+  it("extracts the combat/racing/bounty counters from a real-shape blob", () => {
+    const blob = {
+      attacking: {
+        elo: 2442,
+        hits: { miss: 602, success: 1816, critical: 222, one_hit_kills: 229 },
+        attacks: { won: 672, lost: 14, assist: 5, stealth: 501, stalemate: 1 },
+        defends: { won: 5, lost: 183, total: 188 },
+        faction: { respect: 3176, ranked_war_hits: 346 },
+        networth: { largest_mug: 189_052, money_mugged: 478_831 },
+        killstreak: { best: 51, current: 0 },
+      },
+      racing: { races: { won: 45, entered: 205 }, skill: 5, points: 250 },
+      bounties: { placed: { value: 1502, amount: 2 }, received: { value: 825_000, amount: 5 }, collected: { value: 0, amount: 0 } },
+    };
+    const extracted = extractAccountCounters(blob);
+    expect(extracted.attacks_won).toBe(672);
+    expect(extracted.attacks_lost).toBe(14);
+    expect(extracted.attacks_stealth).toBe(501);
+    expect(extracted.hits_critical).toBe(222);
+    expect(extracted.defends_total).toBe(188);
+    expect(extracted.combat_elo).toBe(2442);
+    expect(extracted.killstreak_best).toBe(51);
+    expect(extracted.money_mugged).toBe(478_831);
+    expect(extracted.largest_mug).toBe(189_052);
+    expect(extracted.faction_respect).toBe(3176);
+    expect(extracted.ranked_war_hits).toBe(346);
+    expect(extracted.races_entered).toBe(205);
+    expect(extracted.races_won).toBe(45);
+    expect(extracted.racing_points).toBe(250);
+    expect(extracted.racing_skill).toBe(5);
+    expect(extracted.bounty_placed_value).toBe(1502);
+    expect(extracted.bounty_received_value).toBe(825_000);
+    expect(extracted.bounty_collected_value).toBe(0);
+  });
+
+  it("builds combat deltas with groups, and gauges never false-positive resets", () => {
+    // Real archive shape: elo climbs with ordinary swings — never a 50% drop,
+    // so the reset detector must not mislabel the gauge.
+    const rows = [
+      { t: 0, stats: { attacking: { attacks: { won: 672 }, elo: 1398, networth: { money_mugged: 478_831 } } } },
+      { t: 10 * DAY, stats: { attacking: { attacks: { won: 6804 }, elo: 1500, networth: { money_mugged: 109_395_449 } } } },
+      { t: 20 * DAY, stats: { attacking: { attacks: { won: 6900 }, elo: 1440, networth: { money_mugged: 110_000_000 } } } },
+    ];
+    const result = buildAccountCounters(rows);
+    const won = result.primary.find((c) => c.key === "attacks_won")!;
+    expect(won.group).toBe("Combat");
+    expect(won.delta).toBe(6228);
+    const elo = result.secondary.find((c) => c.key === "combat_elo")!;
+    expect(elo.delta).toBe(42); // 1398 → 1440 with swings — a range change, not a reset
+    expect(elo.resetDetected).toBe(false);
+    const mugged = result.primary.find((c) => c.key === "money_mugged")!;
+    expect(mugged.delta).toBe(109_521_169);
+  });
 });

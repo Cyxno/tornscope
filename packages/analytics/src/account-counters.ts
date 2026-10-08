@@ -19,13 +19,24 @@ export interface AccountCounterDef {
   key: string;
   label: string;
   /** UI grouping (progression section). */
-  group: "Crime" | "Hospital" | "Jail" | "Jobs" | "Travel" | "Items" | "Missions" | "Other";
+  group: "Combat" | "Crime" | "Hospital" | "Jail" | "Jobs" | "Racing" | "Travel" | "Items" | "Missions" | "Other";
   /** Nested path into the personalstats JSON blob. */
   path: string[];
   /** Primary rows render collapsed; the rest live in the expandable section. */
   primary: boolean;
 }
 
+/**
+ * 2.8.0 additions — the Combat / Racing / bounty families, previously
+ * retained-raw. Every path below is proven to exist AND move in the stored
+ * production archive (JSON-path fingerprint 2026-10-08: 1,322/2,259
+ * snapshots carry personalstats; each path min ≠ max across the series).
+ * Attacking paths are Torn's own cumulative counters; `combat_elo`,
+ * `killstreak_best`, `largest_mug` and `racing_skill` are high-water/gauge
+ * stats — their deltas are honest range changes, and the shared reset
+ * detector (drop ≥ 50% + stability) provably never mistakes ordinary gauge
+ * swings for counter resets.
+ */
 export const ACCOUNT_COUNTERS: AccountCounterDef[] = [
   { key: "awards", label: "Awards gained", group: "Other", path: ["other", "awards"], primary: true },
   { key: "trains_received", label: "Trains received", group: "Jobs", path: ["jobs", "trains_received"], primary: true },
@@ -37,7 +48,25 @@ export const ACCOUNT_COUNTERS: AccountCounterDef[] = [
   { key: "job_points_used", label: "Job points used", group: "Jobs", path: ["jobs", "job_points_used"], primary: true },
   { key: "missions_credits", label: "Mission credits", group: "Missions", path: ["missions", "credits"], primary: true },
   { key: "mails_sent", label: "Mails sent", group: "Other", path: ["communication", "mails_sent"], primary: true },
+  { key: "attacks_won", label: "Attacks won", group: "Combat", path: ["attacking", "attacks", "won"], primary: true },
+  { key: "money_mugged", label: "Cash mugged (total)", group: "Combat", path: ["attacking", "networth", "money_mugged"], primary: true },
   // Secondary (expandable section):
+  { key: "attacks_lost", label: "Attacks lost", group: "Combat", path: ["attacking", "attacks", "lost"], primary: false },
+  { key: "attacks_stealth", label: "Stealthed attacks", group: "Combat", path: ["attacking", "attacks", "stealth"], primary: false },
+  { key: "hits_critical", label: "Critical hits", group: "Combat", path: ["attacking", "hits", "critical"], primary: false },
+  { key: "defends_total", label: "Defends fought", group: "Combat", path: ["attacking", "defends", "total"], primary: false },
+  { key: "combat_elo", label: "Combat ELO", group: "Combat", path: ["attacking", "elo"], primary: false },
+  { key: "killstreak_best", label: "Best killstreak", group: "Combat", path: ["attacking", "killstreak", "best"], primary: false },
+  { key: "largest_mug", label: "Largest mug", group: "Combat", path: ["attacking", "networth", "largest_mug"], primary: false },
+  { key: "faction_respect", label: "Faction respect earned", group: "Combat", path: ["attacking", "faction", "respect"], primary: false },
+  { key: "ranked_war_hits", label: "Ranked war hits", group: "Combat", path: ["attacking", "faction", "ranked_war_hits"], primary: false },
+  { key: "races_entered", label: "Races entered", group: "Racing", path: ["racing", "races", "entered"], primary: false },
+  { key: "races_won", label: "Races won", group: "Racing", path: ["racing", "races", "won"], primary: false },
+  { key: "racing_points", label: "Racing points", group: "Racing", path: ["racing", "points"], primary: false },
+  { key: "racing_skill", label: "Racing skill", group: "Racing", path: ["racing", "skill"], primary: false },
+  { key: "bounty_placed_value", label: "Bounties placed ($)", group: "Other", path: ["bounties", "placed", "value"], primary: false },
+  { key: "bounty_received_value", label: "Bounties received ($)", group: "Other", path: ["bounties", "received", "value"], primary: false },
+  { key: "bounty_collected_value", label: "Bounty collections ($)", group: "Other", path: ["bounties", "collected", "value"], primary: false },
   { key: "medical_items_used", label: "Medical items used", group: "Hospital", path: ["hospital", "medical_items_used"], primary: false },
   { key: "blood_withdrawn", label: "Blood withdrawn", group: "Hospital", path: ["hospital", "blood_withdrawn"], primary: false },
   { key: "revives_received", label: "Revives received", group: "Hospital", path: ["hospital", "reviving", "revives_received"], primary: false },

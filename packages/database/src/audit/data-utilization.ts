@@ -180,8 +180,11 @@ async function main(): Promise<void> {
     { model: "PersonalStatSnapshot", pathSql: "crimes.total", path: "crimes.total", note: "crime counter — productized 2.6.0" },
     { model: "PersonalStatSnapshot", pathSql: "other.awards", path: "other.awards", note: "awards counter — productized 2.6.0" },
     { model: "PersonalStatSnapshot", pathSql: "jobs.trains_received", path: "jobs.trains_received", note: "trains counter — productized 2.6.0" },
+    { model: "PersonalStatSnapshot", pathSql: "attacking.attacks.won", path: "attacking.attacks.won", note: "combat counters — productized 2.8.0 (ACCOUNT_COUNTERS registry)" },
+    { model: "PersonalStatSnapshot", pathSql: "crimes.skills", path: "crimes.skills", note: "per-crime exact skill levels — productized 2.8.0 (crimes skill authority)" },
     { model: "PersonalStatSnapshot", pathSql: "networth.total", path: "networth.total", note: "REDUNDANT with NetworthSnapshot (B — retained raw)" },
-    { model: "PersonalStatSnapshot", pathSql: "investments.bank.total", path: "investments.bank.total", note: "bank-investment gauges — not productized (C, gauge semantics)" },
+    { model: "PersonalStatSnapshot", pathSql: "investments.bank.total", path: "investments.bank.total", note: "bank-investment gauges — not productized (D: held-vs-alltime semantics ambiguous)" },
+    { model: "PersonalStatSnapshot", pathSql: "finishing_hits.piercing", path: "finishing_hits.piercing", note: "per-weapon finishing hits — retained raw (B: 12 weapon classes = metric wall; combat headline counters productized 2.8.0)" },
     { model: "FactionSnapshot", pathSql: "raw.respect", path: "raw.respect", note: "raw mirror sparse/null — the respect COLUMN is the authority (productized 2.6.0)" },
     { model: "UserSnapshot", pathSql: "raw.rank.name", path: "raw.rank.name", note: "rank detail — level/rank columns productized (B)" },
   ];

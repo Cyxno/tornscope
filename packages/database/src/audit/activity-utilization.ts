@@ -2,6 +2,7 @@ import { getPrismaClient } from "../client.js";
 import { normalizeCasinoLog } from "../normalizers/casino.js";
 import { normalizeOpenableLog } from "../normalizers/openables.js";
 import { normalizeDomainLog } from "../normalizers/domains.js";
+import { normalizeSpecialRewardLog } from "../normalizers/rewards.js";
 import { aggregateCasinoEconomics, type CasinoEconomicsRow } from "../normalizers/casino-economics.js";
 import { routeLog } from "../normalizers/titles.js";
 import type { LogRecord } from "../normalizers/extract.js";
@@ -96,6 +97,7 @@ function shapeClaimed(category: string, title: string, data: LogRecord): boolean
   if (normalizeCasinoLog(category, title, data)) return true;
   if (normalizeOpenableLog(title, data)) return true;
   if (normalizeDomainLog(category, title, data)) return true;
+  if (normalizeSpecialRewardLog(category, title, data)) return true;
   return false;
 }
 

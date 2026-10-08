@@ -192,7 +192,15 @@
               {#each summary.skillProgression as sk (sk.crime)}
                 <tr class="border-b border-border/60 last:border-0">
                   <td class="px-4 py-2.5 capitalize text-fg">{sk.crime}</td>
-                  <td class="tnum px-4 py-2.5 text-right font-medium text-fg">{sk.level ?? "—"}</td>
+                  <td class="tnum px-4 py-2.5 text-right font-medium text-fg">
+                    {#if sk.level !== null}
+                      {sk.level}
+                    {:else if sk.snapshotLevel !== null}
+                      <span title="Exact level from Torn's personalstats snapshot — this crime has no skill-change log in your stored history">{sk.snapshotLevel}<span class="ml-1 text-[10px] font-normal text-fg-faint">snapshot</span></span>
+                    {:else}
+                      —
+                    {/if}
+                  </td>
                   <td class="tnum px-4 py-2.5 text-right {sk.delta !== null ? (sk.delta > 0 ? 'text-positive' : sk.delta < 0 ? 'text-warning' : 'text-fg-faint') : 'text-fg-faint'}"
                     title={sk.delta !== null && sk.delta < 0 ? "Net level decrease — includes observed skill-down events (exact observations, never hidden)" : "Net level change over observed skill events"}>
                     {sk.delta !== null ? (sk.delta > 0 ? "+" : "") + String(sk.delta) : "—"}
@@ -204,7 +212,7 @@
             </tbody>
           </table>
           <p class="border-t border-border/60 px-4 py-2.5 text-[11px] leading-relaxed text-fg-faint">
-            Skill levels are Torn's own per-crime values from the log bookkeeping (exact). Levels are observed at skill-change moments — between changes they are interpolated by the counter, not estimated.
+            Skill levels are Torn's own per-crime values (exact). Log-observed levels come from the skill bookkeeping and are observed at skill-change moments; rows marked <span class="font-medium">snapshot</span> show the exact level from the latest personalstats snapshot for crimes with no skill-change log in your stored history.
           </p>
         </div>
       </section>

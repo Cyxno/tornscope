@@ -1,4 +1,4 @@
-import { buildCrimeSkillProgression } from "@tornscope/analytics";
+import { buildCrimeSkillProgression, mergeCrimeSkillSnapshot } from "@tornscope/analytics";
 import { resolveDateRange, type CrimesSummaryResponse, type CrimesTimelineResponse, type CombatSummaryResponse, type CombatTimelineResponse, type KpiValue, type DateRangeInput, type Paginated, type CrimeEventDto, type CombatEventDto } from "@tornscope/shared";
 import { aggregateCrimeStats, aggregateCombatStats } from "@tornscope/analytics";
 import { bigintToNumber, getPrismaClient, loadItemNameMap, loadMarketPrices, parseRewardComponents, priceRewardComponent } from "@tornscope/database";
@@ -17,13 +17,27 @@ export async function getCrimesSummary(userId: string, rangeInput: DateRangeInpu
     'SELECT te."occurredAt", te."title", (te."metadata"->\'data\'->>\'crime\') AS crime, (te."metadata"->\'data\'->>\'skill_level\')::int AS skill_level FROM "TimelineEvent" te WHERE te."userId" = $1 AND te."type" = \'log\' AND te."category" = \'Crimes\' AND te."title" IN (\'Crime skill level up\', \'Crime skill level down\') AND te."occurredAt" >= $2 AND te."occurredAt" <= $3 ORDER BY te."occurredAt" ASC LIMIT 20000',
     userId, new Date(range.from * 1000), new Date(range.to * 1000)
   );
-  const skillProgression = buildCrimeSkillProgression(
-    skillRows.map((r) => ({
-      t: Math.floor(r.occurredAt.getTime() / 1000),
-      crime: String(r.crime ?? "unknown"),
-      level: r.skill_level,
-      direction: (/down/i.test(r.title) ? "down" : "up") as "down" | "up",
-    }))
+  // Crime-skill authority from the personalstats snapshot (2.8.0): the latest
+  // snapshot's crimes.skills map carries Torn's own exact per-crime level —
+  // including crimes whose skill never produced a level-change log here.
+  // One bounded query; raw snapshot untouched, log-derived levels never
+  // overwritten (the snapshot rides in snapshotLevel).
+  const latestSkillSnapshot = await db.personalStatSnapshot.findFirst({
+    where: { userId },
+    orderBy: { capturedAt: "desc" },
+    select: { stats: true },
+  });
+  const snapshotSkillMap = (latestSkillSnapshot?.stats as { crimes?: { skills?: Record<string, unknown> } } | null)?.crimes?.skills ?? null;
+  const skillProgression = mergeCrimeSkillSnapshot(
+    buildCrimeSkillProgression(
+      skillRows.map((r) => ({
+        t: Math.floor(r.occurredAt.getTime() / 1000),
+        crime: String(r.crime ?? "unknown"),
+        level: r.skill_level,
+        direction: (/down/i.test(r.title) ? "down" : "up") as "down" | "up",
+      }))
+    ),
+    snapshotSkillMap
   );
   const rows = await db.crimeEvent.findMany({
     where: { userId, occurredAt: { gte: new Date(range.from * 1000), lte: new Date(range.to * 1000) } },

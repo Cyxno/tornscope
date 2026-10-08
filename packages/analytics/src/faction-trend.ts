@@ -136,6 +136,9 @@ export interface CrimeSkillStat {
   levelUps: number;
   levelDowns: number;
   lastChangeAt: number | null;
+  /** Exact current level from the latest personalstats snapshot (2.8.0) —
+   *  covers crimes with no level-change log in the archive. */
+  snapshotLevel: number | null;
 }
 
 /**
@@ -148,7 +151,7 @@ export function buildCrimeSkillProgression(events: CrimeSkillEvent[]): CrimeSkil
   for (const e of events) {
     let stat = byCrime.get(e.crime);
     if (!stat) {
-      stat = { crime: e.crime, level: null, opening: null, delta: null, levelUps: 0, levelDowns: 0, lastChangeAt: null };
+      stat = { crime: e.crime, level: null, opening: null, delta: null, levelUps: 0, levelDowns: 0, lastChangeAt: null, snapshotLevel: null };
       byCrime.set(e.crime, stat);
     }
     if (stat.opening === null) stat.opening = e.level;
@@ -162,4 +165,34 @@ export function buildCrimeSkillProgression(events: CrimeSkillEvent[]): CrimeSkil
     stat.delta = stat.opening !== null && stat.level !== null ? stat.level - stat.opening : null;
   }
   return stats.sort((a, b) => (b.level ?? 0) - (a.level ?? 0) || a.crime.localeCompare(b.crime));
+}
+
+/**
+ * Merge the personalstats snapshot skill authority (2.8.0) into the
+ * log-derived progression. The snapshot's `crimes.skills` map is Torn's own
+ * exact per-crime level — it covers crimes whose skill never produced a
+ * level-change log in the archive, which the log view can only render as
+ * "—". Matching is by NORMALIZED name (case/underscore-insensitive);
+ * unmatched names stay separate rows — never guessed onto each other.
+ * `level` (log-observed) is never overwritten; the snapshot value rides in
+ * `snapshotLevel`.
+ */
+export function mergeCrimeSkillSnapshot(
+  stats: CrimeSkillStat[],
+  snapshotSkills: Record<string, unknown> | null
+): CrimeSkillStat[] {
+  if (!snapshotSkills || typeof snapshotSkills !== "object" || Array.isArray(snapshotSkills)) return stats;
+  const normalize = (name: string): string => name.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const byNorm = new Map(stats.map((s) => [normalize(s.crime), s]));
+  const merged = [...stats];
+  for (const [rawName, value] of Object.entries(snapshotSkills)) {
+    if (typeof value !== "number" || !Number.isFinite(value)) continue;
+    const existing = byNorm.get(normalize(rawName));
+    if (existing) {
+      existing.snapshotLevel = value;
+    } else {
+      merged.push({ crime: rawName, level: null, opening: null, delta: null, levelUps: 0, levelDowns: 0, lastChangeAt: null, snapshotLevel: value });
+    }
+  }
+  return merged.sort((a, b) => (b.level ?? b.snapshotLevel ?? 0) - (a.level ?? a.snapshotLevel ?? 0) || a.crime.localeCompare(b.crime));
 }
