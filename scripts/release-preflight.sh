@@ -171,7 +171,12 @@ if [[ $QUICK -eq 0 ]]; then
     unset REDIS_URL VAPID_PUBLIC_KEY VAPID_PRIVATE_KEY VAPID_SUBJECT
     # Bounded workers: unbounded parallelism can exhaust local Postgres
     # connections (CI runners are small enough not to hit this).
-    pnpm vitest run --maxWorkers="${PREFLIGHT_TEST_WORKERS:-4}" >/dev/null 2>&1 && ok "full DB-backed test suite (hermetic env)" || fail "test suite failed"
+    if pnpm vitest run --maxWorkers="${PREFLIGHT_TEST_WORKERS:-4}" >"${TMPDIR:-/tmp}/tornscope-preflight-vitest.log" 2>&1; then
+      ok "full DB-backed test suite (hermetic env)"
+    else
+      sed 's/^/    /' "${TMPDIR:-/tmp}/tornscope-preflight-vitest.log" | tail -60
+      fail "test suite failed (full output: ${TMPDIR:-/tmp}/tornscope-preflight-vitest.log)"
+    fi
   else
     fail "TEST_DATABASE_URL not set — DB-backed tests cannot run (set it and re-run; a preflight without real tests is never a PASS)"
   fi
