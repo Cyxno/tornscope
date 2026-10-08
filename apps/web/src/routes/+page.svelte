@@ -23,6 +23,7 @@
   import { C, GRID, timeAxis, valueAxis, moneyValueAxis, moneyTooltipValue, dayLabel, hourLabel, axisTimeTooltip, tealArea, MOTION } from "$lib/charts";
   import * as td from "$lib/time-display.svelte.js";
   import { loadCockpitSnapshot, saveCockpitSnapshot, shouldSkipTodayRequest, clearCockpitSnapshot, type CockpitSnapshot } from "$lib/cockpit-cache";
+  import { isNewerTodayPayload, plausibleClockOffsetMs } from "$lib/live";
   import { setDashboardClockOffset } from "$lib/dashboard-clock.svelte";
   import { createLoadGuard } from "$lib/loadGuard";
 
@@ -66,8 +67,13 @@
   // $effect): an effect that writes the shared dashboard clock — which this
   // page's whole cockpit renders from — re-renders on its own write and
   // deadlocks the graph at the first clock tick (effect_update_depth_exceeded).
+  // An impossible skew is a corrupt stamp, never a reading: applying it
+  // fast-forwarded the monotonic shared clock permanently (all countdowns
+  // ≤ 0 → every cooldown "Ready"), so it is rejected outright (2.6.2).
   function applyServerClock(payload: TodayResponse): void {
-    if (payload.stale !== true) setDashboardClockOffset(payload.fetchedAt - Date.now());
+    if (payload.stale === true) return;
+    const offset = plausibleClockOffsetMs(payload.fetchedAt, Date.now());
+    if (offset !== null) setDashboardClockOffset(offset);
   }
   $effect(() => {
     if (!meUserId || cockpitSnapshotLoaded) return;
@@ -119,8 +125,11 @@
         .today()
         .then((res) => {
           // Response ordering: a slower/older response never replaces a
-          // newer one (monotonic on fetchedAt).
-          if (!todayGuard.isCurrent(seq) || (today && res.fetchedAt < today.fetchedAt)) return;
+          // newer one (monotonic on fetchedAt) — but a held payload with an
+          // impossible-future fetchedAt is corrupt and must never suppress a
+          // fresh one (that suppression made the broken state permanent).
+          if (!todayGuard.isCurrent(seq)) return;
+          if (!isNewerTodayPayload(today?.fetchedAt ?? null, res.fetchedAt, Date.now())) return;
           today = res;
           applyServerClock(res);
           if (meUserId) saveCockpitSnapshot(meUserId, { fetchedAtMs: res.fetchedAt, today: res, ocs: myOcs, travelDurations });

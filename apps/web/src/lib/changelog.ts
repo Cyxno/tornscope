@@ -30,8 +30,40 @@ export const CHANGELOG_KINDS: ChangelogKind[] = ["Added", "Improved", "Fixed", "
 
 export const CHANGELOG: ChangelogRelease[] = [
   {
-    version: "2.6.0",
+    version: "2.6.2",
     current: true,
+    summary:
+      "Production regression fix: the Overview cockpit could permanently render every cooldown as green 'Ready' with frozen countdowns from a stale cached snapshot, while the Today page showed the truth. Corrupt payload stamps can no longer own the cockpit clock or suppress fresh live data.",
+    changes: [
+      {
+        kind: "Fixed",
+        text: "Overview cooldowns no longer freeze as 'Ready': a cached cockpit snapshot with an impossible (future-fetchedAt) stamp can never fast-forward the shared dashboard clock, and its stamp can never discard fresh live responses — the broken state now heals itself instead of surviving reloads.",
+      },
+      {
+        kind: "Improved",
+        text: "Clock-sync hardening: payload timestamps beyond a plausible api↔browser skew bound are treated as corrupt in one shared rule used by Overview, Today and the cockpit snapshot loader — both surfaces always derive identical state from the same payload.",
+      },
+    ],
+  },
+  {
+    version: "2.6.1",
+    current: false,
+    summary:
+      "Release-safety hardening — no features: the release pipeline itself was made production-safe (isolated smoke tests, immutable release tags, route-integrity guard, hermetic test environment), on top of 2.5.4's deterministic test lifecycle.",
+    changes: [
+      {
+        kind: "Technical",
+        text: "Docker smoke tests now run fully isolated under their own compose project and can never touch production resources; release tags are immutable and the CI route-integrity check prevents SvelteKit route pages from being silently ignored or untracked.",
+      },
+      {
+        kind: "Technical",
+        text: "Hermetic test environment: test runs use only safe, dedicated test database/Redis configuration, keeping the deterministic test lifecycle from 2.5.4 intact.",
+      },
+    ],
+  },
+  {
+    version: "2.6.0",
+    current: false,
     summary:
       "Data utilization expansion: more value from the history TornScope already stores — long-term account progression, balance-sheet liabilities, internal transfer visibility for vault activity, crime skill progression and faction historical trends, plus a permanent audit that keeps stored-but-unused data visible.",
     changes: [

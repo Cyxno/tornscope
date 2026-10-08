@@ -12,7 +12,7 @@
   import { me } from "$lib/state.svelte";
   import { greetingForHour } from "$lib/reltime";
   import * as td from "$lib/time-display.svelte.js";
-  import { cooldownDisplay, overCapText } from "$lib/live";
+  import { cooldownDisplay, overCapText, plausibleClockOffsetMs } from "$lib/live";
   import StateMessage from "$lib/components/StateMessage.svelte";
   import Countdown from "$lib/components/Countdown.svelte";
   import Icon from "$lib/components/Icon.svelte";
@@ -44,7 +44,10 @@
     refreshing = true;
     try {
       data = await endpoints.today();
-      offsetMs = data.fetchedAt - Date.now();
+      // Impossible skew is a corrupt stamp, not a reading (2.6.2): keep the
+      // previous offset rather than pointing serverNowMs at a broken clock.
+      const offset = plausibleClockOffsetMs(data.fetchedAt, Date.now());
+      if (offset !== null) offsetMs = offset;
       error = null;
       // Stale-while-revalidate: the server answered instantly from the
       // persisted last-known copy and is refreshing upstream right now —

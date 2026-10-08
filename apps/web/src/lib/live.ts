@@ -17,6 +17,46 @@ export interface CooldownLike {
   endsAt: number | null;
 }
 
+/**
+ * Plausible api↔browser clock skew (2.6.2). Both endpoints are NTP-class
+ * clocks; a fetchedAt further from local time than this is a corrupt stamp
+ * (broken clock at fetch time), not a real reading. Corrupt stamps must
+ * never drive clock sync or freshness ordering: a future-fetchedAt payload
+ * once fast-forwarded the shared dashboard clock — every cooldown rendered
+ * "Ready" with a frozen countdown — and its fetchedAt then discarded every
+ * genuinely fresh response, making the broken state permanent.
+ */
+export const PAYLOAD_CLOCK_TOLERANCE_MS = 5 * 60_000;
+
+/** Clock offset (ms) a payload's fetchedAt may drive, or null when the
+ *  stamp is impossible (non-finite, non-positive, or beyond the plausible
+ *  skew bound in either direction). */
+export function plausibleClockOffsetMs(fetchedAtMs: number, nowMs: number): number | null {
+  if (!Number.isFinite(fetchedAtMs) || fetchedAtMs <= 0) return null;
+  const offset = fetchedAtMs - nowMs;
+  if (Math.abs(offset) > PAYLOAD_CLOCK_TOLERANCE_MS) return null;
+  return offset;
+}
+
+/**
+ * Response ordering for Today payloads: may `incoming` replace the held
+ * payload? True only for a plausible incoming stamp that is not older than
+ * a plausible held one. A held payload with an impossible-future fetchedAt
+ * is corrupt and can NEVER suppress a fresh response — the permanent-ready
+ * regression hinged on exactly that suppression. (Out-of-order delivery —
+ * held genuinely newer than incoming — still keeps the held payload.)
+ */
+export function isNewerTodayPayload(
+  heldFetchedAtMs: number | null | undefined,
+  incomingFetchedAtMs: number,
+  nowMs: number
+): boolean {
+  if (plausibleClockOffsetMs(incomingFetchedAtMs, nowMs) === null) return false;
+  if (heldFetchedAtMs === null || heldFetchedAtMs === undefined || !Number.isFinite(heldFetchedAtMs)) return true;
+  if (plausibleClockOffsetMs(heldFetchedAtMs, nowMs) === null) return true;
+  return incomingFetchedAtMs >= heldFetchedAtMs;
+}
+
 export interface CooldownDisplay {
   /** "Ready" when the cooldown has cleared; countdown text while active. */
   text: string;

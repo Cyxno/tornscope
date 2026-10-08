@@ -17,6 +17,8 @@
  * is served regardless of age and refreshed in the background.
  */
 
+import { PAYLOAD_CLOCK_TOLERANCE_MS } from "./live";
+
 const SCHEMA_VERSION = 1;
 const KEY_PREFIX = "tornscope.cockpit.v";
 
@@ -59,6 +61,21 @@ export function loadCockpitSnapshot(userId: string): CockpitSnapshot | null {
     const snap = JSON.parse(raw) as CockpitSnapshot;
     if (snap.schema !== SCHEMA_VERSION || snap.userId !== userId) return null;
     if (typeof snap.fetchedAtMs !== "number" || !snap.today) return null;
+    // A payload stamped in the impossible future is corrupt (broken clock at
+    // fetch time). Rendered as current it showed every cooldown "Ready" with
+    // frozen countdowns, and its fetchedAt then discarded every fresh
+    // response — the permanent-ready state survived reloads in storage.
+    // Reject AND remove so the browser heals on the next load.
+    const todayFetchedAt = (snap.today as { fetchedAt?: unknown } | null)?.fetchedAt;
+    if (
+      typeof todayFetchedAt !== "number" ||
+      !Number.isFinite(todayFetchedAt) ||
+      todayFetchedAt <= 0 ||
+      todayFetchedAt > Date.now() + PAYLOAD_CLOCK_TOLERANCE_MS
+    ) {
+      localStorage.removeItem(keyFor(userId));
+      return null;
+    }
     return snap;
   } catch {
     return null;
