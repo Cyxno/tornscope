@@ -294,6 +294,60 @@ export async function getRewardsSummary(userId: string, rangeInput: DateRangeInp
         ? "partial"
         : "complete";
 
+  // --- Other rewards (2.7.0): generic non-cash components from the OTHER
+  // activity domains (casino wheel wins, special reward families). Stored
+  // semantic + unpriced; priced here from the CURRENT catalog. Kind-level
+  // grouping; unpriced quantity stays visible, never zeroed; malformed
+  // components (drift) counted separately.
+  const otherRows = await db.$queryRawUnsafe<Array<{ component: { kind: string; label: string | null; itemId: number | null; quantity: number }; events: string }>>(
+    `SELECT c AS component, count(*)::text AS events
+     FROM "ActivityEvent" ae, jsonb_array_elements(CASE
+            WHEN jsonb_typeof(COALESCE(ae."otherRewards", '[]'::jsonb)) = 'array' THEN ae."otherRewards"
+            ELSE '[]'::jsonb END) c
+     WHERE ae."userId" = $1
+       AND ae.domain IN ('casino', 'special')
+       AND ae."occurredAt" BETWEEN $2 AND $3
+       AND jsonb_typeof(ae."otherRewards") = 'array'
+       AND jsonb_typeof(c) = 'object'
+     GROUP BY 1
+     ORDER BY 1
+     LIMIT 500`,
+    userId, fromDate, toDate,
+  );
+  const otherAgg = new Map<string, { kind: string; label: string | null; itemId: number | null; quantity: number; events: number }>();
+  let otherMalformed = 0;
+  for (const row of otherRows) {
+    const c = row.component;
+    const qty = Number.isFinite(c.quantity) && c.quantity >= 1 ? Math.round(c.quantity) : null;
+    if (typeof c.kind !== "string" || qty === null) {
+      otherMalformed += Number(row.events);
+      continue;
+    }
+    const key = `${c.kind}|${c.itemId ?? ""}|${c.label ?? ""}`;
+    const prev = otherAgg.get(key);
+    if (prev) {
+      prev.quantity += qty;
+      prev.events += Number(row.events);
+    } else {
+      otherAgg.set(key, { kind: c.kind, label: c.label, itemId: c.itemId, quantity: qty, events: Number(row.events) });
+    }
+  }
+  const otherComponents = [...otherAgg.values()].map((c) => {
+    const priced =
+      c.itemId !== null && prices.get(c.itemId) !== undefined && prices.get(c.itemId)! > 0n
+        ? bigintToNumber(prices.get(c.itemId)!)
+        : null;
+    return {
+      kind: c.kind,
+      label: c.label ?? (c.itemId !== null ? names.get(c.itemId) ?? `Item #${c.itemId}` : "Reward"),
+      itemId: c.itemId,
+      quantity: c.quantity,
+      valueEstimate: priced !== null ? priced * c.quantity : null,
+      valuation: priced !== null ? ("estimated" as const) : ("unpriced" as const),
+    };
+  }).sort((a, b) => (b.valueEstimate ?? -1) - (a.valueEstimate ?? -1));
+  const otherUnpricedQty = otherComponents.filter((c) => c.valuation === "unpriced").reduce((a, c) => a + c.quantity, 0);
+
   return {
     range: { from: range.from, to: range.to },
     openings,
@@ -306,6 +360,12 @@ export async function getRewardsSummary(userId: string, rangeInput: DateRangeInp
     topItemRewards,
     unpricedItemQty: unpricedTotal,
     malformedComponents,
+    otherRewards: {
+      components: otherComponents,
+      unpricedQty: otherUnpricedQty,
+      malformed: otherMalformed,
+      events: otherRows.length,
+    },
     types,
     coverage: {
       openings,

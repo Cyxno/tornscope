@@ -189,6 +189,7 @@ Top-up properties:
 |---|---|---|
 | `20261001196000_timeline_log_type_index` | SAFE EXPAND (index-only) | Composite index `TimelineEvent(userId, type, occurredAt)` for the Log Explorer and deep-analytics evidence queries. |
 | `20261005175053_activity_events` | SAFE EXPAND | New `ActivityEvent` table (2.4.0 Activity & Rewards): semantic casino/openable activity normalization; no existing column or row is touched and profile deletion cascades via FK. Also three schema-convergence statements the generator produced against the declared Prisma schema: `ApiCredential.logAccessAvailable` drops its residual default (schema declares none), `NotificationDelivery.subscriptionId` gains its declared FK to `PushSubscription` (declared since 2.2 but never materialized), and the delivery unique index is renamed to Prisma's identifier (PostgreSQL had truncated the 2.2 name differently). All three are metadata-only, no data is read or rewritten. |
+| `20261008200000_activity_event_other_rewards` | SAFE EXPAND (nullable add) | Adds nullable JSONB `ActivityEvent.otherRewards` (2.7.0 generic non-cash reward components). Additive only: no existing column, row or constraint is touched; existing rows read NULL until the `repair:reward-components` backfill stamps them (raw archive stays read-only). |
 
 ## 2.1 migration delta (2.0.7 production → 2.1.0)
 

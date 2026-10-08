@@ -433,7 +433,7 @@ export { INCOME_WORDS, EXPENSE_WORDS, TRANSFER_WORDS };
 /* Domain routing                                                             */
 /* -------------------------------------------------------------------------- */
 
-export type LogRoute = "money" | "rehab" | "travel" | "drugs" | "itemuse" | "crimes" | "casino" | "openable" | "hunting" | "missions" | "racing" | "bounties" | "education" | "timeline";
+export type LogRoute = "money" | "rehab" | "travel" | "drugs" | "itemuse" | "crimes" | "casino" | "openable" | "hunting" | "missions" | "racing" | "bounties" | "education" | "special" | "timeline";
 
 /**
  * Route a raw log to its structured domain (or "timeline" for timeline-only
@@ -456,6 +456,20 @@ export function routeLog(category: string, title: string): LogRoute {
   // ActivityEvent only (their cash never flows through money logs; the
   // reconciliation reports them as semantic-only domains).
   if (c === "hunting" || c === "missions" || c === "racing" || c === "bounties" || c === "education") return c;
+
+  // Special reward families (2.7.0): item-bearing perk/benefit logs with
+  // PROVEN payload shapes — anchored on exact (category, title) pairs from
+  // the stored archive; their non-cash components previously had no
+  // semantic home at all. Routed BEFORE the money keywords (which would
+  // otherwise swallow them as valueless money logs).
+  if (
+    (c === "company" && t === "company special gain item") ||
+    (c === "job" && t === "job special gain item") ||
+    (c === "stocks" && t === "stock special item") ||
+    (c === "donator" && t === "subscription reward")
+  ) {
+    return "special";
+  }
 
   // Rehab visits are titled "Rehab" but filed under the Travel category.
   if (t === "rehab" || c.includes("rehab") || t.includes("rehab") || c.includes("rehabilitation")) return "rehab";

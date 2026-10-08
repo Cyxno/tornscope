@@ -1108,6 +1108,29 @@ export type DailySummaryResponse = z.infer<typeof DailySummaryResponseSchema>;
 /* Crimes & Combat                                                             */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Generic non-cash reward component (2.7.0) — one line of an activity's
+ * "Other rewards": item gains, ammo, property wins, object rewards.
+ * Shapes are parsed ONLY from proven raw payload semantics; value is an
+ * ESTIMATE from the current item catalog and is null ("unpriced") whenever
+ * the catalog cannot price the component — never zero, never mixed into
+ * exact cash.
+ */
+export const RewardComponentSchema = z.object({
+  /** item | ammo | property | other */
+  kind: z.string(),
+  /** Display name: catalog item name when known, human label otherwise. */
+  label: z.string(),
+  /** Torn item id when the component is (or resolves to) a catalog item. */
+  itemId: z.number().nullable(),
+  quantity: z.number(),
+  /** Current-catalog estimate; null = unpriced (never 0). */
+  unitValueEstimate: z.number().nullable(),
+  valueEstimate: z.number().nullable(),
+  valuation: z.enum(["estimated", "unpriced"]),
+});
+export type RewardComponent = z.infer<typeof RewardComponentSchema>;
+
 export const CrimeEventDtoSchema = z.object({
   id: z.string(),
   occurredAt: z.number(),
@@ -1118,6 +1141,8 @@ export const CrimeEventDtoSchema = z.object({
   moneyDelta: z.number().nullable(),
   itemsValue: z.number().nullable(),
   jailSeconds: z.number().nullable(),
+  /** Non-cash reward components parsed from the raw crime log (2.7.0). */
+  otherRewards: z.array(RewardComponentSchema).default([]),
 });
 export type CrimeEventDto = z.infer<typeof CrimeEventDtoSchema>;
 
@@ -2808,6 +2833,19 @@ export const RewardsItemRewardSchema = z.object({
   valueEstimate: z.number().nullable(),
 });
 
+/** Aggregated non-cash reward component across activity domains (2.7.0):
+ *  casino wheel item/property wins, special-reward families. Value is the
+ *  current-catalog estimate summed only over PRICED components; unpriced
+ *  quantity stays visible and is never zeroed. */
+export const RewardsOtherComponentSchema = z.object({
+  kind: z.string(),
+  label: z.string(),
+  itemId: z.number().nullable(),
+  quantity: z.number(),
+  valueEstimate: z.number().nullable(),
+  valuation: z.enum(["estimated", "unpriced"]),
+});
+
 export const RewardsSummaryResponseSchema = z.object({
   range: z.object({ from: z.number(), to: z.number() }),
   openings: z.number(),
@@ -2835,6 +2873,15 @@ export const RewardsSummaryResponseSchema = z.object({
     cashReward: z.number().nullable(),
     lastOpenedAt: z.number().nullable(),
   })),
+  /** Non-cash reward components from OTHER activity domains (casino wheel
+   *  wins, special rewards) in range (2.7.0) — visible even where they carry
+   *  no catalog price; never mixed into exact cash. */
+  otherRewards: z.object({
+    components: z.array(RewardsOtherComponentSchema),
+    unpricedQty: z.number(),
+    malformed: z.number(),
+    events: z.number(),
+  }).default({ components: [], unpricedQty: 0, malformed: 0, events: 0 }),
   coverage: z.object({ openings: z.number(), trackingSince: z.number().nullable() }),
   availability: z.object({ history: FeatureAvailabilitySchema }).optional(),
 });

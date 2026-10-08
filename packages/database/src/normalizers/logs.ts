@@ -11,6 +11,7 @@ import {
 import { normalizeCasinoLog } from "./casino.js";
 import { buildDomainMetadata, normalizeDomainLog } from "./domains.js";
 import { normalizeOpenableLog } from "./openables.js";
+import { normalizeSpecialRewardLog, parseRewardComponents, type StoredRewardComponent } from "./rewards.js";
 import {
   routeLog,
   travelTransitionFor,
@@ -158,8 +159,12 @@ export interface ActivityEventInput {
   cashReward: bigint | null;
   pointsReward: number | null;
   tokensReward: number | null;
-  /** Non-priceable reward descriptor (free spin, property, hospital). */
+  /** Non-priceable reward descriptor (free spin, hospital) — folded into
+   *  otherRewards at persistence as a kind="other" component. */
   nonPriceable: string | null;
+  /** Generic non-cash reward components (items/ammo/property), semantic and
+   *  unpriced — valued at read time from the catalog (2.7.0). */
+  otherRewards?: StoredRewardComponent[];
   inputValue: bigint | null;
   rewardValue: bigint | null;
   netValue: bigint | null;
@@ -555,6 +560,7 @@ export function normalizeLogEntry(log: TornUserLog, ctx: NormalizeContext): Norm
           pointsReward: openable.pointsReward,
           tokensReward: null,
           nonPriceable: openable.nonPriceable,
+          otherRewards: parseRewardComponents(data).components,
           inputValue: null,
           rewardValue: null,
           netValue: openable.cashReward,
@@ -718,6 +724,14 @@ export function normalizeLogEntry(log: TornUserLog, ctx: NormalizeContext): Norm
       // the ledger, no lost casino context.
       const casino = normalizeCasinoLog(categoryTitle, logTitle, data);
       if (casino) {
+        // Non-cash wheel components (win item / win property / free spin /
+        // hospital) previously had no persisted home — the raw shapes parse
+        // into generic reward components; wheel points/tokens stay in their
+        // EXISTING columns (never doubled as components).
+        const wheelComponents = parseRewardComponents(data).components;
+        const components = casino.nonPriceable
+          ? [...wheelComponents, { kind: "other" as const, itemId: null, label: casino.nonPriceable, quantity: 1 }]
+          : wheelComponents;
         writes.activityEvents.push({
           occurredAt,
           domain: "casino",
@@ -733,6 +747,7 @@ export function normalizeLogEntry(log: TornUserLog, ctx: NormalizeContext): Norm
           pointsReward: casino.pointsReward,
           tokensReward: casino.tokensReward,
           nonPriceable: casino.nonPriceable,
+          otherRewards: components,
           inputValue: casino.cashInput,
           rewardValue: casino.cashReward,
           // P/L ONLY on settlements; placements (lottery bet, blackjack/
@@ -796,6 +811,7 @@ export function normalizeLogEntry(log: TornUserLog, ctx: NormalizeContext): Norm
           pointsReward: domain.pointsReward,
           tokensReward: domain.tokensReward,
           nonPriceable: null,
+          otherRewards: parseRewardComponents(data).components,
           inputValue: domain.cashInput,
           rewardValue: domain.cashReward,
           netValue: domain.netValue,
@@ -805,6 +821,41 @@ export function normalizeLogEntry(log: TornUserLog, ctx: NormalizeContext): Norm
           metadata: buildDomainMetadata(categoryTitle, logTitle, data),
         });
       }
+      break;
+    }
+
+    case "special": {
+      // Special reward families (2.7.0): job/company perks, stock benefit
+      // items, subscription rewards — proven item-bearing shapes only (see
+      // normalizeSpecialRewardLog anchors). Semantic reward events with NO
+      // cash component; job_points_used stays in metadata as progression
+      // context, never counted as reward value. Priced at read time.
+      const special = normalizeSpecialRewardLog(categoryTitle, logTitle, data);
+      if (!special) break;
+      writes.activityEvents.push({
+        occurredAt,
+        domain: "special",
+        activityType: special.activityType,
+        activityLabel: special.activityLabel,
+        subtype: null,
+        outcome: "received",
+        game: null,
+        wheel: null,
+        opponentId: null,
+        cashInput: null,
+        cashReward: null,
+        pointsReward: null,
+        tokensReward: null,
+        nonPriceable: null,
+        otherRewards: special.components,
+        inputValue: null,
+        rewardValue: null,
+        netValue: null,
+        valuation: "unpriced",
+        provenance: "exact",
+        sourceRef: ref,
+        metadata: data,
+      });
       break;
     }
 

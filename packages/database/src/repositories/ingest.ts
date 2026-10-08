@@ -623,6 +623,17 @@ export async function insertActivityEvents(db: PrismaClientType, userId: string,
       cashReward: e.cashReward,
       pointsReward: e.pointsReward,
       tokensReward: e.tokensReward,
+      // Generic non-cash reward components (2.7.0): semantic + unpriced at
+      // rest; catalog pricing happens at read time. The long-dangling
+      // nonPriceable descriptor rides along as a kind="other" component.
+      // (?? [] — hand-built inputs from older call sites may omit the field.)
+      otherRewards: (
+        (e.otherRewards ?? []).length > 0
+          ? e.otherRewards
+          : e.nonPriceable
+            ? [{ kind: "other", itemId: null, label: e.nonPriceable, quantity: 1 }]
+            : []
+      ) as never,
       inputValue: e.inputValue,
       rewardValue: e.rewardValue,
       netValue: e.netValue,

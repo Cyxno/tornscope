@@ -20,6 +20,15 @@
   let error = $state<string | null>(null);
   let reloadToken = $state(0);
 
+  /** One compact line per non-cash reward component: "3× Banana (est. $120)".
+   *  Estimated value only where the catalog prices it; unpriced stays visible
+   *  as "unpriced" — never $0, never mixed into exact cash. */
+  function otherRewardLine(rewards: CrimesTimelineResponse["items"][number]["otherRewards"]): string {
+    return rewards
+      .map((r) => `${r.quantity > 1 ? `${r.quantity}× ` : ""}${r.label}${r.valuation === "estimated" ? ` (est. ${formatMoneyCompact(r.valueEstimate!)})` : " (unpriced)"}`)
+      .join(", ");
+  }
+
   // Permission gate: crimes history is reconstructed from personal logs.
   const histAv = $derived(summary?.availability?.history);
   const histBlocked = $derived(histAv !== undefined && !availabilityHasData(histAv));
@@ -276,6 +285,7 @@
                 <th>Outcome</th>
                 <th class="text-right">Nerve</th>
                 <th class="text-right">Cash</th>
+                <th class="text-right">Other rewards</th>
                 <th class="text-right">Est. items</th>
               </tr>
             </thead>
@@ -292,6 +302,13 @@
                   <td class="tnum text-right text-fg-muted">{ev.nerveUsed ?? "—"}</td>
                   <td class="tnum text-right {ev.moneyDelta !== null ? (ev.moneyDelta >= 0 ? 'text-positive' : 'text-negative') : 'text-fg-faint'}">
                     {ev.moneyDelta !== null ? formatSignedMoney(ev.moneyDelta) : "—"}
+                  </td>
+                  <td class="max-w-[240px] truncate text-right text-xs text-fg-muted" title={ev.otherRewards.length > 0 ? otherRewardLine(ev.otherRewards) : ""}>
+                    {#if ev.otherRewards.length > 0}
+                      {otherRewardLine(ev.otherRewards)}
+                    {:else}
+                      <span class="text-fg-faint">—</span>
+                    {/if}
                   </td>
                   <td class="tnum text-right text-fg-muted">{ev.itemsValue !== null ? formatMoneyCompact(ev.itemsValue) : "—"}</td>
                 </tr>

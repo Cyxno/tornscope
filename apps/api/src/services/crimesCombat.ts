@@ -1,7 +1,7 @@
 import { buildCrimeSkillProgression } from "@tornscope/analytics";
 import { resolveDateRange, type CrimesSummaryResponse, type CrimesTimelineResponse, type CombatSummaryResponse, type CombatTimelineResponse, type KpiValue, type DateRangeInput, type Paginated, type CrimeEventDto, type CombatEventDto } from "@tornscope/shared";
 import { aggregateCrimeStats, aggregateCombatStats } from "@tornscope/analytics";
-import { bigintToNumber, getPrismaClient } from "@tornscope/database";
+import { bigintToNumber, getPrismaClient, loadItemNameMap, loadMarketPrices, parseRewardComponents, priceRewardComponent } from "@tornscope/database";
 import { cursorWhere, encodeCursor } from "../cursor.js";
 import { loadAvailabilityContext, sectionAvailability } from "./availability.js";
 
@@ -85,19 +85,31 @@ export async function getCrimesTimeline(userId: string, rangeInput: DateRangeInp
     where: { userId, occurredAt: { gte: new Date(range.from * 1000), lte: new Date(range.to * 1000) }, ...cursorWhere(cursor) },
     orderBy: [{ occurredAt: "desc" }, { id: "desc" }],
     take: limit,
-    select: { id: true, occurredAt: true, crimeName: true, crimeCategory: true, success: true, nerveUsed: true, moneyDelta: true, itemsValue: true, jailSeconds: true },
+    select: { id: true, occurredAt: true, crimeName: true, crimeCategory: true, success: true, nerveUsed: true, moneyDelta: true, itemsValue: true, jailSeconds: true, metadata: true },
   });
-  const items: CrimeEventDto[] = rows.map((r) => ({
-    id: r.id,
-    occurredAt: Math.floor(r.occurredAt.getTime() / 1000),
-    crimeName: r.crimeName,
-    crimeCategory: r.crimeCategory,
-    success: r.success,
-    nerveUsed: r.nerveUsed,
-    moneyDelta: bigintToNumber(r.moneyDelta),
-    itemsValue: bigintToNumber(r.itemsValue),
-    jailSeconds: r.jailSeconds,
-  }));
+
+  // Non-cash reward components (2.7.0): parsed from the raw payload the
+  // CrimeEvent already archives (metadata.data), priced from the CURRENT
+  // catalog — never mixed into the exact cash columns, never zeroed when
+  // unpriced.
+  const [itemNameById, marketPriceById] = await Promise.all([loadItemNameMap(db), loadMarketPrices(db)]);
+
+  const items: CrimeEventDto[] = rows.map((r) => {
+    const data = (r.metadata as { data?: Record<string, unknown> } | null)?.data ?? null;
+    const parsed = data ? parseRewardComponents(data) : { components: [], malformed: 0 };
+    return {
+      id: r.id,
+      occurredAt: Math.floor(r.occurredAt.getTime() / 1000),
+      crimeName: r.crimeName,
+      crimeCategory: r.crimeCategory,
+      success: r.success,
+      nerveUsed: r.nerveUsed,
+      moneyDelta: bigintToNumber(r.moneyDelta),
+      itemsValue: bigintToNumber(r.itemsValue),
+      jailSeconds: r.jailSeconds,
+      otherRewards: parsed.components.map((c) => priceRewardComponent(c, itemNameById, marketPriceById)),
+    };
+  });
   const last = rows[rows.length - 1];
   return {
     range: { from: range.from, to: range.to },

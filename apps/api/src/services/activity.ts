@@ -28,6 +28,7 @@ const DOMAIN_LABELS: Array<{ domain: string; label: string }> = [
   { domain: "racing", label: "Racing" },
   { domain: "bounties", label: "Bounties" },
   { domain: "education", label: "Education" },
+  { domain: "special", label: "Special rewards" },
 ];
 
 interface DomainAggregate {

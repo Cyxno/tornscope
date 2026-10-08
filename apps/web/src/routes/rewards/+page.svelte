@@ -91,13 +91,55 @@
       </div>
     </dl>
 
-    {#if data.openings === 0}
+      {#if data.openings === 0 && data.otherRewards.components.length === 0}
       <StateMessage
         state="empty"
         title="No logged openings in this range"
         hint="Openings appear as Torn logs sync. Openables without reward components in the logs stay untracked rather than estimated."
       />
     {:else}
+      {#if data.otherRewards.components.length > 0}
+        <section class="section-rule" aria-label="Other rewards">
+          <h2 class="section-label">Other rewards — casino wheels &amp; specials</h2>
+          <p class="mt-1 text-[12px] leading-relaxed text-fg-muted">
+            Non-cash reward components from played activities outside the openings above — wheel prizes, job/company perks, stock benefits, subscription rewards. Quantities are exact; value only where the catalog prices the item.
+          </p>
+          <div class="mt-3 overflow-x-auto">
+            <table class="tsv-table">
+              <thead>
+                <tr>
+                  <th>Reward</th>
+                  <th>Type</th>
+                  <th class="text-right">Quantity</th>
+                  <th class="text-right">Value (est.)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each data.otherRewards.components as c (c.kind + c.label + (c.itemId ?? ""))}
+                  <tr>
+                    <td class="font-medium text-fg">{c.label}</td>
+                    <td class="text-xs text-fg-muted">{c.kind}</td>
+                    <td class="tnum text-right text-fg-muted">{c.quantity}</td>
+                    <td class="tnum text-right font-semibold text-fg">
+                      {#if c.valuation === "estimated"}
+                        {formatMoneyCompact(c.valueEstimate!)}
+                      {:else}
+                        <span class="text-fg-faint" title="No catalog price is available for this reward — shown as unpriced, never counted as zero.">unpriced</span>
+                      {/if}
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+          {#if data.otherRewards.unpricedQty > 0 || data.otherRewards.malformed > 0}
+            <p class="mt-2 text-[11px] leading-relaxed text-fg-faint">
+              {data.otherRewards.unpricedQty > 0 ? `${data.otherRewards.unpricedQty} units have no catalog price and stay visible as unpriced — never counted as zero.` : ""}
+              {data.otherRewards.malformed > 0 ? ` ${data.otherRewards.malformed} components no longer parse (payload drift) and are excluded from every total.` : ""}
+            </p>
+          {/if}
+        </section>
+      {/if}
       {#if data.topItemRewards.length > 0}
         <section class="section-rule" aria-label="Reward distribution">
           <h2 class="section-label">Reward distribution — top items</h2>

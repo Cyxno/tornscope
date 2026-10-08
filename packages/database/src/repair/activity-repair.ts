@@ -2,6 +2,7 @@ import { getPrismaClient } from "../client.js";
 import { normalizeCasinoLog as normalizeCasino } from "../normalizers/casino.js";
 import { normalizeOpenableLog } from "../normalizers/openables.js";
 import { buildDomainMetadata, normalizeDomainLog } from "../normalizers/domains.js";
+import { normalizeSpecialRewardLog, parseRewardComponents } from "../normalizers/rewards.js";
 import { routeLog } from "../normalizers/titles.js";
 
 /**
@@ -22,6 +23,15 @@ import { routeLog } from "../normalizers/titles.js";
  *   attribution): normalized as unattributed legacy casino income so the
  *   semantic view converges with the ledger instead of leaving 400+ value
  *   rows unexplained. The game is UNKNOWN and stays unknown — never guessed.
+ *
+ * 2.7.0 additions:
+ * - generic non-cash reward components (otherRewards) are parsed from the
+ *   raw payload and persisted on casino/openable/special inserts.
+ * - special reward families (job/company perks, stock benefit items,
+ *   subscription rewards) claimed as ActivityEvents (domain "special").
+ *   Historical component backfill for rows that ALREADY exist is handled by
+ *   repair:reward-components (this script's candidate query skips rows that
+ *   already have an ActivityEvent).
  */
 
 function parseArgs(argv: string[]): { dryRun: boolean } {
@@ -38,7 +48,7 @@ interface Candidate {
   data: Record<string, unknown>;
   /** TimelineEvent.amount column (legacy money logs carry only this). */
   amount: bigint | null;
-  kind: "casino" | "openable" | "domain" | "casino-legacy";
+  kind: "casino" | "openable" | "domain" | "casino-legacy" | "special";
 }
 
 async function main(): Promise<void> {
@@ -69,6 +79,10 @@ async function main(): Promise<void> {
           OR te."metadata"->'data' ? 'money'
           OR te."metadata"->'data' ? 'points'
         ))
+        OR (te."category" = 'Company' AND te."title" = 'Company special gain item')
+        OR (te."category" = 'Job' AND te."title" = 'Job special gain item')
+        OR (te."category" = 'Stocks' AND te."title" = 'Stock special item')
+        OR (te."category" = 'Donator' AND te."title" = 'Subscription reward')
       )
       AND NOT EXISTS (
         SELECT 1 FROM "ActivityEvent" ae
@@ -119,6 +133,18 @@ async function main(): Promise<void> {
       }
       // Domain-category rows the normalizer does not claim stay
       // unrecognized-but-visible in the gap list (never dropped, never guessed).
+      stats.ambiguous += 1;
+      bump(`${row.category} | ${row.title}`);
+      continue;
+    }
+
+    if (route === "special") {
+      const special = normalizeSpecialRewardLog(row.category, row.title, data);
+      if (special) {
+        stats.recognized += 1;
+        candidates.push({ userId: row.userId, sourceRef: row.sourceRef, occurredAt: row.occurredAt, title: row.title, category: row.category, data, amount, kind: "special" });
+        continue;
+      }
       stats.ambiguous += 1;
       bump(`${row.category} | ${row.title}`);
       continue;
@@ -192,6 +218,12 @@ async function main(): Promise<void> {
         cashReward: casino.cashReward,
         pointsReward: casino.pointsReward,
         tokensReward: casino.tokensReward,
+        otherRewards: (() => {
+          const parsed = parseRewardComponents(c.data).components;
+          return casino.nonPriceable
+            ? [...parsed, { kind: "other", itemId: null, label: casino.nonPriceable, quantity: 1 }]
+            : parsed;
+        })(),
         netValue,
         valuation: "exact",
         provenance: "exact",
@@ -240,8 +272,41 @@ async function main(): Promise<void> {
         outcome: "opened",
         cashReward: openable.cashReward,
         pointsReward: openable.pointsReward,
+        otherRewards: (() => {
+          const parsed = parseRewardComponents(c.data).components;
+          return openable.nonPriceable
+            ? [...parsed, { kind: "other", itemId: null, label: openable.nonPriceable, quantity: 1 }]
+            : parsed;
+        })(),
         netValue: openable.cashReward,
         valuation: openable.cashReward !== null ? "exact" : "unpriced",
+        provenance: "exact",
+        source: "torn_log",
+        sourceRef: c.sourceRef,
+        metadata: c.data,
+      });
+      continue;
+    }
+    if (c.kind === "special") {
+      const special = normalizeSpecialRewardLog(c.category, c.title, c.data);
+      if (!special) continue;
+      inserts.push({
+        userId: c.userId,
+        occurredAt: c.occurredAt,
+        domain: "special",
+        activityType: special.activityType,
+        activityLabel: special.activityLabel,
+        subtype: null,
+        outcome: "received",
+        game: null,
+        wheel: null,
+        cashInput: null,
+        cashReward: null,
+        pointsReward: null,
+        tokensReward: null,
+        otherRewards: special.components,
+        netValue: null,
+        valuation: "unpriced",
         provenance: "exact",
         source: "torn_log",
         sourceRef: c.sourceRef,

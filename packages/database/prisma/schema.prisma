@@ -1078,6 +1078,12 @@ model ActivityEvent {
   inputValue    BigInt?
   rewardValue   BigInt?
   netValue      BigInt?
+  /// Generic non-cash reward components (2.7.0): JSON array of
+  /// { kind, label, itemId?, quantity } — item gains, ammo, property wins,
+  /// other object rewards. Semantic shapes only; value is resolved at READ
+  /// time from the item catalog and stays null ("unpriced") when the
+  /// catalog cannot price a component — never zero. Cash never moves here.
+  otherRewards  Json?
   valuation     String   @default("unpriced")
   provenance    String   @default("exact")
   metadata      Json?
