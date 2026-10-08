@@ -12,9 +12,22 @@
  */
 process.env.TEST_DATABASE_URL ??= "";
 if (process.env.TEST_DATABASE_URL) {
+  // v2.6.1 hermetic guard: a DB-backed run may only ever address a database
+  // whose name is unmistakably a test database (2.6.0 wrote fixtures into
+  // production because a sourced .env leaked prod env through).
+  const dbName = new URL(process.env.TEST_DATABASE_URL).pathname.replace(/^\//, "");
+  if (!/test/i.test(dbName)) {
+    throw new Error(`[vitest.setup] TEST_DATABASE_URL must point at a *test* database (got "${dbName}") — refusing to run`);
+  }
   process.env.API_KEY_ENCRYPTION_KEY ??= "a".repeat(64);
   process.env.TORN_API_MIN_REQUEST_INTERVAL_MS ??= "0";
-  process.env.REDIS_URL ??= "redis://127.0.0.1:6379/15";
+  // Queue traffic isolated from any live Redis by default (DB 15): FORCED,
+  // not defaulted — an inherited prod REDIS_URL would receive test traffic.
+  process.env.REDIS_URL = "redis://127.0.0.1:6379/15";
+  // Web-push credentials are production secrets with no test consumer.
+  delete process.env.VAPID_PUBLIC_KEY;
+  delete process.env.VAPID_PRIVATE_KEY;
+  delete process.env.VAPID_SUBJECT;
   // Bound every Prisma pool so Vitest's default parallelism (one client per
   // test file, files running across many workers) can never exhaust the
   // server's max_connections — the exact failure that broke hosted CI
@@ -29,5 +42,8 @@ if (process.env.TEST_DATABASE_URL) {
     return /[?&]connection_limit=/.test(url) ? url : url + (url.includes("?") ? "&" : "?") + `connection_limit=${limit}`;
   };
   process.env.TEST_DATABASE_URL = boundPool(process.env.TEST_DATABASE_URL);
-  process.env.DATABASE_URL = boundPool(process.env.DATABASE_URL);
+  // Fixtures use the Prisma client, which reads DATABASE_URL: force it to the
+  // validated test URL instead of `??=`-defaulting — inheritance from a prod
+  // environment can then never reach the fixtures.
+  process.env.DATABASE_URL = boundPool(process.env.TEST_DATABASE_URL);
 }

@@ -83,6 +83,8 @@ jobs:
 
       - name: Svelte check
         run: pnpm --filter @tornscope/web exec svelte-check --tsconfig ./tsconfig.json
+      - name: Route integrity (nav hrefs ↔ tracked routes, gitignore audit)
+        run: node scripts/ci/route-integrity.mjs
       - name: Test (with DB-backed suites)
         run: pnpm test
       - name: Assert DB-backed suites actually ran
@@ -136,5 +138,7 @@ jobs:
       - name: Smoke test (up → readiness → /api/ready)
         run: bash scripts/ci/docker-smoke-test.sh
         env:
-          SMOKE_WEB_URL: http://127.0.0.1:5173
+          # Project name + ephemeral host ports are enforced by the script
+          # itself (v2.6.1: hard-fails on any production-colliding name and
+          # picks three free ports so a live deployment is never touched).
           SMOKE_TIMEOUT: 300
