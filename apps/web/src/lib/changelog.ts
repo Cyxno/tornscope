@@ -30,8 +30,32 @@ export const CHANGELOG_KINDS: ChangelogKind[] = ["Added", "Improved", "Fixed", "
 
 export const CHANGELOG: ChangelogRelease[] = [
   {
-    version: "2.6.2",
+    version: "2.7.0",
     current: true,
+    summary:
+      "Event reward coverage: non-cash reward components that Torn's raw logs always carried — crime item and ammo gains, casino wheel prizes, job/company perks, stock benefit items and subscription rewards — are now parsed, valued from the item catalog where that is defensible, and shown next to the exact cash they never replace.",
+    changes: [
+      {
+        kind: "Added",
+        text: "Non-cash reward components on played activities: crime item gains (3,462 in the archive), crime ammo gains, casino wheel item/property prizes, job and company perks, stock benefit items and subscription rewards now appear as structured components with name, type and exact quantity.",
+      },
+      {
+        kind: "Added",
+        text: "Crimes page rows and the Rewards page show Other rewards per activity; the Activity page gains a Special rewards domain for the previously invisible perk/benefit families.",
+      },
+      {
+        kind: "Improved",
+        text: "Unpriced semantics: value is estimated only where the current item catalog prices the component — anything the catalog cannot price stays visible as 'unpriced', never zeroed, and is never mixed into exact cash totals.",
+      },
+      {
+        kind: "Technical",
+        text: "Historical reward-component backfill (dry-run first, idempotent): existing activity rows were stamped from the raw log archive (3,274 rows, 166 with components) and 41 missing special-reward events were inserted; the raw archive stayed read-only and a re-run reports zero.",
+      },
+    ],
+  },
+  {
+    version: "2.6.2",
+    current: false,
     summary:
       "Production regression fix: the Overview cockpit could permanently render every cooldown as green 'Ready' with frozen countdowns from a stale cached snapshot, while the Today page showed the truth. Corrupt payload stamps can no longer own the cockpit clock or suppress fresh live data.",
     changes: [
