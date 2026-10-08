@@ -85,6 +85,13 @@ snapshot_prod() {
 BEFORE=$(snapshot_prod)
 
 echo "==> Starting smoke-test stack"
+# Source-build path (build override present): compose reuses an existing
+# image verbatim, so a locally cached image would carry a stale GIT_SHA and
+# trip the build-identity assertion below. Rebuild explicitly.
+if dc config --format json 2>/dev/null | grep -q '"build"'; then
+  echo "==> Building images first (source-build path; GIT_SHA=${GIT_SHA:-unset})"
+  dc build || { fail "docker compose build failed"; exit 1; }
+fi
 dc up -d || { fail "docker compose up failed"; exit 1; }
 
 echo "==> Waiting up to ${TIMEOUT_SECONDS}s for ${WEB_URL}/api/ready ..."
