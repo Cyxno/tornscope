@@ -30,8 +30,28 @@ export const CHANGELOG_KINDS: ChangelogKind[] = ["Added", "Improved", "Fixed", "
 
 export const CHANGELOG: ChangelogRelease[] = [
   {
-    version: "2.7.0",
+    version: "2.8.0",
     current: true,
+    summary:
+      "Coverage expansion from already-stored history: the Combat, Racing and bounty families from your personalstats snapshots — hundreds of thousands of attacking events' worth of counters that TornScope stored but never showed — plus exact per-crime skill levels from the snapshot authority.",
+    changes: [
+      {
+        kind: "Added",
+        text: "Combat progression on the Progression page: attacks won/lost/stealthed, critical hits, defends, combat ELO, best killstreak, total cash mugged, largest mug, faction respect and ranked-war hits — exact snapshot deltas with rate/day over any range.",
+      },
+      {
+        kind: "Added",
+        text: "Racing and bounty counters: races entered/won, racing points and skill, bounty placed/received/collected values — all from the stored snapshot history.",
+      },
+      {
+        kind: "Improved",
+        text: "Crime skill levels now carry Torn's own snapshot authority: every crime shows the exact current level from your latest personalstats snapshot, including crimes with no skill-change log in the stored history (marked 'snapshot'); log-observed levels are never overwritten.",
+      },
+    ],
+  },
+  {
+    version: "2.7.0",
+    current: false,
     summary:
       "Event reward coverage: non-cash reward components that Torn's raw logs always carried — crime item and ammo gains, casino wheel prizes, job/company perks, stock benefit items and subscription rewards — are now parsed, valued from the item catalog where that is defensible, and shown next to the exact cash they never replace.",
     changes: [
