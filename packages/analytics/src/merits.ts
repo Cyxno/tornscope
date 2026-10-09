@@ -242,3 +242,123 @@ export function filterMerits(
     return true;
   });
 }
+
+/* -------------------------------------------------------------------------- */
+/* Current merit effects (2.8.2)                                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Actuele effecten van geïnvesteerde merit ranks (2.8.2).
+ *
+ * SOURCE + FORMULA POLICY: every effect below is derived from the OFFICIAL
+ * `/v2/torn/merits` description (verified live 2026-10-08), and each entry
+ * carries an ANCHOR PHRASE that must be present in the live description
+ * before the formula is applied. If Torn ever rewords a description and the
+ * anchor disappears, that merit silently drops out of the effects summary —
+ * it stays in the existing ledger with its description, never a guessed
+ * number. Per-level semantics are internally cross-validated by Torn's own
+ * text (e.g. Hospitalizing: "+5% ... 50% extra hospital time when fully
+ * upgraded" ⇒ 5% × 10 ranks).
+ *
+ * Merits whose description cannot be parsed unambiguously (Awareness's
+ * "20%" phrasing is included ONLY with its literal anchor) are NEVER
+ * inferred from prose alone.
+ */
+
+export interface MeritEffect {
+  /** Official catalog id (or negative synthetic id for combined groups). */
+  id: number;
+  /** Display label for the combined effect line. */
+  label: string;
+  /** percent | flat | special — rendering + combination semantics. */
+  unit: "percent" | "flat" | "special";
+  /** Signed per-rank magnitude (negative = reduction). */
+  perLevel: number;
+  /** Exact owned rank from /user/merits. */
+  level: number;
+  /** perLevel × level — the ACTUAL current effect. */
+  total: number;
+  /** increase | reduce — direction of benefit. */
+  direction: "increase" | "reduce";
+  /** Effect family for combining (weapon masteries share one group). */
+  group: string;
+  /** What the effect applies to, verbatim family ("defense stat", ...). */
+  appliesTo: string;
+}
+
+interface EffectFormula {
+  /** Anchor that MUST appear in the live description (drift guard). */
+  anchor: RegExp;
+  unit: "percent" | "flat" | "special";
+  perLevel: number;
+  direction: "increase" | "reduce";
+  group: string;
+  appliesTo: string;
+  label?: string;
+}
+
+const WEAPON_MASTERY_FORMULA: EffectFormula = {
+  anchor: /damage by 1% and accuracy by \+0\.2/i,
+  unit: "special",
+  perLevel: 1,
+  direction: "increase",
+  group: "Weapons mastery",
+  appliesTo: "weapon class damage & accuracy",
+};
+
+const MERIT_EFFECT_FORMULAS: ReadonlyMap<number, EffectFormula> = new Map([
+  [1, { anchor: /\+1 extra nerve point/i, unit: "flat", perLevel: 1, direction: "increase", group: "Nerve", appliesTo: "maximum nerve", label: "Maximum nerve" }],
+  [3, { anchor: /extra 0\.5% chance/i, unit: "percent", perLevel: 0.5, direction: "increase", group: "Combat", appliesTo: "critical hit chance" }],
+  [4, { anchor: /items you can find in the city by 20%/i, unit: "percent", perLevel: 20, direction: "increase", group: "Money & career", appliesTo: "city items found" }],
+  [5, { anchor: /5% boost in money that you mug/i, unit: "percent", perLevel: 5, direction: "increase", group: "Money & career", appliesTo: "mug money" }],
+  [6, { anchor: /stealth level by \+0\.2/i, unit: "flat", perLevel: 0.2, direction: "increase", group: "Combat", appliesTo: "stealth level" }],
+  [7, { anchor: /increase of 5% to your investment bank interest/i, unit: "percent", perLevel: 5, direction: "increase", group: "Money & career", appliesTo: "bank interest" }],
+  [8, { anchor: /hospitalize someone by 5%/i, unit: "percent", perLevel: 5, direction: "increase", group: "Combat", appliesTo: "hospitalize time" }],
+  [9, { anchor: /passive 3% bonus to your strength stat/i, unit: "percent", perLevel: 3, direction: "increase", group: "Battlestats", appliesTo: "strength" }],
+  [10, { anchor: /passive 3% bonus to your speed stat/i, unit: "percent", perLevel: 3, direction: "increase", group: "Battlestats", appliesTo: "speed" }],
+  [11, { anchor: /passive 3% bonus to your dexterity stat/i, unit: "percent", perLevel: 3, direction: "increase", group: "Battlestats", appliesTo: "dexterity" }],
+  [12, { anchor: /passive 3% bonus to your defense stat/i, unit: "percent", perLevel: 3, direction: "increase", group: "Battlestats", appliesTo: "defense" }],
+  [13, { anchor: /maximum life by 5%/i, unit: "percent", perLevel: 5, direction: "increase", group: "Recovery", appliesTo: "maximum life" }],
+  [14, { anchor: /complete an education course by 2%/i, unit: "percent", perLevel: 2, direction: "reduce", group: "Education", appliesTo: "education course time" }],
+  [15, WEAPON_MASTERY_FORMULA], [16, WEAPON_MASTERY_FORMULA], [17, WEAPON_MASTERY_FORMULA],
+  [18, WEAPON_MASTERY_FORMULA], [19, WEAPON_MASTERY_FORMULA], [20, WEAPON_MASTERY_FORMULA],
+  [21, WEAPON_MASTERY_FORMULA], [22, WEAPON_MASTERY_FORMULA], [23, WEAPON_MASTERY_FORMULA],
+  [24, WEAPON_MASTERY_FORMULA], [25, WEAPON_MASTERY_FORMULA], [26, WEAPON_MASTERY_FORMULA],
+  [27, { anchor: /addiction causes by 2%/i, unit: "percent", perLevel: 2, direction: "reduce", group: "Recovery", appliesTo: "addiction effects" }],
+  [28, { anchor: /\+1 bonus to employee effectiveness/i, unit: "flat", perLevel: 1, direction: "increase", group: "Money & career", appliesTo: "employee effectiveness" }],
+]);
+
+/**
+ * Build the ACTUAL current effects from owned merit ranks + the official
+ * catalog. Ranks with no owned level (untouched) produce nothing; a merit
+ * whose live description no longer matches its anchor is excluded (drift
+ * guard) — never approximated. Weapon masteries keep per-weapon rows but
+ * share the "Weapons mastery" group so the UI can render them as one block.
+ */
+export function buildMeritEffects(
+  levels: Array<{ id: number; level: number }>,
+  catalogById: Map<number, { name: string; description: string }> | null
+): MeritEffect[] {
+  const out: MeritEffect[] = [];
+  for (const { id, level } of levels) {
+    if (!Number.isInteger(level) || level < 1) continue;
+    const formula = MERIT_EFFECT_FORMULAS.get(id);
+    if (!formula) continue;
+    const official = catalogById?.get(id);
+    // Drift guard: no official description, or the anchor phrase vanished —
+    // the formula is no longer provably correct for this merit.
+    if (!official || !formula.anchor.test(official.description)) continue;
+    out.push({
+      id,
+      label: formula.label ?? official.name,
+      unit: formula.unit,
+      perLevel: formula.perLevel,
+      level,
+      total: Math.round(formula.perLevel * level * 100) / 100,
+      direction: formula.direction,
+      group: formula.group,
+      appliesTo: formula.appliesTo,
+    });
+  }
+  return out.sort((a, b) => a.group.localeCompare(b.group) || b.total - a.total || a.label.localeCompare(b.label));
+}

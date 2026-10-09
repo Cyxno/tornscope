@@ -92,7 +92,7 @@ function medianOf(values: number[]): number | null {
   return sorted[Math.floor(sorted.length / 2)]!;
 }
 
-export async function getProgression(userId: string, rangeInput: DateRangeInput): Promise<ProgressionResponse> {
+export async function getProgression(userId: string, rangeInput: DateRangeInput): Promise<Omit<ProgressionResponse, "education">> {
   const db = getPrismaClient();
   const range = resolveDateRange(rangeInput);
   const from = range.from;

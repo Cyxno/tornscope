@@ -1,4 +1,4 @@
-import { assembleMerits } from "@tornscope/analytics";
+import { assembleMerits, buildMeritEffects } from "@tornscope/analytics";
 import type { MeritsResponse, FeatureAvailability as FeatureAvailabilityDto } from "@tornscope/shared";
 import { getApiContext } from "../context.js";
 import { liveAvailability, loadAvailabilityContext, type AvailabilityContext } from "./availability.js";
@@ -75,6 +75,7 @@ async function fetchMerits(userId: string): Promise<MeritsResponse> {
     merits: rows,
     availability: { ...availability, state: "available_live", lastRefreshedAt: Math.floor(Date.now() / 1000) },
     catalogDegraded: catalog.size === 0,
+    effects: buildMeritEffects(raw.merits.upgrades, catalog),
   };
 }
 
@@ -101,7 +102,7 @@ function availabilityOf(ctx: AvailabilityContext): FeatureAvailabilityDto {
 
 function emptyResponse(availability: FeatureAvailabilityDto): MeritsResponse {
   const { rows, summary } = assembleMerits({ upgrades: [], available: null, used: null, medals: null, honors: null, catalog: new Map() });
-  return { summary, merits: rows, availability, catalogDegraded: false };
+  return { summary, merits: rows, availability, catalogDegraded: false, effects: [] };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -135,6 +136,7 @@ function buildDemoMerits(): MeritsResponse {
       lastRefreshedAt: Math.floor(Date.now() / 1000),
     },
     catalogDegraded: false,
+    effects: buildMeritEffects(DEMO_UPGRADES, catalog),
   };
 }
 

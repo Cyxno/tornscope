@@ -48,6 +48,7 @@ export type TornScopeFeature =
   | "progression_energy"
   | "progression_training"
   | "progression_happy_jumps"
+  | "progression_education"
   | "merits_overview"
   | "stocks_holdings"
   | "stocks_benefits";
@@ -123,6 +124,12 @@ export const FEATURE_REQUIREMENTS: FeatureRequirement[] = [
     requires: ["canReadUserLogs"],
     optional: ["canReadUserBars"],
     partial: true,
+  },
+  {
+    feature: "progression_education",
+    label: "Education progress",
+    requires: ["canReadUserEducation"],
+    partial: false,
   },
   {
     feature: "merits_overview",

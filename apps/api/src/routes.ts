@@ -24,6 +24,7 @@ import { getTravelHistory, getTravelSummary } from "./services/travel.js";
 import { getNetworth } from "./services/networth.js";
 import { getEconomySummary } from "./services/economy.js";
 import { getProgression } from "./services/progression.js";
+import { getEducationProgress } from "./services/education.js";
 import { getEnergySummary } from "./services/energy.js";
 import { getLogs, getLogsMeta, exportLogs } from "./services/logs.js";
 import { getCrimesSummary, getCrimesTimeline, getCombatSummary, getCombatTimeline } from "./services/crimesCombat.js";
@@ -201,7 +202,10 @@ export function registerRoutes(app: FastifyInstance): void {
   app.get("/api/progression", async (req) => {
     const user = currentUser(req);
     const range = parseRange(req.query as Record<string, unknown>);
-    return getProgression(user.id, range);
+    // Education rides along (2.8.2): live user state + official catalog,
+    // cached; null when either source is unavailable (never partial).
+    const [progression, educationResult] = await Promise.all([getProgression(user.id, range), getEducationProgress(user)]);
+    return { ...progression, education: educationResult.education };
   });
 
   // Deep Energy Analytics (2.1.0): sources / uses / losses accounting over

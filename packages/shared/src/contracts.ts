@@ -2322,6 +2322,65 @@ export const AccountCounterSchema = z.object({
 });
 export type AccountCounter = z.infer<typeof AccountCounterSchema>;
 
+/* -------------------------------------------------------------------------- */
+/* Education progress (2.8.2)                                                  */
+export const EducationRewardSchema = z.object({
+  /** Working-stat rewards, exact catalog numbers per completed course. */
+  manualLabor: z.number().default(0),
+  intelligence: z.number().default(0),
+  endurance: z.number().default(0),
+  /** Free-text course effects (official catalog strings, never aggregated). */
+  effects: z.array(z.string()),
+  /** Honor awarded by the course, when the catalog names one. */
+  honors: z.array(z.string()),
+});
+export type EducationReward = z.infer<typeof EducationRewardSchema>;
+
+export const EducationCourseDtoSchema = z.object({
+  id: z.number(),
+  name: z.string(),
+  categoryName: z.string(),
+  state: z.enum(["completed", "in_progress", "remaining"]),
+  /** Catalog duration in days (exact, from duration seconds). */
+  durationDays: z.number().nullable(),
+  /** Course cost ($, catalog prerequisite cost). */
+  cost: z.number().nullable(),
+  reward: EducationRewardSchema,
+});
+export type EducationCourseDto = z.infer<typeof EducationCourseDtoSchema>;
+
+export const EducationProgressSchema = z.object({
+  currentCourse: z.object({
+    id: z.number(),
+    name: z.string(),
+    categoryName: z.string(),
+    completesAt: z.number(),
+    remainingSeconds: z.number(),
+  }).nullable(),
+  completed: z.number(),
+  inProgress: z.number(),
+  remaining: z.number(),
+  total: z.number(),
+  categories: z.array(z.object({
+    name: z.string(),
+    completed: z.number(),
+    total: z.number(),
+    /** Degree complete: every course in the category is completed. */
+    complete: z.boolean(),
+  })),
+  /** Working-stat totals + effect/honor lists, EARNED (completed courses)
+   *  strictly separated from FUTURE (remaining + in-progress) rewards. */
+  earned: EducationRewardSchema,
+  future: EducationRewardSchema,
+  courses: z.array(EducationCourseDtoSchema),
+  coverage: z.object({
+    source: z.literal("live_user_state+official_catalog"),
+    /** Epoch seconds the live education state was fetched. */
+    fetchedAt: z.number(),
+  }),
+});
+export type EducationProgress = z.infer<typeof EducationProgressSchema>;
+
 export const ProgressionResponseSchema = z.object({
   range: z.object({ from: z.number(), to: z.number() }),
   generatedAt: z.number(),
@@ -2491,8 +2550,14 @@ export const ProgressionResponseSchema = z.object({
       secondary: z.array(AccountCounterSchema),
     })
     .nullable(),
+  /** Education progress (2.8.2) — live user state + the official catalog,
+   *  read-time derived; null when either source is unavailable. Completion
+   *  HISTORY is not derivable (Torn publishes current/completed state only)
+   *  and is therefore never fabricated. */
+  education: EducationProgressSchema.nullable(),
 });
 export type ProgressionResponse = z.infer<typeof ProgressionResponseSchema>;
+
 
 /* -------------------------------------------------------------------------- */
 /* Merits & Stocks (v0.2 feature completion)                                   */
@@ -2528,12 +2593,32 @@ export const MeritSummaryDtoSchema = z.object({
   byCategory: z.array(z.object({ category: z.string(), points: z.number() })),
 });
 
+/** Actuele merit-effect (2.8.2) — één regel van het "Current effects"-blok.
+ *  Alléén effecten waarvan de per-rank-formule betrouwbaar is (officiële
+ *  description + anker-guard); niet-ondersteunde merits blijven alleen in de
+ *  bestaande ledger. total = perLevel × level (exact). */
+export const MeritEffectSchema = z.object({
+  id: z.number(),
+  label: z.string(),
+  unit: z.enum(["percent", "flat", "special"]),
+  perLevel: z.number(),
+  level: z.number(),
+  total: z.number(),
+  direction: z.enum(["increase", "reduce"]),
+  group: z.string(),
+  appliesTo: z.string(),
+});
+export type MeritEffect = z.infer<typeof MeritEffectSchema>;
+
 export const MeritsResponseSchema = z.object({
   summary: MeritSummaryDtoSchema,
   merits: z.array(MeritRowDtoSchema),
   availability: FeatureAvailabilitySchema,
   /** When the official catalog could not be fetched, names come back null. */
   catalogDegraded: z.boolean(),
+  /** Actuele effecten van geïnvesteerde ranks (2.8.2) — alleen bewezen
+   *  formules; leeg bij catalog-degradatie of onherkenbare descriptions. */
+  effects: z.array(MeritEffectSchema).default([]),
 });
 
 export type MeritRowDto = z.infer<typeof MeritRowDtoSchema>;

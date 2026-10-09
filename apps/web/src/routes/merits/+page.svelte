@@ -174,6 +174,32 @@
       </p>
     {/if}
 
+    {#if data.effects.length > 0}
+      <section aria-label="Current effects" class="overflow-hidden rounded-card border border-accent/30 bg-accent/[0.04] p-5">
+        <p class="section-label">Current effects — what your invested ranks do right now</p>
+        <ul class="mt-3 grid gap-x-8 gap-y-2 text-[13px] md:grid-cols-2">
+          {#each data.effects as effect (effect.id)}
+            <li class="flex items-baseline justify-between gap-3">
+              <span class="min-w-0 truncate text-fg-muted">
+                {effect.label}
+                {#if effect.group === "Weapons mastery"}<span class="text-fg-faint"> · {effect.appliesTo}</span>{/if}
+                <span class="text-fg-faint"> · rank {effect.level}</span>
+              </span>
+              <span class={`tnum shrink-0 font-semibold ${effect.direction === "increase" ? "text-positive" : "text-accent"}`}>
+                {effect.direction === "reduce" ? "−" : "+"}{effect.total}{effect.unit === "percent" ? "%" : ""}
+                {#if effect.unit !== "percent"}
+                  <span class="text-[11px] font-normal text-fg-faint">flat</span>
+                {/if}
+              </span>
+            </li>
+          {/each}
+        </ul>
+        <p class="mt-3 text-[11px] leading-relaxed text-fg-faint">
+          Computed from your exact ranks and Torn's official merit descriptions (per-rank formulas, anchor-verified). Merits whose effect cannot be stated reliably stay in the ledger below only.
+        </p>
+      </section>
+    {/if}
+
     <section aria-label="Category concentration" class="space-y-2">
       <p class="section-label">Where points are concentrated</p>
       <div class="space-y-1.5">

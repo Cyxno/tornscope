@@ -30,8 +30,28 @@ export const CHANGELOG_KINDS: ChangelogKind[] = ["Added", "Improved", "Fixed", "
 
 export const CHANGELOG: ChangelogRelease[] = [
   {
-    version: "2.8.1",
+    version: "2.8.2",
     current: true,
+    summary:
+      "Education and Merits, made useful: a full Education section on Progression (current course with live ETA, completed/remaining, category degrees, earned-vs-future rewards, per-course filters) and a Current-effects block on Merits that states exactly what the invested ranks do — only where the per-rank formula is provably known.",
+    changes: [
+      {
+        kind: "Added",
+        text: "Education section on Progression: current course + live countdown, completed/total against the official 143-course catalog, per-category degree progress, the course list with All / Completed / In progress / Remaining filters plus search, and each course's reward/effect line from the catalog.",
+      },
+      {
+        kind: "Added",
+        text: "Earned vs future rewards, strictly separated: working-stat totals from completed courses never mix with what is still available; Torn publishes no completion history, and none is fabricated.",
+      },
+      {
+        kind: "Added",
+        text: "Merits — Current effects: computed from exact ranks and Torn's official descriptions with anchor-verified per-rank formulas (+50% bank interest, +20% mug money, +6% defense, −12% course time, weapon masteries grouped). Effects whose formula cannot be stated reliably stay in the ledger only.",
+      },
+    ],
+  },
+  {
+    version: "2.8.1",
+    current: false,
     summary:
       "Overview live-state repair: bars can never read Full while current is below max, percentages are derived from the real values at render time, and the browser cockpit snapshot is judged fresh by the payload's own fetch time — the chain that let a stale snapshot show Energy '25 / 150 — Full · 100%' and keep travel stale for hours.",
     changes: [

@@ -1,7 +1,8 @@
 <script lang="ts">
   import { createLoadGuard } from "$lib/loadGuard";
   import { goto } from "$app/navigation";
-  import type { ProgressionResponse } from "@tornscope/shared";
+  import type { ProgressionResponse, EducationCourseDto } from "@tornscope/shared";
+  import Countdown from "$lib/components/Countdown.svelte";
   import {
     formatKpiValue,
     formatNumberCompact,
@@ -26,6 +27,29 @@
   let loading = $state(true);
   let error = $state<string | null>(null);
   let reloadToken = $state(0);
+
+  // Education section (2.8.2): client-side filter + search over the catalog
+  // rows delivered in the progression payload.
+  let eduFilter = $state<"all" | "completed" | "in_progress" | "remaining">("all");
+  let eduQuery = $state("");
+  const education = $derived(progression?.education ?? null);
+  const eduFiltered = $derived.by(() => {
+    if (!education) return [];
+    const q = eduQuery.trim().toLowerCase();
+    return education.courses.filter((c) => {
+      if (eduFilter !== "all" && c.state !== eduFilter) return false;
+      if (q && !`${c.name} ${c.categoryName}`.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  });
+  function eduRewardLine(course: EducationCourseDto): string {
+    const bits: string[] = [];
+    if (course.reward.manualLabor) bits.push(`+${course.reward.manualLabor} manual`);
+    if (course.reward.intelligence) bits.push(`+${course.reward.intelligence} int`);
+    if (course.reward.endurance) bits.push(`+${course.reward.endurance} end`);
+    bits.push(...course.reward.effects, ...course.reward.honors.map((h) => `Honor: ${h}`));
+    return bits.join(" · ");
+  }
 
   const guard = createLoadGuard();
   async function load() {
@@ -451,6 +475,111 @@
       {/if}
     </section>
 
+    {#if education}
+      <section class="space-y-4" aria-label="Education">
+        <h2 class="section-label text-[12px]"><span class="mr-2 text-accent">E</span> Education — current state and catalog progress</h2>
+        <div class="grid gap-4 lg:grid-cols-3">
+          <Panel title="Current course" caption="Live from Torn — exact completion time" class="lg:col-span-2">
+            {#if education.currentCourse}
+              <div class="flex items-baseline justify-between gap-3">
+                <div class="min-w-0">
+                  <p class="truncate text-[15px] font-semibold text-fg">{education.currentCourse.name}</p>
+                  <p class="mt-0.5 text-[12px] text-fg-muted">{education.currentCourse.categoryName}</p>
+                </div>
+                <div class="shrink-0 text-right">
+                  <Countdown seconds={education.currentCourse.remainingSeconds} style="clock" class="text-[17px] font-semibold" />
+                  <p class="tnum mt-0.5 text-[11px] text-fg-faint">{td.displayDateTime(education.currentCourse.completesAt)}</p>
+                </div>
+              </div>
+            {:else}
+              <p class="text-[14px] text-fg-muted">No course in progress.</p>
+            {/if}
+            <p class="mt-3 text-[11px] text-fg-faint">
+              Completed {education.completed} of {education.total} courses{education.inProgress > 0 ? ` · ${education.inProgress} in progress` : ""} · completion history is not published by Torn (current + completed state only).
+            </p>
+          </Panel>
+          <Panel title="Category progress" caption="A category completes as a degree when every course is done">
+            <ul class="space-y-2 text-[12px]">
+              {#each education.categories as cat (cat.name)}
+                <li>
+                  <div class="flex items-baseline justify-between gap-2">
+                    <span class="truncate {cat.complete ? 'text-positive' : 'text-fg-muted'}">{cat.name}{cat.complete ? " ✓" : ""}</span>
+                    <span class="tnum shrink-0 text-fg-faint">{cat.completed}/{cat.total}</span>
+                  </div>
+                  <div class="mt-1 h-1 overflow-hidden rounded-full bg-surface-2">
+                    <div class="h-full rounded-full {cat.complete ? 'bg-positive' : 'bg-accent/70'}" style={`width:${Math.round((cat.completed / cat.total) * 100)}%`}></div>
+                  </div>
+                </li>
+              {/each}
+            </ul>
+          </Panel>
+        </div>
+        <div class="grid gap-4 lg:grid-cols-2">
+          <Panel title="Earned rewards" caption="From completed courses only — exact catalog values">
+            <p class="tnum text-[15px] font-semibold text-fg">
+              +{education.earned.manualLabor} manual · +{education.earned.intelligence} int · +{education.earned.endurance} end
+            </p>
+            <p class="tnum mt-1 text-[11px] text-fg-faint">{education.earned.effects.length} course effects · {education.earned.honors.length} honors earned</p>
+          </Panel>
+          <Panel title="Future rewards" caption="Remaining + in-progress courses — not yet earned">
+            <p class="tnum text-[15px] font-semibold text-fg">
+              +{education.future.manualLabor} manual · +{education.future.intelligence} int · +{education.future.endurance} end
+            </p>
+            <p class="tnum mt-1 text-[11px] text-fg-faint">{education.future.effects.length} course effects · {education.future.honors.length} honors available</p>
+          </Panel>
+        </div>
+        <Panel title="Courses" caption="{education.completed} completed · {education.remaining} remaining of {education.total}">
+          {#snippet actions()}
+            <div class="flex flex-wrap items-center gap-2">
+              <div class="inline-flex items-center gap-0.5 rounded-full border border-border bg-surface p-1" role="group" aria-label="Education filter">
+                {#each [["all", "All"], ["completed", "Completed"], ["in_progress", "In progress"], ["remaining", "Remaining"]] as [value, label] (value)}
+                  <button
+                    class={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${eduFilter === value ? "bg-accent/15 text-accent" : "text-fg-muted hover:text-fg"}`}
+                    onclick={() => (eduFilter = value as typeof eduFilter)}
+                  >{label}</button>
+                {/each}
+              </div>
+              <input
+                class="w-36 rounded-full border border-border bg-surface px-3 py-1 text-[12px] text-fg placeholder:text-fg-faint focus:border-accent focus:outline-none"
+                placeholder="Search…"
+                bind:value={eduQuery}
+                aria-label="Search education courses"
+              />
+            </div>
+          {/snippet}
+          <div class="overflow-x-auto">
+            <table class="tsv-table">
+              <thead>
+                <tr>
+                  <th>Course</th>
+                  <th>Category</th>
+                  <th>State</th>
+                  <th class="hidden text-right md:table-cell">Days</th>
+                  <th>Reward / effect</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each eduFiltered as course (course.id)}
+                  <tr>
+                    <td class="max-w-[220px] truncate text-fg" title={course.name}>{course.name}</td>
+                    <td class="text-xs text-fg-muted">{course.categoryName}</td>
+                    <td>
+                      <span class={`chip ${course.state === "completed" ? "chip-positive" : course.state === "in_progress" ? "chip-accent" : ""}`}>
+                        {course.state === "completed" ? "Completed" : course.state === "in_progress" ? "In progress" : "Remaining"}
+                      </span>
+                    </td>
+                    <td class="tnum hidden text-right text-fg-muted md:table-cell">{course.durationDays ?? "—"}</td>
+                    <td class="max-w-[320px] truncate text-xs text-fg-muted" title={eduRewardLine(course)}>{eduRewardLine(course) || "—"}</td>
+                  </tr>
+                {:else}
+                  <tr><td colspan="5" class="px-4 py-4 text-center text-[13px] text-fg-faint">No courses match this filter.</td></tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        </Panel>
+      </section>
+    {/if}
 
           <Panel title="Account progression" caption="Long-term counters from your stored personalstats history — exact snapshot deltas over the selected range">
             {#if !progression.accountCounters}
