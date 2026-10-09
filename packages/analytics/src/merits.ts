@@ -319,8 +319,13 @@ const MERIT_EFFECT_FORMULAS: ReadonlyMap<number, EffectFormula> = new Map([
   [11, { anchor: /passive 3% bonus to your dexterity stat/i, unit: "percent", perLevel: 3, direction: "increase", group: "Battlestats", appliesTo: "dexterity" }],
   [12, { anchor: /passive 3% bonus to your defense stat/i, unit: "percent", perLevel: 3, direction: "increase", group: "Battlestats", appliesTo: "defense" }],
   [13, { anchor: /maximum life by 5%/i, unit: "percent", perLevel: 5, direction: "increase", group: "Recovery", appliesTo: "maximum life" }],
-  [14, { anchor: /complete an education course by 2%/i, unit: "percent", perLevel: 2, direction: "reduce", group: "Education", appliesTo: "education course time" }],
-  [15, WEAPON_MASTERY_FORMULA], [16, WEAPON_MASTERY_FORMULA], [17, WEAPON_MASTERY_FORMULA],
+  // id 14 = Crime XP, id 15 = Education Length (verified live 2026-10-08).
+  // The initial 2.8.2 table had these two shifted by one rank-id — the
+  // anchor guard blocked the misattribution (both merits dropped out of the
+  // summary instead of being wrongly applied), corrected in 2.8.3.
+  [14, { anchor: /boost of 3% \(per upgrade\) to your Crime XP/i, unit: "percent", perLevel: 3, direction: "increase", group: "Crime", appliesTo: "crime XP gain" }],
+  [15, { anchor: /complete an education course by 2%/i, unit: "percent", perLevel: 2, direction: "reduce", group: "Education", appliesTo: "education course time" }],
+  [16, WEAPON_MASTERY_FORMULA], [17, WEAPON_MASTERY_FORMULA],
   [18, WEAPON_MASTERY_FORMULA], [19, WEAPON_MASTERY_FORMULA], [20, WEAPON_MASTERY_FORMULA],
   [21, WEAPON_MASTERY_FORMULA], [22, WEAPON_MASTERY_FORMULA], [23, WEAPON_MASTERY_FORMULA],
   [24, WEAPON_MASTERY_FORMULA], [25, WEAPON_MASTERY_FORMULA], [26, WEAPON_MASTERY_FORMULA],

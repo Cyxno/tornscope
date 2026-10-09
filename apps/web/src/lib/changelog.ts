@@ -30,8 +30,17 @@ export const CHANGELOG_KINDS: ChangelogKind[] = ["Added", "Improved", "Fixed", "
 
 export const CHANGELOG: ChangelogRelease[] = [
   {
-    version: "2.8.2",
+    version: "2.8.3",
     current: true,
+    summary:
+      "Merit-effects correctness: the effect formulas for Crime XP (id 14) and Education Length (id 15) were keyed to shifted catalog ids in 2.8.2 — the description anchors correctly blocked any wrong number, but both merits dropped out of the Current-effects summary. Ids verified against the live catalog; both now summarize (+3%×ranks crime XP, −2%×ranks course time).",
+    changes: [
+      { kind: "Fixed", text: "Current effects now include Crime XP and Education Length at their verified catalog ids — 2.8.2 summarized neither (the anchor guard refused the shifted ids rather than applying a wrong formula)." },
+    ],
+  },
+  {
+    version: "2.8.2",
+    current: false,
     summary:
       "Education and Merits, made useful: a full Education section on Progression (current course with live ETA, completed/remaining, category degrees, earned-vs-future rewards, per-course filters) and a Current-effects block on Merits that states exactly what the invested ranks do — only where the per-rank formula is provably known.",
     changes: [

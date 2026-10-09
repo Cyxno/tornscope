@@ -111,7 +111,8 @@ const MERIT_CATALOG = new Map<number, { name: string; description: string }>([
   [5, { name: "Masterful Looting", description: "This upgrade will give you a 5% boost in money that you mug from opponents. Perfect for experienced muggers, looking for some extra cash." }],
   [7, { name: "Bank Interest", description: "This upgrade will give you an increase of 5% to your investment bank interest. This upgrade will start working on your next investment." }],
   [12, { name: "Protection", description: "This upgrade will give you a passive 3% bonus to your defense stat. This upgrade will not increase your actual viewable stat number, but you will notice the effects during attacks." }],
-  [14, { name: "Education Length", description: "This upgrade will decrease the amount of time you have to wait to complete an education course by 2%. This upgrade will start working on the next education course you start." }],
+  [14, { name: "Crime XP", description: "This upgrade will give you a passive boost of 3% (per upgrade) to your Crime XP resulting from successfully committing crimes." }],
+  [15, { name: "Education Length", description: "This upgrade will decrease the amount of time you have to wait to complete an education course by 2%. This upgrade will start working on the next education course you start." }],
   [18, { name: "Rifle Mastery", description: "This upgrade will improve your proficiency with these weapons, increasing damage by 1% and accuracy by +0.2. Rifle weapons include: AK-47, Enfield SA-80, and ArmaLite M-15A4." }],
   [28, { name: "Employee Effectiveness", description: "This upgrade will provide an additional +1 bonus to employee effectiveness, helping you to earn more money for the company you work for." }],
 ]);
@@ -126,6 +127,7 @@ describe("merit current effects: level × formula", () => {
         { id: 7, level: 10 },
         { id: 12, level: 2 },
         { id: 14, level: 6 },
+        { id: 15, level: 10 },
         { id: 28, level: 5 },
       ],
       MERIT_CATALOG
@@ -141,8 +143,11 @@ describe("merit current effects: level × formula", () => {
     expect(byId.get(7)).toMatchObject({ unit: "percent", perLevel: 5, total: 50, appliesTo: "bank interest" });
     // +3% defense × 2
     expect(byId.get(12)).toMatchObject({ unit: "percent", perLevel: 3, total: 6, appliesTo: "defense" });
-    // reduction: −2% education course time × 6
-    expect(byId.get(14)).toMatchObject({ unit: "percent", perLevel: 2, total: 12, direction: "reduce", appliesTo: "education course time" });
+    // reduction: −2% education course time × 10 (REAL id 15 — the initial
+    // 2.8.2 table had 14/15 shifted; anchors blocked the misattribution).
+    expect(byId.get(15)).toMatchObject({ unit: "percent", perLevel: 2, total: 20, direction: "reduce", appliesTo: "education course time" });
+    // +3% crime XP × 6 (real id 14)
+    expect(byId.get(14)).toMatchObject({ unit: "percent", perLevel: 3, total: 18, direction: "increase", appliesTo: "crime XP gain" });
     // flat +1 employee effectiveness × 5
     expect(byId.get(28)).toMatchObject({ unit: "flat", perLevel: 1, total: 5 });
   });
