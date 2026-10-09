@@ -26,7 +26,7 @@ const USER_B = "user-b";
 const NOW = 1_750_000_000_000;
 
 function snapshot(fetchedAtMs = NOW) {
-  return { schema: 1, userId: "user-a", fetchedAtMs, today: { fetchedAt: Math.floor(fetchedAtMs / 1000), player: { name: "X" } }, ocs: [{ name: "OC" }], travelDurations: { UAE: 43_200 } };
+  return { schema: 1, userId: "user-a", fetchedAtMs, today: { fetchedAt: fetchedAtMs, bars: { energy: null }, player: { name: "X" } }, ocs: [{ name: "OC" }], travelDurations: { UAE: 43_200 } };
 }
 
 describe("cockpit snapshot", () => {

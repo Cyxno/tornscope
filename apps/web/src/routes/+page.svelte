@@ -169,7 +169,12 @@
       data = dash;
       todaySummary = summaryRes;
       myOcs = ocsRes?.ocs.filter((o) => o.myParticipation && o.state === "active") ?? null;
-      if (meUserId) saveCockpitSnapshot(meUserId, { fetchedAtMs: Date.now(), today: today, ocs: myOcs, travelDurations });
+      // Snapshot atomicity (2.6.2): the stored fetchedAtMs is ALWAYS the today
+      // payload's own fetchedAt — re-stamping with Date.now() here kept a
+      // stale payload "fresh" for <120s skips on every later mount (the
+      // Overview/travel staleness + "Full at 25/150" root cause). OCS/
+      // travel-duration refreshes never refresh the live-status freshness.
+      if (meUserId && today) saveCockpitSnapshot(meUserId, { fetchedAtMs: today.fetchedAt, today: today, ocs: myOcs, travelDurations });
     } catch (err) {
       // A failure here only invalidates the ANALYTICS zone; the cockpit
       // (from snapshot/state) keeps rendering — a transient upstream error

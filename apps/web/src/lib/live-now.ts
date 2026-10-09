@@ -17,7 +17,7 @@
  */
 import type { TodayResponse } from "@tornscope/shared";
 import { formatCountdownCompact, formatMoneyCompact, remainingSeconds, TORN_URLS } from "@tornscope/shared";
-import { cooldownDisplay, barFullDisplay } from "./live";
+import { cooldownDisplay, barFullDisplay, barFillPct } from "./live";
 import { monotonicRemaining } from "./monotonic-remaining";
 
 export interface LiveItem {
@@ -321,7 +321,9 @@ function deriveBars(today: TodayResponse, serverNowMs: number, displayTime: (tsS
       state: `${bar.current} / ${bar.max}`,
       relative: ticking && mono ? formatCountdownCompact(mono.remainingSeconds) : d.text === "—" ? null : d.text,
       absolute: ticking && bar.fullAt !== null ? displayTime(bar.fullAt) : null,
-      pct: Math.min(100, Math.max(2, bar.percent)),
+      // Fill is derived from current/max at render time — a cached percent
+      // field from a stale snapshot is never trusted (2.6.2 invariant).
+      pct: Math.min(100, Math.max(2, barFillPct(bar))),
       tone: "accent",
       ready: false,
       tornUrl: url,

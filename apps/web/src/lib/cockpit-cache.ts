@@ -65,14 +65,18 @@ export function loadCockpitSnapshot(userId: string): CockpitSnapshot | null {
     // fetch time). Rendered as current it showed every cooldown "Ready" with
     // frozen countdowns, and its fetchedAt then discarded every fresh
     // response — the permanent-ready state survived reloads in storage.
-    // Reject AND remove so the browser heals on the next load.
-    const todayFetchedAt = (snap.today as { fetchedAt?: unknown } | null)?.fetchedAt;
-    if (
-      typeof todayFetchedAt !== "number" ||
-      !Number.isFinite(todayFetchedAt) ||
-      todayFetchedAt <= 0 ||
-      todayFetchedAt > Date.now() + PAYLOAD_CLOCK_TOLERANCE_MS
-    ) {
+    // Reject AND remove so the browser heals on the next load. 2.6.2 extends
+    // this to ANY corrupt payload stamp: freshness is judged from the
+    // payload's own fetchedAt (never the outer storage timestamp), so an
+    // unreadable stamp invalidates the whole snapshot atomically.
+    const todayFetchedAt = payloadFetchedAtMs(snap);
+    if (todayFetchedAt === null || todayFetchedAt > Date.now() + PAYLOAD_CLOCK_TOLERANCE_MS) {
+      localStorage.removeItem(keyFor(userId));
+      return null;
+    }
+    // Not a live-status payload (no bars subset): unusable for the cockpit.
+    const todayBars = (snap.today as { bars?: unknown }).bars;
+    if (typeof todayBars !== "object" || todayBars === null) {
       localStorage.removeItem(keyFor(userId));
       return null;
     }
@@ -80,6 +84,20 @@ export function loadCockpitSnapshot(userId: string): CockpitSnapshot | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * The payload's OWN fetch time (ms) — the authoritative freshness anchor of a
+ * snapshot (2.6.2). The outer `fetchedAtMs` used to be trusted for freshness,
+ * which let a re-save with `Date.now()` keep an hours-old `today` payload
+ * looking fresh forever (Overview skipped /api/today indefinitely; expired
+ * bar boundaries then rendered as "Full" next to stale values, and travel
+ * stayed stale). Freshness is now judged from the payload itself — the whole
+ * TodayResponse atomically, never field-by-field.
+ */
+export function payloadFetchedAtMs(snap: CockpitSnapshot): number | null {
+  const fetchedAt = (snap.today as { fetchedAt?: unknown } | null)?.fetchedAt;
+  return typeof fetchedAt === "number" && Number.isFinite(fetchedAt) && fetchedAt > 0 ? fetchedAt : null;
 }
 
 /** Remove this user's snapshot (logout, profile deletion, user switch). */
@@ -101,7 +119,11 @@ export const COCKPIT_FRESH_MS = 120_000;
 
 export function snapshotAgeMs(snap: CockpitSnapshot | null, nowMs: number): number | null {
   if (!snap) return null;
-  return Math.max(0, nowMs - snap.fetchedAtMs);
+  // Freshness comes from the payload itself (2.6.2) — the outer fetchedAtMs
+  // is a storage timestamp, not a data timestamp, and is never consulted.
+  const fetchedAtMs = payloadFetchedAtMs(snap);
+  if (fetchedAtMs === null) return null; // corrupt → never "fresh"
+  return Math.max(0, nowMs - fetchedAtMs);
 }
 
 export function shouldSkipTodayRequest(snap: CockpitSnapshot | null, nowMs: number): boolean {

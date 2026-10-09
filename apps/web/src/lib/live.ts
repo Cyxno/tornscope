@@ -89,6 +89,20 @@ export interface BarFullDisplay {
   overCap: boolean;
   /** How far current is over the natural cap (0 unless overCap). */
   overBy: number;
+  /** Bar fill derived from current/max AT RENDER TIME (0-100) — a cached
+   *  `percent` field is never trusted (stale snapshot invariant). */
+  pct: number;
+  /** The payload's full-time boundary has passed while current is still
+   *  below max — the fields cannot both be true in a live Torn read, so the
+   *  snapshot they came from is stale or corrupt. Renders as "regen
+   *  unknown", never as Full. */
+  boundaryPassed: boolean;
+}
+
+/** Bar fill from current/max — the ONLY trusted source of the percentage. */
+export function barFillPct(bar: { current: number; max: number }): number {
+  if (!(bar.max > 0)) return 0;
+  return Math.min(100, Math.max(0, (bar.current / bar.max) * 100));
 }
 
 /** Canonical over-cap copy, shared by Today and the Overview Right-now board. */
@@ -101,22 +115,38 @@ export function barFullDisplay(
   serverNowMs: number
 ): BarFullDisplay | null {
   if (!bar) return null;
+  const pct = barFillPct(bar);
   // Stacked (Xanax, training stacks): current legitimately exceeds the
   // natural cap. Regen is stopped and Torn supplies no full time — show the
   // real numbers with the over-cap amount, never a countdown and never the
   // "not regenerating" fallback.
   const overBy = Math.max(0, bar.current - bar.max);
   if (overBy > 0) {
-    return { text: overCapText(overBy), full: false, remainingSeconds: null, overCap: true, overBy };
+    return { text: overCapText(overBy), full: false, remainingSeconds: null, overCap: true, overBy, pct: 100, boundaryPassed: false };
   }
-  if (bar.regenState === "full" || bar.current >= bar.max) {
-    return { text: "Full", full: true, remainingSeconds: null, overCap: false, overBy: 0 };
+  // INVARIANT (2.6.2): current < max ⇒ NEVER Full — a cached `regenState:
+  // "full"` is only believed when current >= max agrees, and an expired
+  // fullAt never promotes the bar to Full by itself. Both shapes occur on a
+  // stale snapshot (the value fields are old, the boundary has since passed)
+  // and rendered as "25 / 150 — Full · 100%". A live Torn read cannot
+  // produce them, so the honest render is "regen unknown".
+  if (bar.current >= bar.max) {
+    return { text: "Full", full: true, remainingSeconds: null, overCap: false, overBy: 0, pct: 100, boundaryPassed: false };
   }
   if (bar.regenState === "regenerating" && bar.fullAt !== null) {
     const left = remainingSeconds(serverNowMs, bar.fullAt);
-    if (left === null || left <= 0) return { text: "Full", full: true, remainingSeconds: null, overCap: false, overBy: 0 };
-    return { text: `Full in ${formatCountdownCompact(left)}`, full: false, remainingSeconds: left, overCap: false, overBy: 0 };
+    if (left !== null && left > 0) {
+      return { text: `Full in ${formatCountdownCompact(left)}`, full: false, remainingSeconds: left, overCap: false, overBy: 0, pct, boundaryPassed: false };
+    }
   }
-  // Regen paused/unknown: never invent a timer.
-  return { text: "—", full: false, remainingSeconds: null, overCap: false, overBy: 0 };
+  // Regen paused/unknown (or a stale boundary): never invent a timer, never Full.
+  return {
+    text: "—",
+    full: false,
+    remainingSeconds: null,
+    overCap: false,
+    overBy: 0,
+    pct,
+    boundaryPassed: bar.fullAt !== null && bar.fullAt <= Math.floor(serverNowMs / 1000),
+  };
 }

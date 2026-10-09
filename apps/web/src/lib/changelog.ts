@@ -30,8 +30,32 @@ export const CHANGELOG_KINDS: ChangelogKind[] = ["Added", "Improved", "Fixed", "
 
 export const CHANGELOG: ChangelogRelease[] = [
   {
-    version: "2.8.0",
+    version: "2.8.1",
     current: true,
+    summary:
+      "Overview live-state repair: bars can never read Full while current is below max, percentages are derived from the real values at render time, and the browser cockpit snapshot is judged fresh by the payload's own fetch time — the chain that let a stale snapshot show Energy '25 / 150 — Full · 100%' and keep travel stale for hours.",
+    changes: [
+      {
+        kind: "Fixed",
+        text: "Overview and Today can no longer render a bar as Full while current < max: a cached \"full\" regenState is only believed when the values agree, and an expired full-at boundary on a stale snapshot honestly reads as \"stale — revalidating\" instead of a fabricated Full.",
+      },
+      {
+        kind: "Fixed",
+        text: "Bar fill percentages are derived from current/max at render time — a stale cached percent (e.g. 100% on a quarter-full bar) is never trusted, on either page.",
+      },
+      {
+        kind: "Fixed",
+        text: "The Overview cockpit snapshot is fresh or stale by the today payload's own fetchedAt, atomically. Re-saving the snapshot around an old payload (the previous behavior) no longer makes an hours-old cockpit look fresh and block revalidation — the root cause of bars, cooldowns and travel staying stale indefinitely.",
+      },
+      {
+        kind: "Improved",
+        text: "Corrupt cockpit snapshots (unreadable payload stamp, or a payload without the live-status bars subset) are rejected and removed so the next load heals instead of re-rendering the broken state.",
+      },
+    ],
+  },
+  {
+    version: "2.8.0",
+    current: false,
     summary:
       "Coverage expansion from already-stored history: the Combat, Racing and bounty families from your personalstats snapshots — hundreds of thousands of attacking events' worth of counters that TornScope stored but never showed — plus exact per-crime skill levels from the snapshot authority.",
     changes: [

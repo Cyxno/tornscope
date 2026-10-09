@@ -12,7 +12,7 @@
   import { me } from "$lib/state.svelte";
   import { greetingForHour } from "$lib/reltime";
   import * as td from "$lib/time-display.svelte.js";
-  import { cooldownDisplay, overCapText, plausibleClockOffsetMs } from "$lib/live";
+  import { cooldownDisplay, plausibleClockOffsetMs, barFullDisplay, barFillPct } from "$lib/live";
   import StateMessage from "$lib/components/StateMessage.svelte";
   import Countdown from "$lib/components/Countdown.svelte";
   import Icon from "$lib/components/Icon.svelte";
@@ -116,23 +116,26 @@
 
   function barState(bar: LiveBar | null): { text: string; tone: "muted" | "positive" | "warning" | "accent" } {
     if (!bar) return { text: "Unavailable", tone: "muted" };
-    // Stacked (current above the natural cap, e.g. energy 400/150 on Xanax):
-    // show the real numbers and the over-cap amount. Regen IS stopped above
-    // the cap, but the energy was never lost — never render the clamped
-    // "Full" nor an invented countdown. Normal accent treatment: stacking is
-    // intentional, not an error.
-    if (bar.current > bar.max) return { text: overCapText(bar.current - bar.max), tone: "accent" };
-    if (bar.regenState === "full") return { text: "Full", tone: "positive" };
-    if (bar.regenState === "regenerating" && bar.fullAt !== null) {
-      const left = remainingSeconds(serverNowMs, bar.fullAt);
-      // The countdown elapsed while the payload is still cached: Torn's own
-      // full_time is authoritative, so the bar IS full now — never "0s".
-      if (left !== null && left <= 0) return { text: "Full", tone: "positive" };
-      return { text: `Full in ${formatCountdownCompact(left)}`, tone: "accent" };
-    }
+    // ONE canonical derivation shared with the Overview (barFullDisplay):
+    // identical payload + clock ⇒ identical state on both pages (2.6.2
+    // invariant). current < max is NEVER Full — a cached "full" regenState or
+    // an expired fullAt on a stale snapshot renders as "regen unknown", and
+    // stacking keeps its real numbers.
+    const d = barFullDisplay(bar, serverNowMs);
+    if (!d) return { text: "Unavailable", tone: "muted" };
+    if (d.overCap) return { text: d.text, tone: "accent" };
+    if (d.full) return { text: "Full", tone: "positive" };
+    if (d.remainingSeconds !== null) return { text: d.text, tone: "accent" };
+    if (d.boundaryPassed) return { text: "Stale — revalidating", tone: "warning" };
     // Regen state genuinely unknown (Torn gave no full time): no invented timer.
     if (bar.regenState === "paused") return { text: "Regen paused", tone: "warning" };
     return { text: "Full time unavailable", tone: "muted" };
+  }
+
+  /** Fill shown next to the bar: derived from current/max at render time —
+   *  a cached percent field from a stale snapshot is never trusted (2.6.2). */
+  function barPercent(bar: LiveBar): number {
+    return Math.round(barFillPct(bar) * 10) / 10;
   }
 
   function cooldownState(cd: (typeof cooldowns)[number]): { label: string; active: boolean } | null {
@@ -296,15 +299,15 @@
               <span class="w-20 shrink-0 text-[13px] font-medium text-fg">{bar?.label ?? "—"}</span>
             {/if}
             {#if bar}
-              <div class="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-surface-2" role="progressbar" aria-label={bar.label} aria-valuenow={bar.percent} aria-valuemin={0} aria-valuemax={100}>
+              <div class="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-surface-2" role="progressbar" aria-label={bar.label} aria-valuenow={barPercent(bar)} aria-valuemin={0} aria-valuemax={100}>
                 <div
                   class="h-full rounded-full {bar.regenState === 'paused' && bar.current <= bar.max ? 'bg-warning/70' : 'bg-gradient-to-r from-accent-strong to-accent'}"
-                  style={`width:${Math.min(100, Math.max(2, bar.percent))}%`}
+                  style={`width:${Math.min(100, Math.max(2, barPercent(bar)))}%`}
                 ></div>
               </div>
               <span class="tnum shrink-0 text-[13px] text-fg-muted md:w-44 md:text-right">
                 {bar.current.toLocaleString("en-US")} / {bar.max.toLocaleString("en-US")}
-                <span class="text-fg-faint">· {Math.round(bar.percent)}%</span>
+                <span class="text-fg-faint">· {barPercent(bar)}%</span>
               </span>
               <span class="tnum shrink-0 text-[13px] font-medium md:w-32 md:text-right {barState(bar).tone === 'positive' ? 'text-positive' : barState(bar).tone === 'warning' ? 'text-warning' : barState(bar).tone === 'accent' ? 'text-accent' : 'text-fg-faint'}">
                 {barState(bar).text}
