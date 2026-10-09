@@ -12,7 +12,7 @@ TornScope is a self-hostable [Torn](https://www.torn.com) analytics and history 
 | **CI** | [GitHub Actions](.github/workflows/ci.yml): lint, typecheck, svelte-check, tests, build, Docker smoke |
 | **Docker images** | [![Docker images on GHCR](https://img.shields.io/badge/images-ghcr.io%2Fcyxno-2088FF)](https://github.com/Cyxno?tab=packages&repo_name=tornscope) published per release — web / api / worker |
 | **Runtime** | Docker Compose (Node ≥ 20.19, PostgreSQL, Redis) |
-| **License** | [MIT](LICENSE) |
+| **License** | [AGPL-3.0-only](LICENSE) |
 | **Demo** | Synthetic demo profile — explore without a real API key |
 
 **[Try the live instance →](https://tornscope.cyxno.eu)** · **[Quick Start](#quick-start)** · **[Features](#features)** · **[Screenshots](#screenshots)**
@@ -411,4 +411,4 @@ TornScope is an independent community project — not operated, endorsed, or hos
 
 ## License
 
-[MIT](LICENSE)
+[AGPL-3.0-only](LICENSE)
