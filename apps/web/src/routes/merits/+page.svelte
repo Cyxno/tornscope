@@ -1,6 +1,6 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
-  import type { MeritsResponse, MeritRowDto, FeatureAvailability as FeatureAvailabilityDto } from "@tornscope/shared";
+  import type { MeritsResponse, MeritRowDto, FeatureAvailability as FeatureAvailabilityDto, AccountEffect } from "@tornscope/shared";
   import { endpoints, ApiClientError } from "$lib/api";
   import PageHeader from "$lib/components/PageHeader.svelte";
   import StateMessage from "$lib/components/StateMessage.svelte";
@@ -119,6 +119,30 @@
   function availabilityState(a: FeatureAvailabilityDto): "permission" | "loading" {
     return a.state === "unavailable_permission" || a.state === "stale_permission" ? "permission" : "loading";
   }
+
+  // Current effects (2.8.4): rendered from the combined account-effect rows so
+  // merit and education contributions of the same family appear once, with
+  // percent / flat / special kept visually apart within each group.
+  const UNIT_ORDER = { percent: 0, flat: 1, special: 2 } as const;
+  function rowUnit(effect: AccountEffect): "percent" | "flat" | "special" {
+    return effect.merit?.unit ?? effect.education?.unit ?? "special";
+  }
+  const effectGroups = $derived.by(() => {
+    const rows = data?.accountEffects ?? [];
+    const groups = new Map<string, AccountEffect[]>();
+    for (const row of rows) {
+      const list = groups.get(row.group) ?? [];
+      list.push(row);
+      groups.set(row.group, list);
+    }
+    return [...groups.entries()]
+      .map(([group, items]) => [
+        group,
+        items.sort((a, b) => UNIT_ORDER[rowUnit(a)] - UNIT_ORDER[rowUnit(b)] || a.label.localeCompare(b.label)),
+      ] as const)
+      .sort((a, b) => a[0].localeCompare(b[0]));
+  });
+  const unknownEducation = $derived(data?.unknownEducationEffects ?? []);
 </script>
 
 <svelte:head><title>Merits · TornScope</title></svelte:head>
@@ -174,28 +198,50 @@
       </p>
     {/if}
 
-    {#if data.effects.length > 0}
+    {#if data.accountEffects.length > 0 || unknownEducation.length > 0}
       <section aria-label="Current effects" class="overflow-hidden rounded-card border border-accent/30 bg-accent/[0.04] p-5">
-        <p class="section-label">Current effects — what your invested ranks do right now</p>
-        <ul class="mt-3 grid gap-x-8 gap-y-2 text-[13px] md:grid-cols-2">
-          {#each data.effects as effect (effect.id)}
-            <li class="flex items-baseline justify-between gap-3">
-              <span class="min-w-0 truncate text-fg-muted">
-                {effect.label}
-                {#if effect.group === "Weapons mastery"}<span class="text-fg-faint"> · {effect.appliesTo}</span>{/if}
-                <span class="text-fg-faint"> · rank {effect.level}</span>
-              </span>
-              <span class={`tnum shrink-0 font-semibold ${effect.direction === "increase" ? "text-positive" : "text-accent"}`}>
-                {effect.direction === "reduce" ? "−" : "+"}{effect.total}{effect.unit === "percent" ? "%" : ""}
-                {#if effect.unit !== "percent"}
-                  <span class="text-[11px] font-normal text-fg-faint">flat</span>
-                {/if}
-              </span>
-            </li>
-          {/each}
-        </ul>
+        <p class="section-label">Current effects — what your account bonuses do right now</p>
+        {#each effectGroups as [group, rows] (group)}
+          <div class="mt-3 first:mt-2">
+            <p class="text-[10px] font-medium uppercase tracking-[0.12em] text-fg-faint">{group}</p>
+            <ul class="mt-1.5 grid gap-x-8 gap-y-2 text-[13px] md:grid-cols-2">
+              {#each rows as effect (effect.key)}
+                <li class="flex items-baseline justify-between gap-3">
+                  <span class="min-w-0 truncate text-fg-muted">
+                    {effect.label}
+                    {#if effect.merit?.unit === "special"}<span class="text-fg-faint"> · {effect.merit.appliesTo}</span>{/if}
+                    {#if effect.merit}<span class="text-fg-faint"> · rank {effect.merit.level}</span>{/if}
+                    {#if effect.education}<span class="chip chip-quiet !px-1.5 !text-[9px] !uppercase">Education</span>{/if}
+                  </span>
+                  <span class="tnum shrink-0 text-right">
+                    {#if effect.merit}
+                      <span class={`font-semibold ${effect.merit.direction === "increase" ? "text-positive" : "text-accent"}`}>
+                        {effect.merit.direction === "reduce" ? "−" : "+"}{effect.merit.total}{effect.merit.unit === "percent" ? "%" : ""}
+                      </span>
+                      {#if effect.merit.unit !== "percent"}<span class="text-[11px] font-normal text-fg-faint">{effect.merit.unit === "special" ? "per rank" : "flat"}</span>{/if}
+                    {/if}
+                    {#if effect.education}
+                      <span class="font-semibold text-positive">+{effect.education.total}{effect.education.unit === "percent" ? "%" : ""}</span>
+                      <span class="text-[11px] font-normal text-fg-faint">courses ({effect.education.courses})</span>
+                    {/if}
+                  </span>
+                </li>
+              {/each}
+            </ul>
+          </div>
+        {/each}
+        {#if unknownEducation.length > 0}
+          <ul class="mt-3 space-y-1 border-t border-border/60 pt-2.5 text-[12px] text-fg-muted">
+            {#each unknownEducation as text (text)}
+              <li class="flex items-baseline justify-between gap-3">
+                <span class="min-w-0">{text}</span>
+                <span class="chip chip-quiet !px-1.5 !text-[9px] !uppercase">Education · not quantified</span>
+              </li>
+            {/each}
+          </ul>
+        {/if}
         <p class="mt-3 text-[11px] leading-relaxed text-fg-faint">
-          Computed from your exact ranks and Torn's official merit descriptions (per-rank formulas, anchor-verified). Merits whose effect cannot be stated reliably stay in the ledger below only.
+          Merit figures are exact from your ranks and Torn's official descriptions (per-rank formulas, anchor-verified). Where a completed education course states the same family, it is listed on the same row from its own source — never summed together. Effects that cannot be stated reliably stay in the ledger below only.
         </p>
       </section>
     {/if}

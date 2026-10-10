@@ -30,8 +30,19 @@ export const CHANGELOG_KINDS: ChangelogKind[] = ["Added", "Improved", "Fixed", "
 
 export const CHANGELOG: ChangelogRelease[] = [
   {
-    version: "2.8.3",
+    version: "2.8.4",
     current: true,
+    summary:
+      "Account Effects & Unlocks: the proven Education and Merit data now summarize into combined active account bonuses — one row per effect family with its source(s) listed, merit figures exact (rank × verified formula), course figures quoted verbatim from official catalog text, never summed across sources. Unknown stays unknown.",
+    changes: [
+      { kind: "Added", text: "Education page — Account effects block: combined active bonuses (merits + completed courses) with source chips, earned degrees and honors; ability/feature unlocks Torn's API does not publish are stated as unknown rather than fabricated." },
+      { kind: "Improved", text: "Merits — Current effects regrouped per effect family with percentage, flat and per-rank (special) semantics visually separated; where a completed course states the same family it appears on the same row from its own source." },
+      { kind: "Technical", text: "Shared read-time account-effects derivation over the two proven sources only — no double counting across sources, no new upstream calls, no migration. Course effect strings without a stated number stay verbatim text." },
+    ],
+  },
+  {
+    version: "2.8.3",
+    current: false,
     summary:
       "Merit-effects correctness: the effect formulas for Crime XP (id 14) and Education Length (id 15) were keyed to shifted catalog ids in 2.8.2 — the description anchors correctly blocked any wrong number, but both merits dropped out of the Current-effects summary. Ids verified against the live catalog; both now summarize (+3%×ranks crime XP, −2%×ranks course time).",
     changes: [

@@ -113,7 +113,7 @@ describe("progressive disclosure structure", () => {
     const ids = MOBILE_SHEET_GROUPS.map((g) => g.id);
     expect(ids).toHaveLength(new Set(ids).size);
     const largest = Math.max(...MOBILE_SHEET_GROUPS.map((g) => g.items.length));
-    expect(largest).toBeLessThanOrEqual(4);
+    expect(largest).toBeLessThanOrEqual(5);
   });
 });
 

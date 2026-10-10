@@ -54,6 +54,7 @@ const progression: NavItem = { href: "/progression", label: "Progression", icon:
 const activity: NavItem = { href: "/activity", label: "Activity", icon: "activity", section: "analytics" };
 const stocks: NavItem = { href: "/stocks", label: "Stocks", icon: "stocks", section: "analytics" };
 const energy: NavItem = { href: "/energy", label: "Energy", icon: "progression", section: "analytics" };
+const education: NavItem = { href: "/education", label: "Education", icon: "progression", section: "analytics" };
 const merits: NavItem = { href: "/merits", label: "Merits", icon: "merits", section: "analytics" };
 const drugs: NavItem = { href: "/drugs", label: "Drugs", icon: "drugs", section: "analytics" };
 const timeline: NavItem = { href: "/timeline", label: "Timeline", icon: "timeline", section: "analytics" };
@@ -105,7 +106,7 @@ export const NAV_SECTIONS: NavSection[] = [
       // Real hub pages lead their families: /money, /progression and
       // /activity are first-class pages, not invented headers.
       { id: "economy", section: "analytics", parent: economy, children: [stocks] },
-      { id: "progression", section: "analytics", parent: progression, children: [energy, merits, drugs] },
+      { id: "progression", section: "analytics", parent: progression, children: [energy, education, merits, drugs] },
       { id: "activity", section: "analytics", parent: activity, children: [timeline, logs] },
     ],
   },
@@ -154,7 +155,7 @@ export const NAV_FAMILIES: NavFamily[] = NAV_SECTIONS.flatMap((s) => s.families)
 export const MOBILE_SHEET_GROUPS: Array<{ id: string; label: string; icon: IconName; items: NavItem[] }> = [
   { id: "intelligence", label: "Intelligence", icon: "insight", items: [goals, insights] },
   { id: "economy", label: "Economy", icon: economy.icon, items: [economy, stocks] },
-  { id: "progression", label: "Progression", icon: progression.icon, items: [progression, energy, merits, drugs] },
+  { id: "progression", label: "Progression", icon: progression.icon, items: [progression, energy, education, merits, drugs] },
   { id: "activity", label: "Activity", icon: activity.icon, items: [activity, timeline, logs] },
   { id: "gameplay", label: "Gameplay", icon: "combat", items: [crimes, combat, faction, travel] },
   { id: "specialty", label: "Rewards & games", icon: "slots", items: [rewardsGames, casino, rewards, hunting] },

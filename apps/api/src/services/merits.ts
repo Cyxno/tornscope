@@ -76,6 +76,8 @@ async function fetchMerits(userId: string): Promise<MeritsResponse> {
     availability: { ...availability, state: "available_live", lastRefreshedAt: Math.floor(Date.now() / 1000) },
     catalogDegraded: catalog.size === 0,
     effects: buildMeritEffects(raw.merits.upgrades, catalog),
+    accountEffects: [], // combined at the route layer (2.8.4)
+    unknownEducationEffects: [],
   };
 }
 
@@ -102,7 +104,7 @@ function availabilityOf(ctx: AvailabilityContext): FeatureAvailabilityDto {
 
 function emptyResponse(availability: FeatureAvailabilityDto): MeritsResponse {
   const { rows, summary } = assembleMerits({ upgrades: [], available: null, used: null, medals: null, honors: null, catalog: new Map() });
-  return { summary, merits: rows, availability, catalogDegraded: false, effects: [] };
+  return { summary, merits: rows, availability, catalogDegraded: false, effects: [], accountEffects: [], unknownEducationEffects: [] };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -137,6 +139,8 @@ function buildDemoMerits(): MeritsResponse {
     },
     catalogDegraded: false,
     effects: buildMeritEffects(DEMO_UPGRADES, catalog),
+    accountEffects: [], // combined at the route layer (2.8.4)
+    unknownEducationEffects: [],
   };
 }
 

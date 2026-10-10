@@ -33,6 +33,7 @@ import { getTimeline } from "./services/timeline.js";
 import { getDashboard } from "./services/dashboard.js";
 import { getToday } from "./services/today.js";
 import { getMerits } from "./services/merits.js";
+import { buildAccountEffects } from "@tornscope/analytics";
 import { getStocks } from "./services/stocks.js";
 import { getDailySummary } from "./services/dailySummary.js";
 import { getMe, getApiKeyStatus, saveApiKey, validateApiKey, linkProfile, deleteApiKey, setDemoView, deleteProfile, signOutOtherSessions } from "./services/me.js";
@@ -159,9 +160,13 @@ export function registerRoutes(app: FastifyInstance): void {
   });
 
   // Merits: live merits + official catalog enrichment (see services/merits.ts).
+  // Account effects (2.8.4): combined active bonuses over merits + completed
+  // education — read-time derivation, both sources already cached.
   app.get("/api/merits", async (req) => {
     const user = currentUser(req);
-    return getMerits(user);
+    const [merits, educationResult] = await Promise.all([getMerits(user), getEducationProgress(user)]);
+    const combined = buildAccountEffects(merits.effects, educationResult.education?.earned.effects ?? null);
+    return { ...merits, accountEffects: combined.effects, unknownEducationEffects: combined.unknownEducationEffects };
   });
 
   // Stocks: holdings, benefit blocks, valuations (see services/stocks.ts).
@@ -204,8 +209,19 @@ export function registerRoutes(app: FastifyInstance): void {
     const range = parseRange(req.query as Record<string, unknown>);
     // Education rides along (2.8.2): live user state + official catalog,
     // cached; null when either source is unavailable (never partial).
-    const [progression, educationResult] = await Promise.all([getProgression(user.id, range), getEducationProgress(user)]);
-    return { ...progression, education: educationResult.education };
+    // Account effects (2.8.4): combined over merits + completed courses.
+    const [progression, educationResult, merits] = await Promise.all([
+      getProgression(user.id, range),
+      getEducationProgress(user),
+      getMerits(user),
+    ]);
+    const education = educationResult.education
+      ? {
+          ...educationResult.education,
+          ...buildAccountEffects(merits.effects, educationResult.education.earned.effects),
+        }
+      : null;
+    return { ...progression, education };
   });
 
   // Deep Energy Analytics (2.1.0): sources / uses / losses accounting over

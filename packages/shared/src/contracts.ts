@@ -2349,6 +2349,38 @@ export const EducationCourseDtoSchema = z.object({
 });
 export type EducationCourseDto = z.infer<typeof EducationCourseDtoSchema>;
 
+/* Account effects (2.8.4) — gecombineerde actieve account-bonussen over de
+ * twee bewezen bronnen (meritranks + voltooide education courses). Eén rij
+ * per effectfamilie; beide bronnen nooit numeriek opgeteld (verschillende
+ * mechanics). provenance: "exact" = meritformule, "catalog" = waarde
+ * letterlijk overgenomen uit officiële coursetekst. */
+export const AccountEffectSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  group: z.string(),
+  sources: z.array(z.enum(["merits", "education"])),
+  provenance: z.enum(["exact", "catalog"]),
+  merit: z
+    .object({
+      unit: z.enum(["percent", "flat", "special"]),
+      perLevel: z.number(),
+      level: z.number(),
+      total: z.number(),
+      direction: z.enum(["increase", "reduce"]),
+      appliesTo: z.string(),
+    })
+    .nullable(),
+  education: z
+    .object({
+      unit: z.enum(["percent", "flat"]),
+      total: z.number(),
+      direction: z.enum(["increase", "reduce"]),
+      courses: z.number(),
+    })
+    .nullable(),
+});
+export type AccountEffect = z.infer<typeof AccountEffectSchema>;
+
 export const EducationProgressSchema = z.object({
   currentCourse: z.object({
     id: z.number(),
@@ -2373,6 +2405,12 @@ export const EducationProgressSchema = z.object({
   earned: EducationRewardSchema,
   future: EducationRewardSchema,
   courses: z.array(EducationCourseDtoSchema),
+  /** Gecombineerde actieve account-bonussen (2.8.4) — merits + VOLTOOIDE
+   *  courses; toekomstige course-rewards tellen nooit als actief. */
+  accountEffects: z.array(AccountEffectSchema).default([]),
+  /** Officiële effectteksten van voltooide courses die niet numeriek
+   *  leesbaar zijn — verbatim, unknown blijft unknown. */
+  unknownEducationEffects: z.array(z.string()).default([]),
   coverage: z.object({
     source: z.literal("live_user_state+official_catalog"),
     /** Epoch seconds the live education state was fetched. */
@@ -2619,6 +2657,10 @@ export const MeritsResponseSchema = z.object({
   /** Actuele effecten van geïnvesteerde ranks (2.8.2) — alleen bewezen
    *  formules; leeg bij catalog-degradatie of onherkenbare descriptions. */
   effects: z.array(MeritEffectSchema).default([]),
+  /** Gecombineerde actieve bonussen over merits + voltooide education (2.8.4). */
+  accountEffects: z.array(AccountEffectSchema).default([]),
+  /** Officiële education-effectteksten die niet numeriek leesbaar zijn. */
+  unknownEducationEffects: z.array(z.string()).default([]),
 });
 
 export type MeritRowDto = z.infer<typeof MeritRowDtoSchema>;

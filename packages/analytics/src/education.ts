@@ -63,6 +63,9 @@ export interface EducationProgress {
   earned: EducationRewardTotals;
   future: EducationRewardTotals;
   courses: EducationCourseView[];
+  /** Combined account effects (2.8.4) — attached at the API route layer. */
+  accountEffects: import("./account-effects.js").AccountEffect[];
+  unknownEducationEffects: string[];
   coverage: { source: "live_user_state+official_catalog"; fetchedAt: number };
 }
 
@@ -150,6 +153,10 @@ export function buildEducationProgress(
     earned,
     future,
     courses: courses.sort((a, b) => a.categoryName.localeCompare(b.categoryName) || a.name.localeCompare(b.name)),
+    // Combined account effects are attached at the API route layer (2.8.4) —
+    // this pure derivation only carries the neutral defaults.
+    accountEffects: [],
+    unknownEducationEffects: [],
     coverage: { source: "live_user_state+official_catalog", fetchedAt: fetchedAtSec },
   };
 }
