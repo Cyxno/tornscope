@@ -430,8 +430,10 @@ export function timelineActivationBoundary(enabledAt: Date): Date {
   return new Date(enabledAt.getTime() - 60_000);
 }
 
-/** One live Torn call for all timer sources (single /user selection set). */
-async function fetchLiveTimers(userId: string, tornBaseUrl: string, minIntervalMs: number): Promise<LiveTimerState | null> {
+/** One live Torn call for all timer sources (single /user selection set).
+ *  Shared with the proactive-alerts engine — the same observation feeds both
+ *  notification timers and alert rules, never a second poll loop. */
+export async function fetchLiveTimers(userId: string, tornBaseUrl: string, minIntervalMs: number): Promise<LiveTimerState | null> {
   const db = getPrismaClient();
   const cred = await db.apiCredential.findFirst({ where: { userId, revokedAt: null }, orderBy: { createdAt: "desc" } });
   if (!cred) return null;

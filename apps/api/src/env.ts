@@ -113,6 +113,16 @@ export const env = {
   /** Abandoned anonymous profiles older than this are cleaned up. */
   guestRetentionDays: Number(process.env.GUEST_PROFILE_RETENTION_DAYS ?? 60),
   /**
+   * Proactive Alerts (2.9.0). The API only performs the channel test send;
+   * evaluation + dispatch live in the worker. Values are clamped to safe
+   * ranges so a stray value degrades to the default.
+   */
+  alerts: {
+    enabled: !/^(false|0|off|no)$/i.test((process.env.ALERTS_ENABLED ?? "").trim()),
+    discordTimeoutMs: clampInt(process.env.DISCORD_WEBHOOK_TIMEOUT_MS, 8000, 1000, 30_000),
+    deliveryMaxRetries: clampInt(process.env.ALERT_DELIVERY_MAX_RETRIES, 5, 0, 10),
+  },
+  /**
    * Build identity (roadmap #9): the root package.json is the CANONICAL
    * version source — resolved at boot by walking up from cwd (containers
    * ship the repo root). APP_VERSION overrides for exotic deployments;

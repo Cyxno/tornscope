@@ -450,6 +450,104 @@ async function main(): Promise<void> {
     }
   }
 
+  /* --------------------- demo alerts (2.9.0) ----------------------------- */
+  // Representative alert rules + inbox for the Alerts page. Isolation:
+  // these rows live on the isDemo=true profile (never a real account), the
+  // worker NEVER evaluates demo profiles, and the demo channel's webhook is
+  // a syntactically valid FAKE target — no real Discord delivery can exist.
+  // Full-seed only: routine top-ups do not touch alerts.
+  const demoRules: Array<{ triggerType: string; enabled: boolean; config: unknown; quietHours: unknown; cooldownMinutes: number; lastFiredAgeSec: number | null }> = [
+    { triggerType: "cooldown_ready", enabled: true, config: {}, quietHours: { start: "23:00", end: "07:00", tz: "Europe/Amsterdam" }, cooldownMinutes: 60, lastFiredAgeSec: 3 * 3600 },
+    { triggerType: "travel_landed", enabled: true, config: {}, quietHours: null, cooldownMinutes: 0, lastFiredAgeSec: 26 * 3600 },
+    { triggerType: "net_worth_drop", enabled: true, config: { pct: 5, window_hours: 24 }, quietHours: null, cooldownMinutes: 360, lastFiredAgeSec: null },
+    { triggerType: "sync_failure", enabled: false, config: {}, quietHours: null, cooldownMinutes: 0, lastFiredAgeSec: null },
+  ];
+  const demoRuleIds = new Map<string, string>();
+  for (const rule of demoRules) {
+    const row = await db.alertRule.create({
+      data: {
+        userId: user.id,
+        triggerType: rule.triggerType,
+        enabled: rule.enabled,
+        config: rule.config as never,
+        quietHours: (rule.quietHours ?? undefined) as never,
+        cooldownMinutes: rule.cooldownMinutes,
+        lastFiredAt: rule.lastFiredAgeSec === null ? null : new Date((now - rule.lastFiredAgeSec) * 1000),
+      },
+    });
+    demoRuleIds.set(rule.triggerType, row.id);
+  }
+
+  const demoChannel = await db.alertChannel.create({
+    data: {
+      userId: user.id,
+      type: "discord",
+      // Syntactically valid, deliberately fake target (demo token). The
+      // alerts engine never evaluates the demo profile, so this is never
+      // used for a real request.
+      encryptedKey: "demo-not-encrypted",
+      iv: "demo-not-encrypted",
+      authTag: "demo-not-encrypted",
+      targetPreview: "discord.com/api/webhooks/4410…/••••",
+      verifiedAt: new Date((now - 2 * DAY) * 1000),
+      enabled: true,
+    },
+  });
+
+  interface DemoAlert {
+    triggerType: string; dedupeKey: string; ageSec: number; title: string; message: string;
+    status: string; read: boolean; payload?: Record<string, unknown>; channelStatus?: "sent" | "failed" | "pending";
+  }
+  const demoAlerts: DemoAlert[] = [
+    { triggerType: "cooldown_ready", dedupeKey: `cooldown_ready:cooldown_drug:${now - 3 * 3600}`, ageSec: 3 * 3600, title: "Drug cooldown ready", message: "The cooldown finished — you can use it again.", status: "sent", read: false, channelStatus: "sent" },
+    { triggerType: "travel_landed", dedupeKey: `travel_landed:travel:${now - 26 * 3600}`, ageSec: 26 * 3600, title: "Travel landed", message: "Your flight landed — welcome home.", status: "sent", read: true, payload: { destination: "Switzerland" }, channelStatus: "sent" },
+    { triggerType: "oc_ready", dedupeKey: `oc:ready:9203:${now - 5 * 3600}`, ageSec: 5 * 3600, title: "OC ready: Stage Fright", message: "Your organized crime is ready to initiate.", status: "sent", read: false, payload: { ocId: 9203, name: "Stage Fright" }, channelStatus: "sent" },
+    { triggerType: "bank_matured", dedupeKey: `bank_matured:bank:${now - 31 * 3600}`, ageSec: 31 * 3600, title: "Bank investment matured", message: "A city-bank investment matured — collect your funds.", status: "sent", read: true },
+    { triggerType: "education_done", dedupeKey: `education_done:education:${now - 2 * DAY}`, ageSec: 2 * DAY, title: "Education completed", message: "Your education course has finished.", status: "sent", read: true, channelStatus: "sent" },
+    { triggerType: "net_worth_drop", dedupeKey: `nwdrop:demo-snap-41:${now - 8 * 3600}`, ageSec: 8 * 3600, title: "Net worth dropped", message: "Net worth fell 6.2% over the last 24h — $214.10m → $200.82m.", status: "sent", read: false, payload: { dropPct: 6.2, pct: 5, windowHours: 24 }, channelStatus: "failed" },
+    { triggerType: "cooldown_ready", dedupeKey: `cooldown_ready:cooldown_booster:${now - 27 * 3600}`, ageSec: 27 * 3600, title: "Booster cooldown ready", message: "The cooldown finished — you can use it again.", status: "suppressed", read: false },
+    { triggerType: "sync_failure", dedupeKey: `syncfail:money_logs,events:${now - 3 * DAY}`, ageSec: 3 * DAY, title: "2 data sources stopped updating", message: "Money logs, Events are no longer updating. Check Sync Status.", status: "suppressed", read: true, payload: { resources: ["money_logs", "events"] } },
+    { triggerType: "sync_recovery", dedupeKey: `syncrecover:money_logs,events:${now - 3 * DAY + 5400}`, ageSec: 3 * DAY - 5400, title: "Data source recovered", message: "Money logs, Events are updating again.", status: "sent", read: true, channelStatus: "sent" },
+  ];
+
+  for (const alert of demoAlerts) {
+    const ruleId = demoRuleIds.get(alert.triggerType);
+    if (!ruleId) continue;
+    const occurredAt = new Date((now - alert.ageSec) * 1000);
+    const delivery = await db.alertDelivery.create({
+      data: {
+        userId: user.id,
+        ruleId,
+        triggerType: alert.triggerType,
+        dedupeKey: alert.dedupeKey,
+        occurredAt,
+        title: alert.title,
+        message: alert.message,
+        payload: (alert.payload ?? undefined) as never,
+        status: alert.status,
+        readAt: alert.read ? new Date(occurredAt.getTime() + 20 * 60_000) : null,
+        createdAt: occurredAt,
+      },
+    });
+    if (alert.channelStatus) {
+      await db.alertChannelDelivery.create({
+        data: {
+          userId: user.id,
+          deliveryId: delivery.id,
+          channelId: demoChannel.id,
+          status: alert.channelStatus,
+          attempts: alert.channelStatus === "failed" ? 6 : 1,
+          errorKind: alert.channelStatus === "failed" ? "invalid_webhook" : null,
+          errorMessage: alert.channelStatus === "failed" ? "Webhook rejected by Discord (HTTP 404). The URL may be revoked or wrong." : null,
+          sentAt: alert.channelStatus === "sent" ? occurredAt : null,
+          nextAttemptAt: alert.channelStatus === "pending" ? new Date((now + 300) * 1000) : null,
+          createdAt: occurredAt,
+          updatedAt: occurredAt,
+        },
+      });
+    }
+  }
+
   /* ------------------------------ demo goals (2.0) ----------------------- */
   // Anchored to the generated history so progress/projections are meaningful:
   // one achieved, one mid-flight with a milestone, one long-horizon stat goal.
@@ -490,7 +588,7 @@ async function main(): Promise<void> {
     update: { value: now },
   });
 
-  const counts = { ...generation.counts, rankedWars: warRows.length, chains: chainRows.length, ocs: ocNames.length, notifications: demoEvents.length };
+  const counts = { ...generation.counts, rankedWars: warRows.length, chains: chainRows.length, ocs: ocNames.length, notifications: demoEvents.length, alerts: demoAlerts.length };
   console.log(`Demo seed complete for user ${user.id}:`, JSON.stringify(counts));
   console.log("All rows are marked source='demo' for the isDemo=true user - never mixed with real players.");
 }

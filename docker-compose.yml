@@ -96,6 +96,10 @@ services:
       # direct unproxied exposure).
       TRUST_PROXY: ${TRUST_PROXY:-true}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Proactive alerts (2.9.0): evaluation/dispatch switch + Discord delivery tuning.
+      ALERTS_ENABLED: ${ALERTS_ENABLED:-true}
+      DISCORD_WEBHOOK_TIMEOUT_MS: ${DISCORD_WEBHOOK_TIMEOUT_MS:-8000}
+      ALERT_DELIVERY_MAX_RETRIES: ${ALERT_DELIVERY_MAX_RETRIES:-5}
     ports:
       - "127.0.0.1:${API_HOST_PORT:-3000}:3000"
     healthcheck:
@@ -131,6 +135,10 @@ services:
       VAPID_SUBJECT: ${VAPID_SUBJECT:-}
       ENV_LABEL: ${ENV_LABEL:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Proactive alerts (2.9.0): evaluation/dispatch switch + Discord delivery tuning.
+      ALERTS_ENABLED: ${ALERTS_ENABLED:-true}
+      DISCORD_WEBHOOK_TIMEOUT_MS: ${DISCORD_WEBHOOK_TIMEOUT_MS:-8000}
+      ALERT_DELIVERY_MAX_RETRIES: ${ALERT_DELIVERY_MAX_RETRIES:-5}
     depends_on:
       migrate:
         condition: service_completed_successfully
