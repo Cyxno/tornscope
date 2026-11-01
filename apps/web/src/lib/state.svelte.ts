@@ -48,6 +48,44 @@ export async function refreshMe(): Promise<void> {
   }
 }
 
+/* -------------------------------------------------------------------------- */
+/* 2.9.0 Proactive alerts: unread bell indicator                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Global unread-alert count for the topbar bell. ONE shared poller (60s —
+ * the same cadence as the sync pill) no matter how many surfaces render the
+ * badge; read-actions call refreshAlertUnread() so the count never lags a
+ * user action. A failed poll keeps the last known count (passive indicator).
+ */
+export const alertUnread = $state<{ count: number; loaded: boolean }>({ count: 0, loaded: false });
+
+let alertUnreadTimer: ReturnType<typeof setInterval> | null = null;
+
+export async function refreshAlertUnread(): Promise<void> {
+  const { endpoints } = await import("./api.js");
+  try {
+    const res = await endpoints.alertsUnreadCount();
+    alertUnread.count = res.count;
+    alertUnread.loaded = true;
+  } catch {
+    /* bell is passive — keep the last known count */
+  }
+}
+
+export function startAlertUnreadPolling(): void {
+  if (alertUnreadTimer !== null || typeof window === "undefined") return;
+  void refreshAlertUnread();
+  alertUnreadTimer = setInterval(() => void refreshAlertUnread(), 60_000);
+}
+
+export function stopAlertUnreadPolling(): void {
+  if (alertUnreadTimer !== null) {
+    clearInterval(alertUnreadTimer);
+    alertUnreadTimer = null;
+  }
+}
+
 /** Per-route range memory (V1.0 QOL): each analytics route remembers its
  *  own preset in this browser. Custom windows stay session-only. Parsing
  *  lives in prefs.ts (pure, testable): unknown presets and malformed JSON

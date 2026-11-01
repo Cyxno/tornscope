@@ -101,6 +101,9 @@ model User {
   todayLastKnown       TodayLastKnown?
   goals                Goal[]
   activityEvents       ActivityEvent[]
+  alertRules           AlertRule[]
+  alertChannels        AlertChannel[]
+  alertDeliveries      AlertDelivery[]
 }
 
 /// The Torn player connected to a user.
@@ -1112,4 +1115,126 @@ model Goal {
 
   @@index([userId, status])
   @@index([userId, metric])
+}
+
+/* -------------------------------------------------------------------------- */
+/* Proactive alerts (Discord + in-app inbox)                                   */
+/* -------------------------------------------------------------------------- */
+
+/// One user-configured alert rule per built-in trigger type. The Alerts
+/// engine (worker) evaluates enabled rules on its scheduler tick; cooldowns
+/// and quiet hours are per rule, not per account.
+model AlertRule {
+  id              String    @id @default(cuid())
+  userId          String
+  /// Canonical ALERT_TRIGGER_TYPES id (shared/alerts). One rule per type:
+  /// the built-in trigger set is fixed, so a compound key is the natural UI.
+  triggerType     String
+  /// Trigger-specific configuration, validated by the shared per-type schema.
+  config          Json?
+  enabled         Boolean   @default(true)
+  /// {"start":"23:00","end":"07:00","tz":"Europe/Amsterdam"} | null = off.
+  quietHours      Json?
+  /// Minimum minutes between two firings of THIS rule.
+  cooldownMinutes Int       @default(0)
+  lastFiredAt     DateTime?
+  /// Evaluator working state: the previous observation for transition
+  /// detection + the open episode marker for threshold triggers. Json —
+  /// its shape is owned by the shared evaluator for this triggerType.
+  lastState       Json?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deliveries AlertDelivery[]
+
+  @@unique([userId, triggerType])
+  @@index([userId, enabled])
+}
+
+/// External notification channel. The Discord webhook URL is a SECRET:
+/// AES-256-GCM encrypted with the same master key as Torn API keys and only
+/// ever surfaced as a masked targetPreview. Never logged, never returned.
+model AlertChannel {
+  id            String    @id @default(cuid())
+  userId        String
+  /// Only "discord" in the MVP; the column keeps future channels additive.
+  type          String    @default("discord")
+  encryptedKey  String
+  iv            String
+  authTag       String
+  /// Masked host + id fragment for the UI (e.g. "discord.com/api/webhooks/441…").
+  targetPreview String
+  /// Set only after a successful test delivery through the same sender.
+  verifiedAt    DateTime?
+  enabled       Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  user       User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deliveries AlertChannelDelivery[]
+
+  @@index([userId])
+}
+
+/// One LOGICAL alert and the in-app inbox entry in a single row. The unique
+/// (userId, dedupeKey) constraint is the account-level dedupe: a worker
+/// crash, concurrent tick or re-processed sync can never create a second
+/// copy of the same alert episode. External channel fan-out lives in
+/// AlertChannelDelivery (separate rows, separate retry lifecycle).
+model AlertDelivery {
+  id          String    @id @default(cuid())
+  userId      String
+  ruleId      String
+  triggerType String
+  /// Stable per-episode identity (`trigger:identity`), built by the shared
+  /// evaluator — deterministic across restarts and re-evaluations.
+  dedupeKey   String
+  occurredAt  DateTime
+  title       String
+  message     String
+  /// Structured context for the inbox (amounts, destinations, resources).
+  payload     Json?
+  /// pending | sent | failed | suppressed (suppressed = quiet hours; the
+  /// inbox shows WHY nothing went out).
+  status      String    @default("sent")
+  readAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  user              User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rule              AlertRule              @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  channelDeliveries AlertChannelDelivery[]
+
+  @@unique([userId, dedupeKey])
+  @@index([userId, occurredAt])
+  @@index([userId, readAt])
+  @@index([ruleId])
+}
+
+/// Per-channel external delivery attempt with its own bounded-retry ledger.
+/// Unique (channelId, deliveryId): one row per logical alert per channel,
+/// so concurrent dispatch and worker restarts are idempotent by constraint.
+model AlertChannelDelivery {
+  id            String    @id @default(cuid())
+  userId        String
+  deliveryId    String
+  channelId     String
+  /// pending | sent | failed | suppressed
+  status        String    @default("pending")
+  attempts      Int       @default(0)
+  /// Next bounded-retry instant for a transient failure.
+  nextAttemptAt DateTime?
+  /// Machine error category (DISCORD_ERROR_KINDS) — never includes secrets.
+  errorKind     String?
+  errorMessage  String?
+  sentAt        DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  delivery AlertDelivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  channel  AlertChannel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, deliveryId])
+  @@index([status, nextAttemptAt])
+  @@index([userId, createdAt])
 }

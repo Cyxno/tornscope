@@ -2,7 +2,7 @@
   import { page } from "$app/state";
   import { browser } from "$app/environment";
   import { env as publicEnv } from "$env/dynamic/public";
-  import { me } from "$lib/state.svelte";
+  import { me, alertUnread } from "$lib/state.svelte";
   import { NAV_SECTIONS, familyForPath, isActivePath, type NavFamily, type NavItem } from "$lib/nav";
   import Icon from "./Icon.svelte";
   import { build, loadBuildIdentity } from "$lib/build.svelte";
@@ -278,13 +278,20 @@
         <a
           href={item.href}
           title={item.label}
-          class="flex min-h-[26px] items-center gap-1.5 text-[10.5px] font-medium tracking-wide transition-colors {active
+          class="relative flex min-h-[26px] items-center gap-1.5 text-[10.5px] font-medium tracking-wide transition-colors {active
             ? 'text-accent'
             : 'text-fg-faint hover:text-fg-muted'}"
           aria-current={active ? "page" : undefined}
+          aria-label={item.href === "/alerts" && alertUnread.count > 0 ? `${item.label} (${alertUnread.count} unread)` : item.label}
         >
           <Icon name={item.icon} size={12} class="shrink-0" />
           <span class="hidden truncate xl:block">{item.label}</span>
+          {#if item.href === "/alerts" && alertUnread.count > 0}
+            <span
+              class="tnum absolute -right-2 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-accent px-1 text-[8.5px] font-semibold text-bg"
+              aria-hidden="true"
+            >{alertUnread.count > 9 ? "9+" : alertUnread.count}</span>
+          {/if}
         </a>
       {/each}
     </div>

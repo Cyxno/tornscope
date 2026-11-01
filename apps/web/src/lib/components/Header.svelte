@@ -1,7 +1,7 @@
 <script lang="ts">
   import { page } from "$app/state";
   import { env as publicEnv } from "$env/dynamic/public";
-  import { me } from "$lib/state.svelte";
+  import { me, alertUnread } from "$lib/state.svelte";
   import { activeItemForPath } from "$lib/nav";
   import Icon from "./Icon.svelte";
 
@@ -65,8 +65,22 @@
       >{envLabel}</span>
     </a>
 
-    <!-- Right cluster: sync + identity (nav lives in the bottom bar) -->
+    <!-- Right cluster: alerts + sync + identity (nav lives in the bottom bar) -->
     <div class="flex shrink-0 items-center gap-2">
+      <a
+        href="/alerts"
+        class="relative flex items-center justify-center rounded-full border border-border bg-surface p-2 text-fg-muted transition-colors hover:border-border-strong hover:text-fg"
+        title="Alerts"
+        aria-label={`Alerts${alertUnread.count > 0 ? ` (${alertUnread.count} unread)` : ""}`}
+      >
+        <Icon name="bell" size={14} />
+        {#if alertUnread.count > 0}
+          <span
+            class="tnum absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[9px] font-semibold text-bg"
+            aria-hidden="true"
+          >{alertUnread.count > 99 ? "99+" : alertUnread.count}</span>
+        {/if}
+      </a>
       <a
         href="/sync"
         class="flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1.5 text-xs text-fg-muted transition-colors hover:border-border-strong hover:text-fg"

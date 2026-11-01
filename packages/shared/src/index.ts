@@ -20,3 +20,5 @@ export * from "./goals.js";
 export * from "./freshness.js";
 export * from "./insights.js";
 export * from "./command-center.js";
+export * from "./alerts.js";
+export * from "./discord.js";

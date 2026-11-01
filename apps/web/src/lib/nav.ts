@@ -70,6 +70,7 @@ const hunting: NavItem = { href: "/hunting", label: "Hunting", icon: "hunting", 
  * family label navigate like every other family (2.5.3). */
 const rewardsGames: NavItem = { href: "/rewards-games", label: "Rewards & games", icon: "slots", section: "specialty" };
 const systemHealth: NavItem = { href: "/system", label: "System health", icon: "sync", section: "system" };
+const alerts: NavItem = { href: "/alerts", label: "Alerts", icon: "bell", section: "system" };
 const changelog: NavItem = { href: "/changelog", label: "Changelog", icon: "changelog", section: "system" };
 
 /**
@@ -129,7 +130,7 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     id: "system",
     label: "System",
-    entries: [systemHealth, changelog],
+    entries: [systemHealth, alerts, changelog],
     families: [],
   },
 ];
@@ -159,7 +160,7 @@ export const MOBILE_SHEET_GROUPS: Array<{ id: string; label: string; icon: IconN
   { id: "activity", label: "Activity", icon: activity.icon, items: [activity, timeline, logs] },
   { id: "gameplay", label: "Gameplay", icon: "combat", items: [crimes, combat, faction, travel] },
   { id: "specialty", label: "Rewards & games", icon: "slots", items: [rewardsGames, casino, rewards, hunting] },
-  { id: "system", label: "System", icon: "sync", items: [systemHealth, changelog, ...PERSISTENT_ITEMS] },
+  { id: "system", label: "System", icon: "sync", items: [systemHealth, alerts, changelog, ...PERSISTENT_ITEMS] },
 ];
 
 /**

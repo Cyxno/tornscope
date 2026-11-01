@@ -21,4 +21,21 @@ export const env = {
    */
   initialHistoryDays: Math.max(1, Math.min(3650, Math.round(Number(process.env.TORN_SYNC_INITIAL_HISTORY_DAYS ?? 180)) || 180)),
   encryptionKey: process.env.API_KEY_ENCRYPTION_KEY ?? "",
+  /**
+   * Proactive Alerts engine (2.9.0). Disabling ALERTS_ENABLED stops new
+   * evaluation AND dispatch; existing pending deliveries are retained, never
+   * deleted. Numeric values are clamped to safe ranges — a stray value
+   * degrades to the default instead of wedging the delivery loop.
+   */
+  alerts: {
+    enabled: !/^(false|0|off|no)$/i.test((process.env.ALERTS_ENABLED ?? "").trim()),
+    discordTimeoutMs: clampNumber(process.env.DISCORD_WEBHOOK_TIMEOUT_MS, 8000, 1000, 30_000),
+    deliveryMaxRetries: clampNumber(process.env.ALERT_DELIVERY_MAX_RETRIES, 5, 0, 10),
+  },
 } as const;
+
+function clampNumber(raw: string | undefined, fallback: number, min: number, max: number): number {
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(parsed)));
+}

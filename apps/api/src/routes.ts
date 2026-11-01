@@ -40,6 +40,23 @@ import { getMe, getApiKeyStatus, saveApiKey, validateApiKey, linkProfile, delete
 import { deleteEmptyProfile } from "@tornscope/database";
 import { getSyncStatus, getSyncHealth, requestManualSync, retryFailedSyncs, retrySyncNow, restartBackfill } from "./services/syncStatus.js";
 import { listGoals, createGoal, updateGoal, deleteGoal } from "./services/goals.js";
+import {
+  listAlertRules,
+  createAlertRule,
+  updateAlertRule,
+  deleteAlertRule,
+  listAlertChannels,
+  createAlertChannel,
+  updateAlertChannel,
+  deleteAlertChannel,
+  testAlertChannel,
+  listAlertDeliveries,
+  markDeliveryRead,
+  markAllDeliveriesRead,
+  getAlertUnreadCount,
+  type AlertRuleInput,
+  type AlertRuleUpdateInput,
+} from "./services/alerts.js";
 import { getInsights } from "./services/insights.js";
 import { getDecisions, getDecisionPrefs, updateDecisionPrefs, DECISION_DOMAINS } from "./services/decisions.js";
 import { getCasinoSummary } from "./services/casino.js";
@@ -816,6 +833,146 @@ export function registerRoutes(app: FastifyInstance): void {
     await deleteProfile(user.id);
     reply.header("Set-Cookie", clearSessionCookie(requestIsSecure(req)));
     return { deleted: true };
+  });
+
+  // ---- Proactive alerts (2.9.0): rules, Discord channels, in-app inbox ----
+  // Ownership ALWAYS comes from the session profile (currentUser) — never a
+  // body/query id. Webhook URLs are write-only secrets: stored encrypted,
+  // surfaced only as a masked preview, never logged or echoed.
+
+  app.get("/api/alerts/rules", async (req) => {
+    return listAlertRules(currentUser(req).id);
+  });
+
+  const ALERT_QUIET_HOURS_SCHEMA = z
+    .object({ start: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/), end: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/), tz: z.string().min(1).max(64) })
+    .strict();
+
+  app.post("/api/alerts/rules", async (req) => {
+    const limit = checkRateLimit("alert-rule-write", currentUser(req).id, 30, 10 * 60_000);
+    if (!limit.ok) throw errors.rateLimited("Too many alert changes — try again later.", limit.retryAfterSeconds);
+    const body = z
+      .object({
+        triggerType: z.string().min(1).max(64),
+        enabled: z.boolean().optional(),
+        config: z.record(z.string(), z.unknown()).optional(),
+        quietHours: ALERT_QUIET_HOURS_SCHEMA.nullable().optional(),
+        cooldownMinutes: z.number().int().min(0).max(7 * 24 * 60).optional(),
+      })
+      .strict()
+      .safeParse(req.body);
+    if (!body.success) throw errors.validation(body.error.flatten());
+    const input: AlertRuleInput = {
+      triggerType: body.data.triggerType,
+      enabled: body.data.enabled,
+      config: body.data.config,
+      quietHours: body.data.quietHours,
+      cooldownMinutes: body.data.cooldownMinutes,
+    };
+    return createAlertRule(currentUser(req).id, input);
+  });
+
+  app.patch("/api/alerts/rules/:id", async (req) => {
+    const limit = checkRateLimit("alert-rule-write", currentUser(req).id, 30, 10 * 60_000);
+    if (!limit.ok) throw errors.rateLimited("Too many alert changes — try again later.", limit.retryAfterSeconds);
+    const params = z.object({ id: z.string().min(1).max(64) }).safeParse(req.params);
+    if (!params.success) throw errors.validation(params.error.flatten());
+    const body = z
+      .object({
+        enabled: z.boolean().optional(),
+        config: z.record(z.string(), z.unknown()).optional(),
+        quietHours: ALERT_QUIET_HOURS_SCHEMA.nullable().optional(),
+        cooldownMinutes: z.number().int().min(0).max(7 * 24 * 60).optional(),
+      })
+      .strict()
+      .safeParse(req.body);
+    if (!body.success) throw errors.validation(body.error.flatten());
+    const input: AlertRuleUpdateInput = {
+      enabled: body.data.enabled,
+      config: body.data.config,
+      quietHours: body.data.quietHours,
+      cooldownMinutes: body.data.cooldownMinutes,
+    };
+    return updateAlertRule(currentUser(req).id, params.data.id, input);
+  });
+
+  app.delete("/api/alerts/rules/:id", async (req) => {
+    const params = z.object({ id: z.string().min(1).max(64) }).safeParse(req.params);
+    if (!params.success) throw errors.validation(params.error.flatten());
+    return deleteAlertRule(currentUser(req).id, params.data.id);
+  });
+
+  app.get("/api/alerts/channels", async (req) => {
+    return listAlertChannels(currentUser(req).id);
+  });
+
+  app.post("/api/alerts/channels", async (req) => {
+    // Channel creation stores a secret and (at test time) triggers an
+    // outbound request — both are strictly rate-limited.
+    const limit = checkRateLimit("alert-channel-write", clientIp(req), 20, 10 * 60_000);
+    if (!limit.ok) throw errors.rateLimited("Too many channel changes — try again later.", limit.retryAfterSeconds);
+    const body = z
+      .object({ type: z.literal("discord"), url: z.string().min(20).max(2000) })
+      .strict()
+      .safeParse(req.body);
+    if (!body.success) throw errors.validation(body.error.flatten());
+    return createAlertChannel(currentUser(req).id, body.data);
+  });
+
+  app.patch("/api/alerts/channels/:id", async (req) => {
+    const limit = checkRateLimit("alert-channel-write", clientIp(req), 20, 10 * 60_000);
+    if (!limit.ok) throw errors.rateLimited("Too many channel changes — try again later.", limit.retryAfterSeconds);
+    const params = z.object({ id: z.string().min(1).max(64) }).safeParse(req.params);
+    if (!params.success) throw errors.validation(params.error.flatten());
+    const body = z.object({ enabled: z.boolean() }).strict().safeParse(req.body);
+    if (!body.success) throw errors.validation(body.error.flatten());
+    return updateAlertChannel(currentUser(req).id, params.data.id, body.data);
+  });
+
+  app.post("/api/alerts/channels/:id/test", async (req) => {
+    const limit = checkRateLimit("alert-test", currentUser(req).id, 5, 60_000);
+    if (!limit.ok) throw errors.rateLimited("Too many test notifications — wait a minute.", limit.retryAfterSeconds);
+    const params = z.object({ id: z.string().min(1).max(64) }).safeParse(req.params);
+    if (!params.success) throw errors.validation(params.error.flatten());
+    return testAlertChannel(currentUser(req), params.data.id);
+  });
+
+  app.delete("/api/alerts/channels/:id", async (req) => {
+    const params = z.object({ id: z.string().min(1).max(64) }).safeParse(req.params);
+    if (!params.success) throw errors.validation(params.error.flatten());
+    return deleteAlertChannel(currentUser(req).id, params.data.id);
+  });
+
+  // Inbox: in-app deliveries (the logical alerts), keyset-paginated by
+  // occurredAt desc, id desc — the same cursor contract as every event list.
+  app.get("/api/alerts/deliveries", async (req) => {
+    const user = currentUser(req);
+    const pagination = parsePagination(req.query as Record<string, unknown>);
+    const q = req.query as { triggerType?: string; unread?: string };
+    if (q.triggerType && q.triggerType.length > 64) throw errors.validation("triggerType filter must be ≤64 characters");
+    return listAlertDeliveries(user.id, {
+      limit: pagination.limit,
+      cursor: pagination.cursor ?? null,
+      triggerType: q.triggerType || null,
+      unread: q.unread === "true" || q.unread === "1",
+    });
+  });
+
+  app.post("/api/alerts/deliveries/read-all", async (req) => {
+    const limit = checkRateLimit("alert-read", currentUser(req).id, 60, 10 * 60_000);
+    if (!limit.ok) throw errors.rateLimited("Too many requests — try again later.", limit.retryAfterSeconds);
+    return markAllDeliveriesRead(currentUser(req).id);
+  });
+
+  app.post("/api/alerts/deliveries/:id/read", async (req) => {
+    const params = z.object({ id: z.string().min(1).max(64) }).safeParse(req.params);
+    if (!params.success) throw errors.validation(params.error.flatten());
+    return markDeliveryRead(currentUser(req).id, params.data.id);
+  });
+
+  // Bell indicator: a count query (indexed), polled at page cadence.
+  app.get("/api/alerts/unread-count", async (req) => {
+    return getAlertUnreadCount(currentUser(req).id);
   });
 
   app.get("/api/meta/drugs", async () => ({ drugs: TORN_DRUG_NAMES }));

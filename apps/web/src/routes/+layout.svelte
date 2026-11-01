@@ -10,7 +10,7 @@
   import Header from "$lib/components/Header.svelte";
   import NavRail from "$lib/components/NavRail.svelte";
   import MobileNav from "$lib/components/MobileNav.svelte";
-  import { me, refreshMe } from "$lib/state.svelte";
+  import { me, refreshMe, startAlertUnreadPolling } from "$lib/state.svelte";
   import { endpoints } from "$lib/api";
   import { env as publicEnv } from "$env/dynamic/public";
   import InstallHint from "$lib/components/InstallHint.svelte";
@@ -31,6 +31,8 @@
     // notification settings): an installed iOS web app must be able to
     // subscribe right after install, and updates apply on next navigation.
     void registerServiceWorker();
+    // Alert bell (2.9.0): one shared 60s unread-count poll for every surface.
+    startAlertUnreadPolling();
   });
 
   // First-run flow: without a connected Torn player, route to /welcome.

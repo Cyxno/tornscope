@@ -45,6 +45,12 @@ import type {
   RewardsSummaryResponse,
   HuntingSummaryResponse,
   ActivitySummaryResponse,
+  AlertRulesResponse,
+  AlertRuleDto,
+  AlertChannelDto,
+  AlertChannelTestResult,
+  AlertDeliveriesResponse,
+  AlertUnreadCountResponse,
 } from "@tornscope/shared";
 
 /**
@@ -259,6 +265,38 @@ export const endpoints = {
   deleteGoal: (id: string) => api.del<{ deleted: boolean }>(`/goals/${id}`),
   insights: () => api.get<InsightsResponse>("/insights"),
   systemHealth: () => api.get<SystemHealthResponse>("/system/health"),
+
+  // ---- 2.9.0 proactive alerts ----
+  alertsRules: () => api.get<AlertRulesResponse>("/alerts/rules"),
+  alertsCreateRule: (input: {
+    triggerType: string;
+    enabled?: boolean;
+    config?: Record<string, unknown>;
+    quietHours?: { start: string; end: string; tz: string } | null;
+    cooldownMinutes?: number;
+  }) => api.post<AlertRuleDto>("/alerts/rules", input),
+  alertsUpdateRule: (id: string, patch: {
+    enabled?: boolean;
+    config?: Record<string, unknown>;
+    quietHours?: { start: string; end: string; tz: string } | null;
+    cooldownMinutes?: number;
+  }) => api.patch<AlertRuleDto>(`/alerts/rules/${id}`, patch),
+  alertsDeleteRule: (id: string) => api.del<{ deleted: boolean }>(`/alerts/rules/${id}`),
+  alertsChannels: () => api.get<{ channels: AlertChannelDto[] }>("/alerts/channels"),
+  alertsCreateChannel: (input: { type: "discord"; url: string }) => api.post<{ channel: AlertChannelDto }>("/alerts/channels", input),
+  alertsUpdateChannel: (id: string, patch: { enabled?: boolean }) => api.patch<AlertChannelDto>(`/alerts/channels/${id}`, patch),
+  alertsTestChannel: (id: string) => api.post<AlertChannelTestResult>(`/alerts/channels/${id}/test`, {}),
+  alertsDeleteChannel: (id: string) => api.del<{ deleted: boolean }>(`/alerts/channels/${id}`),
+  alertsDeliveries: (opts: { limit?: number; cursor?: string | null; triggerType?: string | null; unread?: boolean } = {}) => {
+    const params = new URLSearchParams({ limit: String(opts.limit ?? 50) });
+    if (opts.cursor) params.set("cursor", opts.cursor);
+    if (opts.triggerType) params.set("triggerType", opts.triggerType);
+    if (opts.unread) params.set("unread", "true");
+    return api.get<AlertDeliveriesResponse>(`/alerts/deliveries?${params.toString()}`);
+  },
+  alertsMarkRead: (id: string) => api.post<{ ok: true }>(`/alerts/deliveries/${id}/read`, {}),
+  alertsMarkAllRead: () => api.post<{ updated: number }>("/alerts/deliveries/read-all", {}),
+  alertsUnreadCount: () => api.get<AlertUnreadCountResponse>("/alerts/unread-count"),
 };
 
 /* ---- 2.1.0 deep analytics ---- */

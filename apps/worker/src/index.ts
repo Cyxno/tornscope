@@ -2,6 +2,7 @@ import { enqueueDueSyncs } from "./scheduler.js";
 import { maybeRunDailyMaintenance } from "./maintenance.js";
 import { maybeTopUpDemoData } from "@tornscope/database";
 import { evaluateNotifications } from "./notifications/engine.js";
+import { evaluateAlerts } from "./alerts/engine.js";
 import { runResourceSync } from "./sync/runner.js";
 import { PROCESSOR_DEADLINE_GRACE_MS, SYNC_JOB_DEADLINE_MS, SyncDeadlineError, createPhaseTracker, withDeadline } from "./sync/deadline.js";
 import { env, logger } from "./env.js";
@@ -80,6 +81,11 @@ async function main(): Promise<void> {
     // profiles with an active device subscription. Never per-minute Torn
     // polling — timer checks are gated by stored next-eligible timestamps.
     await evaluateNotifications();
+    // Proactive Alerts (2.9.0): rule evaluation + Discord dispatch on the
+    // SAME tick — self-throttled (min 60s), demo profiles skipped, live Torn
+    // fetches shared with the push engine's cadence. ALERTS_ENABLED=false
+    // makes this a no-op without touching the sync pipeline.
+    await evaluateAlerts();
   });
   schedulerWorker.on("error", (err) => logger.error({ err: (err as Error).message }, "scheduler worker error"));
 
