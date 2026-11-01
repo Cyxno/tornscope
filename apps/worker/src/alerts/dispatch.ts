@@ -41,8 +41,23 @@ const MAX_DISPATCH_PER_PASS = 50;
  * Dispatch every due channel delivery: pending rows whose next attempt is
  * due (or unset). Called from the same scheduler tick as evaluation, so
  * retries require no dedicated queue.
+ *
+ * DISABLED channels (audit F3): due rows of a disabled channel are not even
+ * selected (the query filters on channel.enabled) — their pending rows are
+ * RETAINED untouched and resume normally after re-enabling. Deleting a
+ * channel cascades its rows (existing behavior, unchanged).
+ *
+ * ENCRYPTION (audit F4): an invalid ALERTS key is an operationally fixable
+ * configuration problem — the pass aborts with ONE clear error and pending
+ * rows are retained (they resume automatically once the key is fixed). A
+ * per-row decrypt failure under a VALID key is a permanently unreadable
+ * target: the row is marked failed with errorKind "unreadable_target" so it
+ * can never wedge a dispatch pass. The key and plaintext URL are never
+ * logged.
  */
-export async function dispatchDueAlertDeliveries(opts: { sender?: typeof sendDiscordWebhook } = {}): Promise<void> {
+export async function dispatchDueAlertDeliveries(
+  opts: { sender?: typeof sendDiscordWebhook; encryption?: () => EncryptionService } = {}
+): Promise<void> {
   if (!env.alerts.enabled) return;
   const db = getPrismaClient();
   const now = new Date();
@@ -50,30 +65,61 @@ export async function dispatchDueAlertDeliveries(opts: { sender?: typeof sendDis
     where: {
       status: "pending",
       OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
+      // Disabled channels are skipped silently — their rows stay pending.
+      channel: { enabled: true },
     },
     orderBy: { createdAt: "asc" },
     take: MAX_DISPATCH_PER_PASS,
     select: { id: true, deliveryId: true, channelId: true, attempts: true },
   });
+  if (due.length === 0) return;
+
+  // Pass-level configuration guard: constructing the decryption service is
+  // cheap and cached; if the configured key is unusable, abort the pass ONCE
+  // with a clear error instead of throwing per row (rows stay pending and
+  // resume after the operator fixes the key). The WorkerContext already
+  // validates the same key at boot for the sync pipeline — this is defense
+  // in depth for the alerts path.
+  const getEncryption = opts.encryption ?? decryptor;
+  try {
+    getEncryption();
+  } catch (err) {
+    logger.error(
+      { err: (err as Error).message, dueRows: due.length },
+      "alert dispatch aborted: API key encryption configuration is invalid — pending alert deliveries retained"
+    );
+    return;
+  }
 
   const sender = opts.sender ?? sendDiscordWebhook;
-  // Decrypt lazily per distinct channel so one pass never decrypts twice.
-  const urlCache = new Map<string, string | null>();
+  // Resolve lazily per distinct channel so one pass never decrypts twice.
+  const targetCache = new Map<string, ChannelTarget>();
 
   for (const row of due) {
     try {
-      let webhookUrl = urlCache.get(row.channelId);
-      if (webhookUrl === undefined) {
-        webhookUrl = await decryptChannelUrl(db, row.channelId);
-        urlCache.set(row.channelId, webhookUrl);
+      let target = targetCache.get(row.channelId);
+      if (target === undefined) {
+        target = await resolveChannelTarget(db, row.channelId, getEncryption);
+        targetCache.set(row.channelId, target);
       }
-      if (webhookUrl === null) {
+      if (target.state === "disabled") {
+        // Re-disabled between the query and resolution: keep the row pending.
+        continue;
+      }
+      if (target.state === "unreadable") {
+        // Permanently unreadable ciphertext under a VALID key — never retry.
         await db.alertChannelDelivery.update({
           where: { id: row.id },
-          data: { status: "failed", errorKind: "invalid_webhook", errorMessage: "Channel target is missing or unreadable.", nextAttemptAt: null },
+          data: {
+            status: "failed",
+            errorKind: "unreadable_target",
+            errorMessage: "Stored webhook could not be decrypted — remove and re-add the channel.",
+            nextAttemptAt: null,
+          },
         });
         continue;
       }
+      const webhookUrl = target.url;
       const delivery = await db.alertDelivery.findUnique({
         where: { id: row.deliveryId },
         select: { title: true, message: true, dedupeKey: true },
@@ -141,16 +187,27 @@ async function applySendResult(
   logger.warn({ deliveryRowId: rowId, attempts, errorKind }, "alert dispatch failed permanently");
 }
 
-/** Decrypt a channel's webhook URL; null when the row or payload is broken. */
-export async function decryptChannelUrl(db: ReturnType<typeof getPrismaClient>, channelId: string): Promise<string | null> {
+/** Resolve a channel's webhook target. "disabled" = temporarily off (rows
+ *  retained); "unreadable" = permanently undecryptable under a valid key. */
+export type ChannelTarget =
+  | { state: "ok"; url: string }
+  | { state: "disabled" }
+  | { state: "unreadable" };
+
+export async function resolveChannelTarget(
+  db: ReturnType<typeof getPrismaClient>,
+  channelId: string,
+  getEncryption: () => EncryptionService = decryptor
+): Promise<ChannelTarget> {
   const channel = await db.alertChannel.findUnique({
     where: { id: channelId },
     select: { encryptedKey: true, iv: true, authTag: true, enabled: true },
   });
-  if (!channel || !channel.enabled) return null;
+  if (!channel) return { state: "unreadable" }; // dangling row (deleted channel)
+  if (!channel.enabled) return { state: "disabled" };
   try {
-    return decryptor().decrypt(channel);
+    return { state: "ok", url: getEncryption().decrypt(channel) };
   } catch {
-    return null;
+    return { state: "unreadable" };
   }
 }

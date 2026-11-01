@@ -118,6 +118,8 @@ interface StoredInputs {
   ocsReady: Array<{ ocId: number; name: string; readyAtSec: number }> | null;
   networth: { baseline: NetworthPoint | null; current: NetworthPoint | null } | null;
   syncFailing: string[] | null;
+  /** SyncState.updatedAt per resource — the incident stamp for dedupe keys. */
+  syncStampByResource: Map<string, number> | null;
 }
 
 async function evaluateUserAlerts(userId: string, opts: { liveFetch?: typeof fetchLiveTimers }): Promise<void> {
@@ -141,7 +143,7 @@ async function evaluateUserAlerts(userId: string, opts: { liveFetch?: typeof fet
     }
   }
 
-  const stored: StoredInputs = { ocsReady: null, networth: null, syncFailing: null };
+  const stored: StoredInputs = { ocsReady: null, networth: null, syncFailing: null, syncStampByResource: null };
   const channels = await db.alertChannel.findMany({
     where: { userId, enabled: true },
     select: { id: true },
@@ -371,15 +373,22 @@ async function evaluateNetWorthDrop(
     return { drafts: [], nextState: { observedAt: nowSec, openEpisode: null }, needsLive: false };
   }
   if (!result.eligible) {
-    // Re-arm when the condition genuinely reset (recovered above threshold
-    // or the window moved to a new baseline) — the evaluator signals this by
-    // a crossed=false result with no open-episode lock on THIS baseline.
-    const episodeKey = baseline ? networthEpisodeKey(baseline.id) : null;
-    const stillLocked = result.reason === "still_open_episode";
-    const openEpisode = stillLocked && episodeKey ? { baselineId: episodeKey } : null;
+    // RECOVERY (audit F2): the episode closes ONLY on a valid comparison
+    // (reason undefined) that shows the value back above the threshold.
+    // Data-quality failures — missing/stale snapshots, no usable baseline in
+    // the window — keep the episode open: a temporary sync outage must never
+    // re-alert the same decline when fresh data returns.
+    if (result.reason === undefined) {
+      return {
+        drafts: [],
+        nextState: { observedAt: previous.observedAt, openEpisode: null },
+        needsLive: false,
+      };
+    }
+    // Data-quality failure or an already-open episode: preserve the state.
     return {
       drafts: [],
-      nextState: { observedAt: previous.observedAt, openEpisode },
+      nextState: { observedAt: previous.observedAt, openEpisode: previous.openEpisode ?? null },
       needsLive: false,
     };
   }
@@ -416,7 +425,7 @@ async function evaluateSyncHealth(
     const db = getPrismaClient();
     const states = await db.syncState.findMany({
       where: { userId },
-      select: { resource: true, status: true, errorCount: true, lastErrorKind: true },
+      select: { resource: true, status: true, errorCount: true, lastErrorKind: true, updatedAt: true },
     });
     const CAPABILITY_KINDS = new Set(["access_denied", "key_invalid", "key_paused"]);
     const capabilitySet = new Set(
@@ -428,18 +437,33 @@ async function evaluateSyncHealth(
       .filter((s) => s.status === "failed" && s.errorCount >= SYNC_DEGRADED_MIN_ERRORS && !capabilitySet.has(s.resource))
       .map((s) => s.resource)
       .sort();
+    // Per-resource incident stamp (audit F1): SyncState.updatedAt is written
+    // by every sync attempt, so a NEW incident of the SAME resource set gets
+    // a fresh stamp and can alert again — while repeated evaluations of one
+    // incident and crash replays stay stable (a down worker runs no syncs,
+    // so updatedAt cannot move between the alert commit and the replay).
+    // Same mechanism as the push system producer's capability_lost stamp.
+    stored.syncStampByResource = new Map(
+      states.map((s) => [s.resource, s.updatedAt.getTime()])
+    );
   }
   const prevFailing = previous?.failing ?? null;
   const { failures, recoveries } = diffSyncHealth(prevFailing, stored.syncFailing);
   const nextState: AlertRuleState = { observedAt: nowSec, failing: stored.syncFailing };
   if (prevFailing === null) return { drafts: [], nextState, needsLive: false }; // baseline
 
+  // The stamp is the LATEST updatedAt among the affected resources — the
+  // incident's own identity, not the evaluation clock (never Date.now():
+  // every tick would mint a new alert).
+  const stampFor = (resources: string[]): number =>
+    resources.reduce((acc, r) => Math.max(acc, stored.syncStampByResource?.get(r) ?? 0), 0);
+
   if (direction === "sync_failure") {
     if (failures.length === 0) return { drafts: [], nextState, needsLive: false };
     const label = (r: string) => RESOURCE_LABELS[r as keyof typeof RESOURCE_LABELS] ?? r;
     const draft: AlertDraft = {
       triggerType: "sync_failure",
-      dedupeKey: `syncfail:${syncIncidentSignature(failures)}`,
+      dedupeKey: `syncfail:${syncIncidentSignature(failures)}:${stampFor(failures)}`,
       occurredAt: nowSec,
       title: failures.length === 1 ? "Data source stopped updating" : `${failures.length} data sources stopped updating`,
       message: `${failures.map(label).join(", ")} ${failures.length === 1 ? "is" : "are"} no longer updating. Check Sync Status.`,
@@ -452,7 +476,7 @@ async function evaluateSyncHealth(
   const label = (r: string) => RESOURCE_LABELS[r as keyof typeof RESOURCE_LABELS] ?? r;
   const draft: AlertDraft = {
     triggerType: "sync_recovery",
-    dedupeKey: `syncrecover:${syncIncidentSignature(recoveries)}`,
+    dedupeKey: `syncrecover:${syncIncidentSignature(recoveries)}:${stampFor(recoveries)}`,
     occurredAt: nowSec,
     title: "Data source recovered",
     message: `${recoveries.map(label).join(", ")} ${recoveries.length === 1 ? "is" : "are"} updating again.`,

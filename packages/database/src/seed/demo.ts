@@ -506,8 +506,8 @@ async function main(): Promise<void> {
     { triggerType: "education_done", dedupeKey: `education_done:education:${now - 2 * DAY}`, ageSec: 2 * DAY, title: "Education completed", message: "Your education course has finished.", status: "sent", read: true, channelStatus: "sent" },
     { triggerType: "net_worth_drop", dedupeKey: `nwdrop:demo-snap-41:${now - 8 * 3600}`, ageSec: 8 * 3600, title: "Net worth dropped", message: "Net worth fell 6.2% over the last 24h — $214.10m → $200.82m.", status: "sent", read: false, payload: { dropPct: 6.2, pct: 5, windowHours: 24 }, channelStatus: "failed" },
     { triggerType: "cooldown_ready", dedupeKey: `cooldown_ready:cooldown_booster:${now - 27 * 3600}`, ageSec: 27 * 3600, title: "Booster cooldown ready", message: "The cooldown finished — you can use it again.", status: "suppressed", read: false },
-    { triggerType: "sync_failure", dedupeKey: `syncfail:money_logs,events`, ageSec: 3 * DAY, title: "2 data sources stopped updating", message: "Money logs, Events are no longer updating. Check Sync Status.", status: "suppressed", read: true, payload: { resources: ["money_logs", "events"] } },
-    { triggerType: "sync_recovery", dedupeKey: `syncrecover:money_logs,events`, ageSec: 3 * DAY - 5400, title: "Data source recovered", message: "Money logs, Events are updating again.", status: "sent", read: true, channelStatus: "sent" },
+    { triggerType: "sync_failure", dedupeKey: `syncfail:money_logs,events:${now - 3 * DAY}`, ageSec: 3 * DAY, title: "2 data sources stopped updating", message: "Money logs, Events are no longer updating. Check Sync Status.", status: "suppressed", read: true, payload: { resources: ["money_logs", "events"] } },
+    { triggerType: "sync_recovery", dedupeKey: `syncrecover:money_logs,events:${now - 3 * DAY + 5400}`, ageSec: 3 * DAY - 5400, title: "Data source recovered", message: "Money logs, Events are updating again.", status: "sent", read: true, channelStatus: "sent" },
   ];
 
   for (const alert of demoAlerts) {

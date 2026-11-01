@@ -20,7 +20,7 @@ import {
 import { getPrismaClient, encryptionFromEnv } from "@tornscope/database";
 import { cursorWhere, encodeCursor } from "../cursor.js";
 import { env } from "../env.js";
-import { errors } from "../errors.js";
+import { errors, AppError } from "../errors.js";
 import type { SessionUser } from "../auth.js";
 
 /**
@@ -203,13 +203,27 @@ export async function listAlertChannels(userId: string): Promise<{ channels: Ale
   };
 }
 
+/** Alerts encryption access with a controlled failure path (audit F4): an
+ *  invalid/missing API_KEY_ENCRYPTION_KEY is a server configuration problem —
+ *  surfaced as a 500 AppError with an actionable, secret-free message instead
+ *  of an uncontrolled exception leaking internals. */
+function alertsEncryption() {
+  try {
+    return encryptionFromEnv();
+  } catch {
+    throw errors.internal(
+      "Alert channel storage is unavailable: the server's API_KEY_ENCRYPTION_KEY is missing or invalid. Check the server configuration."
+    );
+  }
+}
+
 export async function createAlertChannel(userId: string, input: { type: string; url: string }): Promise<AlertChannelDto> {
   if (input.type !== "discord") throw errors.validation("Unsupported channel type — the MVP supports Discord webhooks only.");
   const validation = validateDiscordWebhookUrl(input.url);
   if (!validation.ok) {
     throw errors.validation(`Not a valid Discord webhook URL (${validation.reason}).`);
   }
-  const encryption = encryptionFromEnv();
+  const encryption = alertsEncryption();
   const encrypted = encryption.encrypt(input.url);
   const row = await db().alertChannel.create({
     data: {
@@ -268,10 +282,12 @@ export async function testAlertChannel(user: SessionUser, channelId: string): Pr
   if (!channel.enabled) throw errors.conflict("Enable the channel before testing it.");
   let webhookUrl: string;
   try {
-    webhookUrl = encryptionFromEnv().decrypt(channel);
-  } catch {
-    // The stored payload is unreadable — the user must re-add the channel.
-    return { ok: false, errorKind: "invalid_webhook", message: "Stored webhook could not be decrypted — remove and re-add the channel." };
+    webhookUrl = alertsEncryption().decrypt(channel);
+  } catch (err) {
+    if (err instanceof AppError) throw err;
+    // The stored payload is unreadable under the configured key — the user
+    // must re-add the channel (no server internals in the message).
+    return { ok: false, errorKind: "unreadable_target", message: "Stored webhook could not be decrypted — remove and re-add the channel." };
   }
   const result = await sendDiscordWebhook(webhookUrl, buildDiscordContent({
     title: "TornScope test alert",

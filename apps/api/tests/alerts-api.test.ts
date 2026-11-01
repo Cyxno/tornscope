@@ -14,7 +14,7 @@ process.env.API_KEY_ENCRYPTION_KEY ??= "a".repeat(64);
 const dbUrl = process.env.TEST_DATABASE_URL ?? "";
 const suite = dbUrl ? describe : describe.skip;
 
-const { createAlertRule, listAlertRules, updateAlertRule, deleteAlertRule, createAlertChannel, listAlertChannels, listAlertDeliveries, markDeliveryRead, markAllDeliveriesRead, getAlertUnreadCount } = await import(
+const { createAlertRule, listAlertRules, updateAlertRule, deleteAlertRule, createAlertChannel, listAlertChannels, testAlertChannel, listAlertDeliveries, markDeliveryRead, markAllDeliveriesRead, getAlertUnreadCount } = await import(
   "../src/services/alerts.js"
 );
 
@@ -150,6 +150,59 @@ suite("alerts channels API", () => {
     await expect(createAlertChannel(userId, { type: "discord", url: "https://evil.example/api/webhooks/123456789012345678/AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdefghij" })).rejects.toMatchObject({ statusCode: 400 });
     await expect(createAlertChannel(userId, { type: "slack", url: VALID_WEBHOOK })).rejects.toMatchObject({ statusCode: 400 });
     expect(await db.alertChannel.count({ where: { userId } })).toBe(0);
+  });
+
+  it("surfaces a missing/invalid encryption key as a controlled 500, never a raw exception (audit F4)", async () => {
+    const userId = await newUser();
+    const prevKey = process.env.API_KEY_ENCRYPTION_KEY;
+    try {
+      process.env.API_KEY_ENCRYPTION_KEY = ""; // missing
+      await expect(createAlertChannel(userId, { type: "discord", url: VALID_WEBHOOK })).rejects.toMatchObject({
+        statusCode: 500,
+        code: "internal_error",
+      });
+      process.env.API_KEY_ENCRYPTION_KEY = "zz"; // invalid format
+      await expect(createAlertChannel(userId, { type: "discord", url: VALID_WEBHOOK })).rejects.toMatchObject({ statusCode: 500 });
+      // No channel row was written by either attempt.
+      expect(await db.alertChannel.count({ where: { userId } })).toBe(0);
+      // The surfaced message never contains the webhook secret.
+      const message = await createAlertChannel(userId, { type: "discord", url: VALID_WEBHOOK }).then(
+        () => "",
+        (err: Error) => err.message
+      );
+      expect(message).not.toContain("AbCdEfGhIjKlMnOpQrStUvWxYz");
+    } finally {
+      process.env.API_KEY_ENCRYPTION_KEY = prevKey;
+    }
+  });
+
+  it("test notification reports an unreadable stored target instead of crashing (audit F4)", async () => {
+    const userId = await newUser();
+    const channel = await createAlertChannel(userId, { type: "discord", url: VALID_WEBHOOK });
+    // Corrupt the stored ciphertext directly (data-corruption shape).
+    await db.alertChannel.update({
+      where: { id: channel.id },
+      data: { encryptedKey: "!!!!not-valid-ciphertext!!!!", iv: "!!!!", authTag: "!!!!" },
+    });
+    const result = await testAlertChannel(sessionUser(userId), channel.id);
+    expect(result.ok).toBe(false);
+    expect(result.errorKind).toBe("unreadable_target");
+    expect(result.message).not.toContain("AbCdEfGhIjKlMnOpQrStUvWxYz");
+  });
+
+  it("test notification surfaces a broken encryption configuration as a controlled 500 (audit F4)", async () => {
+    const userId = await newUser();
+    const channel = await createAlertChannel(userId, { type: "discord", url: VALID_WEBHOOK });
+    const prevKey = process.env.API_KEY_ENCRYPTION_KEY;
+    try {
+      process.env.API_KEY_ENCRYPTION_KEY = ""; // broken after the channel was stored
+      await expect(testAlertChannel(sessionUser(userId), channel.id)).rejects.toMatchObject({
+        statusCode: 500,
+        code: "internal_error",
+      });
+    } finally {
+      process.env.API_KEY_ENCRYPTION_KEY = prevKey;
+    }
   });
 
   it("isolates channels per account (a foreign id is a 404, never a leak)", async () => {

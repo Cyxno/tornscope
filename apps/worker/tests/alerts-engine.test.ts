@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeAll, afterAll, vi } from "vitest";
 import { randomBytes } from "node:crypto";
 import { getPrismaClient, EncryptionService } from "@tornscope/database";
-import type { DiscordSendResult } from "@tornscope/shared";
+import { networthEpisodeKey, type DiscordSendResult } from "@tornscope/shared";
 
 /**
  * Proactive Alerts engine integration suite (2.9.0).
@@ -244,6 +244,72 @@ suite("proactive alerts engine", () => {
     expect(await db.alertDelivery.count({ where: { userId, triggerType: "net_worth_drop" } })).toBe(2);
   });
 
+  it("net_worth_drop: a data gap never closes an episode — no duplicate after sync outage (audit F2)", async () => {
+    // The earlier net-worth test left snapshots and deliveries behind for
+    // this shared user — this test pins its own baseline/current pair.
+    await db.networthSnapshot.deleteMany({ where: { userId } });
+    await db.alertDelivery.deleteMany({ where: { userId, triggerType: "net_worth_drop" } });
+    const ruleId = await createRule({ triggerType: "net_worth_drop", config: { pct: 5, window_hours: 24 } });
+    let seq = 0;
+    const addSnapshot = async (total: bigint, capturedAt: number): Promise<string> =>
+      (
+        await db.networthSnapshot.create({
+          data: {
+            userId,
+            capturedAt: new Date(capturedAt * 1000 + seq++),
+            total,
+            pending: 0n, wallet: 0n, vault: 0n, bookie: 0n, cityBank: 0n, caymanBank: 0n, piggyBank: 0n,
+            loans: 0n, unpaidFees: 0n, inventory: 0n, displayCase: 0n, bazaar: 0n, trades: 0n,
+            itemMarket: 0n, auctionHouse: 0n, enlistedCars: 0n, property: 0n, stockMarket: 0n,
+            company: 0n, points: 0n,
+          },
+          select: { id: true },
+        })
+      ).id;
+
+    // Reconstruct a fired episode deterministically (the engine reads the
+    // wall clock, so the fired-past is seeded): baseline A 26h old (inside
+    // the [24h, 27h] window band), current B stale (13h old), the delivery
+    // for the A→B crossing exists and the episode is open.
+    const aId = await addSnapshot(100_000_000n, NOW - 26 * 3600);
+    const bId = await addSnapshot(94_000_000n, NOW - 13 * 3600);
+    await db.alertDelivery.create({
+      data: {
+        userId, ruleId, triggerType: "net_worth_drop", dedupeKey: `nwdrop:${aId}:${bId}`,
+        occurredAt: new Date((NOW - 2 * 3600) * 1000), title: "Net worth dropped", message: "fired before the gap", status: "sent",
+      },
+    });
+    await db.alertRule.update({
+      where: { id: ruleId },
+      data: { lastState: { observedAt: NOW - 2 * 3600, openEpisode: { baselineId: networthEpisodeKey(aId) } } as never },
+    });
+
+    // The current snapshot is stale → data-quality failure → the episode
+    // MUST survive, and nothing new fires.
+    liveState = null;
+    await evaluate();
+    let rule = await db.alertRule.findUnique({ where: { id: ruleId } });
+    expect((rule!.lastState as { openEpisode?: unknown }).openEpisode).toEqual({ baselineId: networthEpisodeKey(aId) });
+    expect(await db.alertDelivery.count({ where: { userId, triggerType: "net_worth_drop" } })).toBe(1);
+
+    // No current at all (only the baseline remains) → still preserved.
+    await db.networthSnapshot.delete({ where: { id: bId } });
+    await evaluate();
+    rule = await db.alertRule.findUnique({ where: { id: ruleId } });
+    expect((rule!.lastState as { openEpisode?: unknown }).openEpisode).toEqual({ baselineId: networthEpisodeKey(aId) });
+
+    // GENUINE recovery (valid comparison above the threshold) closes it.
+    await addSnapshot(99_000_000n, NOW - 60);
+    await evaluate();
+    rule = await db.alertRule.findUnique({ where: { id: ruleId } });
+    expect((rule!.lastState as { openEpisode?: unknown }).openEpisode).toBeNull();
+
+    // ...and a NEW drop after real recovery may alert again (re-armed).
+    await addSnapshot(93_000_000n, NOW - 30);
+    await evaluate();
+    expect(await db.alertDelivery.count({ where: { userId, triggerType: "net_worth_drop" } })).toBe(2);
+  });
+
   it("oc_ready: fires only for OCs that became ready since the previous observation, for a participant", async () => {
     const tornId = 9_876_500 + Math.floor(Math.random() * 1000);
     await db.tornAccount.create({
@@ -303,7 +369,7 @@ suite("proactive alerts engine", () => {
     await evaluate();
     const failures = await db.alertDelivery.findMany({ where: { userId, triggerType: "sync_failure" } });
     expect(failures).toHaveLength(1);
-    expect(failures[0]!.dedupeKey).toBe("syncfail:attacks");
+    expect(failures[0]!.dedupeKey).toMatch(/^syncfail:attacks:\d+$/);
     expect(failures[0]!.payload).toMatchObject({ resources: ["attacks"] });
 
     // Everything recovers → the recovery rule fires once for the incident.
@@ -311,8 +377,48 @@ suite("proactive alerts engine", () => {
     await evaluate();
     const recoveries = await db.alertDelivery.findMany({ where: { userId, triggerType: "sync_recovery" } });
     expect(recoveries).toHaveLength(1);
-    expect(recoveries[0]!.dedupeKey).toBe("syncrecover:attacks,money_logs");
+    expect(recoveries[0]!.dedupeKey).toMatch(/^syncrecover:attacks,money_logs:\d+$/);
     expect(await db.alertDelivery.count({ where: { userId, triggerType: "sync_failure" } })).toBe(1);
+  });
+
+  it("sync_failure: an identical repeated incident fires again (per-incident stamp, audit F1)", async () => {
+    // The earlier sync-health test left deliveries behind for this shared
+    // user — scope this test's counts to its own run.
+    await db.alertDelivery.deleteMany({ where: { userId, triggerType: { in: ["sync_failure", "sync_recovery"] } } });
+    await createRule({ triggerType: "sync_failure" });
+    const mkState = async (resource: string, status: string, errorCount: number): Promise<void> => {
+      await db.syncState.upsert({
+        where: { userId_resource: { userId, resource } },
+        create: { userId, resource, status, errorCount, lastSuccessAt: new Date((NOW - 3600) * 1000) },
+        update: { status, errorCount },
+      });
+    };
+    await mkState("money_logs", "idle", 0);
+    liveState = null;
+
+    await evaluate(); // baseline: healthy
+    await mkState("money_logs", "failed", 3); // incident 1
+    await evaluate();
+    const first = await db.alertDelivery.findMany({ where: { userId, triggerType: "sync_failure" } });
+    expect(first).toHaveLength(1);
+
+    // Re-evaluating the SAME incident adds nothing (stable stamp).
+    await evaluate();
+    expect(await db.alertDelivery.count({ where: { userId, triggerType: "sync_failure" } })).toBe(1);
+
+    // Recovery closes the incident (recovery alerts are covered above); a
+    // WEEKS-LATER identical failure is a NEW incident: updatedAt moved, so
+    // the stamp — and therefore the dedupeKey — differs. The small wait
+    // guarantees a distinct millisecond stamp deterministically.
+    await mkState("money_logs", "idle", 0);
+    await evaluate();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await mkState("money_logs", "failed", 3);
+    await evaluate();
+    const repeated = await db.alertDelivery.findMany({ where: { userId, triggerType: "sync_failure" } });
+    expect(repeated).toHaveLength(2);
+    expect(repeated[0]!.dedupeKey).not.toBe(repeated[1]!.dedupeKey);
+    expect(repeated[1]!.dedupeKey).toMatch(/^syncfail:money_logs:\d+$/);
   });
 
   it("channel fan-out: one in-app alert, one pending row per channel; dispatch marks sent and never duplicates", async () => {
@@ -426,6 +532,134 @@ suite("proactive alerts engine", () => {
     expect(invalid.status).toBe("failed");
     expect(invalid.errorKind).toBe("invalid_webhook");
     expect(senderMock).toHaveBeenCalledTimes(1); // one attempt, no retries
+  });
+
+  it("disabled channel: pending deliveries are retained, not failed, and resume after re-enable (audit F3)", async () => {
+    // One enabled channel + one pending row.
+    await db.alertChannel.updateMany({ where: { userId }, data: { enabled: false } });
+    const encryption = new EncryptionService(process.env.API_KEY_ENCRYPTION_KEY!);
+    const webhook = "https://discord.com/api/webhooks/1234567890123499/AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdefghij";
+    const encrypted = encryption.encrypt(webhook);
+    const channel = await db.alertChannel.create({
+      data: {
+        userId, type: "discord",
+        encryptedKey: encrypted.encryptedKey, iv: encrypted.iv, authTag: encrypted.authTag,
+        targetPreview: "discord.com/api/webhooks/3499…/••••", enabled: true,
+      },
+      select: { id: true },
+    });
+    const delivery = await db.alertDelivery.create({
+      data: {
+        userId, ruleId: (await db.alertRule.findFirst({ where: { userId } }))!.id, triggerType: "cooldown_ready",
+        dedupeKey: `audit-f3:${randomBytes(4).toString("hex")}`, occurredAt: new Date(), title: "T", message: "M", status: "sent",
+      },
+      select: { id: true },
+    });
+    const rowId = (
+      await db.alertChannelDelivery.create({
+        data: { userId, deliveryId: delivery.id, channelId: channel.id, status: "pending" },
+        select: { id: true },
+      })
+    ).id;
+
+    // Disabled → the pass must NOT select the row at all: still pending,
+    // zero send attempts, no log-worthy work.
+    await db.alertChannel.update({ where: { id: channel.id }, data: { enabled: false } });
+    senderMock.mockClear();
+    const { dispatchDueAlertDeliveries } = await import("../src/alerts/dispatch.js");
+    await dispatchDueAlertDeliveries({ sender: senderMock });
+    let row = await db.alertChannelDelivery.findUnique({ where: { id: rowId } });
+    expect(row!.status).toBe("pending");
+    expect(row!.errorKind).toBeNull();
+    expect(senderMock).toHaveBeenCalledTimes(0);
+
+    // Re-enabled → the SAME pending row is processed normally.
+    await db.alertChannel.update({ where: { id: channel.id }, data: { enabled: true } });
+    sendResults = [{ outcome: "sent" }];
+    await dispatchDueAlertDeliveries({ sender: senderMock });
+    row = await db.alertChannelDelivery.findUnique({ where: { id: rowId } });
+    expect(row!.status).toBe("sent");
+    expect(senderMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("unreadable channel ciphertext under a valid key is failed permanently, never retried (audit F4)", async () => {
+    await db.alertChannel.updateMany({ where: { userId }, data: { enabled: false } });
+    // Corrupt ciphertext (not decryptable under ANY key shape).
+    const channel = await db.alertChannel.create({
+      data: {
+        userId, type: "discord",
+        encryptedKey: "!!!!not-valid-ciphertext!!!!", iv: "!!!!", authTag: "!!!!",
+        targetPreview: "discord.com/api/webhooks/4777…/••••", enabled: true,
+      },
+      select: { id: true },
+    });
+    const delivery = await db.alertDelivery.create({
+      data: {
+        userId, ruleId: (await db.alertRule.findFirst({ where: { userId } }))!.id, triggerType: "cooldown_ready",
+        dedupeKey: `audit-f4:${randomBytes(4).toString("hex")}`, occurredAt: new Date(), title: "T", message: "M", status: "sent",
+      },
+      select: { id: true },
+    });
+    const rowId = (
+      await db.alertChannelDelivery.create({
+        data: { userId, deliveryId: delivery.id, channelId: channel.id, status: "pending" },
+        select: { id: true },
+      })
+    ).id;
+
+    senderMock.mockClear();
+    const { dispatchDueAlertDeliveries } = await import("../src/alerts/dispatch.js");
+    await dispatchDueAlertDeliveries({ sender: senderMock });
+    const row = await db.alertChannelDelivery.findUnique({ where: { id: rowId } });
+    expect(row!.status).toBe("failed");
+    expect(row!.errorKind).toBe("unreadable_target");
+    expect(row!.errorMessage).not.toContain("AbCdEfGhIjKlMnOpQrStUvWxYz");
+    expect(senderMock).toHaveBeenCalledTimes(0); // never sent anywhere
+    expect(JSON.stringify(row)).not.toContain("AbCdEfGhIjKlMnOpQrStUvWxYz"); // no plaintext leak
+  });
+
+  it("an invalid alerts encryption configuration aborts the pass and RETAINS pending rows (audit F4)", async () => {
+    await db.alertChannel.updateMany({ where: { userId }, data: { enabled: false } });
+    const encryption = new EncryptionService(process.env.API_KEY_ENCRYPTION_KEY!);
+    const webhook = "https://discord.com/api/webhooks/1234567890123501/AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdefghij";
+    const encrypted = encryption.encrypt(webhook);
+    const channel = await db.alertChannel.create({
+      data: {
+        userId, type: "discord",
+        encryptedKey: encrypted.encryptedKey, iv: encrypted.iv, authTag: encrypted.authTag,
+        targetPreview: "discord.com/api/webhooks/3501…/••••", enabled: true,
+      },
+      select: { id: true },
+    });
+    const delivery = await db.alertDelivery.create({
+      data: {
+        userId, ruleId: (await db.alertRule.findFirst({ where: { userId } }))!.id, triggerType: "cooldown_ready",
+        dedupeKey: `audit-f4cfg:${randomBytes(4).toString("hex")}`, occurredAt: new Date(), title: "T", message: "M", status: "sent",
+      },
+      select: { id: true },
+    });
+    const rowId = (
+      await db.alertChannelDelivery.create({
+        data: { userId, deliveryId: delivery.id, channelId: channel.id, status: "pending" },
+        select: { id: true },
+      })
+    ).id;
+
+    // A broken encryption factory (the boot-invalid-key shape) aborts the
+    // pass ONCE; the row stays pending and nothing is sent or destroyed.
+    senderMock.mockClear();
+    const { dispatchDueAlertDeliveries } = await import("../src/alerts/dispatch.js");
+    await expect(
+      dispatchDueAlertDeliveries({
+        sender: senderMock,
+        encryption: () => {
+          throw new Error("API_KEY_ENCRYPTION_KEY must be 64 hex characters");
+        },
+      })
+    ).resolves.toBeUndefined();
+    const row = await db.alertChannelDelivery.findUnique({ where: { id: rowId } });
+    expect(row!.status).toBe("pending"); // retained, resumes after the key is fixed
+    expect(senderMock).toHaveBeenCalledTimes(0);
   });
 
   it("disabled rules are skipped; demo profiles are never evaluated", async () => {

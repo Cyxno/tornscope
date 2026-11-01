@@ -82,6 +82,29 @@ in `AlertRule.lastState` (previous observation + episode markers).
   sender, clearly labeled as a test, no rule state or cooldown touched;
   `verifiedAt` updates only after Discord accepted.
 
+## Delivery guarantees and scaling limits (accepted for the MVP)
+
+- **Discord delivery is AT-LEAST-ONCE, not exactly-once.** The Discord HTTP
+  request happens outside the database transaction: if the worker crashes
+  between Discord accepting a message (2xx) and the `sent` status write, the
+  row stays `pending` and the next dispatch pass sends the message again.
+  Webhooks carry no idempotency key, so this cannot be fully excluded at the
+  source. The database-level dedupe (one logical alert per episode) is
+  unaffected.
+- **Dispatch assumes ONE active worker.** The dispatch pass has no row claim
+  (no `FOR UPDATE SKIP LOCKED` / status transition). This is safe with the
+  shipped single-worker Compose topology (BullMQ scheduler concurrency 1);
+  running MULTIPLE worker containers concurrently would let two passes
+  process the same pending row and duplicate sends. Add a claim step before
+  scaling the worker horizontally.
+- A disabled Discord channel pauses its queued deliveries (rows stay
+  `pending` and resume when the channel is re-enabled); deleting the channel
+  cascades its delivery rows. A webhook whose stored ciphertext cannot be
+  decrypted under the configured key is marked `failed` with error kind
+  `unreadable_target` — remove and re-add the channel. An invalid
+  `API_KEY_ENCRYPTION_KEY` aborts the dispatch pass with a single error; its
+  pending rows are retained and resume once the key is fixed.
+
 ## Configuration
 
 | Variable | Default | Meaning |

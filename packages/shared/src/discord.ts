@@ -92,6 +92,9 @@ export const DISCORD_ERROR_KINDS = [
   "redirect",
   "http_error",
   "disabled",
+  /** The stored webhook target could not be decrypted (corrupt/unreadable
+   *  ciphertext under a VALID key). Permanent — the channel must be re-added. */
+  "unreadable_target",
 ] as const;
 export type DiscordErrorKind = (typeof DISCORD_ERROR_KINDS)[number];
 
