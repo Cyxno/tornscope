@@ -254,7 +254,7 @@
     <div class="flex w-full items-start justify-between gap-3">
       <div class="min-w-0">
         <h3 class="flex items-center gap-2 text-[14.5px] font-semibold text-fg">
-          <Icon name={meta.group === "operational" ? "sync" : "bell"} size={14} class="text-fg-muted" />
+          <Icon name={meta.category === "operational" ? "sync" : "bell"} size={14} class="text-fg-muted" />
           {meta.label}
         </h3>
         <p class="mt-0.5 text-[12.5px] leading-snug text-fg-muted">{meta.description}</p>
