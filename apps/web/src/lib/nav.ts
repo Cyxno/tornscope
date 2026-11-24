@@ -70,7 +70,7 @@ const hunting: NavItem = { href: "/hunting", label: "Hunting", icon: "hunting", 
  * family label navigate like every other family (2.5.3). */
 const rewardsGames: NavItem = { href: "/rewards-games", label: "Rewards & games", icon: "slots", section: "specialty" };
 const systemHealth: NavItem = { href: "/system", label: "System health", icon: "sync", section: "system" };
-const alerts: NavItem = { href: "/alerts", label: "Alerts", icon: "bell", section: "system" };
+const alerts: NavItem = { href: "/alerts", label: "Alerts", icon: "bell", section: "intelligence" };
 const changelog: NavItem = { href: "/changelog", label: "Changelog", icon: "changelog", section: "system" };
 
 /**
@@ -96,7 +96,7 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     id: "intelligence",
     label: "Intelligence",
-    entries: [goals, insights],
+    entries: [goals, insights, alerts],
     families: [],
   },
   {
@@ -130,7 +130,7 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     id: "system",
     label: "System",
-    entries: [systemHealth, alerts, changelog],
+    entries: [systemHealth, changelog],
     families: [],
   },
 ];
@@ -154,13 +154,13 @@ export const NAV_FAMILIES: NavFamily[] = NAV_SECTIONS.flatMap((s) => s.families)
  * groups so the sheet stays ~7 group decisions instead of a route matrix.
  */
 export const MOBILE_SHEET_GROUPS: Array<{ id: string; label: string; icon: IconName; items: NavItem[] }> = [
-  { id: "intelligence", label: "Intelligence", icon: "insight", items: [goals, insights] },
+  { id: "intelligence", label: "Intelligence", icon: "insight", items: [goals, insights, alerts] },
   { id: "economy", label: "Economy", icon: economy.icon, items: [economy, stocks] },
   { id: "progression", label: "Progression", icon: progression.icon, items: [progression, energy, education, merits, drugs] },
   { id: "activity", label: "Activity", icon: activity.icon, items: [activity, timeline, logs] },
   { id: "gameplay", label: "Gameplay", icon: "combat", items: [crimes, combat, faction, travel] },
   { id: "specialty", label: "Rewards & games", icon: "slots", items: [rewardsGames, casino, rewards, hunting] },
-  { id: "system", label: "System", icon: "sync", items: [systemHealth, alerts, changelog, ...PERSISTENT_ITEMS] },
+  { id: "system", label: "System", icon: "sync", items: [systemHealth, changelog, ...PERSISTENT_ITEMS] },
 ];
 
 /**
