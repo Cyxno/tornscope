@@ -360,7 +360,11 @@ async function evaluateOcReady(
     const rows = await db.organizedCrime.findMany({
       where: {
         userId,
-        status: "recruiting",
+        // Torn's API reports OC status capitalized ("Recruiting"); the sync
+        // stores it verbatim, so tolerate both casings — Postgres text
+        // equality is case-sensitive and a bare "recruiting" never matched
+        // production rows.
+        status: { in: ["recruiting", "Recruiting"] },
         readyAt: { not: null, lte: new Date(nowSec * 1000), gt: new Date(previous.observedAt * 1000) },
       },
       select: { ocId: true, name: true, readyAt: true, slots: true },
@@ -669,7 +673,11 @@ async function evaluateOcAlmostReady(
     const rows = await db.organizedCrime.findMany({
       where: {
         userId,
-        status: "recruiting",
+        // Torn's API reports OC status capitalized ("Recruiting"); the sync
+        // stores it verbatim, so tolerate both casings — Postgres text
+        // equality is case-sensitive and a bare "recruiting" never matched
+        // production rows.
+        status: { in: ["recruiting", "Recruiting"] },
         readyAt: { not: null, gt: new Date(nowSec * 1000), lte: new Date((nowSec + withinHours * 3600) * 1000) },
       },
       select: { ocId: true, name: true, readyAt: true, slots: true },

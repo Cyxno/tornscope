@@ -117,7 +117,10 @@ export async function evaluateOcProducer(ctx: IngestContext, systemState: Record
   const windowSeconds = ctx.config.ocSoonMinutes * 60;
   const nowSec = Math.floor(Date.now() / 1000);
   const ocs = await db.organizedCrime.findMany({
-    where: { userId: ctx.userId, status: "recruiting", readyAt: { gte: new Date(nowSec * 1000), lte: new Date((nowSec + windowSeconds) * 1000) } },
+    // Torn's API reports OC status capitalized ("Recruiting"); the sync
+    // stores it verbatim — tolerate both casings (Postgres = is
+    // case-sensitive; a bare "recruiting" never matched production rows).
+    where: { userId: ctx.userId, status: { in: ["recruiting", "Recruiting"] }, readyAt: { gte: new Date(nowSec * 1000), lte: new Date((nowSec + windowSeconds) * 1000) } },
     select: { ocId: true, name: true, readyAt: true, slots: true },
   });
   if (ocs.length === 0) return;

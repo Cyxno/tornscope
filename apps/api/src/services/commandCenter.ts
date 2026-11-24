@@ -90,7 +90,11 @@ async function buildCommandCenter(user: SessionUser): Promise<CommandCenterRespo
   const ocFacts: ActionOcFact[] = account?.tornId != null
     ? (
         await db.organizedCrime.findMany({
-          where: { userId: user.id, status: "recruiting" },
+          // Torn's API reports OC status capitalized ("Recruiting"); the
+          // sync stores it verbatim — tolerate both casings (Postgres = is
+          // case-sensitive). The DTO below keeps the hardcoded lowercase
+          // "recruiting" contract the shared Command Center logic expects.
+          where: { userId: user.id, status: { in: ["recruiting", "Recruiting"] } },
           select: { ocId: true, name: true, readyAt: true, slots: true, status: true },
         })
       )
