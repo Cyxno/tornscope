@@ -1,6 +1,9 @@
 import {
   buildDataFreshness,
   deriveActionItems,
+  alertTrigger,
+  ACTION_POLICY,
+  type ActionAlertFact,
   type ActionFacts,
   type ActionOcFact,
   type CommandCenterResponse,
@@ -35,7 +38,7 @@ async function buildCommandCenter(user: SessionUser): Promise<CommandCenterRespo
     getInsights(user.id),
     getSyncStates(db, user.id),
   ]);
-  const [goals, credential, account, networthRows] = await Promise.all([
+  const [goals, credential, account, networthRows, unreadAlertRows] = await Promise.all([
     getActiveGoalActionFacts(db, user.id, nowSec),
     db.apiCredential.findUnique({ where: { userId: user.id }, select: { revokedAt: true } }),
     db.tornAccount.findUnique({ where: { userId: user.id }, select: { tornId: true } }),
@@ -44,7 +47,24 @@ async function buildCommandCenter(user: SessionUser): Promise<CommandCenterRespo
       orderBy: { capturedAt: "asc" },
       select: { capturedAt: true, total: true },
     }),
+    db.alertDelivery.findMany({
+      where: { userId: user.id, readAt: null },
+      orderBy: { occurredAt: "desc" },
+      take: ACTION_POLICY.MAX_ALERT_ITEMS,
+      select: { id: true, triggerType: true, title: true, occurredAt: true },
+    }),
   ]);
+
+  // Unread proactive alerts → attention-feed facts (severity from the registry,
+  // defaulting to "info" for trigger types no longer registered).
+  const unreadAlerts: ActionAlertFact[] = unreadAlertRows.map((row) => ({
+    id: row.id,
+    triggerType: row.triggerType,
+    title: row.title,
+    severity: alertTrigger(row.triggerType)?.severity ?? "info",
+    occurredAt: Math.floor(row.occurredAt.getTime() / 1000),
+    clickPath: "/alerts",
+  }));
 
   // Freshness (worst domains only — the feed is an attention surface, not a
   // full table; /system owns the complete view).
@@ -106,6 +126,7 @@ async function buildCommandCenter(user: SessionUser): Promise<CommandCenterRespo
     insights: insights.insights.slice(0, 3) as Insight[],
     freshnessIssues,
     networth: networthRows.length > 0 ? { current: Number(networthRows[networthRows.length - 1]!.total), changePct7d } : null,
+    unreadAlerts,
   };
 
   const items = deriveActionItems(facts);

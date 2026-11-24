@@ -47,7 +47,8 @@ export type ActionType =
   | "goal_achieved_pending"
   | "insight"
   | "data_health"
-  | "notable_trend";
+  | "notable_trend"
+  | "alert";
 
 export interface ActionItem {
   /** Stable identity — one item per identity, ever. */
@@ -81,6 +82,8 @@ export const ACTION_POLICY = {
   MAX_ITEMS: 10,
   /** Max items per priority tier (stops one tier from flooding the feed). */
   MAX_PER_PRIORITY: { critical: 2, high: 4, normal: 6, low: 2 } as Record<ActionPriority, number>,
+  /** Unread alerts shown in the feed at most (the inbox owns the full list). */
+  MAX_ALERT_ITEMS: 3,
   /** Energy: item appears once the bar has been full this long. */
   ENERGY_CAPPED_AFTER_SECONDS: 30 * 60,
   /** Energy: stop claiming "capped" after this long (likely intentional idle). */
@@ -105,6 +108,15 @@ export const ACTION_POLICY = {
 } as const;
 
 const PRIORITY_ORDER: Record<ActionPriority, number> = { critical: 0, high: 1, normal: 2, low: 3 };
+
+/** Within one priority tier the feed order is alert > cooldown > goal-milestone
+ *  > insight (2.10.0); everything else sits with the cooldown tier. */
+function typePrecedence(type: ActionType): number {
+  if (type === "alert") return 0;
+  if (type === "insight") return 3;
+  if (type.startsWith("goal_")) return 2;
+  return 1;
+}
 
 /* -------------------------------------------------------------------------- */
 /* Facts (API-composed, all optional — missing facts yield no items)           */
@@ -169,6 +181,18 @@ export interface ActionFacts {
   /** Only non-fresh domains need to be passed in. */
   freshnessIssues: Array<Pick<DataFreshnessEntry, "domain" | "label" | "status">>;
   networth: { current: number; changePct7d: number | null } | null;
+  /** Unread proactive alerts (2.10.0) — highest feed precedence. */
+  unreadAlerts: ActionAlertFact[];
+}
+
+/** One unread alert entering the attention feed. */
+export interface ActionAlertFact {
+  id: string;
+  triggerType: string;
+  title: string;
+  severity: "info" | "warning" | "critical";
+  occurredAt: number;
+  clickPath: string;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -519,10 +543,31 @@ export function deriveActionItems(facts: ActionFacts): ActionItem[] {
     );
   }
 
+  // ---- Unread proactive alerts (2.10.0) — top precedence ---------------------------
+  for (const alert of facts.unreadAlerts.slice(0, ACTION_POLICY.MAX_ALERT_ITEMS)) {
+    items.push(
+      item({
+        id: `alert:${alert.id}`,
+        type: "alert",
+        category: "insight",
+        priority: alert.severity === "critical" ? "critical" : "high",
+        title: alert.title,
+        state: "warning",
+        explanation: "Unread alert — see the Alerts inbox for the full context.",
+        deadlineAt: null,
+        actionUrl: null,
+        analyticsUrl: `/alerts`,
+        confidence: "exact",
+        occurredAt: alert.occurredAt,
+      })
+    );
+  }
+
   // ---- Sort, then enforce per-priority caps -----------------------------------------
   const sorted = items.sort(
     (a, b) =>
       PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] ||
+      typePrecedence(a.type) - typePrecedence(b.type) ||
       deadlineKey(a.deadlineAt) - deadlineKey(b.deadlineAt) ||
       b.occurredAt - a.occurredAt
   );

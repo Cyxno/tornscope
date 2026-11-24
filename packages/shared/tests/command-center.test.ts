@@ -21,6 +21,7 @@ function facts(overrides: Partial<ActionFacts> = {}): ActionFacts {
     insights: [],
     freshnessIssues: [],
     networth: null,
+    unreadAlerts: [],
     ...overrides,
   };
 }
@@ -190,5 +191,44 @@ describe("deriveActionItems", () => {
     const result = deriveActionItems(facts({ hospitalUntil: NOW + 3600 }));
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({ type: "hospital_jail", state: "hospital", deadlineAt: NOW + 3600 });
+  });
+
+  it("puts unread alerts above other items in the same priority tier", () => {
+    const result = deriveActionItems(
+      facts({
+        bars: { energy: { current: 150, maximum: 150, fullAt: NOW - 3600 } },
+        unreadAlerts: [
+          { id: "d1", triggerType: "energy_capped", title: "Energy bar capped", severity: "warning", occurredAt: NOW - 120, clickPath: "/alerts" },
+        ],
+      })
+    );
+    expect(result[0]).toMatchObject({ type: "alert", priority: "high", analyticsUrl: "/alerts" });
+    expect(result[1]).toMatchObject({ type: "energy_capped", priority: "high" });
+  });
+
+  it("escalates a critical unread alert to the top of the whole feed", () => {
+    const result = deriveActionItems(
+      facts({
+        bars: { energy: { current: 150, maximum: 150, fullAt: NOW - 3600 } },
+        unreadAlerts: [
+          { id: "d2", triggerType: "networth_drawdown", title: "Net worth drawdown", severity: "critical", occurredAt: NOW - 60, clickPath: "/alerts" },
+        ],
+      })
+    );
+    expect(result[0]).toMatchObject({ type: "alert", priority: "critical", state: "warning" });
+    expect(result[0]!.id).toBe("alert:d2");
+  });
+
+  it("carries at most MAX_ALERT_ITEMS alerts even when more are unread", () => {
+    const unreadAlerts = Array.from({ length: 6 }, (_, i) => ({
+      id: `d${i}`,
+      triggerType: "energy_capped",
+      title: `Alert ${i}`,
+      severity: "warning" as const,
+      occurredAt: NOW - i,
+      clickPath: "/alerts",
+    }));
+    const result = deriveActionItems(facts({ unreadAlerts }));
+    expect(result.filter((i) => i.type === "alert")).toHaveLength(ACTION_POLICY.MAX_ALERT_ITEMS);
   });
 });
