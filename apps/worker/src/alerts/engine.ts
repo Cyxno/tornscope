@@ -1,5 +1,6 @@
 import {
   alertTrigger,
+  alertQuietEndSec,
   cooldownKindsFromConfig,
   diffAlertTimers,
   diffSyncHealth,
@@ -17,7 +18,6 @@ import {
   NETWORTH_DRAWDOWN_BASELINE_SECONDS,
   networthDrawdownEpisodeKey,
   networthEpisodeKey,
-  nextWallClockOccurrence,
   parseAlertQuietHours,
   parseAlertRuleState,
   sendDiscordWebhook,
@@ -1165,8 +1165,7 @@ async function commitAlert(
   let deferredUntil: Date | null = null;
   let firstAttemptAt: Date | null = null;
   if (opts.quietNow && opts.qh !== null) {
-    const [endH, endM] = opts.qh.end.split(":").map(Number) as [number, number];
-    deferredUntil = new Date(nextWallClockOccurrence(endH * 60 + endM, opts.qh.tz, opts.nowSec) * 1000);
+    deferredUntil = new Date(alertQuietEndSec(opts.qh, opts.nowSec) * 1000);
     firstAttemptAt = deferredUntil;
     status = "deferred";
   }

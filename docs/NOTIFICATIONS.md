@@ -79,6 +79,16 @@ see §6). System wording is jargon-free by construction
 (`syncProblemCopy` / `capabilityLostCopy`): "money_logs worker stale_running"
 never ships.
 
+**Proactive Alerts (2.10.0)** are not a separate push pipeline: the alerts
+worker source (`evaluateAlertDeliveriesForPush`) offers each committed
+`AlertDelivery` past the push-activation boundary to the ingest documented
+here as generated types `alert_<triggerType>` (group `alerts`, one type per
+catalog trigger, toggles in Settings → Notifications). Dedupe key
+`alert:<episode key>` gives exactly one push per episode, ever; severity maps
+info → normal and warning/critical → time-sensitive (never critical). See
+docs/ALERTS.md for trigger semantics, episode rules and the deferred
+quiet-hours delivery record.
+
 ### Intentionally omitted types
 
 - **Refill available** — Torn exposes no refill-availability state or

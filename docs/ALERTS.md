@@ -172,8 +172,12 @@ pins this guarantee across the whole catalog.
   is actually committed — never on mere evaluation, never for suppressed ones.
 - **Quiet hours** are per rule, `{"start":"23:00","end":"07:00","tz":"Europe/Amsterdam"}`
   (IANA zone, DST-safe, midnight-crossing; start == end = full-day quiet).
-  Inside the window the alert is SUPPRESSED WITH A RECORD (status
-  `suppressed` in the inbox), never silently discarded.
+  Inside the window the alert is DEFERRED, not dropped: the `AlertDelivery`
+  row is committed with status `deferred` and `deferredUntil` = the quiet
+  window's end. Channel rows (Discord) stay `pending` with
+  `nextAttemptAt` = quiet end and go out then; if the rule has no external
+  channels the deferred row is swept silently at quiet end. The inbox shows
+  "Deferred until <time>". Never silently discarded.
 - **Snooze** (`AlertRule.snoozedUntil`, from the inbox per trigger type)
   pauses evaluation of that rule without touching its state.
 - **In-app inbox**: one row per logical alert. External Discord states are
@@ -189,12 +193,32 @@ pins this guarantee across the whole catalog.
 - **Test notification** (`POST /api/alerts/channels/:id/test`): the same
   sender, clearly labeled as a test, no rule state or cooldown touched;
   `verifiedAt` updates only after Discord accepted.
+- **Web Push (2.10.0)**: after the push-activation boundary, every committed
+  alert delivery is offered to the existing notification ingest as type
+  `alert_<triggerType>` (one generated type per catalog trigger), group
+  `alerts`, dedupe key `alert:<episode dedupeKey>`. Result: exactly ONE push
+  per episode — ever — across ticks, restarts and multiple profiles; the
+  episode does not re-push after recovery or on later ticks. Urgency mapping:
+  severity info → normal, warning/critical → time-sensitive (never critical).
+  Quiet hours defer through the existing `NotificationEvent` deferral
+  mechanism with `deliverAtSec` visible in the history ledger as "deferred
+  until …". Thresholds are NOT duplicated into the notification-type config:
+  the settings UI edits the alert-rule config (single source of truth) and
+  creates the rule when missing. Delivery correctness is ledger-based: if
+  ingest is down, no event is recorded and the delivery is re-offered on a
+  later tick (at-least-once at the ingest boundary, exactly-once at the
+  user-visible level via the dedupe key).
 
 ## UI surfaces
 
 - `/alerts` lives under **Intelligence** (2.10.0 nav move): inbox with
   category/severity filters, acknowledge (read), snooze per trigger type, a
-  per-trigger activity timeline, and a provenance panel per alert.
+  per-trigger activity timeline, and a provenance panel per alert. Deferred
+  deliveries show a "Deferred until …" chip.
+- Settings → **Notifications**: every `alert_*` push type appears in the
+  alerts group with a per-trigger toggle; threshold inputs render generically
+  from the trigger's `defaultConfig` (numeric keys) and persist to the
+  alert-rule config.
 - Command Center feed: unread alerts enter the attention feed with the
   highest precedence (alert > cooldown > goal-milestone > insight, then the
   existing priority/deadline ordering).
@@ -221,6 +245,22 @@ pins this guarantee across the whole catalog.
   `unreadable_target` — remove and re-add the channel. An invalid
   `API_KEY_ENCRYPTION_KEY` aborts the dispatch pass with a single error; its
   pending rows are retained and resume once the key is fixed.
+
+## Known limitations
+
+- **`stocks_benefit` is not in the catalog.** TornScope deliberately stores
+  no stock-holdings history (docs/STOCKS.md, "No schema"), so no honest
+  deterministic implementation exists. It ships when a holdings snapshot
+  exists — never as a live-API claim.
+- **Web Push device coverage.** Push requires a browser with service-worker
+  push support and a user gesture. iOS/iPadOS only receives pushes when the
+  TornScope PWA is installed to the home screen (Apple limitation) — the
+  settings UI links the install guide. A physical iOS end-to-end test is a
+  manual release-checklist item; the service-worker contract
+  (`payload.tag`) is statically covered by tests.
+- **Push is tied to the notification ingest.** If the push provider or the
+  ingest pipeline is degraded, alerts still land in the inbox/Discord
+  (those paths are independent); only the push leg waits for recovery.
 
 ## Configuration
 

@@ -66,6 +66,11 @@ Wealth-first dashboard: official net worth with extended wealth, historical char
 **Insights & Decision Intelligence** — decision signals derived from your own history (opportunities, risks, trends, anomalies) with rolling personal baselines, evidence, confidence and provenance; plus the deterministic observed-shifts feed. Historical signals only — never live optimization claims.
 **Training & wealth intelligence** — 7d vs 7d vs 30-day training comparisons with personal bests; wealth velocity, a 30-day trend projection, wealth attribution (conversions are never losses) and all-time financial records.
 
+### Proactive Alerts (2.9.0 engine, 2.10.0 catalog & push)
+**Sixteen honest triggers** (cooldown ready, OC ready, education done, bank matured/maturing, travel landed, net-worth drop & 7d drawdown, bar capped, goal milestones, rehab advice, overdose spike vs your own baseline, training stagnation, sync health) — each with category, severity, episode semantics (an episode only closes on real recovery) and a provenance object stating exactly where the fact came from. Unavailable data renders as "—", never a fabricated zero.
+**Inbox & snooze** — filter by category/severity, per-trigger snooze that pauses evaluation without losing state, quiet hours that DEFER (with a visible "deferred until" record) instead of dropping, and Discord delivery with encrypted webhooks, SSRF-guarded URLs and honest retry/failure states.
+**Web Push (2.10.0)** — every trigger has its own push type, toggled per trigger in Settings → Notifications with rule thresholds editable inline; exactly one push per episode, quiet-hours-aware, time-sensitive urgency for warning/critical severities.
+
 ### Today
 The live current-state view: bars with regen and full-at times, cooldown countdowns, travel state, city-bank investment maturity, education progress, hospital/jail notices, and a merged upcoming-events timeline. State changes are handled server-side so the same payload renders identically on every page.
 
