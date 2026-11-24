@@ -1,6 +1,6 @@
 import { Prisma } from "../generated/client/client.js";
 import { getPrismaClient, ensureSyncStates } from "../index.js";
-import { DEMO_USER_EMAIL } from "@tornscope/shared";
+import { ALERT_TRIGGERS, DEMO_USER_EMAIL } from "@tornscope/shared";
 import { DAY, DEMO_FACTION_ID, DEMO_TORN_ID, DRUGS, FLOWERS, PLUSHIES, DESTINATIONS, HOUR } from "../demo/constants.js";
 import { generateDemoHistory, type DemoMoneyRow } from "../demo/generator.js";
 import { DEMO_TOPUP_WATERMARK_KEY } from "../demo/topup.js";
@@ -450,32 +450,38 @@ async function main(): Promise<void> {
     }
   }
 
-  /* --------------------- demo alerts (2.9.0) ----------------------------- */
+  /* --------------------- demo alerts (2.9.0 rules, 2.10.0 catalog) --------- */
   // Representative alert rules + inbox for the Alerts page. Isolation:
   // these rows live on the isDemo=true profile (never a real account), the
   // worker NEVER evaluates demo profiles, and the demo channel's webhook is
   // a syntactically valid FAKE target — no real Discord delivery can exist.
   // Full-seed only: routine top-ups do not touch alerts.
-  const demoRules: Array<{ triggerType: string; enabled: boolean; config: unknown; quietHours: unknown; cooldownMinutes: number; lastFiredAgeSec: number | null }> = [
-    { triggerType: "cooldown_ready", enabled: true, config: {}, quietHours: { start: "23:00", end: "07:00", tz: "Europe/Amsterdam" }, cooldownMinutes: 60, lastFiredAgeSec: 3 * 3600 },
-    { triggerType: "travel_landed", enabled: true, config: {}, quietHours: null, cooldownMinutes: 0, lastFiredAgeSec: 26 * 3600 },
-    { triggerType: "net_worth_drop", enabled: true, config: { pct: 5, window_hours: 24 }, quietHours: null, cooldownMinutes: 360, lastFiredAgeSec: null },
-    { triggerType: "sync_failure", enabled: false, config: {}, quietHours: null, cooldownMinutes: 0, lastFiredAgeSec: null },
-  ];
+  //
+  // 2.10.0: one rule for EVERY catalog trigger (16) and at least one
+  // AlertDelivery episode per trigger, spread across ~185 days of history
+  // with provenance objects, so the demo inbox shows the full catalog
+  // (categories, severities, episode statuses incl. the 2.10.0 "deferred"
+  // quiet-hours state) instead of a single recent week.
   const demoRuleIds = new Map<string, string>();
-  for (const rule of demoRules) {
+  for (const meta of ALERT_TRIGGERS) {
     const row = await db.alertRule.create({
       data: {
         userId: user.id,
-        triggerType: rule.triggerType,
-        enabled: rule.enabled,
-        config: rule.config as never,
-        quietHours: (rule.quietHours ?? undefined) as never,
-        cooldownMinutes: rule.cooldownMinutes,
-        lastFiredAt: rule.lastFiredAgeSec === null ? null : new Date((now - rule.lastFiredAgeSec) * 1000),
+        triggerType: meta.id,
+        enabled: meta.defaultEnabled,
+        config: meta.defaultConfig as never,
+        quietHours: (meta.id === "cooldown_ready" || meta.id === "networth_drawdown"
+          ? { start: "23:00", end: "07:00", tz: "Europe/Amsterdam" }
+          : undefined) as never,
+        cooldownMinutes: 60,
+        lastFiredAt: meta.id === "cooldown_ready"
+          ? new Date((now - 3 * 3600) * 1000)
+          : meta.id === "travel_landed"
+            ? new Date((now - 26 * 3600) * 1000)
+            : null,
       },
     });
-    demoRuleIds.set(rule.triggerType, row.id);
+    demoRuleIds.set(meta.id, row.id);
   }
 
   const demoChannel = await db.alertChannel.create({
@@ -496,24 +502,39 @@ async function main(): Promise<void> {
 
   interface DemoAlert {
     triggerType: string; dedupeKey: string; ageSec: number; title: string; message: string;
-    status: string; read: boolean; payload?: Record<string, unknown>; channelStatus?: "sent" | "failed" | "pending";
+    status: string; read: boolean; payload?: Record<string, unknown>;
+    provenance: { confidence: string; sources: string[]; window?: { fromSec: number; toSec: number }; note?: string };
+    /** Seconds from occurrence to the quiet-window end (status "deferred" only). */
+    deferredBySec?: number;
+    channelStatus?: "sent" | "failed" | "pending";
   }
   const demoAlerts: DemoAlert[] = [
-    { triggerType: "cooldown_ready", dedupeKey: `cooldown_ready:cooldown_drug:${now - 3 * 3600}`, ageSec: 3 * 3600, title: "Drug cooldown ready", message: "The cooldown finished — you can use it again.", status: "sent", read: false, channelStatus: "sent" },
-    { triggerType: "travel_landed", dedupeKey: `travel_landed:travel:${now - 26 * 3600}`, ageSec: 26 * 3600, title: "Travel landed", message: "Your flight landed — welcome home.", status: "sent", read: true, payload: { destination: "Switzerland" }, channelStatus: "sent" },
-    { triggerType: "oc_ready", dedupeKey: `oc:ready:9203:${now - 5 * 3600}`, ageSec: 5 * 3600, title: "OC ready: Stage Fright", message: "Your organized crime is ready to initiate.", status: "sent", read: false, payload: { ocId: 9203, name: "Stage Fright" }, channelStatus: "sent" },
-    { triggerType: "bank_matured", dedupeKey: `bank_matured:bank:${now - 31 * 3600}`, ageSec: 31 * 3600, title: "Bank investment matured", message: "A city-bank investment matured — collect your funds.", status: "sent", read: true },
-    { triggerType: "education_done", dedupeKey: `education_done:education:${now - 2 * DAY}`, ageSec: 2 * DAY, title: "Education completed", message: "Your education course has finished.", status: "sent", read: true, channelStatus: "sent" },
-    { triggerType: "net_worth_drop", dedupeKey: `nwdrop:demo-snap-41:${now - 8 * 3600}`, ageSec: 8 * 3600, title: "Net worth dropped", message: "Net worth fell 6.2% over the last 24h — $214.10m → $200.82m.", status: "sent", read: false, payload: { dropPct: 6.2, pct: 5, windowHours: 24 }, channelStatus: "failed" },
-    { triggerType: "cooldown_ready", dedupeKey: `cooldown_ready:cooldown_booster:${now - 27 * 3600}`, ageSec: 27 * 3600, title: "Booster cooldown ready", message: "The cooldown finished — you can use it again.", status: "suppressed", read: false },
-    { triggerType: "sync_failure", dedupeKey: `syncfail:money_logs,events:${now - 3 * DAY}`, ageSec: 3 * DAY, title: "2 data sources stopped updating", message: "Money logs, Events are no longer updating. Check Sync Status.", status: "suppressed", read: true, payload: { resources: ["money_logs", "events"] } },
-    { triggerType: "sync_recovery", dedupeKey: `syncrecover:money_logs,events:${now - 3 * DAY + 5400}`, ageSec: 3 * DAY - 5400, title: "Data source recovered", message: "Money logs, Events are updating again.", status: "sent", read: true, channelStatus: "sent" },
+    // --- recent (last ~3 days): the live-looking inbox ---
+    { triggerType: "cooldown_ready", dedupeKey: `cooldown_ready:cooldown_drug:${now - 3 * 3600}`, ageSec: 3 * 3600, title: "Drug cooldown ready", message: "The cooldown finished — you can use it again.", status: "sent", read: false, provenance: { confidence: "exact", sources: ["LiveStateTransition"] }, channelStatus: "sent" },
+    { triggerType: "oc_ready", dedupeKey: `oc:ready:9203:${now - 5 * 3600}`, ageSec: 5 * 3600, title: "OC ready: Stage Fright", message: "Your organized crime is ready to initiate.", status: "sent", read: false, payload: { ocId: 9203, name: "Stage Fright" }, provenance: { confidence: "exact", sources: ["OrganizedCrime"] }, channelStatus: "sent" },
+    { triggerType: "bank_maturity_soon", dedupeKey: `bank:maturing:${now - 6 * 3600}`, ageSec: 6 * 3600, title: "Bank investment matures soon", message: "A city-bank investment matures within the next 24 hours.", status: "deferred", read: false, deferredBySec: 8 * 3600, provenance: { confidence: "exact", sources: ["BankInvestment"] }, channelStatus: "pending" },
+    { triggerType: "bar_capped", dedupeKey: `barcapped:energy:${now - 40 * 3600}`, ageSec: 40 * 3600, title: "Energy bar sitting at maximum", message: "Energy has been capped for 15 minutes — regen is being wasted.", status: "sent", read: false, payload: { bar: "energy", minutes: 15 }, provenance: { confidence: "derived", sources: ["BarsSnapshot"], note: "Regen is estimated from the stored bar history." }, channelStatus: "sent" },
+    { triggerType: "net_worth_drop", dedupeKey: `nwdrop:demo-snap-41:${now - 8 * 3600}`, ageSec: 8 * 3600, title: "Net worth dropped", message: "Net worth fell 6.2% over the last 24h — $214.10m → $200.82m.", status: "sent", read: false, payload: { dropPct: 6.2, pct: 5, windowHours: 24 }, provenance: { confidence: "derived", sources: ["NetworthSnapshot"], window: { fromSec: now - 32 * 3600, toSec: now - 8 * 3600 } }, channelStatus: "failed" },
+    { triggerType: "travel_landed", dedupeKey: `travel_landed:travel:${now - 26 * 3600}`, ageSec: 26 * 3600, title: "Travel landed", message: "Your flight landed — welcome home.", status: "sent", read: true, payload: { destination: "Switzerland" }, provenance: { confidence: "exact", sources: ["LiveStateTransition"] }, channelStatus: "sent" },
+    { triggerType: "education_done", dedupeKey: `education_done:education:${now - 2 * DAY}`, ageSec: 2 * DAY, title: "Education completed", message: "Your education course has finished.", status: "sent", read: true, provenance: { confidence: "exact", sources: ["EducationState"] }, channelStatus: "sent" },
+    { triggerType: "sync_failure", dedupeKey: `syncfail:money_logs,events:${now - 3 * DAY}`, ageSec: 3 * DAY, title: "2 data sources stopped updating", message: "Money logs, Events are no longer updating. Check Sync Status.", status: "suppressed", read: true, payload: { resources: ["money_logs", "events"] }, provenance: { confidence: "exact", sources: ["SyncHealthState"] } },
+    { triggerType: "sync_recovery", dedupeKey: `syncrecover:money_logs,events:${now - 3 * DAY + 5400}`, ageSec: 3 * DAY - 5400, title: "Data source recovered", message: "Money logs, Events are updating again.", status: "sent", read: true, provenance: { confidence: "exact", sources: ["SyncHealthState"] }, channelStatus: "sent" },
+    { triggerType: "networth_drawdown", dedupeKey: `nwdrawdown:7d:${now - 12 * DAY}`, ageSec: 12 * DAY, title: "Net worth below 7-day baseline", message: "Net worth has been 4.8% under your 7-day baseline for 6 hours.", status: "sent", read: false, payload: { dropPct: 4.8, pct: 4 }, provenance: { confidence: "derived", sources: ["NetworthSnapshot"], window: { fromSec: now - 19 * DAY, toSec: now - 12 * DAY } } },
+    // --- older history: proves the ledger spans the full retention window ---
+    { triggerType: "oc_almost_ready", dedupeKey: `oc:almost:9155:${now - 60 * DAY}`, ageSec: 60 * DAY, title: "OC almost ready", message: "Your organized crime can be initiated within the next 24 hours.", status: "sent", read: true, payload: { ocId: 9155 }, provenance: { confidence: "exact", sources: ["OrganizedCrime"] }, channelStatus: "sent" },
+    { triggerType: "goal_milestone", dedupeKey: `goalmilestone:networth:75:${now - 90 * DAY}`, ageSec: 90 * DAY, title: "Goal milestone: 75% of net worth target", message: "You passed 75% of your net worth goal.", status: "sent", read: true, payload: { metric: "networth", pct: 75 }, provenance: { confidence: "derived", sources: ["Goal", "NetworthSnapshot"] } },
+    { triggerType: "cooldown_ready", dedupeKey: `cooldown_ready:cooldown_booster:${now - 175 * DAY}`, ageSec: 175 * DAY, title: "Booster cooldown ready", message: "The cooldown finished — you can use it again.", status: "suppressed", read: true, provenance: { confidence: "exact", sources: ["LiveStateTransition"] } },
+    { triggerType: "rehab_advice", dedupeKey: `rehab:advice:${now - 140 * DAY}`, ageSec: 140 * DAY, title: "Consider a rehab visit", message: "Your recent drug volume is high — a rehab visit would reset the addiction build-up. Volume-based estimate, not an addiction meter.", status: "sent", read: true, provenance: { confidence: "inferred", sources: ["DrugUseEvents"], note: "Torn publishes no addiction meter; this alert is a volume proxy and says so." } },
+    { triggerType: "drug_overdose_spike", dedupeKey: `odspike:${now - 160 * DAY}`, ageSec: 160 * DAY, title: "Overdose spike", message: "3 overdoses in 24h — more than double your personal baseline rate.", status: "sent", read: true, provenance: { confidence: "derived", sources: ["DrugUseEvents"], window: { fromSec: now - 167 * DAY, toSec: now - 160 * DAY }, note: "Spike = window volume exceeds 2× your own baseline rate; never a universal claim." } },
+    { triggerType: "training_stagnation", dedupeKey: `training:stagnation:${now - 185 * DAY}`, ageSec: 185 * DAY, title: "Training stagnating", message: "No battle-stat gain recorded in the last 14 days.", status: "sent", read: true, provenance: { confidence: "derived", sources: ["PersonalStatSnapshot"], note: "Individual training sessions are not stored — this compares stored snapshot totals, never a fabricated session count." } },
+    { triggerType: "bank_matured", dedupeKey: `bank_matured:bank:${now - 31 * 3600}`, ageSec: 31 * 3600, title: "Bank investment matured", message: "A city-bank investment matured — collect your funds.", status: "sent", read: true, provenance: { confidence: "exact", sources: ["BankInvestment"] } },
   ];
 
   for (const alert of demoAlerts) {
     const ruleId = demoRuleIds.get(alert.triggerType);
     if (!ruleId) continue;
     const occurredAt = new Date((now - alert.ageSec) * 1000);
+    const deferredUntil = alert.deferredBySec === undefined ? null : new Date(occurredAt.getTime() + alert.deferredBySec * 1000);
     const delivery = await db.alertDelivery.create({
       data: {
         userId: user.id,
@@ -524,7 +545,9 @@ async function main(): Promise<void> {
         title: alert.title,
         message: alert.message,
         payload: (alert.payload ?? undefined) as never,
+        provenance: alert.provenance as never,
         status: alert.status,
+        deferredUntil,
         readAt: alert.read ? new Date(occurredAt.getTime() + 20 * 60_000) : null,
         createdAt: occurredAt,
       },
@@ -540,7 +563,7 @@ async function main(): Promise<void> {
           errorKind: alert.channelStatus === "failed" ? "invalid_webhook" : null,
           errorMessage: alert.channelStatus === "failed" ? "Webhook rejected by Discord (HTTP 404). The URL may be revoked or wrong." : null,
           sentAt: alert.channelStatus === "sent" ? occurredAt : null,
-          nextAttemptAt: alert.channelStatus === "pending" ? new Date((now + 300) * 1000) : null,
+          nextAttemptAt: alert.channelStatus === "pending" ? deferredUntil : null,
           createdAt: occurredAt,
           updatedAt: occurredAt,
         },
