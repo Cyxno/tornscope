@@ -48,6 +48,7 @@ function toRuleDto(row: {
   quietHours: unknown;
   cooldownMinutes: number;
   lastFiredAt: Date | null;
+  snoozedUntil: Date | null;
   createdAt: Date;
 }): AlertRuleDto {
   // Unknown persisted trigger types (older builds) are filtered by callers;
@@ -60,6 +61,7 @@ function toRuleDto(row: {
     quietHours: parseAlertQuietHours(row.quietHours),
     cooldownMinutes: row.cooldownMinutes,
     lastFiredAtSec: row.lastFiredAt === null ? null : Math.floor(row.lastFiredAt.getTime() / 1000),
+    snoozedUntilSec: row.snoozedUntil === null ? null : Math.floor(row.snoozedUntil.getTime() / 1000),
     createdAtSec: Math.floor(row.createdAt.getTime() / 1000),
   };
 }
@@ -333,6 +335,7 @@ export async function listAlertDeliveries(
 
   const entries: AlertDeliveryDto[] = rows.map((row) => ({
     id: row.id,
+    ruleId: row.ruleId,
     triggerType: row.triggerType as AlertDeliveryDto["triggerType"],
     title: row.title,
     message: row.message,
@@ -376,6 +379,17 @@ export async function markAllDeliveriesRead(userId: string): Promise<{ updated: 
     data: { readAt: new Date() },
   });
   return { updated: result.count };
+}
+
+/** Snooze a rule (2.10.0): the engine skips it until `untilSec` without
+ *  touching lastState, so episode/transition memory survives the snooze.
+ *  `untilSec` null (or in the past) clears the snooze. */
+export async function snoozeAlertRule(userId: string, ruleId: string, untilSec: number | null): Promise<AlertRuleDto> {
+  const existing = await db().alertRule.findFirst({ where: { id: ruleId, userId } });
+  if (!existing || !alertTrigger(existing.triggerType)) throw errors.notFound("Alert rule");
+  const until = untilSec === null ? null : new Date(untilSec * 1000);
+  const row = await db().alertRule.update({ where: { id: existing.id }, data: { snoozedUntil: until } });
+  return toRuleDto(row);
 }
 
 export async function getAlertUnreadCount(userId: string): Promise<AlertUnreadCountResponse> {

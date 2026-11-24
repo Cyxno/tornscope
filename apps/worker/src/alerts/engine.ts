@@ -1037,6 +1037,9 @@ interface RuleLike {
   cooldownMinutes: number;
   lastFiredAt: Date | null;
   lastState: unknown;
+  /** User snooze (2.10.0): while in the future the rule is skipped without
+   *  touching lastState — snoozing must not reset transition/episode memory. */
+  snoozedUntil: Date | null;
 }
 
 async function evaluateRule(
@@ -1047,6 +1050,7 @@ async function evaluateRule(
 ): Promise<void> {
   const meta = alertTrigger(rule.triggerType);
   if (!meta) return; // unknown type persisted by an older build — ignore
+  if (rule.snoozedUntil !== null && rule.snoozedUntil.getTime() > Date.now()) return; // snoozed
   const previous = parseAlertRuleState(rule.lastState);
 
   let result: RuleEvaluation = { drafts: [], nextState: null, needsLive: meta.needsLiveFetch };

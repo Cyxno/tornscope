@@ -1138,6 +1138,9 @@ model AlertRule {
   /// Minimum minutes between two firings of THIS rule.
   cooldownMinutes Int       @default(0)
   lastFiredAt     DateTime?
+  /// User snooze (2.10.0): while in the future the engine skips this rule
+  /// without touching lastState — snoozing must not reset episode memory.
+  snoozedUntil    DateTime?
   /// Evaluator working state: the previous observation for transition
   /// detection + the open episode marker for threshold triggers. Json —
   /// its shape is owned by the shared evaluator for this triggerType.

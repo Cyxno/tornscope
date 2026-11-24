@@ -14,7 +14,7 @@ process.env.API_KEY_ENCRYPTION_KEY ??= "a".repeat(64);
 const dbUrl = process.env.TEST_DATABASE_URL ?? "";
 const suite = dbUrl ? describe : describe.skip;
 
-const { createAlertRule, listAlertRules, updateAlertRule, deleteAlertRule, createAlertChannel, listAlertChannels, testAlertChannel, listAlertDeliveries, markDeliveryRead, markAllDeliveriesRead, getAlertUnreadCount } = await import(
+const { createAlertRule, listAlertRules, updateAlertRule, deleteAlertRule, snoozeAlertRule, createAlertChannel, listAlertChannels, testAlertChannel, listAlertDeliveries, markDeliveryRead, markAllDeliveriesRead, getAlertUnreadCount } = await import(
   "../src/services/alerts.js"
 );
 
@@ -126,6 +126,27 @@ suite("alerts rules API", () => {
     });
     await deleteAlertRule(userId, rule.id);
     expect(await db.alertDelivery.count({ where: { userId } })).toBe(0);
+  });
+
+  it("snoozes a rule until a unix second, keeps it account-scoped, and clears with null", async () => {
+    const owner = await newUser();
+    const attacker = await newUser();
+    const rule = await createAlertRule(owner, { triggerType: "energy_capped" });
+
+    // Fresh rules are never snoozed (nullable add — pre-2.10 rows read null).
+    expect(rule.snoozedUntilSec).toBeNull();
+
+    const until = NOW + 24 * 3600;
+    const snoozed = await snoozeAlertRule(owner, rule.id, until);
+    expect(snoozed.snoozedUntilSec).toBe(until);
+
+    // A foreign id is a 404, never a leak — and the owner's snooze survives.
+    await expect(snoozeAlertRule(attacker, rule.id, until)).rejects.toMatchObject({ statusCode: 404 });
+    expect((await listAlertRules(owner)).rules[0]!.snoozedUntilSec).toBe(until);
+
+    // null (or a past instant) clears the snooze.
+    const cleared = await snoozeAlertRule(owner, rule.id, null);
+    expect(cleared.snoozedUntilSec).toBeNull();
   });
 });
 

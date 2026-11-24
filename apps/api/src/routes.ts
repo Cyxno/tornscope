@@ -53,6 +53,7 @@ import {
   listAlertDeliveries,
   markDeliveryRead,
   markAllDeliveriesRead,
+  snoozeAlertRule,
   getAlertUnreadCount,
   type AlertRuleInput,
   type AlertRuleUpdateInput,
@@ -900,6 +901,20 @@ export function registerRoutes(app: FastifyInstance): void {
     const params = z.object({ id: z.string().min(1).max(64) }).safeParse(req.params);
     if (!params.success) throw errors.validation(params.error.flatten());
     return deleteAlertRule(currentUser(req).id, params.data.id);
+  });
+
+  // Snooze (2.10.0): { untilSec: unix | null } — null clears the snooze.
+  app.post("/api/alerts/rules/:id/snooze", async (req) => {
+    const limit = checkRateLimit("alert-rule-write", currentUser(req).id, 30, 10 * 60_000);
+    if (!limit.ok) throw errors.rateLimited("Too many alert changes — try again later.", limit.retryAfterSeconds);
+    const params = z.object({ id: z.string().min(1).max(64) }).safeParse(req.params);
+    if (!params.success) throw errors.validation(params.error.flatten());
+    const body = z
+      .object({ untilSec: z.number().int().min(0).nullable() })
+      .strict()
+      .safeParse(req.body);
+    if (!body.success) throw errors.validation(body.error.flatten());
+    return snoozeAlertRule(currentUser(req).id, params.data.id, body.data.untilSec);
   });
 
   app.get("/api/alerts/channels", async (req) => {

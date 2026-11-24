@@ -282,6 +282,7 @@ export const endpoints = {
     cooldownMinutes?: number;
   }) => api.patch<AlertRuleDto>(`/alerts/rules/${id}`, patch),
   alertsDeleteRule: (id: string) => api.del<{ deleted: boolean }>(`/alerts/rules/${id}`),
+  alertsSnoozeRule: (id: string, untilSec: number | null) => api.post<AlertRuleDto>(`/alerts/rules/${id}/snooze`, { untilSec }),
   alertsChannels: () => api.get<{ channels: AlertChannelDto[] }>("/alerts/channels"),
   alertsCreateChannel: (input: { type: "discord"; url: string }) => api.post<{ channel: AlertChannelDto }>("/alerts/channels", input),
   alertsUpdateChannel: (id: string, patch: { enabled?: boolean }) => api.patch<AlertChannelDto>(`/alerts/channels/${id}`, patch),

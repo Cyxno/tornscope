@@ -1113,6 +1113,8 @@ export interface AlertRuleDto {
   quietHours: AlertQuietHours | null;
   cooldownMinutes: number;
   lastFiredAtSec: number | null;
+  /** User snooze (2.10.0): unix seconds until the rule is skipped; null = not snoozed. */
+  snoozedUntilSec: number | null;
   createdAtSec: number;
 }
 
@@ -1134,6 +1136,8 @@ export interface AlertChannelDeliveryDto {
  *  can label which status belongs to what. */
 export interface AlertDeliveryDto {
   id: string;
+  /** Owning rule (2.10.0) — lets the inbox offer per-rule snooze. */
+  ruleId: string;
   triggerType: AlertTriggerId;
   title: string;
   message: string;

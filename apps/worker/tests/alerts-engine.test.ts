@@ -52,6 +52,7 @@ async function createRule(data: {
   enabled?: boolean;
   lastState?: unknown;
   lastFiredAt?: Date | null;
+  snoozedUntil?: Date | null;
 }): Promise<string> {
   // One rule per trigger type per account (the engine's own invariant) —
   // the suite reuses the SAME user, so re-arming a trigger UPSERTS its rule.
@@ -66,6 +67,7 @@ async function createRule(data: {
       cooldownMinutes: data.cooldownMinutes ?? 0,
       lastState: (data.lastState ?? undefined) as never,
       lastFiredAt: data.lastFiredAt ?? null,
+      snoozedUntil: data.snoozedUntil ?? null,
     },
     update: {
       enabled: data.enabled ?? true,
@@ -74,6 +76,7 @@ async function createRule(data: {
       cooldownMinutes: data.cooldownMinutes ?? 0,
       lastState: (data.lastState ?? undefined) as never,
       lastFiredAt: data.lastFiredAt ?? null,
+      snoozedUntil: data.snoozedUntil ?? null,
     },
     select: { id: true },
   });
@@ -127,6 +130,31 @@ suite("proactive alerts engine", () => {
     await evaluate();
     deliveries = await db.alertDelivery.findMany({ where: { userId, triggerType: "cooldown_ready" } });
     expect(deliveries).toHaveLength(1);
+  });
+
+  it("cooldown_ready: a snoozed rule is skipped WITHOUT touching lastState (episode memory survives the snooze)", async () => {
+    await db.alertDelivery.deleteMany({ where: { userId } }); // scope assertions to THIS test
+    const ruleId = await createRule({
+      triggerType: "cooldown_ready",
+      snoozedUntil: new Date((NOW + 3600) * 1000),
+    });
+
+    // The cooldown is ready, but the rule is snoozed: nothing fires AND the
+    // transition/episode state is left exactly as it was.
+    liveState = { cooldownDrugEndsAt: null };
+    await evaluate();
+    let deliveries = await db.alertDelivery.findMany({ where: { userId, triggerType: "cooldown_ready" } });
+    expect(deliveries).toEqual([]);
+    let rule = await db.alertRule.findUnique({ where: { id: ruleId } });
+    expect(rule!.lastState).toBeNull();
+
+    // Snooze expires → the next tick evaluates normally and fires.
+    await db.alertRule.update({ where: { id: ruleId }, data: { snoozedUntil: new Date((NOW - 60) * 1000) } });
+    await evaluate();
+    deliveries = await db.alertDelivery.findMany({ where: { userId, triggerType: "cooldown_ready" } });
+    expect(deliveries).toHaveLength(1);
+    rule = await db.alertRule.findUnique({ where: { id: ruleId } });
+    expect((rule!.lastState as { observedAt: number }).observedAt).toBeGreaterThan(0);
   });
 
   it("cooldown_ready: a stale observation (>12h) is re-baselined, never fabricated into a transition", async () => {
