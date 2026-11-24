@@ -782,9 +782,11 @@ suite("2.10.0 proactive alerts → Web Push", () => {
     expect(webpushMock.state.calls.length).toBe(0);
 
     // Quiet hours active: the push is DEFERRED — the ledger names the quiet end.
+    // start == end means a full-day quiet window (the alerts convention):
+    // the alert must DEFER with deliverAt, never drop.
     const utcMin = localMinutesInZone(nowSec, "UTC");
     const startMin = (utcMin + 30) % 1440;
-    const endMin = (utcMin - 30 + 1440) % 1440;
+    const endMin = startMin;
     const quietUser = await makeProfile({ devices: 1, toggles: { alert_bar_capped: true }, quiet: { start: startMin, end: endMin } });
     await alertDeliveryRow(quietUser, "bar_capped", "quiet:1");
     webpushMock.state.calls.length = 0;

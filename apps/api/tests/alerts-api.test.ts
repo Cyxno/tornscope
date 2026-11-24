@@ -131,7 +131,7 @@ suite("alerts rules API", () => {
   it("snoozes a rule until a unix second, keeps it account-scoped, and clears with null", async () => {
     const owner = await newUser();
     const attacker = await newUser();
-    const rule = await createAlertRule(owner, { triggerType: "energy_capped" });
+    const rule = await createAlertRule(owner, { triggerType: "bar_capped" });
 
     // Fresh rules are never snoozed (nullable add — pre-2.10 rows read null).
     expect(rule.snoozedUntilSec).toBeNull();

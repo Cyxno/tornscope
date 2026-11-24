@@ -134,25 +134,29 @@ suite("proactive alerts engine", () => {
 
   it("cooldown_ready: a snoozed rule is skipped WITHOUT touching lastState (episode memory survives the snooze)", async () => {
     await db.alertDelivery.deleteMany({ where: { userId } }); // scope assertions to THIS test
+    const endSec = NOW + 3600;
     const ruleId = await createRule({
       triggerType: "cooldown_ready",
-      snoozedUntil: new Date((NOW + 3600) * 1000),
+      lastState: { observedAt: NOW - 600, timers: { cooldownDrugEndsAt: endSec } },
     });
 
-    // The cooldown is ready, but the rule is snoozed: nothing fires AND the
-    // transition/episode state is left exactly as it was.
+    // The cooldown becomes ready while the rule is snoozed: nothing fires AND
+    // the transition/episode state is left exactly as it was.
+    await db.alertRule.update({ where: { id: ruleId }, data: { snoozedUntil: new Date((NOW + 3600) * 1000) } });
     liveState = { cooldownDrugEndsAt: null };
     await evaluate();
     let deliveries = await db.alertDelivery.findMany({ where: { userId, triggerType: "cooldown_ready" } });
     expect(deliveries).toEqual([]);
     let rule = await db.alertRule.findUnique({ where: { id: ruleId } });
-    expect(rule!.lastState).toBeNull();
+    expect(rule!.lastState).toEqual({ observedAt: NOW - 600, timers: { cooldownDrugEndsAt: endSec } });
 
-    // Snooze expires → the next tick evaluates normally and fires.
+    // Snooze expires: the episode memory is intact, so the missed transition
+    // fires on the next tick (snoozing postpones; it never resets memory).
     await db.alertRule.update({ where: { id: ruleId }, data: { snoozedUntil: new Date((NOW - 60) * 1000) } });
     await evaluate();
     deliveries = await db.alertDelivery.findMany({ where: { userId, triggerType: "cooldown_ready" } });
     expect(deliveries).toHaveLength(1);
+    expect(deliveries[0]!.dedupeKey).toBe(`cooldown_ready:cooldown_drug:${endSec}`);
     rule = await db.alertRule.findUnique({ where: { id: ruleId } });
     expect((rule!.lastState as { observedAt: number }).observedAt).toBeGreaterThan(0);
   });
@@ -504,6 +508,9 @@ suite("proactive alerts engine", () => {
   });
 
   it("channel fan-out: one in-app alert, one pending row per channel; dispatch marks sent and never duplicates", async () => {
+    // Earlier suites leave their (enabled) channels behind: fan-out is one row per ENABLED channel,
+    // so start from exactly one channel or the row count reflects channels this test does not own.
+    await db.alertChannel.deleteMany({ where: { userId } });
     const encryption = new EncryptionService(process.env.API_KEY_ENCRYPTION_KEY!);
     const webhook = "https://discord.com/api/webhooks/123456789012345678/AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdefghij";
     const encrypted = encryption.encrypt(webhook);
