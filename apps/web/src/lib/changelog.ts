@@ -30,8 +30,35 @@ export const CHANGELOG_KINDS: ChangelogKind[] = ["Added", "Improved", "Fixed", "
 
 export const CHANGELOG: ChangelogRelease[] = [
   {
-    version: "2.8.4",
+    version: "2.10.0",
     current: true,
+    summary:
+      "Proactive Alerts, productie-klaar: de trigger-catalogus groeit van 8 naar 16 triggers met per trigger een categorie, severity, dedupe-scope en confidence-label; elke alert draagt voortaan een provenance-object (waar de fact vandaan komt); en de Alerts-pagina verhuist naar Intelligence met filters, snooze en een uitlegpaneel. Onbeschikbare data blijft \"—\" — nooit 0.",
+    changes: [
+      { kind: "Added", text: "Alerts — acht nieuwe triggers: net-worth drawdown t.o.v. de 7d-baseline, bar-capped (energy/nerve/happy, maximaal één per dag), bank-maturity en OC bijna-klaar (horizon-drempel), goal-milestones (dezelfde 50/75/90%-breuken als de push-engine), rehab-advies (drug-volume proxy, eerlijk gelabeld als proxy — Torn publiceert geen addiction-meter), overdose-spike (alleen boven 2× je eigen baseline), en training-stagnatie. De catalogus declareert per trigger categorie (economy/progression/health/travel/combat/operational), severity, dedupe-scope (per-incident/per-episode/per-dag), confidence-label en default." },
+      { kind: "Added", text: "Elke alert draagt een provenance-object (confidence, brontabellen, waargenomen periode, eerlijke caveats) dat in de inbox zichtbaar is; episodes worden formeel gedefinieerd en sluiten alleen bij echte herstel — data-kwaliteitsproblemen (stale/missing snapshots) heropenen een episode nooit. Episodes van drawdown en net-worth-drop delen nooit een namespace." },
+      { kind: "Added", text: "Alerts-pagina onder Intelligence: filteren op categorie en severity, snooze per trigger-type (pauzeert evaluatie zonder state te verliezen), activity-tijdlijn per trigger, en acknowledge zoals voorheen. Unread alerts verschijnen bovenaan de Command Center-feed — voorrang boven cooldowns, goal-milestones en insights." },
+      { kind: "Improved", text: "Alerts-navigatie verhuist van System naar Intelligence (samen met Goals, Insights en Command Center); quiet-hours-suppressed alerts blijven met een suppressed-record in de inbox zichtbaar." },
+      { kind: "Fixed", text: "De in-app changelog stopte bij 2.8.4 — de ontbrekende 2.9.0-entry (Proactive Alerts MVP + audit-fixes F1–F4) is hersteld." },
+      { kind: "Technical", text: "Nieuwe evaluatoren zijn pure functies in packages/shared met een gedocumenteerde reason per niet-eligibel pad; AlertDelivery krijgt een nullable provenance-kolom (migratie 20261124180000_alert_provenance, pre-2.10-rijen lezen NULL = \"—\"). Parameterized fake-zero-test over alle 16 triggers: onbeschikbare data levert geen gefabuleerde nul op. stocks-benefit-trigger bewust niet opgenomen: er bestaat geen eerlijke deterministische implementatie zonder holdings-historie (docs/STOCKS.md)." },
+    ],
+  },
+  {
+    version: "2.9.0",
+    current: false,
+    summary:
+      "Proactive Alerts MVP: een tweede, zelf in te stellen alertlaag naast de push-engine — acht ingebouwde triggers (cooldowns, OC, education, bank, travel, net-worth-drop, sync-failure/-recovery), per-rule quiet hours en Discord-webhook delivery, met een in-app inbox als delivery-ledger.",
+    changes: [
+      { kind: "Added", text: "Alerts-engine op de bestaande scheduler-tick (geen extra container of queue): per account één live-/stored-observatie, per-rule evaluatoren als pure functies, en één transactie per logische alert — de (userId, dedupeKey)-unieke constraint maakt elke replay idempotent." },
+      { kind: "Added", text: "Discord-kanaal met SSRF-guard (alleen officiële webhook-hosts, geen redirects), AES-256-GCM-versleuteling at rest, gemaskeerde preview in de API en bounded retries die Discord's retry_after respecteren; test-notification zonder rule-state aan te raken." },
+      { kind: "Added", text: "In-app inbox: één rij per logische alert met per-kanaal delivery-statussen (pending/sent/failed/suppressed) — suppressed door quiet hours blijft met record zichtbaar, nooit stilzwijgend weggegooid." },
+      { kind: "Improved", text: "Audit-fixes F1–F4: per-incident sync-dedupe via het SyncState-updatedAt-stamp (een nieuw incident van dezelfde resource-set kan wél opnieuw alarmeren), episode-scoped net-worth-dedupe die pas re-armt na herstel boven de drempel, behouden queues voor uitgeschakelde kanalen, en deterministische decrypt-fouten." },
+      { kind: "Technical", text: "Vier nieuwe tabellen (AlertRule, AlertChannel, AlertDelivery, AlertChannelDelivery) met volledige cascade vanuit User; engine evalueert nooit demo-profielen. Evaluatie-contract: eerste observatie = baseline, stale gap = re-baseline, gefaalde fetch raakt de baseline nooit." },
+    ],
+  },
+  {
+    version: "2.8.4",
+    current: false,
     summary:
       "Account Effects & Unlocks: the proven Education and Merit data now summarize into combined active account bonuses — one row per effect family with its source(s) listed, merit figures exact (rank × verified formula), course figures quoted verbatim from official catalog text, never summed across sources. Unknown stays unknown.",
     changes: [
