@@ -132,3 +132,10 @@ export const GET = handler;
 export const POST = handler;
 export const DELETE = handler;
 export const PUT = handler;
+// 2.10.0 regression: alert-rule edits (alertsUpdateRule) and goal edits use
+// PATCH. adapter-node answers an unexported method on this catch-all with
+// 405 + allow(GET, POST, PUT, DELETE, HEAD); without PATCH here every
+// rule/threshold save in Settings failed with "Request failed (405)".
+// The handler is method-agnostic (request.method + body read for
+// non-GET/HEAD), so one export covers every mutating method.
+export const PATCH = handler;
