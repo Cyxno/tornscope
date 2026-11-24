@@ -2,6 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   alertQuietEndSec,
   alertTrigger,
+  ALERT_TRIGGERS,
+  ALERT_CATEGORIES,
+  ALERT_SEVERITIES,
+  ALERT_DEDUPE_SCOPES,
+  ALERT_CONFIDENCE_LABELS,
   cooldownKindsFromConfig,
   diffAlertTimers,
   diffSyncHealth,
@@ -270,13 +275,34 @@ describe("normalizeAlertConfig", () => {
     expect(() => normalizeAlertConfig("net_worth_drop", { pctt: 5 })).toThrow(AlertConfigError);
   });
 
-  it("exposes the full registry with the six gameplay + two operational triggers", () => {
-    expect(alertTrigger("cooldown_ready")?.group).toBe("gameplay");
+  it("exposes the full 2.10.0 catalog: 16 triggers with canonical metadata", () => {
+    expect(alertTrigger("cooldown_ready")?.category).toBe("health");
+    expect(alertTrigger("oc_ready")?.category).toBe("combat");
     expect(alertTrigger("oc_ready")?.needsLiveFetch).toBe(false);
+    expect(alertTrigger("travel_landed")?.category).toBe("travel");
     expect(alertTrigger("travel_landed")?.needsLiveFetch).toBe(true);
-    expect(alertTrigger("net_worth_drop")?.needsLiveFetch).toBe(false);
-    expect(alertTrigger("sync_failure")?.group).toBe("operational");
-    expect(alertTrigger("sync_recovery")?.group).toBe("operational");
+    expect(alertTrigger("net_worth_drop")?.category).toBe("economy");
+    expect(alertTrigger("net_worth_drop")?.dedupeScope).toBe("per-episode");
+    expect(alertTrigger("sync_failure")?.category).toBe("operational");
+    expect(alertTrigger("sync_recovery")?.category).toBe("operational");
+    // 2.10.0 additions
+    expect(alertTrigger("networth_drawdown")?.category).toBe("economy");
+    expect(alertTrigger("bar_capped")?.dedupeScope).toBe("per-day");
+    expect(alertTrigger("bank_maturity_soon")?.dedupeScope).toBe("per-incident");
+    expect(alertTrigger("oc_almost_ready")?.category).toBe("combat");
+    expect(alertTrigger("goal_milestone")?.category).toBe("progression");
+    expect(alertTrigger("rehab_advice")?.confidenceLabel).toBe("inferred");
+    expect(alertTrigger("drug_overdose_spike")?.severity).toBe("critical");
+    expect(alertTrigger("training_stagnation")?.category).toBe("progression");
+    // every trigger carries the full canonical metadata
+    for (const meta of ALERT_TRIGGERS) {
+      expect(ALERT_CATEGORIES).toContain(meta.category);
+      expect(ALERT_SEVERITIES).toContain(meta.severity);
+      expect(ALERT_DEDUPE_SCOPES).toContain(meta.dedupeScope);
+      expect(ALERT_CONFIDENCE_LABELS).toContain(meta.confidenceLabel);
+      expect(typeof meta.defaultEnabled).toBe("boolean");
+      expect(meta.clickPath.startsWith("/")).toBe(true);
+    }
     expect(alertTrigger("browser_push")).toBeUndefined();
   });
 });
