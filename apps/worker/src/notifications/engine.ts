@@ -600,6 +600,43 @@ async function evaluateUser(userId: string, timezone: string): Promise<void> {  
   await evaluateGoalsProducer(ctx, (state?.systemState ?? null) as Record<string, unknown> | null, updateSystemState);
   await evaluateOcProducer(ctx, (state?.systemState ?? null) as Record<string, unknown> | null, updateSystemState);
   await evaluateInsightProducer(ctx, updateSystemState);
+
+  // ---- Proactive alerts (2.10.0): committed alert deliveries → Web Push ---
+  await evaluateAlertDeliveriesForPush(userId, ctx);
+}
+
+/**
+ * Proactive alerts → Web Push. Every AlertDelivery committed for this user at
+ * or after the push activation boundary is offered to the canonical ingest
+ * path under its `alert_<trigger>` notification type: user toggle, profile
+ * dedupe (NotificationEvent unique on (userId, dedupeKey) with
+ * `alert:<alertDedupeKey>` — ONE push per alert episode, ever), quiet-hours
+ * DEFER (never silently drop; the NotificationEvent ledger records the
+ * deliverAt instant), per-device ledger with bounded retries. Re-ticks and
+ * worker restarts re-offer the same rows — every constraint makes that
+ * idempotent. Deliveries older than the push stale bound are skipped by
+ * ingest itself, and retired trigger types (no registry entry) are ignored.
+ */
+export async function evaluateAlertDeliveriesForPush(userId: string, ctx: IngestContext): Promise<void> {
+  const db = getPrismaClient();
+  const since = new Date((ctx.enabledAtSec - 60) * 1000);
+  const rows = await db.alertDelivery.findMany({
+    where: { userId, occurredAt: { gte: since } },
+    orderBy: { occurredAt: "asc" },
+    take: MAX_EVENTS_PER_TICK,
+    select: { triggerType: true, dedupeKey: true, occurredAt: true, title: true, message: true },
+  });
+  for (const row of rows) {
+    if (!notificationType(`alert_${row.triggerType}`)) continue; // trigger retired from the registry
+    await ingest(userId, {
+      type: `alert_${row.triggerType}`,
+      dedupeKey: `alert:${row.dedupeKey}`,
+      occurredAt: Math.floor(row.occurredAt.getTime() / 1000),
+      title: row.title,
+      body: row.message,
+      clickPath: "/alerts",
+    }, ctx);
+  }
 }
 
 /**

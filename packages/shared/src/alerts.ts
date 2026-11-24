@@ -28,7 +28,10 @@ import type { DiscordErrorKind } from "./discord.js";
 /* Delivery statuses                                                          */
 /* -------------------------------------------------------------------------- */
 
-export const ALERT_DELIVERY_STATUSES = ["pending", "sent", "failed", "suppressed"] as const;
+/** pending | sent | failed | suppressed | deferred — "deferred" (2.10.0) is
+ *  the quiet-hours state: committed during the rule's quiet window, external
+ *  delivery scheduled for the window's end instead of being dropped. */
+export const ALERT_DELIVERY_STATUSES = ["pending", "sent", "failed", "suppressed", "deferred"] as const;
 export type AlertDeliveryStatus = (typeof ALERT_DELIVERY_STATUSES)[number];
 
 export const ALERT_DELIVERY_STATUS_LABELS: Record<AlertDeliveryStatus, string> = {
@@ -36,6 +39,7 @@ export const ALERT_DELIVERY_STATUS_LABELS: Record<AlertDeliveryStatus, string> =
   sent: "Delivered",
   failed: "Failed",
   suppressed: "Suppressed",
+  deferred: "Deferred",
 };
 
 /* -------------------------------------------------------------------------- */
@@ -1144,6 +1148,9 @@ export interface AlertDeliveryDto {
   payload: Record<string, unknown> | null;
   provenance: AlertProvenance | null;
   status: AlertDeliveryStatus;
+  /** Quiet-hours deferral (2.10.0): unix seconds until external delivery is
+   *  scheduled; null unless status is "deferred". */
+  deferredUntilSec: number | null;
   occurredAtSec: number;
   readAtSec: number | null;
   channels: AlertChannelDeliveryDto[];

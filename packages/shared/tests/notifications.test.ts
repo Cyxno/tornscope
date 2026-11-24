@@ -153,6 +153,28 @@ describe("notification type registry", () => {
     expect(notificationType("daily_summary_ready")!.config).toEqual(["summaryTimeMin"]);
     expect(notificationType("mail")!.config).toEqual([]);
   });
+
+  it("2.10.0: one alert_* push type per proactive-alert trigger, mirroring the alert registry", async () => {
+    const { ALERT_TRIGGERS } = await import("../src/alerts.js");
+    for (const trigger of ALERT_TRIGGERS) {
+      const meta = notificationType(`alert_${trigger.id}`);
+      expect(meta, `alert_${trigger.id}`).toBeDefined();
+      expect(meta!.group).toBe("alerts");
+      expect(meta!.label).toBe(trigger.label);
+      expect(meta!.defaultEnabled).toBe(trigger.defaultEnabled);
+      // Game-event alerts are never service-level critical — quiet hours must
+      // be able to defer them (info → normal, warning/critical → time_sensitive).
+      expect(meta!.urgency === "critical").toBe(false);
+      expect(meta!.urgency).toBe(trigger.severity === "info" ? "normal" : "time_sensitive");
+      expect(meta!.quietHours).toBe("defer");
+      expect(meta!.clickPath).toBe("/alerts");
+      expect(meta!.provenance).toBe(trigger.confidenceLabel);
+      expect(meta!.config).toEqual([]); // thresholds live in the alert RULE config
+    }
+    // Every alert_* type resolves and nothing extra was invented.
+    const alertTypes = NOTIFICATION_TYPES.filter((t) => t.id.startsWith("alert_"));
+    expect(alertTypes).toHaveLength(ALERT_TRIGGERS.length);
+  });
 });
 
 describe("legacy toggle normalization", () => {

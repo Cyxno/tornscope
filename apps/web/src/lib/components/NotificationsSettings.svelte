@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { env as publicEnv } from "$env/dynamic/public";
-  import type { NotificationsStatusResponse, NotificationHistoryResponse } from "@tornscope/shared";
-  import { CAPABILITY_LABELS, DELIVERY_REASON_LABELS, DELIVERY_STATUSES, HEADSUP_PRE_OPTIONS, NOTIFICATION_GROUPS, NOTIFICATION_TYPES, type DeliveryReason, type DeliveryStatus } from "@tornscope/shared";
+  import type { NotificationsStatusResponse, NotificationHistoryResponse, AlertRuleDto } from "@tornscope/shared";
+  import { CAPABILITY_LABELS, DELIVERY_REASON_LABELS, DELIVERY_STATUSES, HEADSUP_PRE_OPTIONS, NOTIFICATION_GROUPS, NOTIFICATION_TYPES, alertTrigger, type DeliveryReason, type DeliveryStatus } from "@tornscope/shared";
   import { HEADSUP_PREF_KEYS, parseHeadsupCue, parseHeadsupSound } from "$lib/prefs";
   import { endpoints, ApiClientError } from "$lib/api";
   import { me } from "$lib/state.svelte";
@@ -45,6 +45,36 @@
     try { localStorage.setItem(HEADSUP_PREF_KEYS.sound, on ? "1" : "0"); } catch { /* per-session */ }
   }
   let history = $state<NotificationHistoryResponse | null>(null);
+  /** 2.10.0: alert rules (threshold editing for the Proactive alerts group). */
+  let alertRules = $state<AlertRuleDto[]>([]);
+
+  function alertRuleFor(triggerType: string): AlertRuleDto | undefined {
+    return alertRules.find((r) => r.triggerType === triggerType);
+  }
+
+  function thresholdValue(triggerType: string, key: string, fallback: number): number {
+    const v = alertRuleFor(triggerType)?.config?.[key];
+    return typeof v === "number" && Number.isFinite(v) ? v : fallback;
+  }
+
+  /** Thresholds live in the alert RULE config (single source of truth) — a
+   *  rule that doesn't exist yet is created with defaults + this threshold. */
+  async function setAlertThreshold(triggerType: string, key: string, rawValue: number, fallback: number): Promise<void> {
+    const value = Number.isFinite(rawValue) ? rawValue : fallback;
+    const rule = alertRuleFor(triggerType);
+    notice = null;
+    try {
+      if (rule) {
+        const updated = await endpoints.alertsUpdateRule(rule.id, { config: { ...rule.config, [key]: value } });
+        alertRules = alertRules.map((r) => (r.id === updated.id ? updated : r));
+      } else {
+        const created = await endpoints.alertsCreateRule({ triggerType, config: { [key]: value } });
+        alertRules = [...alertRules, created];
+      }
+    } catch (err) {
+      notice = { tone: "err", text: err instanceof ApiClientError ? err.message : (err as Error).message };
+    }
+  }
   type PushEnv = PushCapability;
   let support = $state<PushEnv>({ kind: "unsupported" });
   let iosEnv = $state(false);
@@ -92,6 +122,8 @@
     } catch {
       status = null;
     }
+    // 2.10.0: alert rules for the Proactive alerts threshold inputs.
+    alertRules = await endpoints.alertsRules().then((res) => res.rules).catch(() => []);
     if (me.data?.isDemo) {
       history = await endpoints.notificationsHistory().catch(() => null);
     } else {
@@ -509,8 +541,7 @@
                   </span>
                   {#if !blocked && t.config.length > 0 && status.preferences.categories[t.id]}
                     <span class="mt-1 flex flex-wrap items-center gap-2">
-                      {#if t.config.includes("nearFullThreshold")}
-                        <label class="flex items-center gap-1 text-xs text-fg-faint">
+                      {#if t.config.includes("nearFullThreshold")}                        <label class="flex items-center gap-1 text-xs text-fg-faint">
                           Threshold
                           <input
                             type="number" min="1" max="1000"
@@ -575,6 +606,30 @@
                       {/if}
                     </span>
                   {/if}
+                  <!-- 2.10.0 Proactive alerts: per-trigger rule thresholds (the
+                       rule config is the single source of truth; a missing rule
+                       is created with defaults + this threshold). -->
+                  {#if group.id === "alerts"}
+                    {@const trigger = alertTrigger(t.id.slice("alert_".length))}
+                    {#if trigger}
+                      {@const numericThresholds = Object.entries(trigger.defaultConfig).filter((entry): entry is [string, number] => typeof entry[1] === "number")}
+                      {#if numericThresholds.length > 0 && (status.preferences.categories[t.id] ?? t.defaultEnabled)}
+                        <span class="mt-1 flex flex-wrap items-center gap-2">
+                          {#each numericThresholds as [key, fallback] (key)}
+                            <label class="flex items-center gap-1 text-xs text-fg-faint">
+                              {key.replace(/_/g, " ")}
+                              <input
+                                type="number" min="0"
+                                class="w-20 rounded-lg border border-border bg-bg-raise px-2 py-0.5 text-xs text-fg"
+                                value={thresholdValue(trigger.id, key, fallback)}
+                                onchange={(e) => void setAlertThreshold(trigger.id, key, Number((e.currentTarget as HTMLInputElement).value), fallback)}
+                              />
+                            </label>
+                          {/each}
+                        </span>
+                      {/if}
+                    {/if}
+                  {/if}
                 </div>
                 <input
                   type="checkbox"
@@ -622,6 +677,9 @@
                   {entry.status}
                   {#if entry.reason}
                     · {DELIVERY_REASON_LABELS[entry.reason as DeliveryReason] ?? entry.reason}
+                  {/if}
+                  {#if entry.status === "deferred" && entry.deliverAtSec}
+                    · until {td.displayTime(entry.deliverAtSec)} (quiet hours)
                   {/if}
                 </span>
               </summary>

@@ -1201,9 +1201,12 @@ model AlertDelivery {
   /// Where the fact came from (2.10.0): confidence, sources, observed
   /// window, honest caveats. Null only for rows committed before 2.10.0.
   provenance  Json?
-  /// pending | sent | failed | suppressed (suppressed = quiet hours; the
-  /// inbox shows WHY nothing went out).
+  /// pending | sent | failed | suppressed | deferred (deferred = quiet hours;
+  /// the inbox shows WHY nothing went out yet and until when).
   status      String    @default("sent")
+  /// Quiet-hours deferral (2.10.0): external delivery is scheduled for this
+  /// instant (the rule's quiet-window end). Null unless status = "deferred".
+  deferredUntil DateTime?
   readAt      DateTime?
   createdAt   DateTime  @default(now())
 

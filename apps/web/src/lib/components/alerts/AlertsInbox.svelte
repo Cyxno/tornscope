@@ -32,6 +32,7 @@
     failed: "chip-negative",
     suppressed: "chip-warning",
     pending: "chip-info",
+    deferred: "chip-warning",
   };
 
   const SEVERITY_TONES: Record<AlertSeverity, string> = {
@@ -306,7 +307,14 @@
                   Snoozed{rule?.snoozedUntilSec ? ` · ${formatRelative(rule.snoozedUntilSec)}` : ""}
                 </span>
               {/if}
-              <span class={`chip ${STATUS_TONES[entry.status]}`}>{ALERT_DELIVERY_STATUS_LABELS[entry.status]} <span class="text-fg-faint">(in-app)</span></span>
+              <span class={`chip ${STATUS_TONES[entry.status]}`} title={entry.status === "deferred" && entry.deferredUntilSec !== null ? `Deferred until ${displayDateTime(entry.deferredUntilSec)} (rule quiet hours)` : undefined}>
+                {ALERT_DELIVERY_STATUS_LABELS[entry.status]}
+                {#if entry.status === "deferred" && entry.deferredUntilSec !== null}
+                  <span class="text-fg-faint">until {formatRelative(entry.deferredUntilSec)}</span>
+                {:else}
+                  <span class="text-fg-faint">(in-app)</span>
+                {/if}
+              </span>
               {#each entry.channels as channel (channel.channelId)}
                 <span class={`chip ${STATUS_TONES[channel.status]}`} title={channel.errorMessage ?? undefined}>
                   Discord {channel.status}

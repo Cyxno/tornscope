@@ -117,6 +117,7 @@ export async function dispatchDueAlertDeliveries(
             nextAttemptAt: null,
           },
         });
+        await reconcileDeferredParent(db, row.deliveryId);
         continue;
       }
       const webhookUrl = target.url;
@@ -141,11 +142,44 @@ export async function dispatchDueAlertDeliveries(
       });
       const result = await sender(webhookUrl, content, { timeoutMs: env.alerts.discordTimeoutMs });
       await applySendResult(db, row.id, row.attempts, result);
+      await reconcileDeferredParent(db, row.deliveryId);
     } catch (err) {
       // Never let one broken channel stall the pass.
       logger.warn({ deliveryId: row.deliveryId, channelId: row.channelId, err: (err as Error).message }, "alert dispatch row failed");
     }
   }
+
+  // 2.10.0 quiet-hours deferral completion: deferred deliveries whose
+  // deferral instant has passed and whose channel rows are all terminal
+  // (or absent — no channels configured) move to their final honest state
+  // (sent / failed), clearing deferredUntil. Rows still pending (e.g. a
+  // retry backoff pushed nextAttemptAt forward) are left untouched.
+  const deferredDue = await db.alertDelivery.findMany({
+    where: { status: "deferred", deferredUntil: { lte: now } },
+    select: { id: true },
+    take: MAX_DISPATCH_PER_PASS,
+  });
+  for (const parent of deferredDue) {
+    await reconcileDeferredParent(db, parent.id);
+  }
+}
+
+/**
+ * Reconcile a "deferred" parent delivery after one of its channel rows
+ * reached a terminal state (or its deferral instant passed): when no channel
+ * row is still pending, the parent takes the honest final state — "sent"
+ * when at least one channel delivered (or none exist), "failed" when every
+ * channel row failed — and clears deferredUntil.
+ */
+async function reconcileDeferredParent(db: ReturnType<typeof getPrismaClient>, deliveryId: string): Promise<void> {
+  const parent = await db.alertDelivery.findUnique({ where: { id: deliveryId }, select: { status: true } });
+  if (!parent || parent.status !== "deferred") return;
+  const rows = await db.alertChannelDelivery.findMany({ where: { deliveryId }, select: { status: true } });
+  if (rows.some((r) => r.status === "pending")) return;
+  const anySent = rows.some((r) => r.status === "sent");
+  await db.alertDelivery
+    .update({ where: { id: deliveryId }, data: { status: anySent || rows.length === 0 ? "sent" : "failed", deferredUntil: null } })
+    .catch(() => undefined);
 }
 
 /** Apply a send outcome to the ledger row (bounded retries, permanent kinds fail fast). */

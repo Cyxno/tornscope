@@ -186,7 +186,7 @@ suite("proactive alerts engine", () => {
     expect((rule!.lastState as { observedAt: number }).observedAt).toBe(before); // untouched
   });
 
-  it("quiet hours suppress with a visible record and never set lastFiredAt", async () => {
+  it("quiet hours DEFER with a visible record (deferredUntil + pending channels) and never set lastFiredAt", async () => {
     await db.alertDelivery.deleteMany({ where: { userId } });
     const ruleId = await createRule({
       triggerType: "bank_matured",
@@ -197,9 +197,63 @@ suite("proactive alerts engine", () => {
     await evaluate();
     const deliveries = await db.alertDelivery.findMany({ where: { userId, triggerType: "bank_matured" } });
     expect(deliveries).toHaveLength(1);
-    expect(deliveries[0]!.status).toBe("suppressed");
+    // 2.10.0: deferred, never suppressed — the ledger names the quiet end.
+    expect(deliveries[0]!.status).toBe("deferred");
+    expect(deliveries[0]!.deferredUntil).not.toBeNull();
+    expect(Math.floor(deliveries[0]!.deferredUntil!.getTime() / 1000)).toBeGreaterThan(NOW);
+    const channelRows = await db.alertChannelDelivery.findMany({ where: { deliveryId: deliveries[0]!.id } });
+    // A channel row exists only when a channel is configured; either way the
+    // parent must NOT read "suppressed" anymore.
+    for (const row of channelRows) expect(row.status).toBe("pending");
     const rule = await db.alertRule.findUnique({ where: { id: ruleId } });
     expect(rule!.lastFiredAt).toBeNull();
+  });
+
+  it("quiet hours: the deferred Discord delivery goes OUT at quiet end and the parent reconciles to sent", async () => {
+    await db.alertDelivery.deleteMany({ where: { userId } });
+    await db.alertChannel.updateMany({ where: { userId }, data: { enabled: false } });
+    const encryption = new EncryptionService(process.env.API_KEY_ENCRYPTION_KEY!);
+    const webhook = "https://discord.com/api/webhooks/123456789012345679/AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdefghij";
+    const encrypted = encryption.encrypt(webhook);
+    await db.alertChannel.create({
+      data: {
+        userId,
+        type: "discord",
+        encryptedKey: encrypted.encryptedKey,
+        iv: encrypted.iv,
+        authTag: encrypted.authTag,
+        targetPreview: "discord.com/api/webhooks/9999…/••••",
+        enabled: true,
+      },
+      select: { id: true },
+    });
+    await createRule({
+      triggerType: "bank_matured",
+      quietHours: { start: "00:00", end: "00:00", tz: "UTC" }, // full-day quiet
+      lastState: { observedAt: NOW - 120, timers: { bankMaturesAt: NOW - 30 } },
+    });
+    liveState = { bankMaturesAt: null };
+    sendResults = [{ outcome: "sent" }];
+    senderMock.mockClear();
+    await evaluate();
+
+    // Committed DEFERRED — nothing sent yet, the channel row waits for quiet end.
+    const delivery = (await db.alertDelivery.findMany({ where: { userId, triggerType: "bank_matured" } }))[0]!;
+    expect(delivery.status).toBe("deferred");
+    expect(senderMock).toHaveBeenCalledTimes(0);
+
+    // Fast-forward past the quiet end: dispatch sends and the parent reconciles.
+    const past = new Date((NOW - 10) * 1000);
+    await db.alertDelivery.update({ where: { id: delivery.id }, data: { deferredUntil: past } });
+    await db.alertChannelDelivery.updateMany({ where: { deliveryId: delivery.id }, data: { nextAttemptAt: past } });
+    await evaluate();
+
+    const row = (await db.alertChannelDelivery.findMany({ where: { deliveryId: delivery.id } }))[0]!;
+    expect(row.status).toBe("sent");
+    const parent = (await db.alertDelivery.findUnique({ where: { id: delivery.id } }))!;
+    expect(parent.status).toBe("sent");
+    expect(parent.deferredUntil).toBeNull();
+    expect(senderMock).toHaveBeenCalledTimes(1);
   });
 
   it("per-rule cooldown blocks repeats but a NEW episode after expiry fires again", async () => {

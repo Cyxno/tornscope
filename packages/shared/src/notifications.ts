@@ -15,6 +15,7 @@
  * never disagree.
  */
 import { z } from "zod";
+import { ALERT_TRIGGERS } from "./alerts.js";
 
 /* -------------------------------------------------------------------------- */
 /* Urgency model (explicit — business-as-usual is never "critical")            */
@@ -42,6 +43,7 @@ export const NOTIFICATION_GROUPS = [
   { id: "account", label: "Account & progression", description: "Daily summary, milestones and level changes." },
   { id: "economy", label: "Economy", description: "Large wallet movements and net-worth changes at your chosen thresholds." },
   { id: "system", label: "System", description: "TornScope's own health: sync problems and credential access." },
+  { id: "alerts", label: "Proactive alerts", description: "Web Push for alerts fired by your alert rules (Intelligence → Alerts). Thresholds live in each rule — editable inline below." },
 ] as const;
 export type NotificationGroupId = (typeof NOTIFICATION_GROUPS)[number]["id"];
 
@@ -73,10 +75,11 @@ export interface NotificationTypeMeta {
 }
 
 /**
- * The registry. urgency choices are documented per type — nothing here is
- * invented urgency: only TornScope's own delivery health is critical.
+ * The canonical (non-alert) registry. Urgency choices are documented per
+ * type — nothing here is invented urgency: only TornScope's own delivery
+ * health is critical.
  */
-export const NOTIFICATION_TYPES: NotificationTypeMeta[] = [
+const CANONICAL_NOTIFICATION_TYPES: NotificationTypeMeta[] = [
   /* ---- Torn activity (timeline classifications — exact recorded events) --- */
   {
     id: "mail", label: "New mail", group: "torn", defaultEnabled: true,
@@ -265,6 +268,29 @@ export const NOTIFICATION_TYPES: NotificationTypeMeta[] = [
   },
 ];
 
+/** 2.10.0: one Web Push type per proactive-alert trigger, generated from the
+ *  alert registry (single source of truth — labels, severities and defaults
+ *  can never drift from the rule catalog). Alert severities map to push
+ *  urgency info → normal, warning/critical → time_sensitive: game events are
+ *  never service-level "critical", so quiet hours always DEFER these pushes
+ *  (never bypass, never silently drop). Thresholds are NOT typeConfig — they
+ *  live in each alert rule's config and are edited via the Alerts page. */
+const ALERT_NOTIFICATION_TYPES: NotificationTypeMeta[] = ALERT_TRIGGERS.map((t) => ({
+  id: `alert_${t.id}`,
+  label: t.label,
+  description: t.description,
+  group: "alerts",
+  defaultEnabled: t.defaultEnabled,
+  urgency: t.severity === "info" ? "normal" : "time_sensitive",
+  quietHours: "defer",
+  maxDeferralAgeSeconds: 24 * 3600,
+  requires: null,
+  clickPath: "/alerts",
+  provenance: t.confidenceLabel,
+  config: [],
+}));
+
+export const NOTIFICATION_TYPES: NotificationTypeMeta[] = [...CANONICAL_NOTIFICATION_TYPES, ...ALERT_NOTIFICATION_TYPES];
 export const NOTIFICATION_TYPE_IDS = NOTIFICATION_TYPES.map((t) => t.id) as [string, ...string[]];
 
 export function notificationType(id: string): NotificationTypeMeta | undefined {

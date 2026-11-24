@@ -177,6 +177,8 @@ export async function getNotificationHistory(user: SessionUser): Promise<Notific
       status: e.status,
       reason: e.reason,
       provenance: e.provenance,
+      /** Quiet-hours deferral instant (unix sec) — "deferred until …". */
+      deliverAtSec: e.deliverAt === null ? null : Math.floor(e.deliverAt.getTime() / 1000),
       deliveries: e.deliveries.map((d) => ({
         status: d.status,
         reason: d.reason,

@@ -342,6 +342,7 @@ export async function listAlertDeliveries(
     payload: (row.payload ?? null) as Record<string, unknown> | null,
     provenance: (row.provenance ?? null) as AlertDeliveryDto["provenance"],
     status: row.status as AlertDeliveryStatus,
+    deferredUntilSec: row.deferredUntil === null ? null : Math.floor(row.deferredUntil.getTime() / 1000),
     occurredAtSec: Math.floor(row.occurredAt.getTime() / 1000),
     readAtSec: row.readAt === null ? null : Math.floor(row.readAt.getTime() / 1000),
     channels: row.channelDeliveries.map((cd) => ({

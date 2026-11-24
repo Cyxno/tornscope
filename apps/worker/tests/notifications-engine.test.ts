@@ -721,3 +721,79 @@ suite("timeline attention boundary (1.0.1 regression)", () => {
     expect(again).toHaveLength(1);
   });
 });
+
+suite("2.10.0 proactive alerts → Web Push", () => {
+  async function alertDeliveryRow(userId: string, triggerType: string, dedupeKey: string, occurredAtSec = nowSec): Promise<void> {
+    const rule = await db.alertRule.upsert({
+      where: { userId_triggerType: { userId, triggerType } },
+      create: { userId, triggerType },
+      update: {},
+    });
+    await db.alertDelivery.create({
+      data: {
+        userId,
+        ruleId: rule.id,
+        triggerType,
+        dedupeKey,
+        occurredAt: new Date(occurredAtSec * 1000),
+        title: "Energy bar capped",
+        message: "Your energy bar has been full for 30 minutes.",
+        status: "sent",
+      },
+    });
+  }
+
+  it("a committed alert delivery pushes once per episode — re-offering the same row never double-pushes", async () => {
+    process.env.VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY ?? "test-vapid-public";
+    process.env.VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY ?? "test-vapid-private";
+    const userId = await makeProfile({ devices: 2, toggles: { alert_bar_capped: true } });
+    await alertDeliveryRow(userId, "bar_capped", "barcapped:energy:1750000000");
+    const { evaluateAlertDeliveriesForPush } = await import("../src/notifications/engine.js");
+
+    await evaluateAlertDeliveriesForPush(userId, await ctxFor(userId));
+    const events = await db.notificationEvent.findMany({ where: { userId } });
+    expect(events).toHaveLength(1);
+    expect(events[0]!.type).toBe("alert_bar_capped");
+    expect(events[0]!.dedupeKey).toBe("alert:barcapped:energy:1750000000");
+    expect(events[0]!.status).toBe("delivered");
+    expect(events[0]!.clickPath).toBe("/alerts");
+    const deliveries = await db.notificationDelivery.findMany({ where: { userId } });
+    expect(deliveries).toHaveLength(2); // one per device
+    expect(deliveries.every((d) => d.status === "sent")).toBe(true);
+
+    // Next tick / worker restart re-offers the SAME delivery: the profile
+    // dedupe absorbs it — no second event, no second push.
+    webpushMock.state.calls.length = 0;
+    await evaluateAlertDeliveriesForPush(userId, await ctxFor(userId));
+    expect(await db.notificationEvent.count({ where: { userId } })).toBe(1);
+    expect(webpushMock.state.calls.length).toBe(0);
+  });
+
+  it("push toggle off → no push and no ledger row (explicit user choice); quiet hours → DEFERRED with deliverAt, never dropped", async () => {
+    process.env.VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY ?? "test-vapid-public";
+    process.env.VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY ?? "test-vapid-private";
+    const { evaluateAlertDeliveriesForPush } = await import("../src/notifications/engine.js");
+
+    // Toggle OFF: dropped without anything recorded — the user decided.
+    const offUser = await makeProfile({ devices: 1, toggles: { alert_bar_capped: false } });
+    await alertDeliveryRow(offUser, "bar_capped", "off:1");
+    await evaluateAlertDeliveriesForPush(offUser, await ctxFor(offUser));
+    expect(await db.notificationEvent.count({ where: { userId: offUser } })).toBe(0);
+    expect(webpushMock.state.calls.length).toBe(0);
+
+    // Quiet hours active: the push is DEFERRED — the ledger names the quiet end.
+    const utcMin = localMinutesInZone(nowSec, "UTC");
+    const startMin = (utcMin + 30) % 1440;
+    const endMin = (utcMin - 30 + 1440) % 1440;
+    const quietUser = await makeProfile({ devices: 1, toggles: { alert_bar_capped: true }, quiet: { start: startMin, end: endMin } });
+    await alertDeliveryRow(quietUser, "bar_capped", "quiet:1");
+    webpushMock.state.calls.length = 0;
+    await evaluateAlertDeliveriesForPush(quietUser, await ctxFor(quietUser, { quiet: { startMin, endMin, bypassCritical: true } }));
+    const events = await db.notificationEvent.findMany({ where: { userId: quietUser } });
+    expect(events).toHaveLength(1);
+    expect(events[0]!.status).toBe("deferred");
+    expect(events[0]!.deliverAt).not.toBeNull();
+    expect(events[0]!.expiresAt).not.toBeNull();
+    expect(webpushMock.state.calls.length).toBe(0); // nothing fires during the window
+  });
+});

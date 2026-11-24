@@ -2196,6 +2196,8 @@ export const NotificationHistoryResponseSchema = z.object({
       /** Machine reason for a non-delivered outcome (friendly-labeled in UI). */
       reason: z.string().nullable(),
       provenance: z.string(),
+      /** Quiet-hours deferral instant (unix sec) — shown as "deferred until …". */
+      deliverAtSec: z.number().nullable().optional(),
       deliveries: z.array(
         z.object({
           status: z.string(),

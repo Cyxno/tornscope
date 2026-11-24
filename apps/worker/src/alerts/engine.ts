@@ -17,11 +17,13 @@ import {
   NETWORTH_DRAWDOWN_BASELINE_SECONDS,
   networthDrawdownEpisodeKey,
   networthEpisodeKey,
+  nextWallClockOccurrence,
   parseAlertQuietHours,
   parseAlertRuleState,
   sendDiscordWebhook,
   syncIncidentSignature,
   type AlertDraft,
+  type AlertQuietHours,
   type AlertRuleState,
   type AlertTimerState,
   type GoalMetricId,
@@ -1121,7 +1123,7 @@ async function evaluateRule(
   const quietNow = qh !== null && isAlertQuietNow(qh, ctx.nowSec);
 
   for (const draft of result.drafts) {
-    await commitAlert(db, rule, draft, { quietNow, channelIds: ctx.channelIds, nowSec: ctx.nowSec });
+    await commitAlert(db, rule, draft, { quietNow, qh, channelIds: ctx.channelIds, nowSec: ctx.nowSec });
   }
 
   if (result.nextState !== null) {
@@ -1138,12 +1140,18 @@ async function evaluateRule(
  * transaction creating the in-app delivery (the logical alert; the unique
  * (userId, dedupeKey) constraint absorbs concurrent ticks and worker
  * restarts) plus one pending external row per enabled channel.
+ *
+ * QUIET HOURS (2.10.0): the alert is DEFERRED, never dropped — the delivery
+ * is stamped "deferred" with `deferredUntil` = the rule's quiet-window end,
+ * and the channel rows stay "pending" with nextAttemptAt at that same
+ * instant, so dispatch.ts delivers them when quiet hours end. The inbox
+ * explains the state instead of silently losing the alert.
  */
 async function commitAlert(
   db: PrismaDb,
   rule: RuleLike,
   draft: AlertDraft,
-  opts: { quietNow: boolean; channelIds: string[]; nowSec: number }
+  opts: { quietNow: boolean; qh: AlertQuietHours | null; channelIds: string[]; nowSec: number }
 ): Promise<void> {
   // Per-rule cooldown: blocks repeated notifications while still allowing a
   // NEW episode after expiry. Blocked attempts leave no trace (they are
@@ -1153,7 +1161,15 @@ async function commitAlert(
     if (elapsedMs < rule.cooldownMinutes * 60_000) return;
   }
 
-  const status = opts.quietNow ? "suppressed" : "sent";
+  let status: "sent" | "deferred" = "sent";
+  let deferredUntil: Date | null = null;
+  let firstAttemptAt: Date | null = null;
+  if (opts.quietNow && opts.qh !== null) {
+    const [endH, endM] = opts.qh.end.split(":").map(Number) as [number, number];
+    deferredUntil = new Date(nextWallClockOccurrence(endH * 60 + endM, opts.qh.tz, opts.nowSec) * 1000);
+    firstAttemptAt = deferredUntil;
+    status = "deferred";
+  }
   try {
     await db.$transaction(async (tx) => {
       const delivery = await tx.alertDelivery.create({
@@ -1168,12 +1184,13 @@ async function commitAlert(
           payload: (draft.payload ?? undefined) as never,
           provenance: draft.provenance as never,
           status,
+          deferredUntil,
         },
         select: { id: true },
       });
-      // External fan-out only when the alert was actually delivered in-app;
-      // suppressed rows keep their own suppressed channel rows so the UI can
-      // explain what happened (spec 6: never silently discarded).
+      // External fan-out rows: "pending" with nextAttemptAt set (= deferredUntil
+      // during quiet hours, NULL = due immediately otherwise). Dispatch picks
+      // them up when due — a deferred alert goes OUT at quiet end, never lost.
       for (const channelId of opts.channelIds) {
         await tx.alertChannelDelivery
           .create({
@@ -1181,7 +1198,8 @@ async function commitAlert(
               userId: rule.userId,
               deliveryId: delivery.id,
               channelId,
-              status: opts.quietNow ? "suppressed" : "pending",
+              status: "pending",
+              nextAttemptAt: firstAttemptAt,
             },
             select: { id: true },
           })
@@ -1195,7 +1213,7 @@ async function commitAlert(
       }
     });
     logger.info(
-      { userId: rule.userId, triggerType: draft.triggerType, dedupeKey: draft.dedupeKey, status, channels: opts.channelIds.length },
+      { userId: rule.userId, triggerType: draft.triggerType, dedupeKey: draft.dedupeKey, status, deferredUntil, channels: opts.channelIds.length },
       "alert committed"
     );
   } catch {
