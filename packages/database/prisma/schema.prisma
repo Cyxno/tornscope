@@ -1195,6 +1195,9 @@ model AlertDelivery {
   message     String
   /// Structured context for the inbox (amounts, destinations, resources).
   payload     Json?
+  /// Where the fact came from (2.10.0): confidence, sources, observed
+  /// window, honest caveats. Null only for rows committed before 2.10.0.
+  provenance  Json?
   /// pending | sent | failed | suppressed (suppressed = quiet hours; the
   /// inbox shows WHY nothing went out).
   status      String    @default("sent")

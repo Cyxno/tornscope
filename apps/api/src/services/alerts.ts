@@ -337,6 +337,7 @@ export async function listAlertDeliveries(
     title: row.title,
     message: row.message,
     payload: (row.payload ?? null) as Record<string, unknown> | null,
+    provenance: (row.provenance ?? null) as AlertDeliveryDto["provenance"],
     status: row.status as AlertDeliveryStatus,
     occurredAtSec: Math.floor(row.occurredAt.getTime() / 1000),
     readAtSec: row.readAt === null ? null : Math.floor(row.readAt.getTime() / 1000),
